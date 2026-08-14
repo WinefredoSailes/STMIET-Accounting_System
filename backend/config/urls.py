@@ -33,6 +33,10 @@ urlpatterns = [
         include("apps.posting.urls"),
     ),
     path(
+        f"{API_PREFIX}/ar/",
+        include("apps.ar.urls"),
+    ),
+    path(
         f"{API_PREFIX}/workflow/",
         include("apps.workflow.urls"),
     ),
