@@ -1,0 +1,44 @@
+# PostgreSQL + Redis for local production-parity runs.
+# Docker Desktop is not required for day-to-day dev (SQLite fallback works);
+# this file exists for staging and for anyone running the full stack.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: stmiet
+      POSTGRES_PASSWORD: stmiet
+      POSTGRES_DB: stmiet_accounting
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stmiet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.prod
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgres://stmiet:stmiet@db:5432/stmiet_accounting
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

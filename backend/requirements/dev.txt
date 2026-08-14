@@ -1,0 +1,6 @@
+-r base.txt
+pytest>=8.0
+pytest-django>=4.8
+factory-boy>=3.3
+django-extensions>=3.2
+openpyxl>=3.1
