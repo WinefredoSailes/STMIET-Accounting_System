@@ -48,10 +48,12 @@ def accounts(db):
         ("12020", "A/Receivables - Other Current-DHPP", "asset"),
         ("12030", "A/Receivables - Fuel Clients", "asset"),
         ("12070", "Advances to Employees", "asset"),
+        ("20000", "A/Payables - Current - DHPP", "liability"),
         ("21000", "Unearned Revenue - DHPP", "liability"),
         ("21010", "Accounts Payable-Trade", "liability"),
         ("41010", "Sales-Retail", "revenue"),
         ("61100", "Cost of Sales", "expense"),
+        ("64110", "Withholding Tax-Expanded_DHPP", "liability"),
     ]
     out = {}
     for code, name, atype in rows:
