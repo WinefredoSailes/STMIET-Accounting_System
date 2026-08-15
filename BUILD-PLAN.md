@@ -16,11 +16,11 @@
 | Accounts Payable subledger | AP ledger, RFP (ACCTG-FOR-012), CONSO, CV, supplier master | 017-024 | Phase 3 |
 | Cash & Banks / Treasury | 12 bank accounts, 9 banks, bank recon, PCF×3 (85% trigger), weekly cycles (Tue–Mon) | 016, 026-031 | Phase 4 |
 | Inventory | Existing live Django inventory system → API bridge (event bus) | 004, 009 | Phase 5 |
-| Fixed Assets | Asset register, straight-line dep, disposal | (Phase 7 ADR todo) | Phase 7 |
+| Fixed Assets | Asset register, straight-line dep, disposal | [ADR-034](./adr/ADR-034-fixed-assets.md) | Phase 7 |
 | Payroll / HR | EXTERNAL system — GL feed contract (file-based v1, API-ready) | 033 | Phase 6 |
-| Financial Statements | IS, SFP, CF, CoS, Total Expenses, SOCE (6 templates) + TB | 031 | Phase 8 |
+| Financial Statements | IS, SFP, CF, CoS, Total Expenses, SOCE (6 templates) + TB | 031, [035](./adr/ADR-035-financial-statements.md) | Phase 8 |
 | Tax & Compliance | VAT at SI extraction, WHT, income tax (removes "bana-bana" estimation) | (Phase 10 ADR todo) | Phase 10 |
-| Month-End Close | accruals → recon → close → appropriations (10% R&M, 10% Tithing) | 013 | Phase 8 |
+| Month-End Close | accruals → recon → close → appropriations (10% R&M, 10% Tithing) | 013, 035 | Phase 8 |
 | Audit & Controls | Immutable JE, approval hierarchies, segment immutability, no force-balance | 002, 005, 008, 020 | All phases |
 
 ---
@@ -37,7 +37,8 @@
 - [ ] Bank master: 12 accounts/9 banks + PCF&COH (ADB: PNB 50k, MBTC 50k, others 5k, PCF&COH 20k)
 - [ ] Scaffold repo: Django 5 + PostgreSQL + DRF + dev/staging/prod containers
 - [ ] COA import script (Excel → Account model) + validation (unique code+segment, FS sequence)
-- [ ] ADR for Fixed Assets (register, SL dep, disposal, per-category lives) — Phase 0 deliverable
+- [x] ADR for Fixed Assets (register, SL dep, disposal, per-category lives) — Phase 0 deliverable
+- [x] ADR for Financial Statements & Reporting (5 templates as data, windows, month-end close) — Phase 0 deliverable
 - [ ] ADR for Tax module scope (VAT extraction, WHT, income tax) — Phase 0 deliverable
 
 **Done when:** Alywin Q&A answered; COA imports clean; TB tie-out test passes; posting engine spec final.
@@ -145,25 +146,29 @@
 
 ## PHASE 7 — FIXED ASSETS *[est. 4-6 wks]*
 
-- [ ] Asset register (categories from COA: tankers 10-15y, boom trucks 10y, vehicles 5-7y, building 15-20y, furniture 5y, office equip 3-5y)
-- [ ] Acquisition (Dr 17xxx-19xxx | Cr AP/Cash/Loans), financed acquisitions w/ fees
-- [ ] Straight-line depreciation engine (monthly: Dr 50110/616xx | Cr Accum Dep 17xxx)
-- [ ] Disposal (Dr Cash + Accum Dep | Cr Asset + gain/loss 43070-96)
-- [ ] Depreciation schedule + fully-depreciated-still-in-use flag (Alywin pain)
-- [ ] Asset↔Vehicle link (Vehicles are assets — 17000-18650)
+- [x] Asset register (categories from COA: tankers 10-15y, boom trucks 10y, vehicles 5-7y, building 15-20y, furniture 5y, office equip 3-5y)
+- [x] Acquisition (Dr 17xxx-19xxx | Cr AP/Cash/Loans), financed acquisitions w/ fees
+- [x] Straight-line depreciation engine (monthly: Dr 50110/616xx | Cr Accum Dep 17xxx)
+- [x] Disposal (Dr Cash + Accum Dep | Cr Asset + gain/loss 43070-96)
+- [x] Depreciation schedule + fully-depreciated-still-in-use flag (Alywin pain)
+- [x] Asset↔Vehicle link (Vehicles are assets — 17000-18650)
+- [ ] Seed per-segment accum-dep accounts beyond 18513 (Boom Trucks) + residual-value convention w/ Alywin
+- [ ] Confirm loss-on-disposal account (62000/62003 Impairment vs dedicated 6xxx) w/ Alywin
+
+**Done when:** Asset register live; acquisition/depreciation/disposal post via API with gain/loss; fully-depreciated-still-in-use visible.
 
 ---
 
 ## PHASE 8 — FINANCIAL STATEMENTS & REPORTING *[est. 4-6 wks]*
 
-- [ ] 6 FS templates reproduced exactly from workbook layouts (IS MARCH 2026, SFP YEAR END, CoS, Total Expenses CGSE, CF, SOCE)
-- [ ] IS: segment columns (IPPC/STPC/DHPP/DMIE/OPS/Grand) + GPM/Expense Ratio/NPM + appropriations (10% R&M, 10% Tithing)
-- [ ] SFP: current/NC split, Dr/Cr ratio, capital = Assets − Liabilities
-- [ ] CoS by segment (DHPP 12 lines w/ liters, DMIE 18, OPS 5) + direct cost/liter
-- [ ] Total Expenses (CGSE) with reconciliation of duplicate/leftover template issues
-- [ ] SOCE (beginning cap + net profit − drawings = ending)
+- [x] 5 FS templates reproduced from workbook layouts as data (IS MARCH 2026, SFP YEAR END, CoS, Total Expenses CGSE, SOCE) — `apps.reporting`, `[ADR-035](./adr/ADR-035-financial-statements.md)`
+- [x] IS: segment columns (DHPP/DMIE/OPS/Grand) + GPM/Expense Ratio/NPM + appropriations (10% R&M, 10% Tithing)
+- [x] SFP: current/NC split, ratios, capital identity (Assets == Liabilities + Equity machine-checked)
+- [x] CoS by segment (DHPP 12 lines, DMIE 18, OPS 5) + liters quantity rows
+- [x] Total Expenses (CGSE) with reconciliation of duplicate/leftover template issues
+- [x] SOCE (beginning cap + additional + net profit − drawings = ending, machine-checked)
+- [x] Month-end close workflow: accruals → recon → close → appropriations (locks the fiscal period; kills days-long close, target < 3 days)
 - [ ] CF statement (weekly cycles → monthly CF, ADR-031 cadence)
-- [ ] Month-end close workflow: accruals → recon → close → appropriations (kills days-long close; target < 3 days)
 - [ ] Management reports: weekly collections, cash short/excess, AR/AP aging, fleet fuel
 - [ ] Reporting test: January 2026 actuals reproduced across all 6 statements
 

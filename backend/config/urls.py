@@ -37,8 +37,24 @@ urlpatterns = [
         include("apps.ar.urls"),
     ),
     path(
+        f"{API_PREFIX}/ap/",
+        include("apps.ap.urls"),
+    ),
+    path(
+        f"{API_PREFIX}/cash/",
+        include("apps.cash.urls"),
+    ),
+    path(
+        f"{API_PREFIX}/assets/",
+        include("apps.assets.urls"),
+    ),
+    path(
         f"{API_PREFIX}/workflow/",
         include("apps.workflow.urls"),
+    ),
+    path(
+        f"{API_PREFIX}/reporting/",
+        include("apps.reporting.urls"),
     ),
 ]
 
