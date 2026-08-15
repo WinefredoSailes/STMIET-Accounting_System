@@ -25,3 +25,20 @@ Thumbs.db
 
 # Private business documents (payroll review, personnel data)
 COMPENSATION-REVIEW.md
+
+# Office / media files (never commit to GitHub)
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.pdf
+*.m4a
+*.mp3
+*.mp4
+*.m4v
+*.wav
+*.mov
