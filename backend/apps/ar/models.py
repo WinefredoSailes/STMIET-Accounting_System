@@ -198,7 +198,7 @@ class CashShortExcess(AuditableModel):
     a NEW COA account, 63210 is 'Other Operating Expenses')."""
 
     cycle_start = models.DateField(db_index=True)  # Tuesday of the cycle
-    segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="cash_short_excesses")
+    segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="ar_cash_short_excesses")
     expected_cash = models.DecimalField(max_digits=18, decimal_places=2)
     actual_cash = models.DecimalField(max_digits=18, decimal_places=2)
     variance = models.DecimalField(max_digits=18, decimal_places=2)
