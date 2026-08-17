@@ -1,0 +1,64 @@
+{% extends "ui/base.html" %}
+{% block title %}AR Aging — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">AR AGING &amp; REGISTER</h1>
+      <p class="text-sm text-slate-500 mt-1">Open invoice balances as of {{ as_of|date:"M d, Y" }}, bucketed 30/60/90/120+.</p>
+    </div>
+    <form method="get" class="flex items-center gap-2 text-sm">
+      <input type="date" name="as_of" value="{{ as_of|date:"Y-m-d" }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Refresh</button>
+    </form>
+  </div>
+
+  <div class="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3">
+    {% for b in buckets %}
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">{{ b.bucket }} days</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums {% if b.amount > 0 %}text-amber-700{% else %}text-slate-400{% endif %}">₱{{ b.amount|floatformat:2 }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-auto">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Invoice #</th>
+          <th class="px-4 py-3">Customer</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3 text-right">Age (days)</th>
+          <th class="px-4 py-3 text-right">Balance</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in register %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-medium">{{ r.invoice_no }}</td>
+          <td class="px-4 py-2">{{ r.customer }}</td>
+          <td class="px-4 py-2">{{ r.date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2">{{ r.segment }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.age_days > 90 %}bg-red-100 text-red-800{% elif r.age_days > 60 %}bg-amber-100 text-amber-800{% else %}bg-slate-100 text-slate-700{% endif %}">{{ r.status }}</span>
+          </td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.age_days }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-medium">₱{{ r.balance|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No open invoices as of {{ as_of|date:"M d, Y" }}.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="6" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-slate-500">Total outstanding</td>
+          <td class="px-4 py-2 text-right tabular-nums">₱{{ register_total|floatformat:2 }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

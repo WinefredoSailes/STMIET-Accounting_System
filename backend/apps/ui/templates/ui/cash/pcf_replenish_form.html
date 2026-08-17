@@ -24,7 +24,7 @@
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_fund">FUND</label>
             <select name="fund" id="id_fund" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
               {% for fund in funds %}
-              <option value="{{ fund.id }}">{{ fund.get_fund_code_display }} — {{ fund.custodian.get_full_name|default:fund.custodian.username }} (₱{{ fund.imprest_amount|floatformat:2 }})</option>
+              <option value="{{ fund.id }}">{{ fund.fund_code }} — {{ fund.name }} — {{ fund.custodian.get_full_name|default:fund.custodian.username }} (₱{{ fund.imprest_amount|floatformat:2 }})</option>
               {% endfor %}
             </select>
           </div>

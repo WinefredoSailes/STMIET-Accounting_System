@@ -1,0 +1,79 @@
+{% extends "ui/base.html" %}
+{% block title %}General Journal — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-7xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">GENERAL JOURNAL</h1>
+      <p class="text-sm text-slate-500 mt-1">Register of posted entries — workbook layout: Date | Cycle | Ref | Party | PO | Description | CoA | Account Name | Debit | Credit.</p>
+    </div>
+    <form method="get" class="flex items-center gap-2 text-sm">
+      <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      <span class="text-slate-400">to</span>
+      <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">All segments</option>
+        {% for seg in segments %}
+        <option value="{{ seg.id }}" {% if segment_sel == seg.id|stringformat:"s" %}selected{% endif %}>{{ seg.code }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Filter</button>
+    </form>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-auto">
+    <table class="w-full text-sm min-w-[1100px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3">Date</th>
+          <th class="px-3 py-3">Cycle</th>
+          <th class="px-3 py-3">Ref #</th>
+          <th class="px-3 py-3">Supplier / Customer</th>
+          <th class="px-3 py-3">PO #</th>
+          <th class="px-3 py-3">Description</th>
+          <th class="px-3 py-3">CoA</th>
+          <th class="px-3 py-3">Account Name</th>
+          <th class="px-3 py-3 text-right">Debit</th>
+          <th class="px-3 py-3 text-right">Credit</th>
+          <th class="px-3 py-3 text-center">Bal.</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in rows %}
+        <tr class="hover:bg-slate-50 {% if forloop.counter > 1 and not row.new_entry %}text-slate-400{% endif %}">
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ row.date|date:"Y-m-d" }}</td>
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ row.cycle }}</td>
+          <td class="px-3 py-1.5 whitespace-nowrap font-medium">{{ row.ref }}</td>
+          <td class="px-3 py-1.5">{{ row.party }}</td>
+          <td class="px-3 py-1.5">{{ row.po }}</td>
+          <td class="px-3 py-1.5">{{ row.description|truncatechars:60 }}</td>
+          <td class="px-3 py-1.5 tabular-nums">{{ row.coa }}</td>
+          <td class="px-3 py-1.5">{{ row.account_name|truncatechars:40 }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ row.debit|floatformat:2 }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ row.credit|floatformat:2 }}</td>
+          <td class="px-3 py-1.5 text-center">
+            {% if row.entry_balanced %}
+            <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span>
+            {% else %}
+            <span class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800" title="Entry {{ row.ref }} is not balanced">NOT BALANCE</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="11" class="px-4 py-8 text-center text-slate-400">No posted journal entries match the filters.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="8" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ total_debit|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ total_credit|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-center">
+            {% if variance == 0 %}<span class="text-emerald-700">OK</span>{% else %}<span class="text-red-700">VARIANCE {{ variance|floatformat:2 }}</span>{% endif %}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

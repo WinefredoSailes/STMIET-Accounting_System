@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}{{ label }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6 max-w-6xl">
@@ -36,9 +37,9 @@
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">Line</th>
-          <th class="px-4 py-3">DHPP</th>
-          <th class="px-4 py-3">DMIE</th>
-          <th class="px-4 py-3">OPS</th>
+          {% for seg in segments %}
+          <th class="px-4 py-3">{{ seg.code }}</th>
+          {% endfor %}
           <th class="px-4 py-3 text-right">GRAND</th>
         </tr>
       </thead>
@@ -46,9 +47,9 @@
         {% for row in statement.data %}
         <tr class="{% if row.is_subtotal %}bg-slate-50 font-semibold{% elif row.is_section %}bg-indigo-50 font-medium{% else %}hover:bg-slate-50{% endif %}">
           <td class="px-4 py-2 {% if row.is_hidden %}opacity-40{% endif %}">{{ row.title }}</td>
-          <td class="px-4 py-2 tabular-nums">{{ row.amounts.DHPP }}</td>
-          <td class="px-4 py-2 tabular-nums">{{ row.amounts.DMIE }}</td>
-          <td class="px-4 py-2 tabular-nums">{{ row.amounts.OPS }}</td>
+          {% for seg in segments %}
+          <td class="px-4 py-2 tabular-nums">{{ row.amounts|get_item:seg.code }}</td>
+          {% endfor %}
           <td class="px-4 py-2 text-right tabular-nums font-medium">{{ row.amounts.GRAND }}</td>
         </tr>
         {% empty %}

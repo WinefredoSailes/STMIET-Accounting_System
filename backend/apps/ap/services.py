@@ -224,6 +224,11 @@ class CONSOService:
                 description=f"AP - {rfp.payee.name}",
             )
             entry.recalc_totals()
+            # ADR-033: CNR approval (the last RFP gate) is the JE approval gate
+            # for entries above the threshold; PostingService refuses them as DRAFT.
+            if rfp.status == "cnr_approved":
+                entry.status = PostingStatus.APPROVED
+                entry.save(update_fields=["status", "updated_at"])
             PostingService.post(entry, user=user)
             rfp.journal_entry = entry
             rfp.status = "posted"

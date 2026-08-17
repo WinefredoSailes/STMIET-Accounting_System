@@ -1,0 +1,60 @@
+{% extends "ui/base.html" %}
+{% block title %}Advances to Employees — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">ADVANCES TO EMPLOYEES</h1>
+      <p class="text-sm text-slate-500 mt-1">Standing-advance ledger (ADR-021): grant → liquidation → close. Outstanding total: ₱{{ total_outstanding|floatformat:2 }}.</p>
+    </div>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-auto">
+    <table class="w-full text-sm min-w-[860px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Employee</th>
+          <th class="px-4 py-3">Kind</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3">Granted</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3 text-right">Liquidated</th>
+          <th class="px-4 py-3 text-right">Outstanding</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Liquidate</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in rows %}
+        <tr class="hover:bg-slate-50 {% if r.outstanding == 0 %}opacity-60{% endif %}">
+          <td class="px-4 py-2 font-medium">{{ r.advance.employee_name }}</td>
+          <td class="px-4 py-2">{{ r.kind }}</td>
+          <td class="px-4 py-2">{{ r.segment_code }}</td>
+          <td class="px-4 py-2">{{ r.advance.granted_date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.advance.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.advance.liquidated_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-medium">₱{{ r.outstanding|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.advance.status == 'liquidated' %}bg-emerald-100 text-emerald-800{% elif r.outstanding > 0 %}bg-amber-100 text-amber-800{% else %}bg-slate-100 text-slate-700{% endif %}">{{ r.status_label }}</span>
+          </td>
+          <td class="px-4 py-2">
+            {% if r.outstanding > 0 %}
+            <form method="post" action="{% url 'ui:advance_liquidate' r.advance.pk %}" class="flex items-center gap-1">
+              {% csrf_token %}
+              <input type="number" name="amount" step="0.01" min="0.01" max="{{ r.outstanding }}" required placeholder="Amount" class="rounded-md border border-slate-300 px-2 py-1 text-xs w-24">
+              <input type="date" name="liquidate_date" required class="rounded-md border border-slate-300 px-2 py-1 text-xs">
+              <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Apply</button>
+            </form>
+            {% else %}
+            <span class="text-xs text-slate-400">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="px-4 py-8 text-center text-slate-400">No advances recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

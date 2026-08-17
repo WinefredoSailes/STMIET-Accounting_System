@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 
 from apps.core.exceptions import AccountingError
 from apps.core.money import approve_threshold, money
-from apps.foundation.models import Account, Company, FiscalPeriod, Segment
+from apps.foundation.models import Account, AccountType, Company, FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 from apps.sequences.models import DocumentSequence
@@ -30,11 +30,15 @@ from apps.sequences.models import DocumentSequence
 from .services import (
     StatementService,
     TrialBalanceService,
+    advances_context,
+    aging_context,
     approved_rfps,
     asset_context,
     bank_accounts,
     book_balance,
     cash_accounts,
+    cash_flow_options,
+    collectibles_cycle_options,
     conso_context,
     daily_collections,
     list_assets,
@@ -55,6 +59,7 @@ from .services import (
     pcf_gl_candidates,
     rfp_summary,
     rfp_timeline,
+    transfers_context,
     unassigned_approved_rfps,
 )
 
@@ -1163,3 +1168,191 @@ def collections_summary(request):
     if cycle:
         context.update(daily_collections(cycle))
     return render(request, "ui/cash/collections_summary.html", context)
+
+
+# ---------------------------------------------------------------------------
+# General Journal register
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def general_journal(request):
+    """Register of posted entries (workbook PAYMENT RECEIPTS / UPON DELIVERY
+    layout): Date | Cycle | Ref | Party | PO | Description | CoA | Debit | Credit."""
+    from .services import general_journal as gj
+
+    ctx = gj(
+        start=request.GET.get("start") or None,
+        end=request.GET.get("end") or None,
+        segment=request.GET.get("segment") or None,
+    )
+    ctx["start"] = request.GET.get("start", "")
+    ctx["end"] = request.GET.get("end", "")
+    ctx["segment_sel"] = request.GET.get("segment", "")
+    return render(request, "ui/reporting/general_journal.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# Foundation — Chart of Accounts (read-only)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def coa_list(request):
+    """Chart of Accounts — read-only listing with search + filters."""
+    from .services import coa_rows
+
+    ctx = {
+        "rows": coa_rows(
+            q=request.GET.get("q", "").strip(),
+            segment=request.GET.get("segment", "").strip(),
+            account_type=request.GET.get("account_type", "").strip(),
+        ),
+        "q": request.GET.get("q", "").strip(),
+        "segment_sel": request.GET.get("segment", "").strip(),
+        "account_type_sel": request.GET.get("account_type", "").strip(),
+        "segments": Segment.objects.order_by("code"),
+        "types": AccountType.choices,
+    }
+    return render(request, "ui/foundation/coa_list.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# Cash flow statement
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def cash_flow(request):
+    """Cash Flow Statement (ADR-031) — generates on GET with period + segment."""
+    from apps.cash.models import CashFlowStatement
+    from apps.cash.services import CashFlowService
+
+    seg = Segment.objects.filter(pk=request.GET.get("segment")).first()
+    latest = CashFlowStatement.objects.order_by("-period_end").first()
+    if seg and request.GET.get("period_start"):
+        try:
+            latest = CashFlowService.generate(
+                period_start=date.fromisoformat(request.GET["period_start"]),
+                period_end=date.fromisoformat(request.GET["period_end"]),
+                segment=seg,
+            )
+            messages.success(request, f"Cash flow generated for {seg.code}.")
+        except (ValueError, AccountingError) as exc:
+            messages.error(request, str(exc))
+    ctx = cash_flow_options()
+    nets = None
+    if latest:
+        nets = {
+            "operating": latest.collections - latest.payments_to_depot,
+            "investing": -latest.asset_acquisitions,
+            "financing": latest.loan_proceeds - latest.loan_repayments,
+        }
+    ctx.update({"seg": seg, "latest": latest, "nets": nets})
+    return render(request, "ui/cash/cash_flow.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# COLLECTIBLES worksheet
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def collectibles(request):
+    """COLLECTIBLES worksheet (ADR-029): Distribution + F&A rows per cycle."""
+    from apps.cash.models import CollectiblesWorksheet, WeeklyCashCycle
+    from apps.cash.services import CollectiblesService
+
+    cycles = list(collectibles_cycle_options())
+    cycle = None
+    if request.GET.get("cycle"):
+        cycle = WeeklyCashCycle.objects.filter(pk=request.GET["cycle"]).first()
+    if cycle:
+        try:
+            CollectiblesService.generate(cycle)
+            rows = list(CollectiblesWorksheet.objects.filter(cycle=cycle).order_by("department"))
+        except AccountingError as exc:
+            messages.error(request, str(exc))
+            rows = []
+    else:
+        rows = []
+    return render(request, "ui/cash/collectibles.html", {"cycles": cycles, "cycle": cycle, "rows": rows})
+
+
+# ---------------------------------------------------------------------------
+# AR aging / register
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def aging(request):
+    """AR aging buckets 30/60/90/120+ + per-invoice register as of a date."""
+    from .services import aging_context
+
+    as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
+    return render(request, "ui/ar/aging.html", aging_context(as_of))
+
+
+# ---------------------------------------------------------------------------
+# Advances to Employees
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def advances(request):
+    """Advances to Employees ledger (ADR-021) with liquidation form."""
+    return render(request, "ui/ap/advances.html", advances_context())
+
+
+@login_required
+@require_POST
+def advance_liquidate(request, pk):
+    from apps.ap.models import AdvanceToEmployee
+    from apps.ap.services import AdvanceService
+
+    adv = get_object_or_404(AdvanceToEmployee, pk=pk)
+    try:
+        AdvanceService.liquidate(
+            adv,
+            amount=request.POST["amount"],
+            liquidate_date=date.fromisoformat(request.POST["liquidate_date"]),
+            user=request.user,
+        )
+        messages.success(request, f"Advance for {adv.employee_name} updated.")
+    except (ValueError, AccountingError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:advances")
+
+
+# ---------------------------------------------------------------------------
+# Inter-account transfers
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def transfers(request):
+    """Inter-account transfer screen (ADR-030): Dr Cash-To | Cr Cash-From."""
+    return render(request, "ui/cash/transfers.html", transfers_context())
+
+
+@login_required
+@require_POST
+def transfer_create(request):
+    from apps.cash.models import BankAccount
+    from apps.cash.services import TransferService
+
+    try:
+        from_account = BankAccount.objects.get(pk=request.POST["from_account"])
+        to_account = BankAccount.objects.get(pk=request.POST["to_account"])
+        transfer = TransferService.transfer(
+            from_account=from_account,
+            to_account=to_account,
+            amount=request.POST["amount"],
+            purpose=request.POST["purpose"],
+            transfer_date=date.fromisoformat(request.POST["transfer_date"]) if request.POST.get("transfer_date") else None,
+            user=request.user,
+        )
+        messages.success(request, f"Transfer {transfer.transfer_date} posted ({from_account.code} → {to_account.code}).")
+    except (BankAccount.DoesNotExist, ValueError, AccountingError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:transfers")

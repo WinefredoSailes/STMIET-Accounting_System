@@ -4,16 +4,22 @@
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Journal</div>
   <a href="{% url 'ui:je_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800 {% if request.resolver_match.url_name == 'je_list' %}bg-slate-800 text-white{% endif %}">Journal Entries</a>
+  <a href="{% url 'ui:general_journal' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">General Journal</a>
+
+  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Foundation</div>
+  <a href="{% url 'ui:coa_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Chart of Accounts</a>
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Receivables (AR)</div>
   <a href="{% url 'ui:customer_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Customers</a>
   <a href="{% url 'ui:receipt_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Acknowledgment Receipts</a>
+  <a href="{% url 'ui:aging' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">AR Aging / Register</a>
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Payables (AP)</div>
   <a href="{% url 'ui:supplier_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Suppliers</a>
   <a href="{% url 'ui:rfp_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">RFPs (Disbursements)</a>
   <a href="{% url 'ui:conso_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">CONSO Batches</a>
   <a href="{% url 'ui:cv_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Check Vouchers</a>
+  <a href="{% url 'ui:advances' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Advances to Employees</a>
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Cash</div>
   <a href="{% url 'ui:bank_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Bank Accounts</a>
@@ -21,6 +27,8 @@
   <a href="{% url 'ui:recon_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Bank Reconciliation</a>
   <a href="{% url 'ui:cash_short_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Cash Short</a>
   <a href="{% url 'ui:collections_summary' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Daily Collections Summary</a>
+  <a href="{% url 'ui:collectibles' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Collectibles Worksheet</a>
+  <a href="{% url 'ui:transfers' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Inter-Account Transfers</a>
   <a href="{% url 'ui:pcf_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Petty Cash Funds</a>
   <a href="{% url 'ui:pcf_replenishment_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Petty Cash Vouchers</a>
 
@@ -29,6 +37,7 @@
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-500">Reports</div>
   <a href="{% url 'ui:trial_balance' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Trial Balance</a>
+  <a href="{% url 'ui:cash_flow' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Cash Flow Statement</a>
   <a href="{% url 'ui:statement' 'is' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Income Statement</a>
   <a href="{% url 'ui:statement' 'sfp' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Financial Position</a>
   <a href="{% url 'ui:statement' 'cos' %}" class="block rounded px-3 py-1.5 hover:bg-slate-800">Cost of Sales</a>

@@ -127,8 +127,31 @@ class StatementTemplateService:
             )
             if was_created:
                 builder(tpl)
+            else:
+                cls._refresh_segment_headers(tpl)
             created[ttype] = tpl
         return created
+
+    @classmethod
+    def _segment_title(cls, code: str) -> str:
+        """Section header for a segment, taken from the Segment master — never
+        a hardcoded name, so admin changes flow straight into the statements."""
+        from apps.foundation.models import Segment
+
+        seg = Segment.objects.filter(code=code).first()
+        name = seg.name if seg else code
+        return f"{name} ({code})"
+
+    @classmethod
+    def _refresh_segment_headers(cls, template: StatementTemplate) -> None:
+        """Re-sync COS section header titles on already-seeded templates."""
+        from .models import StatementLineDef
+
+        headers = {"cos_dhpp_header": "DHPP", "cos_dmie_header": "DMIE", "cos_ops_header": "OPS"}
+        for key, code in headers.items():
+            StatementLineDef.objects.filter(template=template, key=key).update(
+                title=cls._segment_title(code)
+            )
 
     @classmethod
     def _save_lines(cls, template: StatementTemplate, lines: list[dict]) -> None:
@@ -348,7 +371,7 @@ class StatementTemplateService:
             ("cos_ops_rm", "COGS - Repairs and Maintenance_OPS", ["52016"]),
         ]
         lines = [
-            dict(key="cos_dhpp_header", title="Distribution and Hauling of Petroleum Products (DHPP)",
+            dict(key="cos_dhpp_header", title=cls._segment_title("DHPP"),
                  mode=StatementLineMode.SUM, is_section=True),
         ]
         for key, title, codes in dhpp:
@@ -356,14 +379,14 @@ class StatementTemplateService:
                               account_codes=codes, sign=1))
         lines.append(dict(key="cos_dhpp_total", title="COGS - DHPP", mode=StatementLineMode.SUM,
                           is_subtotal=True))
-        lines.append(dict(key="cos_dmie_header", title="Distribution of Machineries and Industrial Equipment (DMIE)",
+        lines.append(dict(key="cos_dmie_header", title=cls._segment_title("DMIE"),
                           mode=StatementLineMode.SUM, is_section=True))
         for key, title, codes in dmie:
             lines.append(dict(key=key, title=title, mode=StatementLineMode.ACCOUNT,
                               account_codes=codes, sign=1))
         lines.append(dict(key="cos_dmie_total", title="COGS - DMIE", mode=StatementLineMode.SUM,
                           is_subtotal=True))
-        lines.append(dict(key="cos_ops_header", title="Other Products and Services (OPS)",
+        lines.append(dict(key="cos_ops_header", title=cls._segment_title("OPS"),
                           mode=StatementLineMode.SUM, is_section=True))
         for key, title, codes in ops:
             lines.append(dict(key=key, title=title, mode=StatementLineMode.ACCOUNT,

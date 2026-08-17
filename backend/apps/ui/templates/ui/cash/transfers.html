@@ -1,0 +1,84 @@
+{% extends "ui/base.html" %}
+{% block title %}Inter-Account Transfers — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">INTER-ACCOUNT TRANSFERS</h1>
+      <p class="text-sm text-slate-500 mt-1">Dr Cash-To | Cr Cash-From; purpose required (ADR-030). Posted immediately — cash-to-cash has no P&amp;L impact.</p>
+    </div>
+    <a href="{% url 'ui:transfers' %}" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">New Transfer</a>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="p-4 border-b border-slate-100">
+      <h2 class="text-sm font-semibold text-slate-700">New transfer</h2>
+      <form method="post" action="{% url 'ui:transfer_create' %}" class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm items-end">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">From (Credit)</label>
+          <select name="from_account" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+            {% for b in banks %}
+            <option value="{{ b.id }}">{{ b.code }} — {{ b.bank_name }} ({{ b.segment.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">To (Debit)</label>
+          <select name="to_account" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+            {% for b in banks %}
+            <option value="{{ b.id }}">{{ b.code }} — {{ b.bank_name }} ({{ b.segment.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Amount</label>
+          <input type="number" name="amount" step="0.01" min="0.01" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Purpose</label>
+          <input type="text" name="purpose" required maxlength="255" placeholder="e.g. fund transfer to PNB" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Date</label>
+          <input type="date" name="transfer_date" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+        </div>
+        <div class="col-span-2 md:col-span-5">
+          <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Post Transfer</button>
+        </div>
+      </form>
+    </div>
+
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">From (Credit)</th>
+          <th class="px-4 py-3">To (Debit)</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Purpose</th>
+          <th class="px-4 py-3">JE</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for t in transfers %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ t.transfer_date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2">{{ t.from_account.code }} <span class="text-slate-400">({{ t.from_account.bank_name }})</span></td>
+          <td class="px-4 py-2">{{ t.to_account.code }} <span class="text-slate-400">({{ t.to_account.bank_name }})</span></td>
+          <td class="px-4 py-2 text-right tabular-nums font-medium">₱{{ t.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2">{{ t.purpose }}</td>
+          <td class="px-4 py-2">
+            {% if t.journal_entry %}
+            <a href="{% url 'ui:je_detail' t.journal_entry.pk %}" class="text-indigo-600 hover:underline">{{ t.journal_entry.entry_no }}</a>
+            {% else %}<span class="text-slate-400">—</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No transfers yet — use the form above.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

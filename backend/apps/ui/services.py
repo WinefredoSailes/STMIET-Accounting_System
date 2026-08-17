@@ -11,7 +11,8 @@ from decimal import Decimal
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from apps.foundation.models import FiscalPeriod
+from apps.foundation.calendar import cycle_range_for
+from apps.foundation.models import FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, PostingStatus
 from apps.reporting.services import MonthEndCloseService, StatementTemplateService, TrialBalanceService as TBSvc
 
@@ -123,6 +124,7 @@ class StatementService:
             "label": cls.STATEMENT_LABELS.get(statement_type, statement_type),
             "statement": latest,
             "rows": latest.rows_by_key() if latest else {},
+            "segments": list(cls._company().segments.order_by("code")),
         }
 
     @staticmethod
@@ -463,6 +465,25 @@ def daily_collections(cycle):
 
 
 # ---------------------------------------------------------------------------
+# Foundation — Chart of Accounts (read-only)
+# ---------------------------------------------------------------------------
+
+
+def coa_rows(*, q="", segment="", account_type=""):
+    """Filterable COA listing (code, name, segment, type, normal balance)."""
+    from apps.foundation.models import Account
+
+    rows = Account.objects.filter(is_postable=True).order_by("code")
+    if q:
+        rows = rows.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    if segment:
+        rows = rows.filter(segment=segment)
+    if account_type:
+        rows = rows.filter(account_type=account_type)
+    return list(rows)
+
+
+# ---------------------------------------------------------------------------
 # Assets
 # ---------------------------------------------------------------------------
 
@@ -480,4 +501,170 @@ def asset_context(asset):
         "schedule": asset.depreciation_schedule.order_by("period_start"),
         "accumulated": asset.accumulated_depreciation,
         "nbv": asset.cost - asset.accumulated_depreciation,
+    }
+
+
+# ---------------------------------------------------------------------------
+# General Journal register (workbook: PAYMENT RECEIPTS / UPON DELIVERY sheets)
+# ---------------------------------------------------------------------------
+
+
+def general_journal(*, start=None, end=None, segment=None, limit=500):
+    """Posted entries with per-line rows: Date | Cycle | Ref | Party | PO |
+    Description | CoA | Account Name | Debit | Credit. Party derives from the
+    source document masters (AR receipt customer / AP payee), never stale
+    copies on the JE."""
+    from apps.ap.models import CheckVoucher, RFPDocument
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.posting.models import PostingStatus
+
+    party_by = {}
+    for r in AcknowledgmentReceipt.objects.exclude(journal_entry__isnull=True).select_related("customer"):
+        party_by[r.receipt_no] = r.customer.name
+    for doc in RFPDocument.objects.exclude(journal_entry__isnull=True).select_related("payee"):
+        party_by[doc.ap_number] = doc.payee.name if doc.payee else ""
+    for cv in CheckVoucher.objects.exclude(journal_entry__isnull=True).select_related("payee"):
+        party_by[cv.cv_number] = cv.payee.name if cv.payee else ""
+
+    qs = (
+        JournalEntry.objects.filter(status=PostingStatus.POSTED)
+        .select_related("segment", "company")
+        .prefetch_related("lines__account")
+    )
+    if start:
+        qs = qs.filter(transaction_date__gte=start)
+    if end:
+        qs = qs.filter(transaction_date__lte=end)
+    if segment:
+        qs = qs.filter(segment=segment)
+    entries = list(qs.order_by("transaction_date", "entry_no")[:limit])
+
+    rows = []
+    total_debit = total_credit = Decimal("0.00")
+    for entry in entries:
+        cycle_start, cycle_end = cycle_range_for(entry.transaction_date)
+        if cycle_start.month == cycle_end.month:
+            cycle_label = f"{cycle_start:%b} {cycle_start.day}-{cycle_end.day}, {cycle_start:%Y}"
+        else:
+            cycle_label = f"{cycle_start:%b} {cycle_start.day} - {cycle_end:%b} {cycle_end.day}, {cycle_end:%Y}"
+        party = party_by.get(entry.source_doc_no, "") if entry.source_doc_no else ""
+        balanced = entry.is_balanced
+        for line in entry.lines.all():
+            rows.append(
+                {
+                    "new_entry": True,
+                    "date": entry.transaction_date,
+                    "cycle": cycle_label,
+                    "ref": entry.entry_no,
+                    "source_type": entry.source_doc_type,
+                    "party": party,
+                    "po": "",
+                    "description": line.description or entry.description,
+                    "coa": line.account.code,
+                    "account_name": line.account.name,
+                    "debit": line.debit,
+                    "credit": line.credit,
+                    "entry_balanced": balanced,
+                    "segment": entry.segment.code,
+                    "status": entry.status,
+                }
+            )
+            total_debit += line.debit
+            total_credit += line.credit
+
+    for i, row in enumerate(rows):
+        row["new_entry"] = i == 0 or rows[i - 1]["ref"] != row["ref"]
+
+    return {
+        "rows": rows,
+        "total_debit": total_debit,
+        "total_credit": total_credit,
+        "variance": total_debit - total_credit,
+        "segments": list(Segment.objects.order_by("code")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cash flow / collectibles / aging / advances / transfers
+# ---------------------------------------------------------------------------
+
+
+def cash_flow_options():
+    """Segments pickable on the Cash Flow screen."""
+    return {"segments": list(Segment.objects.order_by("code"))}
+
+
+def collectibles_cycle_options():
+    """Cycles that can be rendered on the COLLECTIBLES worksheet."""
+    from apps.cash.models import WeeklyCashCycle
+
+    return WeeklyCashCycle.objects.select_related("segment").order_by("-cycle_start")[:24]
+
+
+def aging_context(as_of: date) -> dict:
+    """AR aging buckets + per-invoice register for an as-of date."""
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import CycleLedgerService
+
+    buckets = CycleLedgerService.aging(as_of)
+    register = []
+    for inv in (
+        ARInvoice.objects.filter(status__in=("open", "partially_paid"))
+        .select_related("customer", "segment")
+        .order_by("transaction_date")
+    ):
+        balance = inv.balance
+        if balance <= 0:
+            continue
+        age_days = max((as_of - inv.transaction_date).days, 0)
+        register.append(
+            {
+                "invoice_no": inv.invoice_no,
+                "customer": inv.customer.name,
+                "date": inv.transaction_date,
+                "segment": inv.segment.code,
+                "status": inv.status.replace("_", " ").title(),
+                "balance": balance,
+                "age_days": age_days,
+            }
+        )
+    return {
+        "as_of": as_of,
+        "buckets": buckets,
+        "bucket_total": sum(b["amount"] for b in buckets),
+        "register": register,
+        "register_total": sum(r["balance"] for r in register),
+    }
+
+
+def advances_context():
+    """AdvanceToEmployee ledger rows with outstanding balances."""
+    from apps.ap.models import AdvanceToEmployee
+
+    rows = []
+    for adv in AdvanceToEmployee.objects.select_related("segment", "rfp").order_by("-granted_date"):
+        rows.append(
+            {
+                "advance": adv,
+                "kind": adv.get_kind_display(),
+                "segment_code": adv.segment.code,
+                "outstanding": adv.outstanding,
+                "status_label": adv.status.replace("_", " ").title(),
+            }
+        )
+    return {
+        "rows": rows,
+        "total_outstanding": sum(r["outstanding"] for r in rows),
+        "segments": list(Segment.objects.order_by("code")),
+    }
+
+
+def transfers_context():
+    """Inter-account transfers + bank accounts for the transfer form."""
+    from apps.cash.models import BankAccount, InterAccountTransfer
+
+    banks = BankAccount.objects.filter(is_active=True).select_related("segment", "gl_account").order_by("code")
+    return {
+        "banks": banks,
+        "transfers": InterAccountTransfer.objects.select_related("from_account", "to_account", "journal_entry").order_by("-transfer_date"),
     }
