@@ -12,9 +12,10 @@ cd backend\frontend
 npm install
 npm run build
 
-# 2. Apply migrations and create your first operator
+# 2. Apply migrations, import the chart of accounts, and create your first operator
 cd ..\..\backend
 python manage.py migrate
+python manage.py import_coa   # reads excel-files/COA-STMIET-2026.xlsx (392 accounts)
 python manage.py createsuperuser
 
 # 3. Run
@@ -22,12 +23,16 @@ python manage.py runserver
 # open http://127.0.0.1:8000/ and sign in
 ```
 
-Optional: seed the chart of accounts (requires the local Excel file):
+Optional: seed a realistic January-2026 demo dataset (idempotent; users
+checker/acctg/fin/cnr/cashier, password `Demo@2026`):
 
 ```powershell
-python manage.py import_coa   # reads excel-files/COA-STMIET-2026.xlsx
-python manage.py seed_statement_templates   # if templates are missing (auto-runs on the Reports screens)
+python manage.py seed_demo   # posted AR/RFP/CONSO/CV/transfer/advance + cycles + reports
 ```
+
+Segments (DHPP/DMIE/OPS) with their COA key digit (0/3/6) and full names are
+maintained in Django admin (Foundation → Segments); screens render them from
+the database, never from hardcoded strings.
 
 ## Modules
 
@@ -41,6 +46,13 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
 
 ### 2. Journal (`/journal/`)
 
+- **General Journal** (`/journal/general/`) — the posted-entry register in
+  the workbook layout (`General_Journal_DHPP…xlsx` PAYMENT RECEIPTS /
+  UPON DELIVERY sheets): Date | Cycle | Ref # | Supplier/Customer | PO # |
+  Description | CoA | Account Name | Debit | Credit, with a per-entry
+  balanced OK / NOT BALANCE flag and total debits/credits/variance at the
+  foot. Filter by date range and segment. Party names resolve from the AR/AP
+  document masters.
 - **List** (`/journal/`) — last 100 entries, newest first; click an entry no.
   for the detail view.
 - **Detail** (`/journal/<id>/`) — header facts (date, segment, source doc,
@@ -58,14 +70,22 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
 
 ### 3. Reports
 
+- **Chart of Accounts** (`/foundation/coa/`) — read-only listing of all
+  postable accounts (code, name, segment, type, normal balance) with
+  search + segment/type filters; the same 392 accounts imported from
+  `COA-STMIET-2026.xlsx`.
+- **Cash Flow Statement** (`/reports/cash-flow/`) — generated from weekly
+  cycle activities (ADR-031): operating / investing / financing sections,
+  NET CHANGE IN CASH, beginning/end balances, ADB adjustments, and the
+  identity check (Net Inc = End − Beg + ADB).
 - **Trial Balance** (`/reports/trial-balance/`) — signed balances from
   posted GL (ADR-005) as of a date, optionally filtered to one segment.
   Debits and credits shown per account's sign; totals at the foot.
 - **Statements** (`/reports/is/`, `/sfp/`, `/cos/`, `/te/`, `/soce/`) —
   pick a period and **Generate** to run the template engine (ADR-035) and
-  view the persisted snapshot with per-segment columns (DHPP / DMIE / OPS)
-  plus GRAND. Identity checks (e.g. SFP Assets = Liabilities + Equity) are
-  shown as OK / FAILED.
+  view the persisted snapshot with per-segment columns (rendered from the
+  Segment master) plus GRAND. Identity checks (e.g. SFP Assets =
+  Liabilities + Equity) are shown as OK / FAILED.
 - **Month-End Close** (`/reports/month-end-close/`) — the four steps:
   **accruals → recon → close → appropriations**. Click **Mark done** on
   each step, then **Close period**. The fiscal period locks when closed
@@ -74,6 +94,10 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
 
 ### 4. Receivables (AR)
 
+- **AR Aging / Register** (`/ar/aging/`) — aging buckets 0-30 / 31-60 /
+  61-90 / 91-120 / 120+ from open invoice balances as of a date, plus the
+  per-invoice register (invoice, customer, date, segment, status, age,
+  balance) with a total. **Refresh** re-runs the derivation.
 - **Customers** (`/ar/customers/`) — customer master (ADR-007): code, name,
   group, segment, pricing tier, contact. **+ New customer** (`/ar/customers/new/`)
   creates the master record.
@@ -86,6 +110,11 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
 
 ### 5. Payables (AP)
 
+- **Advances to Employees** (`/ap/advances/`) — the standing-advance ledger
+  (ADR-021): employee, kind (officer / salary / reimbursement), segment,
+  granted date, amount, liquidated, outstanding, status. Each open row has
+  an inline liquidation form (amount + date) that walks the advance toward
+  `liquidated` (over-liquidation is rejected).
 - **Suppliers** (`/ap/suppliers/`) — vendor master (ADR-024). **+ New supplier**
   (`/ap/suppliers/new/`) adds a vendor with default segment.
 - **RFPs** (`/ap/rfps/`) — A#### payment requests (ACCTG-FOR-012 layout)
@@ -148,6 +177,14 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
   (ADR-029/030). **+ Record variance** enters expected/actual + cause;
   approval is tracked on the worksheet (a reconciliation only — no JE
   until approved and adjusted).
+- **Inter-Account Transfers** (`/cash/transfers/`) — transfer ledger + the
+  form (from bank (credit) → to bank (debit), amount, purpose, date);
+  posting runs TransferService (Dr Cash-To | Cr Cash-From, purpose
+  required — ADR-030) and links the JE.
+- **COLLECTIBLES Worksheet** (`/cash/collectibles/`) — per cycle, the two
+  departments (Distribution: gross mark-up = client paid − depot paid;
+  F&A: net cash position) regenerated from posted cycle activities
+  (ADR-029). A worksheet, never a JE.
 - **Petty Cash Vouchers** (`/cash/pcf/replenishments/`) — replenishment
   requests in the ACCTG-FOR-002 layout.
   - **+ New petty cash voucher** (`/cash/pcf/replenish/`) — payee name,
@@ -189,7 +226,7 @@ python manage.py seed_statement_templates   # if templates are missing (auto-run
 
 ```powershell
 cd backend
-python -m pytest -q    # 148 tests: API contracts + UI smoke tests
+python -m pytest -q    # 153 tests: API contracts + UI smoke tests + E2E workflow
 python manage.py check
 ```
 
@@ -203,3 +240,10 @@ asset lifecycle (acquire → depreciate → dispose), check voucher creation
 and replenishment request → post, bank reconciliation (open + resolved),
 cash short record → approve, and the CONSO batch open → add RFP → post
 lifecycle (incl. the all-approved gate).
+
+`apps/ui/test_e2e.py` is the end-to-end workflow: customer → AR invoice →
+collection JE → RFP chain (incl. CNR escalation) → CONSO post → CV
+lifecycle → transfer → advance liquidation → weekly cycles → COLLECTIBLES
+→ cash flow statement → renders every register screen (general journal,
+cash flow, collectibles, aging, advances, transfers, COA) and re-checks
+posted-entry immutability.
