@@ -176,6 +176,37 @@
 
 ---
 
+## PHASE 8b — SERVER-RENDERED UI (Django Templates + HTMX + Tailwind) *[est. 2-3 wks]*
+
+- [x] Architecture decision: server-rendered UI over SPA — `[ADR-036](./adr/ADR-036-ui-frontend.md)`; DRF API stays as the external contract (JWT)
+- [x] `apps/ui` scaffolded (view-only bounded context, no models); mounted at `/` alongside `api/v1/`
+- [x] Tailwind build pipeline (`backend/frontend`) + vendored HTMX 1.9.12
+- [x] Auth: login/logout (session auth, built-in form)
+- [x] Dashboard: fiscal period, entry counts, close progress, recent entries
+- [x] Journal: list / detail / create (line grid + balance hint) / post (P100k approve gate) / reverse stub
+- [x] Trial Balance screen (as-of + segment filter)
+- [x] Financial statements: 5 types, generate + persisted snapshot, identity OK/FAILED
+- [x] Month-end close screen: step-by-step advance + complete (locks period)
+- [x] List screens: customers, receipts, suppliers, RFPs, banks, cash cycles, assets
+- [x] UI smoke tests (30 tests: render + auth + JE workflow + close lifecycle) — 106 total passing
+- [x] Functional screens per module (following the office form layouts ACCTG-FOR-005/010/012):
+  - AR: customer create, receipt create (auto AR# → posts collection JE)
+  - AP: supplier create, RFP create (line grid + advance credit), RFP detail with ADR-020 approval chain (submit → checked → acctg → fin → CNR >₱100k, same-person rule enforced), approve / approve-CNR actions
+  - AP: check voucher create (CV-YYYY-#### from approved RFP, posts 7.4 JE with WHT split) + detail with sign → release → clear lifecycle
+  - Cash: bank create, weekly cycle generation (Tue–Mon, idempotent), PCF funds (+ setup screen), petty cash voucher / replenishment (ACCTG-FOR-002: payee, distribution grid, post replenishment JE)
+  - Cash: bank reconciliation (book vs statement per cycle, resolved/open), cash short worksheet (record variance + approve)
+  - Cash: daily collections JE summary screen (cashier worksheet format: per-bank DR columns, AR/AP DR-CR, day totals, debits=credits check)
+  - AP: CONSO batch UI (open → add approved RFPs → post atomically)
+  - Assets: acquire (FA-YYYY-####, posts 9.1), detail with depreciation schedule + NBV, post depreciation (9.2), dispose (9.3)
+- [x] UI functional tests (72 UI tests total) — full suite 148 passing, `manage.py check` clean
+- [ ] Statement input chaining (IS net profit → SFP/SOCE `eq_net_profit` / `soce_net_profit`)
+- [ ] HTMX partial updates (inline status transitions, filters) on list screens
+- [ ] Remaining workflow screens: PCF fund setup, check disbursement reconciliation (bank recon), cash short approval, CONSO batch UI
+
+**Done when:** An operator can run the full month-end pack from the browser; all Phase 2–7 workflows have a screen.
+
+---
+
 ## PHASE 9 — TAX & COMPLIANCE *[est. 4-6 wks]*
 
 - [ ] SI extraction (what's declared = SI only — current practice formalized)
