@@ -668,7 +668,7 @@ class MonthEndCloseService:
 
     @classmethod
     def get_or_create(cls, fiscal_period, user=None) -> MonthEndClose:
-        mec, _ = MonthEndClose.objects.update_or_create(
+        mec, _ = MonthEndClose.objects.get_or_create(
             fiscal_period=fiscal_period,
             company=fiscal_period.fiscal_year.company,
             defaults={

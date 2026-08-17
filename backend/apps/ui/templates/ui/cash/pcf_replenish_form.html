@@ -1,0 +1,132 @@
+{% extends "ui/base.html" %}
+{% block title %}Petty Cash Voucher — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl">
+  <a href="{% url 'ui:pcf_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Petty cash funds</a>
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+      <div>
+        <div class="text-lg font-bold text-slate-900">PETTY CASH VOUCHER</div>
+        <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT</div>
+      </div>
+      <div class="text-xs text-slate-500 text-right">
+        <div>Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-002</span></div>
+        <div>Effective Date: 09.24.2024 · Revision No.: 00</div>
+      </div>
+    </div>
+
+    <form method="post" class="p-6 space-y-4">
+      {% csrf_token %}
+      <fieldset class="space-y-3">
+        <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium">Payee Information</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_fund">FUND</label>
+            <select name="fund" id="id_fund" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              {% for fund in funds %}
+              <option value="{{ fund.id }}">{{ fund.get_fund_code_display }} — {{ fund.custodian.get_full_name|default:fund.custodian.username }} (₱{{ fund.imprest_amount|floatformat:2 }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee_name">NAME</label>
+            <input type="text" name="payee_name" id="id_payee_name" maxlength="255"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_request_date">DATE OF REQUEST</label>
+            <input type="date" name="request_date" id="id_request_date" required value="{{ today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_reference">REFERENCE</label>
+            <input type="text" name="reference" id="id_reference" maxlength="64" placeholder="e.g. OR no. / PO no."
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium mb-2">Distribution Charges</legend>
+        <table class="w-full text-sm" id="exp-table">
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+              <th class="px-3 py-2">ENTITY</th>
+              <th class="px-3 py-2">SEGMENT</th>
+              <th class="px-3 py-2">COST CENTER</th>
+              <th class="px-3 py-2">GL ACCOUNT</th>
+              <th class="px-3 py-2 text-right">AMOUNT</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr>
+              <td class="px-1 py-2"><input type="text" name="exp_description" placeholder="PTO cable for MAW7645" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-1 py-2"><input type="text" value="STMIET" readonly class="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs"></td>
+              <td class="px-1 py-2">
+                <select name="exp_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.code }}">{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-1 py-2"><input type="text" name="exp_cost_center" value="OS" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-1 py-2">
+                <select name="exp_account" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-1 py-2"><input type="number" step="0.01" min="0.01" name="exp_amount" required oninput="pcvTotal()" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
+              <td class="px-1 py-2"><button type="button" onclick="this.closest('tr').remove(); pcvTotal()" class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
+            </tr>
+          </tbody>
+          <tfoot class="bg-slate-50">
+            <tr>
+              <td colspan="7" class="px-3 py-2">
+                <button type="button" onclick="pcvAddLine()" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ Add line</button>
+              </td>
+            </tr>
+            <tr class="font-semibold">
+              <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td class="px-3 py-2 text-right tabular-nums" id="pcv-total">0.00</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </fieldset>
+
+      <p class="text-xs text-slate-500">Petty cash voucher shall be submitted with sufficient supporting documents. Failure to do so shall constitute neglect by the requester and/or the department.</p>
+
+      <div class="grid grid-cols-5 gap-2 text-center text-xs">
+        <div class="border-t border-slate-300 pt-2"><div class="font-medium">Print Name/Sign/Date</div><div class="text-slate-500">REQUESTED BY</div></div>
+        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">APPROVING OFFICERS · DEPARTMENT HEAD</div></div>
+        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">APPROVING OFFICERS · COO</div></div>
+        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">TOTAL LIQUIDATED EXPENSES</div></div>
+        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div></div>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          Request replenishment
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function pcvTotal() {
+  var t = 0;
+  document.querySelectorAll('input[name="exp_amount"]').forEach(function (i) {
+    t += parseFloat(i.value || 0);
+  });
+  document.getElementById('pcv-total').textContent = t.toFixed(2);
+}
+function pcvAddLine() {
+  var tbody = document.querySelector('#exp-table tbody');
+  var first = tbody.querySelector('tr');
+  var clone = first.cloneNode(true);
+  clone.querySelectorAll('input').forEach(function (i) { i.value = i.name === 'exp_cost_center' ? 'OS' : ''; });
+  tbody.appendChild(clone);
+  pcvTotal();
+}
+</script>
+{% endblock %}

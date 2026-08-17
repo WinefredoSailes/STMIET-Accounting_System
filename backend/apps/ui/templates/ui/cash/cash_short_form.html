@@ -1,0 +1,52 @@
+{% extends "ui/base.html" %}
+{% block title %}Record Cash Variance — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-3xl">
+  <a href="{% url 'ui:cash_short_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Cash short worksheets</a>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">Record Cash Variance</h1>
+  <p class="text-sm text-slate-500 mt-1">Recon worksheet only — no JE is posted; approval precedes any adjustment.</p>
+
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    {% csrf_token %}
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cycle">Weekly cycle</label>
+      <select name="cycle" id="id_cycle" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        {% for c in cycles %}
+        <option value="{{ c.id }}">{{ c.cycle_start|date:"M d, Y" }} – {{ c.cycle_end|date:"M d, Y" }} · {{ c.segment.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_expected_cash">Expected cash (₱)</label>
+        <input type="number" step="0.01" name="expected_cash" id="id_expected_cash" required
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_actual_cash">Actual cash (₱)</label>
+        <input type="number" step="0.01" name="actual_cash" id="id_actual_cash" required
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cause_category">Cause category</label>
+        <select name="cause_category" id="id_cause_category" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="typo">Typo</option>
+          <option value="pop">Proof of payment</option>
+          <option value="cashier">Cashier</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cause">Cause / notes</label>
+        <input type="text" name="cause" id="id_cause" maxlength="255"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        Record variance
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

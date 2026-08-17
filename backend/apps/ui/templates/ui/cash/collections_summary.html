@@ -1,0 +1,127 @@
+{% extends "ui/base.html" %}
+{% block title %}Daily Collections JE Summary — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900">DAILY COLLECTIONS JOURNAL ENTRIES SUMMARY</h1>
+  <p class="text-sm text-slate-500 mt-1">Per weekly cycle, one row per AR receipt (cashier worksheet format).</p>
+
+  <form method="get" class="mt-4 flex items-center gap-3">
+    <label class="text-sm text-slate-600" for="cycle">Cycle</label>
+    <select name="cycle" id="cycle" onchange="this.form.submit()"
+            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      {% for c in cycles %}
+      <option value="{{ c.id }}" {% if cycle and c.id == cycle.id %}selected{% endif %}>
+        {{ c.cycle_start|date:"M d, Y" }} – {{ c.cycle_end|date:"M d, Y" }} ({{ c.segment.code }})
+      </option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% if cycle %}
+  <div class="mt-6 overflow-x-auto">
+    <table class="w-full text-xs border border-slate-300">
+      <thead>
+        <tr class="bg-slate-100 text-slate-700 font-semibold">
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">DATE</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">AR/SI #</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">OUTLET'S NAME</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">PARTICULARS</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">PO NUMBER</th>
+          <th colspan="2" class="border border-slate-300 px-2 py-2">CASH ON HAND</th>
+          <th colspan="{{ bank_cols|length }}" class="border border-slate-300 px-2 py-2">DUE FROM OTHER BANKS &amp; OTHERS (DEBIT)</th>
+          <th colspan="2" class="border border-slate-300 px-2 py-2">ACCOUNTS RECEIVABLE</th>
+          <th colspan="2" class="border border-slate-300 px-2 py-2">ACCOUNTS PAYABLE</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">TOTAL COLLECTIONS FOR THE DAY</th>
+          <th rowspan="2" class="border border-slate-300 px-2 py-2">REMARKS</th>
+        </tr>
+        <tr class="bg-slate-100 text-slate-700 font-semibold">
+          <th class="border border-slate-300 px-2 py-1">DEBIT</th>
+          <th class="border border-slate-300 px-2 py-1">CREDIT</th>
+          {% for b in bank_cols %}<th class="border border-slate-300 px-2 py-1">{{ b }}</th>{% endfor %}
+          <th class="border border-slate-300 px-2 py-1">DEBIT</th>
+          <th class="border border-slate-300 px-2 py-1">CREDIT</th>
+          <th class="border border-slate-300 px-2 py-1">DEBIT</th>
+          <th class="border border-slate-300 px-2 py-1">CREDIT</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200">
+        {% regroup rows by date as day_groups %}
+        {% for day in day_groups %}
+        {% for row in day.list %}
+        <tr>
+          <td class="border border-slate-200 px-2 py-1">{{ row.date|date:"Y-m-d" }}</td>
+          <td class="border border-slate-200 px-2 py-1 font-mono">{{ row.ar_no }}</td>
+          <td class="border border-slate-200 px-2 py-1">{{ row.outlet }}</td>
+          <td class="border border-slate-200 px-2 py-1">{{ row.particulars }}</td>
+          <td class="border border-slate-200 px-2 py-1">{{ row.po_number }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_credit|floatformat:2 }}</td>
+          {% for amt in row.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_credit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_credit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right font-semibold tabular-nums">{{ row.total|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1">{{ row.remarks }}</td>
+        </tr>
+        {% endfor %}
+        {% for t in daily_values %}
+        {% if t.date == day.grouper %}
+        <tr class="bg-slate-50 font-semibold">
+          <td class="border border-slate-200 px-2 py-1" colspan="5">TOTAL {{ day.grouper|date:"M d, Y" }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_credit|floatformat:2 }}</td>
+          {% for amt in t.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_credit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_debit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_credit|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.total|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1"></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="bg-slate-100 font-semibold">
+          <td colspan="5" class="border border-slate-300 px-2 py-2">TOTAL</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_debit|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_credit|floatformat:2 }}</td>
+          {% for amt in bank_totals %}<td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_debit|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_credit|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_debit|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_credit|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2"></td>
+        </tr>
+        <tr class="bg-slate-50">
+          <td colspan="5" class="border border-slate-300 px-2 py-1 text-sm">Prepared and submitted by:</td>
+          <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
+          <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">TOTAL DEBITS</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ debit_total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1"></td>
+        </tr>
+        <tr>
+          <td colspan="5" class="border border-slate-300 px-2 py-1 text-sm">Received by:</td>
+          <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
+          <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">TOTAL CREDITS</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ credit_total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1"></td>
+        </tr>
+        <tr>
+          <td colspan="5" class="border border-slate-300 px-2 py-1"></td>
+          <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
+          <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">VARIANCE</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ variance|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+  <p class="mt-6 text-sm text-slate-500">Generate a weekly cycle first to see its collections.</p>
+  {% endif %}
+</div>
+{% endblock %}

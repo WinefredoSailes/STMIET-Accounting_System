@@ -1,0 +1,48 @@
+{% extends "ui/base.html" %}
+{% block title %}Cash Cycles — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">Weekly Cash Cycles</h1>
+      <p class="text-sm text-slate-500 mt-1">Tue–Mon cycles with reconciliation and locking (ADR-010, ADR-013).</p>
+    </div>
+    <a href="{% url 'ui:cycle_generate' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ Generate cycles</a>
+  </div>
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Start</th>
+          <th class="px-4 py-3">End</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Opening</th>
+          <th class="px-4 py-3 text-right">Closing</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in cycles %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ c.cycle_start|date:"M d, Y" }}</td>
+          <td class="px-4 py-2">{{ c.cycle_end|date:"M d, Y" }}</td>
+          <td class="px-4 py-2 text-xs">{{ c.segment.code }}</td>
+          <td class="px-4 py-2 text-right">{{ c.opening_balance|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium">{{ c.closing_balance|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+              {% if c.status == 'locked' %}bg-emerald-100 text-emerald-800
+              {% elif c.status == 'reconciled' %}bg-indigo-100 text-indigo-800
+              {% else %}bg-amber-100 text-amber-800{% endif %}">
+              {{ c.status }}
+            </span>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No cash cycles yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

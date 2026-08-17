@@ -1,0 +1,57 @@
+{% extends "ui/base.html" %}
+{% block title %}New Acknowledgment Receipt — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-3xl">
+  <a href="{% url 'ui:receipt_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Acknowledgment receipts</a>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">New Acknowledgment Receipt</h1>
+  <p class="text-sm text-slate-500 mt-1">ACCTG-FOR-005 · posts the cash.collection JE on save (ADR-015).</p>
+
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    {% csrf_token %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_customer">Customer (TYPE CODING HERE)</label>
+        <select name="customer" id="id_customer" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.code }} — {{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_date">Date of AR</label>
+        <input type="date" name="transaction_date" id="id_transaction_date" required
+               value="{{ today|date:'Y-m-d' }}"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_amount">Amount (TYPE AMOUNT HERE, ₱)</label>
+        <input type="number" step="0.01" min="0.01" name="amount" id="id_amount" required
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cash_account">Cash account (Dr)</label>
+        <select name="cash_account" id="id_cash_account" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for acc in cash_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payment_method">Payment method</label>
+        <select name="payment_method" id="id_payment_method" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="cash">Cash</option>
+          <option value="check">Check</option>
+          <option value="gcash">GCash</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_check_no">Check no.</label>
+        <input type="text" name="check_no" id="id_check_no" maxlength="32"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+    </div>
+    <p class="text-xs text-slate-500">The JE is Dr Cash (above) | Cr Unearned Revenue — posted immediately. AR# is auto-assigned.</p>
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        Record collection
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

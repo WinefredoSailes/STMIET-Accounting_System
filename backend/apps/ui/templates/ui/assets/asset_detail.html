@@ -1,0 +1,104 @@
+{% extends "ui/base.html" %}
+{% block title %}{{ asset.asset_no }} — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl">
+  <a href="{% url 'ui:asset_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Assets</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-slate-900">{{ asset.asset_no }} · {{ asset.name }}</h1>
+    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
+      {% if asset.status == 'active' %}bg-emerald-100 text-emerald-800
+      {% elif asset.status == 'disposed' %}bg-slate-100 text-slate-500
+      {% else %}bg-amber-100 text-amber-800{% endif %}">
+      {{ asset.status }}
+    </span>
+  </div>
+
+  <dl class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Category</dt>
+      <dd class="mt-1 font-medium">{{ asset.category.name }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Segment</dt>
+      <dd class="mt-1 font-medium">{{ asset.segment.code }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Acquired</dt>
+      <dd class="mt-1 font-medium">{{ asset.acquisition_date|date:"M d, Y" }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Funding</dt>
+      <dd class="mt-1 font-medium capitalize">{{ asset.funding_source }}{% if asset.financed_loan_reference %} · {{ asset.financed_loan_reference }}{% endif %}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Cost</dt>
+      <dd class="mt-1 font-medium tabular-nums">₱ {{ asset.cost|floatformat:2 }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Accumulated depreciation</dt>
+      <dd class="mt-1 font-medium tabular-nums">₱ {{ accumulated|floatformat:2 }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Net book value</dt>
+      <dd class="mt-1 font-semibold tabular-nums">₱ {{ nbv|floatformat:2 }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Useful life</dt>
+      <dd class="mt-1 font-medium">{{ asset.category.useful_life_years }} years</dd>
+    </div>
+  </dl>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-200 text-sm font-semibold">Depreciation schedule</div>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-2.5">Period</th>
+          <th class="px-4 py-2.5 text-right">Amount</th>
+          <th class="px-4 py-2.5">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in schedule %}
+        <tr>
+          <td class="px-4 py-2">{{ row.period_start|date:"M Y" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ row.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if row.status == 'posted' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ row.status }}</span>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="px-4 py-8 text-center text-slate-400">No depreciation posted yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if asset.status == "active" %}
+    <div class="px-4 py-3 border-t border-slate-200">
+      <form method="post" action="{% url 'ui:asset_depreciate' asset.id %}" class="flex items-end gap-2">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1" for="id_period_start">Post month</label>
+          <input type="date" name="period_start" id="id_period_start" required
+                 class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+        </div>
+        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
+          Post depreciation
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="mt-4 flex items-center gap-3">
+    <a href="{% url 'ui:asset_dispose' asset.id %}"
+       class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+      Dispose asset
+    </a>
+    {% if asset.acquisition_journal_id %}
+    <a href="{% url 'ui:je_detail' asset.acquisition_journal_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+      Acquisition JE →
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

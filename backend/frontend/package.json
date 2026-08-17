@@ -1,0 +1,13 @@
+{
+  "name": "stmiet-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "STMIET Accounting System — server-rendered UI (Django templates + HTMX + Tailwind). No JS framework.",
+  "scripts": {
+    "dev": "tailwindcss -i ./src/input.css -o ../static/css/output.css --watch",
+    "build": "tailwindcss -i ./src/input.css -o ../static/css/output.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

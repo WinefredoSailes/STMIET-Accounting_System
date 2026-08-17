@@ -1,0 +1,72 @@
+{% extends "ui/base.html" %}
+{% block title %}New Customer — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-3xl">
+  <a href="{% url 'ui:customer_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Customers</a>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">New Customer</h1>
+  <p class="text-sm text-slate-500 mt-1">Centralized customer master (ADR-007) — one-time migration cleans the macro-era per-client sheets.</p>
+
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    {% csrf_token %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_code">Code</label>
+        <input type="text" name="code" id="id_code" required maxlength="32"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Name</label>
+        <input type="text" name="name" id="id_name" required maxlength="255"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_group">Group</label>
+        <select name="group" id="id_group" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="fuel">Fuel</option>
+          <option value="equipment">Equipment</option>
+          <option value="ops">Operations</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
+        <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_pricing_tier">Pricing tier</label>
+        <select name="pricing_tier" id="id_pricing_tier" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="regular">Regular</option>
+          <option value="patron">Patron</option>
+          <option value="volume">Volume</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_tin">TIN</label>
+        <input type="text" name="tin" id="id_tin" maxlength="32"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_address">Address</label>
+        <input type="text" name="address" id="id_address" maxlength="255"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_no">Contact no.</label>
+        <input type="text" name="contact_no" id="id_contact_no" maxlength="32"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_notes">Notes</label>
+        <input type="text" name="notes" id="id_notes"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        Create customer
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

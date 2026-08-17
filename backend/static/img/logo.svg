@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="STMIET Accounting logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c7d2fe"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <g fill="url(#bars)">
+    <rect x="13" y="33" width="9" height="14" rx="2"/>
+    <rect x="27" y="24" width="9" height="23" rx="2"/>
+    <rect x="41" y="14" width="9" height="33" rx="2"/>
+  </g>
+  <line x1="12" y1="49" x2="51" y2="49" stroke="#ffffff" stroke-opacity="0.9" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="45.5" cy="14" r="4.5" fill="#34d399"/>
+  <path d="M43.7 14.6l1.2 1.2 2.6-2.8" fill="none" stroke="#064e3b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

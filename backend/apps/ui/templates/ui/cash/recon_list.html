@@ -1,0 +1,48 @@
+{% extends "ui/base.html" %}
+{% block title %}Bank Reconciliation — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">Bank Reconciliation</h1>
+      <p class="text-sm text-slate-500 mt-1">Per cycle per bank: book vs bank statement, target &lt; 15 min/bank (ADR-026).</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="{% url 'ui:cycle_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Cycles</a>
+      <a href="{% url 'ui:recon_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ Reconcile</a>
+    </div>
+  </div>
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Cycle</th>
+          <th class="px-4 py-3">Bank</th>
+          <th class="px-4 py-3 text-right">Book</th>
+          <th class="px-4 py-3 text-right">Bank statement</th>
+          <th class="px-4 py-3 text-right">Difference</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Reconciled by</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in recons %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ r.cycle.cycle_start|date:"M d" }}–{{ r.cycle.cycle_end|date:"M d" }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ r.bank_account.code }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.book_balance|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.bank_statement_balance|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums {% if r.difference %}text-red-600{% else %}text-emerald-700{% endif %}">{{ r.difference|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.status == 'resolved' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ r.status }}</span>
+          </td>
+          <td class="px-4 py-2 text-xs">{{ r.reconciled_by.username|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No reconciliations yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

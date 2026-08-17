@@ -129,11 +129,12 @@ class RFPService:
         """Move the RFP forward one approval role (ADR-020)."""
         if rfp.status == "posted":
             raise PostingError(f"RFP {rfp.ap_number} is already posted.")
-        current = rfp.status
+        # "submitted" (the API submit action) continues the chain at "checked".
+        current = "prepared" if rfp.status == "submitted" else rfp.status
         try:
             idx = RFP_APPROVAL_STEPS.index(current)
         except ValueError:
-            raise ValidationError(f"RFP is in unexpected status '{current}'.")
+            raise ValidationError(f"RFP is in unexpected status '{rfp.status}'.")
         next_role = RFP_APPROVAL_STEPS[idx + 1]
         if role != next_role:
             raise ValidationError(f"Expected approval role '{next_role}' but got '{role}'.")
@@ -157,7 +158,8 @@ class RFPService:
         if rfp.status != "fin_approved":
             raise ValidationError("CNR approval comes after finance approval.")
         rfp.approved_by_cnr = user
-        rfp.save(update_fields=["approved_by_cnr", "updated_at"])
+        rfp.status = "cnr_approved"
+        rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
         return rfp
 
     @classmethod

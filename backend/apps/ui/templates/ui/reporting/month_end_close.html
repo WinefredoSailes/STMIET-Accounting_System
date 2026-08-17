@@ -1,0 +1,56 @@
+{% extends "ui/base.html" %}
+{% block title %}Month-End Close — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-4xl">
+  <h1 class="text-xl font-semibold text-slate-900">Month-End Close</h1>
+  <p class="text-sm text-slate-500 mt-1">accruals → recon → close → appropriations. Closing locks the fiscal period (no back-posting).</p>
+
+  {% if close %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 p-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-sm text-slate-500">Period {{ close.fiscal_period.period_no }} · {{ close.fiscal_period.start_date|date:"M d" }} – {{ close.fiscal_period.end_date|date:"M d, Y" }}</div>
+        <div class="mt-1">
+          <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium {% if close.status == 'closed' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">
+            {% if close.status == "closed" %}Closed{% else %}Open{% endif %}
+          </span>
+        </div>
+      </div>
+      {% if close.status != "closed" %}
+      <form method="post" action="{% url 'ui:month_end_complete' %}">
+        {% csrf_token %}
+        <button type="submit" {% if not close.is_ready %}disabled{% endif %}
+                class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+          Close period
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    <ul class="mt-6 space-y-2">
+      {% for step, state in close.steps.items %}
+      <li class="flex items-center gap-3 rounded-lg border px-4 py-3
+        {% if state == 'done' %}border-emerald-200 bg-emerald-50
+        {% elif state == 'in_progress' %}border-amber-200 bg-amber-50
+        {% else %}border-slate-200 bg-white{% endif %}">
+        <span class="w-3 h-3 rounded-full {% if state == 'done' %}bg-emerald-500{% elif state == 'in_progress' %}bg-amber-500{% else %}bg-slate-300{% endif %}"></span>
+        <span class="font-medium capitalize text-sm">{{ step }}</span>
+        <span class="ml-auto text-xs text-slate-500">{{ state }}</span>
+        {% if close.status != "closed" and state != "done" %}
+        <form method="post" action="{% url 'ui:month_end_advance' %}">
+          {% csrf_token %}
+          <input type="hidden" name="step" value="{{ step }}">
+          <button type="submit" class="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">Mark done</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+    No open fiscal period found — nothing to close.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

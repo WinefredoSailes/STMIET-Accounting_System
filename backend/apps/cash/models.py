@@ -188,6 +188,9 @@ class PCFReplenishment(AuditableModel):
     fund = models.ForeignKey(PettyCashFund, on_delete=models.PROTECT, related_name="replenishments")
     request_date = models.DateField(db_index=True)
     amount = models.DecimalField(max_digits=18, decimal_places=2)
+    # ACCTG-FOR-002 PAYEE INFORMATION: who received / is reimbursed.
+    payee_name = models.CharField(max_length=255, blank=True)
+    reference = models.CharField(max_length=64, blank=True)
     # Expense breakdown from liquidation receipts
     expenses = models.JSONField(default=list)  # [{account_code, amount, description}]
     journal_entry = models.ForeignKey(

@@ -1,0 +1,54 @@
+{% extends "ui/base.html" %}
+{% block title %}PCF Replenishments — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">Petty Cash Vouchers / Replenishments</h1>
+      <p class="text-sm text-slate-500 mt-1">Imprest replenishment requests (ACCTG-FOR-002); posted JE: Dr expenses | Cr cash.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="{% url 'ui:pcf_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Funds</a>
+      <a href="{% url 'ui:pcf_replenish' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New petty cash voucher</a>
+    </div>
+  </div>
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">ID</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Fund</th>
+          <th class="px-4 py-3">Payee</th>
+          <th class="px-4 py-3">Reference</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in replenishments %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">PCF-{{ r.id }}</a>
+          </td>
+          <td class="px-4 py-2">{{ r.request_date|date:"M d, Y" }}</td>
+          <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
+          <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+              {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
+              {% else %}bg-amber-100 text-amber-800{% endif %}">
+              {{ r.status }}
+            </span>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No replenishments yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

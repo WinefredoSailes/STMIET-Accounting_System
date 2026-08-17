@@ -1,0 +1,136 @@
+{% extends "ui/base.html" %}
+{% block title %}New Check Voucher — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl">
+  <a href="{% url 'ui:cv_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Check vouchers</a>
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+      <div>
+        <div class="text-lg font-bold text-slate-900">CHECK VOUCHER</div>
+        <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT</div>
+      </div>
+      <div class="text-xs text-slate-500 text-right">
+        <div>Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-010</span></div>
+        <div>Effective Date: 08.18.2022 · Revision No.: 02</div>
+      </div>
+    </div>
+
+    <form method="post" class="p-6 space-y-4">
+      {% csrf_token %}
+      <fieldset class="space-y-3">
+        <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium">Payee Information</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_rfp">RFP to pay (approved)</label>
+            <select name="rfp" id="id_rfp" required
+                    onchange="if(this.value) location.href='?rfp='+this.value"
+                    class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              <option value="">— select approved RFP —</option>
+              {% for r in rfps %}
+              <option value="{{ r.id }}" {% if selected_rfp and selected_rfp.id == r.id %}selected{% endif %}>
+                {{ r.ap_number }} · {{ r.payee.name }} · ₱{{ r.amount|floatformat:2 }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">NAME</label>
+            <input type="text" readonly value="{{ selected_rfp.payee.name|default:"" }}"
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">DATE OF REQUEST</label>
+            <input type="date" name="cv_date" id="id_cv_date" required value="{{ today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_bank_account">BANK ACCOUNT (GL)</label>
+            <select name="bank_account" id="id_bank_account" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              {% for acc in bank_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_check_no">CHECK ISSUED &amp; NO</label>
+            <input type="text" name="check_no" id="id_check_no" maxlength="32"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gross_amount">Gross amount (₱)</label>
+            <input type="number" step="0.01" min="0.01" name="gross_amount" id="id_gross_amount" required
+                   value="{{ selected_rfp.amount|default:"" }}"
+                   oninput="net()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_withheld_tax">Withholding tax (₱)</label>
+            <input type="number" step="0.01" min="0" name="withheld_tax" id="id_withheld_tax" value="0.00"
+                   oninput="net()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Net amount</label>
+            <div id="id_net_amount" class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-right tabular-nums">
+              {{ selected_rfp.amount|floatformat:2|default:"0.00" }}
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="space-y-2">
+        <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium">Distribution Charges</legend>
+        {% if selected_rfp %}
+        <div class="text-sm text-slate-500 mb-2">
+          {{ selected_rfp.particulars }} · Entity: STMIET · Segment: {{ selected_rfp.segment.code }}
+          · Cost center: {{ selected_rfp.purpose|default:"OS" }}
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+              <th class="px-3 py-2">ENTITY</th>
+              <th class="px-3 py-2">SEGMENT</th>
+              <th class="px-3 py-2">COST CENTER</th>
+              <th class="px-3 py-2">GL ACCOUNT</th>
+              <th class="px-3 py-2 text-right">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for line in selected_rfp.lines.all %}
+            <tr>
+              <td class="px-3 py-2">{{ line.description|default:selected_rfp.particulars }}</td>
+              <td class="px-3 py-2">STMIET</td>
+              <td class="px-3 py-2">{{ line.segment.code }}</td>
+              <td class="px-3 py-2">{{ selected_rfp.purpose|default:"OS" }}</td>
+              <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="bg-slate-50 font-semibold">
+            <tr>
+              <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ selected_rfp.amount|floatformat:2 }}</td>
+            </tr>
+          </tfoot>
+        </table>
+        {% else %}
+        <p class="text-sm text-slate-400">Select an approved RFP above to show its distribution charges.</p>
+        {% endif %}
+      </fieldset>
+
+      <p class="text-xs text-slate-500">Each check issued shall be supported with sufficient documentation. Failure to do so shall constitute neglect to the requester and/or the department.</p>
+
+      <div class="flex justify-end">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          Issue check voucher (posts 7.4 JE)
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function net() {
+  var g = parseFloat(document.getElementById('id_gross_amount').value || 0);
+  var t = parseFloat(document.getElementById('id_withheld_tax').value || 0);
+  document.getElementById('id_net_amount').textContent = (g - t).toFixed(2);
+}
+</script>
+{% endblock %}

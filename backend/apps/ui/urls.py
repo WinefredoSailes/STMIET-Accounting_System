@@ -1,0 +1,73 @@
+from django.urls import path
+
+from . import views
+
+app_name = "ui"
+
+urlpatterns = [
+    # Auth
+    path("login/", views.login_view, name="login"),
+    path("logout/", views.logout_view, name="logout"),
+    # Dashboard
+    path("", views.dashboard, name="dashboard"),
+    # Posting
+    path("journal/", views.je_list, name="je_list"),
+    path("journal/new/", views.je_create, name="je_create"),
+    path("journal/<int:pk>/", views.je_detail, name="je_detail"),
+    path("journal/<int:pk>/post/", views.je_post, name="je_post"),
+    path("journal/<int:pk>/reverse/", views.je_reverse, name="je_reverse"),
+    # Reporting
+    path("reports/trial-balance/", views.trial_balance, name="trial_balance"),
+    path("reports/month-end-close/", views.month_end_close, name="month_end_close"),
+    path("reports/month-end-close/advance/", views.month_end_advance, name="month_end_advance"),
+    path("reports/month-end-close/complete/", views.month_end_complete, name="month_end_complete"),
+    path("reports/<str:statement_type>/", views.statement, name="statement"),
+    # AR
+    path("ar/customers/", views.customer_list, name="customer_list"),
+    path("ar/customers/new/", views.customer_create, name="customer_create"),
+    path("ar/receipts/", views.receipt_list, name="receipt_list"),
+    path("ar/receipts/new/", views.receipt_create, name="receipt_create"),
+    # AP
+    path("ap/suppliers/", views.supplier_list, name="supplier_list"),
+    path("ap/suppliers/new/", views.supplier_create, name="supplier_create"),
+    path("ap/rfps/", views.rfp_list, name="rfp_list"),
+    path("ap/rfps/new/", views.rfp_create, name="rfp_create"),
+    path("ap/rfps/<int:pk>/", views.rfp_detail, name="rfp_detail"),
+    path("ap/rfps/<int:pk>/submit/", views.rfp_submit, name="rfp_submit"),
+    path("ap/rfps/<int:pk>/approve/", views.rfp_approve, name="rfp_approve"),
+    path("ap/rfps/<int:pk>/approve-cnr/", views.rfp_approve_cnr, name="rfp_approve_cnr"),
+    path("ap/cv/", views.cv_list, name="cv_list"),
+    path("ap/cv/new/", views.cv_create, name="cv_create"),
+    path("ap/cv/<int:pk>/", views.cv_detail, name="cv_detail"),
+    path("ap/cv/<int:pk>/sign/", views.cv_sign, name="cv_sign"),
+    path("ap/cv/<int:pk>/release/", views.cv_release, name="cv_release"),
+    path("ap/cv/<int:pk>/clear/", views.cv_clear, name="cv_clear"),
+    path("ap/conso/", views.conso_list, name="conso_list"),
+    path("ap/conso/new/", views.conso_create, name="conso_create"),
+    path("ap/conso/<int:pk>/", views.conso_detail, name="conso_detail"),
+    path("ap/conso/<int:pk>/add-rfp/", views.conso_add_rfp, name="conso_add_rfp"),
+    path("ap/conso/<int:pk>/post/", views.conso_post, name="conso_post"),
+    # Cash
+    path("cash/banks/", views.bank_list, name="bank_list"),
+    path("cash/banks/new/", views.bank_create, name="bank_create"),
+    path("cash/cycles/", views.cycle_list, name="cycle_list"),
+    path("cash/cycles/generate/", views.cycle_generate, name="cycle_generate"),
+    path("cash/pcf/", views.pcf_list, name="pcf_list"),
+    path("cash/pcf/replenish/", views.pcf_replenish, name="pcf_replenish"),
+    path("cash/pcf/replenishments/", views.pcf_replenishment_list, name="pcf_replenishment_list"),
+    path("cash/pcf/replenishments/<int:pk>/", views.pcf_replenishment_detail, name="pcf_replenishment_detail"),
+    path("cash/pcf/replenishments/<int:pk>/post/", views.pcf_replenishment_post, name="pcf_replenishment_post"),
+    path("cash/pcf/new/", views.pcf_create, name="pcf_create"),
+    path("cash/recon/", views.recon_list, name="recon_list"),
+    path("cash/recon/new/", views.recon_create, name="recon_create"),
+    path("cash/short/", views.cash_short_list, name="cash_short_list"),
+    path("cash/short/new/", views.cash_short_record, name="cash_short_record"),
+    path("cash/short/<int:pk>/approve/", views.cash_short_approve, name="cash_short_approve"),
+    path("cash/collections-summary/", views.collections_summary, name="collections_summary"),
+    # Assets
+    path("assets/", views.asset_list, name="asset_list"),
+    path("assets/new/", views.asset_create, name="asset_create"),
+    path("assets/<int:pk>/", views.asset_detail, name="asset_detail"),
+    path("assets/<int:pk>/depreciate/", views.asset_depreciate, name="asset_depreciate"),
+    path("assets/<int:pk>/dispose/", views.asset_dispose, name="asset_dispose"),
+]

@@ -9,11 +9,17 @@ from django.contrib import admin
 from django.urls import include, path
 
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 API_PREFIX = "api/v1"
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Server-rendered UI (HTMX + Tailwind). Not versioned — it is the staff app.
+    path("", include("apps.ui.urls")),
+    # Auth (JWT for API consumers / machine-to-machine; session auth for the UI).
+    path(f"{API_PREFIX}/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path(f"{API_PREFIX}/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path(
         "api/schema/",
         SpectacularAPIView.as_view(),

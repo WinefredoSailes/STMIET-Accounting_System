@@ -1,0 +1,77 @@
+{% extends "ui/base.html" %}
+{% block title %}CONSO {{ batch.batch_no }} — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl">
+  <a href="{% url 'ui:conso_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; CONSO batches</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-slate-900">{{ batch.batch_no }}</h1>
+    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
+      {% if batch.status == 'posted' %}bg-emerald-100 text-emerald-800
+      {% elif batch.status == 'open' %}bg-slate-100 text-slate-600
+      {% else %}bg-amber-100 text-amber-800{% endif %}">
+      {{ batch.status }}
+    </span>
+  </div>
+  <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · Total ₱{{ total|floatformat:2 }}</p>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">AP No</th>
+          <th class="px-4 py-3">Payee</th>
+          <th class="px-4 py-3">Particulars</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">RFP status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for m in members %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{% url 'ui:rfp_detail' m.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ m.ap_number }}</a>
+          </td>
+          <td class="px-4 py-2">{{ m.payee.name }}</td>
+          <td class="px-4 py-2 text-xs text-slate-600 max-w-xs truncate">{{ m.particulars }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ m.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-xs">
+            {% if m.status == 'posted' %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">posted</span>
+            {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ m.status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No RFPs in this batch yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if batch.status == "open" %}
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 p-4 flex items-end gap-3">
+    <form method="post" action="{% url 'ui:conso_add_rfp' batch.id %}" class="flex flex-1 items-end gap-3">
+      {% csrf_token %}
+      <div class="flex-1">
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_rfp">Add approved RFP</label>
+        <select name="rfp" id="id_rfp" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for r in available %}
+          <option value="{{ r.id }}">{{ r.ap_number }} · {{ r.payee.name }} · ₱{{ r.amount|floatformat:2 }}</option>
+          {% empty %}
+          <option value="">— no approved RFPs left —</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Add</button>
+    </form>
+    <form method="post" action="{% url 'ui:conso_post' batch.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              {% if not members %}disabled{% endif %}>
+        Post batch (all RFPs to GL)
+      </button>
+    </form>
+  </div>
+  {% elif batch.status == "posted" %}
+  <p class="mt-4 text-sm text-emerald-700">Batch posted — every member RFP's JE is in the GL (7.3).</p>
+  {% endif %}
+</div>
+{% endblock %}

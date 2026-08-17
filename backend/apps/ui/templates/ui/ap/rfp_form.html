@@ -1,0 +1,143 @@
+{% extends "ui/base.html" %}
+{% block title %}New RFP — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl">
+  <a href="{% url 'ui:rfp_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; RFPs</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-slate-900">New Request for Payment</h1>
+    <span class="text-xs text-slate-400">ACCTG-FOR-012 · A#### auto-assigned</span>
+  </div>
+
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+    {% csrf_token %}
+    <div class="px-6 py-4 border-b border-slate-200">
+      <div class="text-sm font-semibold text-slate-900">REQUEST FOR PAYMENT</div>
+      <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT</div>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee">Payee (NAME)</label>
+        <select name="payee" id="id_payee" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for s in suppliers %}<option value="{{ s.id }}">{{ s.code }} — {{ s.name }}{% if s.last_ap %} (last AP {{ s.last_ap }}){% endif %}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_rfp_date">Date of request</label>
+        <input type="date" name="rfp_date" id="id_rfp_date" required
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_particulars">Purpose of payment</label>
+        <textarea name="particulars" id="id_particulars" required rows="3" maxlength="500"
+                  class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
+        <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_purpose">Cost center / ref.</label>
+        <input type="text" name="purpose" id="id_purpose" maxlength="128"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_amount">Total amount (₱)</label>
+        <input type="number" step="0.01" min="2500" name="amount" id="id_amount" required
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_advance_amount">Advance credit (₱)</label>
+        <input type="number" step="0.01" min="0" name="advance_amount" id="id_advance_amount" value="20000.00"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+    </div>
+
+    <div class="px-6 py-3 border-t border-slate-200 text-xs uppercase tracking-wider text-slate-500">
+      Distribution charges — chart of accounts
+    </div>
+    <div class="px-6 pb-4">
+      <table class="w-full text-sm">
+        <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="py-2">#</th>
+            <th class="py-2">Account (GL)</th>
+            <th class="py-2">Segment</th>
+            <th class="py-2">Description</th>
+            <th class="py-2 text-right w-40">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="lines-body" class="divide-y divide-slate-100">
+          <tr>
+            <td class="py-2 text-slate-400 line-no">1</td>
+            <td class="py-2">
+              <select name="line_account" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="">— select —</option>
+                {% for acc in accounts %}<option value="{{ acc.code }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2">
+              <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2"><input type="text" name="line_description" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_amount" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums line-amount"></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" class="py-2 text-right font-semibold">TOTAL</td>
+            <td id="total-lines" class="py-2 text-right font-semibold tabular-nums">0.00</td>
+          </tr>
+          <tr>
+            <td colspan="5" class="py-2">
+              <button type="button" id="add-line"
+                      class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                + Add line
+              </button>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="mt-2 text-xs text-slate-500">Lines must total the RFP amount — the service rejects mismatches. Minimum RFP is ₱2,500 (use PCV below it).</p>
+    </div>
+
+    <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        Create RFP (prepared)
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const body = document.getElementById('lines-body');
+  const tpl = body.querySelector('tr');
+  const addBtn = document.getElementById('add-line');
+  const total = document.getElementById('total-lines');
+
+  function recalc() {
+    let sum = 0;
+    body.querySelectorAll('.line-amount').forEach(function (i) {
+      sum += parseFloat(i.value) || 0;
+    });
+    total.textContent = sum.toFixed(2);
+  }
+  addBtn.addEventListener('click', function () {
+    const row = tpl.cloneNode(true);
+    row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    row.querySelector('.line-no').textContent = body.querySelectorAll('tr').length + 1;
+    body.appendChild(row);
+    row.querySelectorAll('.line-amount').forEach(function (i) { i.addEventListener('input', recalc); });
+  });
+  body.addEventListener('input', recalc);
+  recalc();
+})();
+</script>
+{% endblock %}

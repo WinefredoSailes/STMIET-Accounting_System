@@ -42,3 +42,5 @@ COMPENSATION-REVIEW.md
 *.m4v
 *.wav
 *.mov
+# Node (Tailwind build)
+node_modules/

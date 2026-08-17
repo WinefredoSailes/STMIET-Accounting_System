@@ -1,0 +1,95 @@
+{% extends "ui/base.html" %}
+{% block title %}Requests for Payment — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Requests for Payment</h1>
+      <p class="text-sm text-slate-500 mt-1">A#### — draft → checked → acctg approved → fin approved → CNR → CONSO (ADR-008/020)</p>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+      <a href="{% url 'ui:rfp_create' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ New RFP</a>
+      <a href="{% url 'ui:supplier_list' %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Suppliers</a>
+    </div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Total RFPs</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ summary.total }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.total_amount|floatformat:2 }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Pending approval</div>
+      <div class="mt-1 text-2xl font-bold text-amber-600">{{ summary.pending }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.pending_amount|floatformat:2 }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Approved, for CONSO</div>
+      <div class="mt-1 text-2xl font-bold text-violet-600">{{ summary.approved }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.approved_amount|floatformat:2 }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Posted (CONSO'd)</div>
+      <div class="mt-1 text-2xl font-bold text-emerald-600">{{ summary.posted_amount|floatformat:2 }}</div>
+      <div class="text-xs text-slate-500 mt-1">amount in GL</div>
+    </div>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">AP No</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Payee</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3">Particulars</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for rfp in rfps %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2.5 font-mono text-xs">
+            <a href="{% url 'ui:rfp_detail' rfp.id %}" class="font-semibold text-indigo-600 hover:text-indigo-800">{{ rfp.ap_number }}</a>
+          </td>
+          <td class="px-4 py-2.5">{{ rfp.rfp_date|date:"M d, Y" }}</td>
+          <td class="px-4 py-2.5 font-medium">{{ rfp.payee.name }}</td>
+          <td class="px-4 py-2.5">
+            <span class="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{{ rfp.segment.code }}</span>
+          </td>
+          <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ rfp.particulars }}</td>
+          <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ rfp.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2.5">
+            {% if rfp.status == 'posted' %}<span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">Posted</span>
+            {% elif rfp.status == 'rejected' %}<span class="inline-flex rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">Rejected</span>
+            {% elif rfp.status == 'cnr_approved' %}<span class="inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700">Approved (CNR)</span>
+            {% elif rfp.status == 'fin_approved' %}<span class="inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700">Approved (Fin)</span>
+            {% elif rfp.status == 'acctg_approved' %}<span class="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">Approved (Acctg)</span>
+            {% elif rfp.status == 'checked' %}<span class="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">Checked</span>
+            {% elif rfp.status == 'submitted' %}<span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Submitted</span>
+            {% else %}<span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Prepared</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="px-6 py-14">
+            <div class="mx-auto max-w-sm text-center">
+              <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">📋</div>
+              <h2 class="mt-3 text-sm font-semibold text-slate-800">No requests for payment yet</h2>
+              <p class="mt-1 text-xs text-slate-500">Start with a supplier, then create an RFP with its distribution charges. Each RFP carries its own journal entry (Dr expense | Cr advances + AP).</p>
+              <div class="mt-4 flex items-center justify-center gap-2">
+                <a href="{% url 'ui:rfp_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ New RFP</a>
+                <a href="{% url 'ui:supplier_create' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">Add a supplier</a>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
