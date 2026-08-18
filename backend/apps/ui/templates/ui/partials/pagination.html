@@ -1,0 +1,30 @@
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="mt-4 flex flex-col items-center justify-between gap-2 sm:flex-row">
+  <p class="text-xs text-slate-500">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</p>
+  <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Pagination">
+    {% if page_obj.has_previous %}
+    <a href="?page=1{% for k, v in pagination_params.items %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="rounded-md border border-slate-300 px-2.5 py-1 hover:bg-slate-50" title="First page">&laquo;</a>
+    <a href="?page={{ page_obj.previous_page_number }}{% for k, v in pagination_params.items %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="rounded-md border border-slate-300 px-2.5 py-1 hover:bg-slate-50">Prev</a>
+    {% else %}
+    <span class="rounded-md border border-slate-200 px-2.5 py-1 text-slate-300">&laquo;</span>
+    <span class="rounded-md border border-slate-200 px-2.5 py-1 text-slate-300">Prev</span>
+    {% endif %}
+    {% for n in page_obj.paginator.get_elided_page_range %}
+      {% if n == page_obj.paginator.ELLIPSIS %}
+      <span class="px-1 text-slate-400">&hellip;</span>
+      {% elif n == page_obj.number %}
+      <span class="rounded-md bg-indigo-600 px-2.5 py-1 font-medium text-white">{{ n }}</span>
+      {% else %}
+      <a href="?page={{ n }}{% for k, v in pagination_params.items %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="rounded-md border border-slate-300 px-2.5 py-1 hover:bg-slate-50">{{ n }}</a>
+      {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}{% for k, v in pagination_params.items %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="rounded-md border border-slate-300 px-2.5 py-1 hover:bg-slate-50">Next</a>
+    <a href="?page={{ page_obj.paginator.num_pages }}{% for k, v in pagination_params.items %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="rounded-md border border-slate-300 px-2.5 py-1 hover:bg-slate-50" title="Last page">&raquo;</a>
+    {% else %}
+    <span class="rounded-md border border-slate-200 px-2.5 py-1 text-slate-300">Next</span>
+    <span class="rounded-md border border-slate-200 px-2.5 py-1 text-slate-300">&raquo;</span>
+    {% endif %}
+  </nav>
+</div>
+{% endif %}

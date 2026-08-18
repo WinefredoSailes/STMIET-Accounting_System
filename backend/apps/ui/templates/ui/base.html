@@ -10,29 +10,42 @@
   <script src="{% static 'js/htmx.min.js' %}" defer></script>
 </head>
 <body class="h-full">
+  {% if request.user.is_authenticated %}
+  <div id="sb-backdrop" onclick="toggleSidebar(false)" class="fixed inset-0 z-30 hidden bg-slate-900/50"></div>
+  {% endif %}
   <div class="min-h-full flex">
     {% if request.user.is_authenticated %}
-    <aside class="w-56 shrink-0 bg-slate-900 text-slate-200 flex flex-col">
-      <div class="px-4 py-4 border-b border-slate-700 flex items-center gap-2.5">
+    <aside id="sidebar"
+      class="fixed inset-y-0 left-0 z-40 w-56 -translate-x-full transform bg-slate-900 text-slate-200 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0">
+      <div class="relative px-4 py-4 border-b border-slate-700 flex items-center gap-2.5">
         <img src="{% static 'img/logo.svg' %}" alt="STMIET logo" class="h-9 w-9 rounded-lg shadow">
         <div>
           <div class="font-semibold text-white text-sm leading-tight">STMIET</div>
           <div class="text-[11px] text-slate-400">Accounting System</div>
         </div>
+        <button onclick="toggleSidebar(false)" aria-label="Close menu"
+          class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-slate-400 hover:text-white hover:bg-slate-800 text-lg leading-none">×</button>
       </div>
-      <nav class="flex-1 overflow-y-auto py-2 text-sm">
+      <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-2 text-sm">
         {% include "ui/_sidebar.html" %}
       </nav>
       <div class="px-4 py-3 border-t border-slate-700 text-xs">
         <div class="text-slate-300">{{ request.user.get_full_name|default:request.user.username }}</div>
         <form method="post" action="{% url 'ui:logout' %}">
           {% csrf_token %}
-          <button type="submit" class="mt-1 text-slate-400 hover:text-white">Sign out</button>
+          <button type="submit" class="mt-1 text-slate-400 hover:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Sign out</button>
         </form>
       </div>
     </aside>
     {% endif %}
-    <main class="flex-1 min-w-0 overflow-auto">
+    <main class="flex-1 min-w-0 overflow-x-hidden">
+      {% if request.user.is_authenticated %}
+      <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-slate-900 px-4 py-3 shadow-md">
+        <button onclick="toggleSidebar(true)" aria-label="Open menu"
+          class="rounded-md px-2 py-1 text-slate-200 hover:text-white hover:bg-slate-800">☰</button>
+        <span class="font-semibold text-white text-sm">STMIET Accounting</span>
+      </header>
+      {% endif %}
       {% if messages %}
       <div class="p-4">
         {% for message in messages %}
@@ -45,6 +58,23 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script>
+    function toggleSidebar(force) {
+      var sb = document.getElementById('sidebar');
+      var bd = document.getElementById('sb-backdrop');
+      if (!sb) return;
+      var open = typeof force === 'boolean' ? force : !sb.classList.contains('translate-x-0');
+      sb.classList.toggle('translate-x-0', open);
+      sb.classList.toggle('-translate-x-full', !open);
+      if (bd) bd.classList.toggle('hidden', !open);
+    }
+    var sbNav = document.getElementById('sidebar-nav');
+    if (sbNav) {
+      sbNav.addEventListener('click', function () {
+        if (window.innerWidth < 1024) toggleSidebar(false);
+      });
+    }
+  </script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

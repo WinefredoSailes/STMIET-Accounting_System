@@ -1,50 +1,51 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Cash Flow Statement — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl">
-  <div class="flex items-center justify-between">
+<div class="p-4 sm:p-6 max-w-5xl">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">CASH FLOW STATEMENT</h1>
       <p class="text-sm text-slate-500 mt-1">Generated from weekly cycle activities (ADR-031). Identity: Net Inc = End − Beg + ADB adjustments.</p>
     </div>
-    <form method="get" class="flex items-center gap-2 text-sm">
-      <select name="segment" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+      <select name="segment" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
         <option value="">Segment…</option>
         {% for s in segments %}
         <option value="{{ s.id }}" {% if seg and seg.id == s.id %}selected{% endif %}>{{ s.code }} — {{ s.name }}</option>
         {% endfor %}
       </select>
-      <input type="date" name="period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      <input type="date" name="period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       <span class="text-slate-400">to</span>
-      <input type="date" name="period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Generate</button>
+      <input type="date" name="period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Generate</button>
     </form>
   </div>
 
   {% if latest %}
-  <div class="mt-4 flex items-center gap-3 text-sm">
+  <div class="mt-4 flex flex-wrap items-center gap-3 text-sm">
     <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium {% if latest.identity_holds %}bg-emerald-100 text-emerald-800{% else %}bg-red-100 text-red-800{% endif %}">
       Identity: {{ latest.identity_holds|yesno:"OK,FAILED" }}
     </span>
     <span class="text-slate-500">{{ latest.period_start|date:"M d, Y" }} – {{ latest.period_end|date:"M d, Y" }} · generated {{ latest.generated_at|timesince }} ago</span>
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[560px]">
       <tbody class="divide-y divide-slate-100">
         <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">OPERATING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Collections (Distribution + Other)</td><td class="px-4 py-1.5 text-right tabular-nums">{{ latest.collections|floatformat:2 }}</td></tr>
-        <tr><td class="px-4 py-1.5">Payments to Depot / Outflows</td><td class="px-4 py-1.5 text-right tabular-nums">({{ latest.payments_to_depot|floatformat:2 }})</td></tr>
-        <tr class="font-semibold"><td class="px-4 py-1.5">Net Cash from Operating Activities</td><td class="px-4 py-1.5 text-right tabular-nums">{{ nets.operating|floatformat:2 }}</td></tr>
+        <tr><td class="px-4 py-1.5">Collections (Distribution + Other)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.collections|money }}</td></tr>
+        <tr><td class="px-4 py-1.5">Payments to Depot / Outflows</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.payments_to_depot|money }})</td></tr>
+        <tr class="font-semibold"><td class="px-4 py-1.5">Net Cash from Operating Activities</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ nets.operating|money }}</td></tr>
         <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">INVESTING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Asset Acquisitions (CAPEX)</td><td class="px-4 py-1.5 text-right tabular-nums">({{ latest.asset_acquisitions|floatformat:2 }})</td></tr>
+        <tr><td class="px-4 py-1.5">Asset Acquisitions (CAPEX)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.asset_acquisitions|money }})</td></tr>
         <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">FINANCING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Loans Proceeds (Borrowed)</td><td class="px-4 py-1.5 text-right tabular-nums">{{ latest.loan_proceeds|floatformat:2 }}</td></tr>
-        <tr><td class="px-4 py-1.5">Loan / Fuel Checks Cleared</td><td class="px-4 py-1.5 text-right tabular-nums">({{ latest.loan_repayments|floatformat:2 }})</td></tr>
-        <tr class="font-semibold border-t-2 border-slate-200"><td class="px-4 py-2">NET CHANGE IN CASH</td><td class="px-4 py-2 text-right tabular-nums">{{ latest.net_change|floatformat:2 }}</td></tr>
-        <tr><td class="px-4 py-1.5">Cash — Beginning</td><td class="px-4 py-1.5 text-right tabular-nums">{{ latest.beginning_cash|floatformat:2 }}</td></tr>
-        <tr><td class="px-4 py-1.5">Cash — End (less ADB maintained)</td><td class="px-4 py-1.5 text-right tabular-nums">{{ latest.ending_cash|floatformat:2 }}</td></tr>
-        <tr class="bg-slate-50"><td class="px-4 py-1.5 text-slate-500">ADB Adjustments (reporting, not a cash movement)</td><td class="px-4 py-1.5 text-right tabular-nums text-slate-500">{{ latest.adb_adjustments|floatformat:2 }}</td></tr>
+        <tr><td class="px-4 py-1.5">Loans Proceeds (Borrowed)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.loan_proceeds|money }}</td></tr>
+        <tr><td class="px-4 py-1.5">Loan / Fuel Checks Cleared</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.loan_repayments|money }})</td></tr>
+        <tr class="font-semibold border-t-2 border-slate-200"><td class="px-4 py-2">NET CHANGE IN CASH</td><td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{ latest.net_change|money }}</td></tr>
+        <tr><td class="px-4 py-1.5">Cash — Beginning</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.beginning_cash|money }}</td></tr>
+        <tr><td class="px-4 py-1.5">Cash — End (less ADB maintained)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.ending_cash|money }}</td></tr>
+        <tr class="bg-slate-50"><td class="px-4 py-1.5 text-slate-500">ADB Adjustments (reporting, not a cash movement)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-500">{{ latest.adb_adjustments|money }}</td></tr>
       </tbody>
     </table>
   </div>

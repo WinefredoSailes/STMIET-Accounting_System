@@ -199,8 +199,9 @@
   - AP: CONSO batch UI (open → add approved RFPs → post atomically)
   - Assets: acquire (FA-YYYY-####, posts 9.1), detail with depreciation schedule + NBV, post depreciation (9.2), dispose (9.3)
 - [x] Register / analysis screens: general journal (workbook layout, balanced flag), cash flow statement (per segment, identity check), COLLECTIBLES worksheet per cycle, AR aging + open-invoice register, advances ledger + inline liquidation, inter-account transfers, COA listing with filters (all master-data driven, no hardcoded segment names)
+- [x] UI polish pass: pagination on long registers (50/page, filters preserved, totals span the whole set), thousand separators on all amounts, responsive layout (off-canvas sidebar < lg, scrollable tables, stacking headers)
 - [x] `seed_demo` management command (idempotent January-2026 dataset through services: posted AR/RFP/CONSO/CV/transfer/advance, cycles, COLLECTIBLES, cash flow) — seed only, run against a dev DB
-- [x] UI functional tests (77 UI/tests.py + E2E workflow in `test_e2e.py`) — full suite 153 passing, `manage.py check` clean
+- [x] UI functional tests (78 UI tests incl. E2E workflow + pagination) — full suite 154 passing, `manage.py check` clean
 - [ ] Statement input chaining (IS net profit → SFP/SOCE `eq_net_profit` / `soce_net_profit`)
 - [ ] HTMX partial updates (inline status transitions, filters) on list screens
 - [ ] Remaining workflow screens: PCF fund setup, check disbursement reconciliation (bank recon), cash short approval, CONSO batch UI

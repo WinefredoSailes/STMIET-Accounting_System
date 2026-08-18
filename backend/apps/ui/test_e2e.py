@@ -245,7 +245,7 @@ class TestEndToEndWorkflow:
                 [b"CASH FLOW STATEMENT", b"Identity"],
             "/cash/collectibles/?cycle=%d" % cycle.id: [b"COLLECTIBLES WORKSHEET", b"Distribution"],
             "/ar/aging/": [b"AR AGING", b"E2E Customer"],
-            "/ap/advances/": [b"ADVANCES TO EMPLOYEES", b"E2E Officer", b"15000.00"],
+            "/ap/advances/": [b"ADVANCES TO EMPLOYEES", b"E2E Officer", b"15,000.00"],
             "/cash/transfers/": [b"INTER-ACCOUNT TRANSFERS", b"E2E fund move"],
         }
         for url, needles in screens.items():
@@ -279,6 +279,26 @@ class TestEndToEndWorkflow:
         body = resp.content
         assert b"0-30 days" in body and b"31-60 days" in body and b"61-90 days" in body
         assert b"E2E Ager" in body
+        # Amounts render with thousand separators
+        assert b"10,000.00" in body and b"20,000.00" in body and b"30,000.00" in body
+        assert b"60,000.00" in body  # register total
+
+    def test_pagination_pages_render(self, client, company, segment, accounts, user):
+        """Every paginated screen honours ?page= (clamps out-of-range pages)."""
+        from apps.ar.models import Customer
+
+        client.force_login(user)
+        for url in (
+            "/journal/general/?page=2",
+            "/foundation/coa/?page=2",
+            "/ar/aging/?page=2",
+            "/ap/advances/?page=2",
+            "/cash/transfers/?page=2",
+            "/journal/general/?page=999",
+            "/foundation/coa/?page=999",
+        ):
+            resp = client.get(url)
+            assert resp.status_code == 200, f"{url} -> {resp.status_code}"
 
     def test_coa_list_renders_and_filters(self, client, company, segment, accounts, user):
         client.force_login(user)

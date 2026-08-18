@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponseRedirect
@@ -66,6 +67,13 @@ from .services import (
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
+
+
+def _page(request, seq, per_page=50):
+    """Paginate a list for a list screen; page_obj + querystring to preserve."""
+    page_obj = Paginator(list(seq), per_page).get_page(request.GET.get("page"))
+    page_obj.pagination_params = {k: v for k, v in request.GET.items() if k != "page"}
+    return page_obj
 
 
 def login_view(request):
@@ -1186,6 +1194,7 @@ def general_journal(request):
         end=request.GET.get("end") or None,
         segment=request.GET.get("segment") or None,
     )
+    ctx["page_obj"] = _page(request, ctx.pop("rows"), per_page=50)
     ctx["start"] = request.GET.get("start", "")
     ctx["end"] = request.GET.get("end", "")
     ctx["segment_sel"] = request.GET.get("segment", "")
@@ -1203,10 +1212,14 @@ def coa_list(request):
     from .services import coa_rows
 
     ctx = {
-        "rows": coa_rows(
-            q=request.GET.get("q", "").strip(),
-            segment=request.GET.get("segment", "").strip(),
-            account_type=request.GET.get("account_type", "").strip(),
+        "page_obj": _page(
+            request,
+            coa_rows(
+                q=request.GET.get("q", "").strip(),
+                segment=request.GET.get("segment", "").strip(),
+                account_type=request.GET.get("account_type", "").strip(),
+            ),
+            per_page=50,
         ),
         "q": request.GET.get("q", "").strip(),
         "segment_sel": request.GET.get("segment", "").strip(),
@@ -1290,7 +1303,9 @@ def aging(request):
     from .services import aging_context
 
     as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
-    return render(request, "ui/ar/aging.html", aging_context(as_of))
+    ctx = aging_context(as_of)
+    ctx["page_obj"] = _page(request, ctx.pop("register"), per_page=50)
+    return render(request, "ui/ar/aging.html", ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1301,7 +1316,9 @@ def aging(request):
 @login_required
 def advances(request):
     """Advances to Employees ledger (ADR-021) with liquidation form."""
-    return render(request, "ui/ap/advances.html", advances_context())
+    ctx = advances_context()
+    ctx["page_obj"] = _page(request, ctx.pop("rows"), per_page=50)
+    return render(request, "ui/ap/advances.html", ctx)
 
 
 @login_required
@@ -1332,7 +1349,9 @@ def advance_liquidate(request, pk):
 @login_required
 def transfers(request):
     """Inter-account transfer screen (ADR-030): Dr Cash-To | Cr Cash-From."""
-    return render(request, "ui/cash/transfers.html", transfers_context())
+    ctx = transfers_context()
+    ctx["page_obj"] = _page(request, ctx.pop("transfers"), per_page=50)
+    return render(request, "ui/cash/transfers.html", ctx)
 
 
 @login_required

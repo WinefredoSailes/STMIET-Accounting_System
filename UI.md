@@ -210,6 +210,15 @@ the database, never from hardcoded strings.
 
 ## How it works (for developers)
 
+- Long registers (general journal, COA, aging, advances, transfers) are
+  paginated at 50 rows/page; filters survive across pages (`?page=` +
+  preserved querystring). Totals (journal debits/credits, aging
+  outstanding) always cover the whole filtered set, not just the page.
+- Amounts render with thousand separators via the `money` filter
+  (`apps/ui/templatetags/ui_filters.py`) — no raw `floatformat` on money.
+- Layout is responsive: sidebar collapses to an off-canvas menu under
+  `lg:` (hamburger in the top bar), tables scroll horizontally, and page
+  headers/filter bars stack vertically on small screens.
 - `apps/ui/views.py` — thin view layer; mutations call the context services
   (`apps.posting.services`, `apps.reporting.services`, …). Business rules
   never live in the UI app (ADR-009).
@@ -226,7 +235,7 @@ the database, never from hardcoded strings.
 
 ```powershell
 cd backend
-python -m pytest -q    # 153 tests: API contracts + UI smoke tests + E2E workflow
+python -m pytest -q    # 154 tests: API contracts + UI smoke tests + E2E workflow
 python manage.py check
 ```
 
