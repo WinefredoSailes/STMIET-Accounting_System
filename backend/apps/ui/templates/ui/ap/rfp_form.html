@@ -1,14 +1,14 @@
 {% extends "ui/base.html" %}
 {% block title %}New RFP — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl">
+<div class="p-6">
   <a href="{% url 'ui:rfp_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; RFPs</a>
   <div class="mt-1 flex items-center justify-between">
     <h1 class="text-xl font-semibold text-slate-900">New Request for Payment</h1>
     <span class="text-xs text-slate-400">ACCTG-FOR-012 · A#### auto-assigned</span>
   </div>
 
-  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     {% csrf_token %}
     <div class="px-6 py-4 border-b border-slate-200">
       <div class="text-sm font-semibold text-slate-900">REQUEST FOR PAYMENT</div>
@@ -73,7 +73,7 @@
           <tr>
             <td class="py-2 text-slate-400 line-no">1</td>
             <td class="py-2">
-              <select name="line_account" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 <option value="">— select —</option>
                 {% for acc in accounts %}<option value="{{ acc.code }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
               </select>

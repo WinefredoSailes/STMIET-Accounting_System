@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Dispose {{ asset.asset_no }} — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-3xl">
+<div class="p-6">
   <a href="{% url 'ui:asset_detail' asset.id %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; {{ asset.asset_no }}</a>
   <h1 class="text-xl font-semibold text-slate-900 mt-1">Dispose Asset</h1>
   <p class="text-sm text-slate-500 mt-1">9.3 disposal: Dr Cash (proceeds) + Dr Accum Dep | Cr Asset + Cr/Loss on disposal.</p>
@@ -35,7 +35,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cash_account">Cash account (Dr proceeds)</label>
-        <select name="cash_account" id="id_cash_account" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <select name="cash_account" id="id_cash_account" data-searchable class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           <option value="">— none —</option>
           {% for acc in cash_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
         </select>

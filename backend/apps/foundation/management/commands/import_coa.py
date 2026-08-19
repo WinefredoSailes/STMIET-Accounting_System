@@ -99,6 +99,8 @@ class Command(BaseCommand):
             }.get(prefix, AccountType.ASSET)
             classification = r[3] if len(r) > 3 else ""
             category = r[4] if len(r) > 4 else ""
+            sub_accounts = r[5] if len(r) > 5 else ""
+            major_accounts = r[6] if len(r) > 6 else ""
             Account.objects.update_or_create(
                 code=code,
                 defaults={
@@ -106,6 +108,10 @@ class Command(BaseCommand):
                     "account_type": atype,
                     "segment": segment,
                     "description": f"{classification} / {category}".strip(" /"),
+                    "classification": classification,
+                    "category": category,
+                    "sub_accounts": sub_accounts,
+                    "major_accounts": major_accounts,
                     "normal_balance": "debit" if atype in (AccountType.ASSET, AccountType.EXPENSE) else "credit",
                 },
             )

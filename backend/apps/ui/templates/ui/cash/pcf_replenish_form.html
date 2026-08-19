@@ -1,9 +1,9 @@
 {% extends "ui/base.html" %}
 {% block title %}Petty Cash Voucher — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl">
+<div class="p-6">
   <a href="{% url 'ui:pcf_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Petty cash funds</a>
-  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
       <div>
         <div class="text-lg font-bold text-slate-900">PETTY CASH VOUCHER</div>
@@ -48,7 +48,7 @@
 
       <fieldset>
         <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium mb-2">Distribution Charges</legend>
-        <table class="w-full text-sm" id="exp-table">
+        <table class="w-full text-sm min-w-[820px]" id="exp-table">
           <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
               <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
@@ -71,7 +71,7 @@
               </td>
               <td class="px-1 py-2"><input type="text" name="exp_cost_center" value="OS" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
               <td class="px-1 py-2">
-                <select name="exp_account" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search…" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }}</option>{% endfor %}
                 </select>
               </td>

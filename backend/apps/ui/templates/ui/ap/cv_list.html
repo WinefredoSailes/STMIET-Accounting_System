@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Check Vouchers — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Check Vouchers (CV-YYYY-####)</h1>
@@ -12,8 +12,8 @@
       <a href="{% url 'ui:cv_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New check voucher</a>
     </div>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[900px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">CV No</th>
@@ -28,7 +28,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for cv in cvs %}
+        {% for cv in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2 font-mono text-xs">
             <a href="{% url 'ui:cv_detail' cv.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ cv.cv_number }}</a>
@@ -56,4 +56,5 @@
     </table>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

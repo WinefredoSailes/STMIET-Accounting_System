@@ -117,6 +117,44 @@ class TestEndToEndWorkflow:
         )
 
         # 4. RFP created + approved via the UI buttons -------------------------
+        # 4a. Invalid submissions must NOT 500: blank amount, blank date,
+        # malformed amount — the form re-renders with an error.
+        from apps.ap.models import RFPDocument
+
+        before = RFPDocument.objects.count()
+        for bad in (
+            {"amount": "", "advance_amount": "20000.00", "rfp_date": "2026-01-07"},
+            {"amount": "150000.00", "advance_amount": "20000.00", "rfp_date": ""},
+            {"amount": "150000.00x", "advance_amount": "20000.00", "rfp_date": "2026-01-07"},
+        ):
+            resp = client.post(
+                "/ap/rfps/new/",
+                {"payee": supplier.id, "segment": segment.id, **bad,
+                 "particulars": "E2E bulk fuel", "purpose": "purchase",
+                 "line_segment": [segment.id], "line_account": ["61100"],
+                 "line_amount": ["150000.00"], "line_description": ["Fuel"],
+                 },
+            )
+            assert resp.status_code == 200, f"bad RFP posted {bad!r} -> {resp.status_code}"
+        assert RFPDocument.objects.count() == before  # nothing persisted
+
+        # 4b. Comma thousands and a blank advance credit are tolerated:
+        # money() strips separators; empty advance reverts to the 20k default.
+        resp = client.post(
+            "/ap/rfps/new/",
+            {"payee": supplier.id, "segment": segment.id, "rfp_date": "2026-01-07",
+             "particulars": "E2E blank advance", "purpose": "purchase",
+             "amount": "150,000.00", "advance_amount": "",
+             "line_segment": [segment.id], "line_account": ["61100"],
+             "line_amount": ["150000.00"], "line_description": ["Fuel"],
+             },
+        )
+        assert resp.status_code == 302
+        default_adv = RFPDocument.objects.get(particulars="E2E blank advance")
+        assert default_adv.amount == Decimal("150000.00")
+        assert default_adv.advance_amount == Decimal("20000.00")
+
+        # 4c. Happy path: valid RFP created + approved step by step.
         resp = client.post(
             "/ap/rfps/new/",
             {"payee": supplier.id, "segment": segment.id, "rfp_date": "2026-01-07",
@@ -127,9 +165,13 @@ class TestEndToEndWorkflow:
              },
         )
         assert resp.status_code == 302
-        from apps.ap.models import RFPDocument
-
-        rfp = RFPDocument.objects.get(payee=supplier)
+        rfp = RFPDocument.objects.get(payee=supplier, particulars="E2E bulk fuel")
+        assert rfp.status == "prepared"
+        # 4d. Routing guard: an out-of-order approver (cashier has no step here)
+        # must not move the RFP; the redirect keeps it in "prepared".
+        client.force_login(roles["cashier"])
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
         assert rfp.status == "prepared"
         # check -> acctg -> fin, each by a different user
         client.force_login(roles["checker"])
@@ -254,6 +296,49 @@ class TestEndToEndWorkflow:
             body = resp.content
             for needle in needles:
                 assert needle in body, f"{url} missing {needle!r}"
+
+        # 10b. Excel exports: all six endpoints return real, mirrored workbooks
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        def export(url):
+            resp = client.get(url)
+            assert resp.status_code == 200, f"{url} -> {resp.status_code}"
+            assert resp["Content-Type"] == (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return load_workbook(BytesIO(resp.content))
+
+        wb = export("/reports/trial-balance/export/?year=2026")
+        ws = wb["TRIAL BALANCE"]
+        assert "I2:AJ2" in {str(r) for r in ws.merged_cells.ranges}
+        assert ws["K5"].value == "JANUARY"
+        assert ws["A6"].value
+
+        wb = export(
+            "/reports/sfp/export/?period_start=2026-01-01&period_end=2026-01-31&net_profit=127000.00",
+            )
+        assert wb["YEAR END"]["B4"].value == "STATEMENT OF FINANCIAL POSITION"
+
+        wb = export(
+            "/reports/soce/export/?period_start=2026-01-01&period_end=2026-01-31&net_profit=127000.00",
+            )
+        assert wb["EQUITY"]["C2"].value == "STATEMENT OF CHANGES IN EQUITY"
+        assert wb["EQUITY"]["D12"].value is not None
+
+        wb = export("/reports/cos/export/?period_start=2026-01-01&period_end=2026-01-31")
+        assert wb["COST OF SALES"]["A12"].value == "COGS - Fuel Purchase"
+        assert wb["COST OF SALES"]["E54"].value is not None
+
+        wb = export("/reports/te/export/?period_start=2026-01-01&period_end=2026-01-31",
+                    )
+        assert wb["January 2026 CGSE"]["H37"].value > 0
+
+        wb = export(
+            "/reports/cash-flow/export/?segment=%d&period_start=2026-01-06&period_end=2026-01-26"
+            % segment.id)
+        assert wb["CF"]["H5"].value == "Amounts in pesos"
+        assert wb["CF"]["H25"].value is not None
 
         # 11. Immutability: posted entries cannot be reversed through the UI
         from apps.posting.models import JournalEntry

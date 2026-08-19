@@ -7,6 +7,14 @@ from rest_framework.response import Response
 from apps.core.exceptions import ValidationError
 from apps.foundation.models import Company, Segment
 
+from .excel_export import (
+    build_statement_of_changes_in_equity,
+    build_statement_of_cost_of_sales,
+    build_statement_of_financial_position,
+    build_statement_of_total_expenses,
+    build_trial_balance,
+    xlsx_response,
+)
 from .models import FinancialStatement, MonthEndClose, StatementTemplate
 from .serializers import (
     FinancialStatementSerializer,
@@ -40,6 +48,18 @@ class TrialBalanceViewSet(viewsets.ViewSet):
                 "totals": {"debit": str(total_dr), "credit": str(total_cr)},
             }
         )
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        """GET /api/reporting/trial-balance/export/?company=&year= — workbook
+        mirroring TRIAL-BALANCE.xlsx (Opening + Jan..Dec + YTD Dr/Cr pairs)."""
+        company_id = request.query_params.get("company")
+        if not company_id:
+            return Response({"detail": "company is required."}, status=status.HTTP_400_BAD_REQUEST)
+        company = Company.objects.get(pk=company_id)
+        year = request.query_params.get("year") or date.today().year
+        wb = build_trial_balance(company, int(year))
+        return xlsx_response(wb, f"TRIAL-BALANCE-{year}.xlsx")
 
 
 class StatementTemplateViewSet(viewsets.ReadOnlyModelViewSet):
@@ -86,6 +106,37 @@ class FinancialStatementViewSet(viewsets.ReadOnlyModelViewSet):
         )
         out = FinancialStatementSerializer(fs)
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        """GET /api/reporting/statements/export/?statement_type=sfp|soce|cos|te
+
+        &company=&period_start=&period_end=[&net_profit=] — downloads the
+        workbook mirroring the source statement file (exact layout).
+        """
+        statement_type = request.query_params.get("statement_type")
+        builders = {
+            "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
+            "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
+            "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
+            "te": ("STATEMENT-OF-TOTAL-EXPENSES", build_statement_of_total_expenses),
+        }
+        if statement_type not in builders:
+            return Response(
+                {"detail": "statement_type must be one of: sfp, soce, cos, te."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        company = Company.objects.get(pk=request.query_params.get("company"))
+        period_start = date.fromisoformat(request.query_params.get("period_start"))
+        period_end = date.fromisoformat(request.query_params.get("period_end"))
+        net_profit = request.query_params.get("net_profit")
+        if statement_type in ("cos", "te"):
+            StatementTemplateService.seed_defaults()  # layouts must exist
+            wb = builders[statement_type][1](company, period_start, period_end)
+        else:
+            wb = builders[statement_type][1](company, period_start, period_end, net_profit)
+        stem = builders[statement_type][0]
+        return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
 
     @action(detail=False, methods=["get"])
     def run_all(self, request):

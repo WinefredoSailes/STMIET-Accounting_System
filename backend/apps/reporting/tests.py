@@ -17,6 +17,14 @@ import pytest
 from apps.foundation.models import Account, Company, FiscalPeriod, FiscalYear, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
+from apps.reporting.excel_export import (
+    build_cash_flow_statement,
+    build_statement_of_changes_in_equity,
+    build_statement_of_cost_of_sales,
+    build_statement_of_financial_position,
+    build_statement_of_total_expenses,
+    build_trial_balance,
+)
 from apps.reporting.models import StatementTemplate, StatementType
 from apps.reporting.services import (
     FinancialStatementService,
@@ -356,3 +364,179 @@ class TestMonthEndClose:
         mec = MonthEndCloseService.advance(mec, "accruals")
         with pytest.raises(ValueError, match="pending"):
             MonthEndCloseService.complete(mec)
+
+
+class TestExcelExport:
+    """Excel builders mirror the source workbooks cell-for-cell (the builders
+    only; the HTTP export endpoints are covered by the e2e suite). Values are
+    always recomputed from the posted GL, never hardcoded."""
+
+    @staticmethod
+    def _code_rows(ws):
+        return {ws.cell(row=r, column=1).value: r for r in range(6, ws.max_row + 1)}
+
+    def test_trial_balance_mirrors_workbook(self, company, segments, coa, period_data):
+        wb = build_trial_balance(company, 2026)
+        ws = wb["TRIAL BALANCE"]
+        assert "I2:AJ2" in {str(r) for r in ws.merged_cells.ranges}
+        assert ws["I2"].value == "SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING (TRIAL BALANCE)"
+        # alternating Dr./Cr. from I4
+        assert ws["H4"].value is None and ws["I4"].value == "Dr." and ws["J4"].value == "Cr."
+        # header band row 5
+        assert [ws.cell(row=5, column=i).value for i in range(1, 9)] == [
+            "COA", "Normal Balance of Account Titles", "ACCOUNT TITLES", "SEGMENT",
+            "CLASSIFICATION", "CATEGORY", "Sub-Accounts", "Major Accounts"]
+        assert ws["I5"].value == "OPENING BALANCES"
+        assert ws["K5"].value == "JANUARY"
+        assert ws["AI5"].value == "YTD Balances"
+        # first account row is 10010 (ordered by code), COA columns echoed
+        rows = self._code_rows(ws)
+        assert rows["10010"] == 6
+        assert ws["A6"].value == "10010"
+        assert ws["B6"].value == "Dr."
+        assert ws["C6"].value == "Cash on Hand"
+        assert ws["D6"].value == "DHPP"
+        # Cash: opening 0, Jan Dr 395000 (400k capital - 5k drawings), YTD same;
+        # only one side of a Dr/Cr pair is ever populated
+        assert ws["I6"].value == 0
+        assert ws["K6"].value == 395000
+        assert ws["L6"].value is None
+        assert ws["AI6"].value == 395000
+        assert ws["AJ6"].value is None
+        # credit-normal AP account: Jan Cr 273000
+        ap_row = rows["20000"]
+        assert ws.cell(row=ap_row, column=11).value is None
+        assert ws.cell(row=ap_row, column=12).value == 273000
+        # contra-equity drawings (debit-normal): Jan Dr 5000
+        dr_row = rows["30500"]
+        assert ws.cell(row=dr_row, column=11).value == 5000
+        assert ws.cell(row=dr_row, column=12).value is None
+
+    def test_sfp_mirrors_workbook_and_identity(self, company, segments, coa, period_data, templates):
+        wb = build_statement_of_financial_position(
+            company, date(2026, 1, 1), date(2026, 1, 31), "127000.00")
+        ws = wb["YEAR END"]
+        assert ws["B4"].value == "STATEMENT OF FINANCIAL POSITION"
+        assert ws["B5"].value == "As of  January 31, 2026"
+        assert ws["B6"].value == "ASSETS" and ws["E6"].value == "LIABILITIES AND OWNER'S EQUITY"
+        assert ws["B8"].value == "Cash" and ws["C8"].value == 395000
+        assert ws["E8"].value == "Accounts Payable" and ws["F8"].value == 273000
+        assert ws["B10"].value == "Accounts Receivable" and ws["C10"].value == 400000
+        assert ws["C16"].value == 795000
+        assert ws["F16"].value == 273000
+        assert ws["F25"].value == 400000
+        assert ws["F26"].value == 5000
+        assert ws["F27"].value == 522000
+        # identity: assets == liabilities + equity (127k net profit input)
+        assert ws["C29"].value == ws["F29"].value == 795000
+        assert float(ws["C32"].value) == pytest.approx(273000 * 100 / 795000, abs=0.001)
+        assert float(ws["C33"].value) == pytest.approx(795000 / 273000, abs=0.001)
+
+    def test_soce_mirrors_workbook(self, company, segments, coa, period_data, templates):
+        wb = build_statement_of_changes_in_equity(
+            company, date(2026, 1, 1), date(2026, 1, 31), "127000.00")
+        ws = wb["EQUITY"]
+        assert "C2:D2" in {str(r) for r in ws.merged_cells.ranges}
+        assert ws["C2"].value == "STATEMENT OF CHANGES IN EQUITY"
+        assert ws["B6"].value == "EQUITY ACCOUNTS" and ws["D6"].value == "TOTAL"
+        assert ws["B7"].value == "E.Bagatua, Beginning Capital" and ws["D7"].value == 0
+        assert ws["B8"].value == "Additional Capital" and ws["D8"].value == 400000
+        assert ws["B9"].value == "Net Profit / Loss for the year (+ / - )" and ws["D9"].value == 127000
+        assert ws["B10"].value == "Total" and ws["D10"].value == 527000
+        assert ws["B11"].value == "Less: E. Bagatua, Drawings" and ws["D11"].value == 5000
+        assert ws["B12"].value == "E. Bagatua, Ending Capital" and ws["D12"].value == 522000
+
+    def test_cos_mirrors_workbook(self, company, segments, coa, period_data, templates):
+        wb = build_statement_of_cost_of_sales(company, date(2026, 1, 1), date(2026, 1, 31))
+        ws = wb["COST OF SALES"]
+        assert ws["B1"].value.startswith("\nSEVEN-TRENT MACHINERIES")
+        assert ws["A8"].value == "Distribution and Hauling of Petroleum Products (DHPP)"
+        assert ws["A9"].value == "ACCOUNT TITLES" and ws["E9"].value == "GRAND TOTAL"
+        # DHPP detail rows 10-21, total row 22
+        assert ws["A10"].value == "COGS - Subscription Fees" and ws["E10"].value == 0
+        assert ws["A11"].value == "COGS - Depreciation of Fuel Tankers_DHPP" and ws["E11"].value == 10000
+        assert ws["A12"].value == "COGS - Fuel Purchase" and ws["E12"].value == 150000
+        assert ws["E22"].value == 160000
+        assert ws["A23"].value == "VOLUME IN LITERS"
+        assert ws["A24"].value == "DIRECT COST PER LITER "
+        # DMIE section
+        assert ws["A25"].value == "Distribution of Machineries and Industrial Equipment (DMIE)"
+        assert ws["A27"].value == "COGS - Calibration Bucket" and ws["E27"].value == 60000
+        assert ws["E45"].value == 60000
+        # OPS section
+        assert ws["A46"].value == "Other Products and Services (OPS)"
+        assert ws["A48"].value == "COGS - Lubricants for Sale" and ws["E48"].value == 25000
+        assert ws["E53"].value == 25000
+        assert ws["E54"].value == 245000
+
+    def test_te_mirrors_workbook(self, company, segments, coa, period_data, templates):
+        wb = build_statement_of_total_expenses(company, date(2026, 1, 1), date(2026, 1, 31))
+        ws = wb["January 2026 CGSE"]
+        assert "H6:H8" in {str(r) for r in ws.merged_cells.ranges}
+        assert ws["H6"].value == "GRAND TOTAL"
+        assert ws["A9"].value == "COGS - DHPP" and ws["H9"].value == 160000
+        assert ws["A12"].value == "Total Cost of Sales" and ws["H12"].value == 245000
+        assert ws["A14"].value == "Accommodation Fees" and ws["H14"].value == 8000
+        assert ws["A18"].value == "Depreciation Expense (Others)" and ws["H18"].value == 2000
+        assert ws["A21"].value == "Insurance Fees" and ws["H21"].value == 3000
+        assert ws["A26"].value == "Salary and Company Benefits" and ws["H26"].value == 12000
+        assert ws["A33"].value == "Total Operating Expenses" and ws["H33"].value == 25000
+        assert ws["A34"].value == "Other Gen. & Admin. Expense" and ws["H34"].value == 2000
+        assert ws["A35"].value == "Other Expense/Miscellaneous Exp." and ws["H35"].value == 1000
+        assert ws["A37"].value == "TOTAL OPERATING COSTS" and ws["H37"].value == 273000
+        assert ws["A43"].value == "Legend:"
+        assert ws["A44"].value == "DHPP - Distribution and Hauling of Petroleum Products"
+        assert ws["A46"].value == "OPS - Other Products and Services"
+
+    def test_cash_flow_mirrors_workbook(self, segments, coa):
+        from apps.cash.models import ActivityType, BankAccount, CashCycleActivity, WeeklyCashCycle
+
+        dhpp = segments["DHPP"]
+        BankAccount.objects.create(
+            code="PNB-DHPP", name="PNB DHPP", account_type="checking",
+            bank_name="PNB", bank_code="PNB", gl_account=coa["10010"],
+            segment=dhpp, adb_required=Decimal("5000.00"),
+        )
+        WeeklyCashCycle.objects.create(
+            cycle_start=date(2026, 1, 6), cycle_end=date(2026, 1, 12),
+            segment=dhpp, closing_balance=Decimal("100000.00"),
+        )
+        c2 = WeeklyCashCycle.objects.create(
+            cycle_start=date(2026, 1, 13), cycle_end=date(2026, 1, 19),
+            segment=dhpp, closing_balance=Decimal("150000.00"),
+        )
+        for atype, amount in [
+            (ActivityType.COLLECTION_DIST, "120000.00"),
+            (ActivityType.OTHER_COLLECTION, "30000.00"),
+            (ActivityType.SUPPLIER_PAYMENT, "50000.00"),
+            (ActivityType.RFP_AP, "20000.00"),
+            (ActivityType.PCF_REPLEN, "5000.00"),
+            (ActivityType.OTHER_PAYMENT, "10000.00"),
+            (ActivityType.CAPEX, "25000.00"),
+            (ActivityType.BORROWED, "40000.00"),
+            (ActivityType.LOAN_CLEARED, "15000.00"),
+        ]:
+            CashCycleActivity.objects.create(cycle=c2, activity_type=atype, amount=Decimal(amount))
+
+        wb = build_cash_flow_statement(dhpp, date(2026, 1, 6), date(2026, 1, 19))
+        ws = wb["CF"]
+        assert ws["B2"].value == "SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING"
+        assert ws["H5"].value == "Amounts in pesos"
+        # operating: +120k +30k -50k -20k -5k -10k = 65k
+        assert ws["H7"].value == 120000
+        assert ws["H8"].value == 30000
+        assert ws["H9"].value == 50000
+        assert ws["H10"].value == 20000
+        assert ws["H11"].value == 5000
+        assert ws["H12"].value == 10000
+        assert ws["H13"].value == 65000
+        # investing / financing
+        assert ws["H17"].value == -25000
+        assert ws["H19"].value == 40000
+        assert ws["H20"].value == 15000
+        assert ws["H21"].value == 25000
+        # net change, beginning, ADB 5k, ending = 150k - 5k
+        assert ws["H22"].value == 65000
+        assert ws["H23"].value == 0
+        assert ws["H24"].value == 5000
+        assert ws["H25"].value == 145000

@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}PCF Replenishments — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Petty Cash Vouchers / Replenishments</h1>
@@ -12,8 +12,8 @@
       <a href="{% url 'ui:pcf_replenish' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New petty cash voucher</a>
     </div>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[820px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">ID</th>
@@ -26,7 +26,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for r in replenishments %}
+        {% for r in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2 font-mono text-xs">
             <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">PCF-{{ r.id }}</a>
@@ -51,4 +51,5 @@
     </table>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Petty Cash Funds — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Petty Cash Funds</h1>
@@ -12,7 +12,7 @@
     </div>
   </div>
   <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-    {% for fund in funds %}
+    {% for fund in page_obj %}
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <div class="text-sm font-semibold text-slate-900">{{ fund.get_fund_code_display }}</div>
       <div class="text-xs text-slate-500 mt-0.5">{{ fund.name }}</div>
@@ -32,4 +32,5 @@
     <a href="{% url 'ui:pcf_replenish' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New petty cash voucher (replenishment)</a>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

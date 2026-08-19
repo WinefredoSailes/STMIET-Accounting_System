@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Cash Short — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Cash Short / Excess Worksheet</h1>
@@ -12,8 +12,8 @@
       <a href="{% url 'ui:cash_short_record' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ Record variance</a>
     </div>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[700px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">Cycle</th>
@@ -27,7 +27,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for ws in worksheets %}
+        {% for ws in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2">{{ ws.cycle.cycle_start|date:"M d" }}–{{ ws.cycle.cycle_end|date:"M d" }}</td>
           <td class="px-4 py-2 text-xs">{{ ws.segment.code }}</td>
@@ -56,4 +56,5 @@
     </table>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

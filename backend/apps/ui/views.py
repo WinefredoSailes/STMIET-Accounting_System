@@ -16,12 +16,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from apps.core.exceptions import AccountingError
+from apps.core.exceptions import AccountingError, ValidationError
 from apps.core.money import approve_threshold, money
 from apps.foundation.models import Account, AccountType, Company, FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -69,7 +69,7 @@ from .services import (
 # ---------------------------------------------------------------------------
 
 
-def _page(request, seq, per_page=50):
+def _page(request, seq, per_page=100):
     """Paginate a list for a list screen; page_obj + querystring to preserve."""
     page_obj = Paginator(list(seq), per_page).get_page(request.GET.get("page"))
     page_obj.pagination_params = {k: v for k, v in request.GET.items() if k != "page"}
@@ -135,8 +135,7 @@ def dashboard(request):
 
 @login_required
 def je_list(request):
-    entries = list_entries(limit=100)
-    return render(request, "ui/posting/je_list.html", {"entries": entries})
+    return render(request, "ui/posting/je_list.html", {"page_obj": _page(request, list_entries(limit=None))})
 
 
 @login_required
@@ -270,6 +269,65 @@ def trial_balance(request):
 
 
 @login_required
+def trial_balance_export(request):
+    """Download TRIAL-BALANCE.xlsx mirror (year-wise monthly Dr/Cr pairs)."""
+    from apps.reporting.excel_export import build_trial_balance, xlsx_response
+
+    company = Company.objects.first()
+    year = int(request.GET.get("year") or date.today().year)
+    return xlsx_response(build_trial_balance(company, year), f"TRIAL-BALANCE-{year}.xlsx")
+
+
+@login_required
+def statement_export(request, statement_type):
+    """Download the statement workbook (sfp/soce/cos/te) for a period."""
+    from apps.reporting.excel_export import (
+        build_statement_of_changes_in_equity,
+        build_statement_of_cost_of_sales,
+        build_statement_of_financial_position,
+        build_statement_of_total_expenses,
+        xlsx_response,
+    )
+
+    builders = {
+        "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
+        "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
+        "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
+        "te": ("STATEMENT-OF-TOTAL-EXPENSES", build_statement_of_total_expenses),
+    }
+    if statement_type not in builders:
+        raise Http404
+    company = Company.objects.first()
+    period_start = date.fromisoformat(request.GET.get("period_start"))
+    period_end = date.fromisoformat(request.GET.get("period_end"))
+    from apps.reporting.services import StatementTemplateService
+
+    StatementTemplateService.seed_defaults()
+    if statement_type in ("cos", "te"):
+        wb = builders[statement_type][1](company, period_start, period_end)
+    else:
+        wb = builders[statement_type][1](
+            company, period_start, period_end, request.GET.get("net_profit")
+        )
+    stem = builders[statement_type][0]
+    return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
+
+
+@login_required
+def cash_flow_export(request):
+    """Download STATEMENT-OF-CASH-FLOW.xlsx CF mirror for a cycle period."""
+    from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
+
+    seg = Segment.objects.get(pk=request.GET.get("segment"))
+    period_start = date.fromisoformat(request.GET.get("period_start"))
+    period_end = date.fromisoformat(request.GET.get("period_end"))
+    wb = build_cash_flow_statement(seg, period_start, period_end)
+    return xlsx_response(
+        wb, f"STATEMENT-OF-CASH-FLOW-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
+    )
+
+
+@login_required
 def statement(request, statement_type):
     if request.method == "POST":
         try:
@@ -328,37 +386,41 @@ def month_end_complete(request):
 
 @login_required
 def customer_list(request):
-    return render(request, "ui/ar/customer_list.html", {"customers": list_customers()})
+    return render(request, "ui/ar/customer_list.html", {"page_obj": _page(request, list_customers())})
 
 
 @login_required
 def receipt_list(request):
-    return render(request, "ui/ar/receipt_list.html", {"receipts": list_receipts()})
+    return render(request, "ui/ar/receipt_list.html", {"page_obj": _page(request, list_receipts(limit=None))})
 
 
 @login_required
 def supplier_list(request):
-    return render(request, "ui/ap/supplier_list.html", {"suppliers": list_suppliers()})
+    return render(request, "ui/ap/supplier_list.html", {"page_obj": _page(request, list_suppliers())})
 
 
 @login_required
 def rfp_list(request):
-    return render(request, "ui/ap/rfp_list.html", {"rfps": list_rfps(), "summary": rfp_summary()})
+    return render(
+        request,
+        "ui/ap/rfp_list.html",
+        {"page_obj": _page(request, list_rfps(limit=None)), "summary": rfp_summary()},
+    )
 
 
 @login_required
 def bank_list(request):
-    return render(request, "ui/cash/bank_list.html", {"banks": list_banks()})
+    return render(request, "ui/cash/bank_list.html", {"page_obj": _page(request, list_banks())})
 
 
 @login_required
 def cycle_list(request):
-    return render(request, "ui/cash/cycle_list.html", {"cycles": list_cycles()})
+    return render(request, "ui/cash/cycle_list.html", {"page_obj": _page(request, list_cycles(limit=None))})
 
 
 @login_required
 def asset_list(request):
-    return render(request, "ui/assets/asset_list.html", {"assets": list_assets()})
+    return render(request, "ui/assets/asset_list.html", {"page_obj": _page(request, list_assets(limit=None))})
 
 
 # ---------------------------------------------------------------------------
@@ -468,10 +530,13 @@ def rfp_create(request):
         try:
             payee = Supplier.objects.get(pk=request.POST["payee"])
             segment = Segment.objects.get(pk=request.POST["segment"])
+            rfp_date = request.POST.get("rfp_date", "")
+            if not rfp_date:
+                raise ValidationError("Enter the date of request.")
             ap_number = DocumentSequence.next_number(
                 company=payee.default_segment.company if payee.default_segment else segment.company,
                 form_code="RFP",
-                year=int(request.POST["rfp_date"][:4]),
+                year=int(rfp_date[:4]),
             )
             lines = []
             seg_ids = request.POST.getlist("line_segment")
@@ -493,13 +558,13 @@ def rfp_create(request):
                 raise ValueError("Add at least one charge line.")
             rfp = RFPService.create_rfp(
                 ap_number=ap_number,
-                rfp_date=date.fromisoformat(request.POST["rfp_date"]),
+                rfp_date=date.fromisoformat(rfp_date),
                 payee=payee,
                 particulars=request.POST["particulars"].strip(),
                 amount=request.POST["amount"],
                 segment=segment,
                 purpose=request.POST.get("purpose", ""),
-                advance_amount=request.POST.get("advance_amount", "20000.00"),
+                advance_amount=request.POST.get("advance_amount") or "20000.00",
                 lines=lines,
                 user=request.user,
             )
@@ -752,7 +817,7 @@ def asset_dispose(request, pk):
 
 @login_required
 def cv_list(request):
-    return render(request, "ui/ap/cv_list.html", {"cvs": list_cv()})
+    return render(request, "ui/ap/cv_list.html", {"page_obj": _page(request, list_cv(limit=None))})
 
 
 @login_required
@@ -866,7 +931,7 @@ def cv_clear(request, pk):
 
 @login_required
 def pcf_list(request):
-    return render(request, "ui/cash/pcf_list.html", {"funds": list_pcf_funds()})
+    return render(request, "ui/cash/pcf_list.html", {"page_obj": _page(request, list_pcf_funds())})
 
 
 @login_required
@@ -925,11 +990,7 @@ def pcf_replenish(request):
 
 @login_required
 def pcf_replenishment_list(request):
-    return render(
-        request,
-        "ui/cash/pcf_replenishment_list.html",
-        {"replenishments": list_pcf_replenishments()},
-    )
+    return render(request, "ui/cash/pcf_replenishment_list.html", {"page_obj": _page(request, list_pcf_replenishments(limit=None))})
 
 
 @login_required
@@ -994,7 +1055,7 @@ def pcf_create(request):
 
 @login_required
 def conso_list(request):
-    return render(request, "ui/ap/conso_list.html", {"batches": list_conso()})
+    return render(request, "ui/ap/conso_list.html", {"page_obj": _page(request, list_conso(limit=None))})
 
 
 @login_required
@@ -1074,7 +1135,7 @@ def conso_post(request, pk):
 
 @login_required
 def recon_list(request):
-    return render(request, "ui/cash/recon_list.html", {"recons": list_recons()})
+    return render(request, "ui/cash/recon_list.html", {"page_obj": _page(request, list_recons(limit=None))})
 
 
 @login_required
@@ -1115,7 +1176,7 @@ def recon_create(request):
 
 @login_required
 def cash_short_list(request):
-    return render(request, "ui/cash/cash_short_list.html", {"worksheets": list_cash_shorts()})
+    return render(request, "ui/cash/cash_short_list.html", {"page_obj": _page(request, list_cash_shorts(limit=None))})
 
 
 @login_required
@@ -1194,7 +1255,7 @@ def general_journal(request):
         end=request.GET.get("end") or None,
         segment=request.GET.get("segment") or None,
     )
-    ctx["page_obj"] = _page(request, ctx.pop("rows"), per_page=50)
+    ctx["page_obj"] = _page(request, ctx.pop("rows"))
     ctx["start"] = request.GET.get("start", "")
     ctx["end"] = request.GET.get("end", "")
     ctx["segment_sel"] = request.GET.get("segment", "")
@@ -1304,7 +1365,7 @@ def aging(request):
 
     as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
     ctx = aging_context(as_of)
-    ctx["page_obj"] = _page(request, ctx.pop("register"), per_page=50)
+    ctx["page_obj"] = _page(request, ctx.pop("register"))
     return render(request, "ui/ar/aging.html", ctx)
 
 
@@ -1317,7 +1378,7 @@ def aging(request):
 def advances(request):
     """Advances to Employees ledger (ADR-021) with liquidation form."""
     ctx = advances_context()
-    ctx["page_obj"] = _page(request, ctx.pop("rows"), per_page=50)
+    ctx["page_obj"] = _page(request, ctx.pop("rows"))
     return render(request, "ui/ap/advances.html", ctx)
 
 
@@ -1350,7 +1411,7 @@ def advance_liquidate(request, pk):
 def transfers(request):
     """Inter-account transfer screen (ADR-030): Dr Cash-To | Cr Cash-From."""
     ctx = transfers_context()
-    ctx["page_obj"] = _page(request, ctx.pop("transfers"), per_page=50)
+    ctx["page_obj"] = _page(request, ctx.pop("transfers"))
     return render(request, "ui/cash/transfers.html", ctx)
 
 

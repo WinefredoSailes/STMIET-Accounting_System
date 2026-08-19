@@ -81,6 +81,45 @@ class TestRFPCreation:
                 user=alywin,
             )
 
+    def test_empty_amount_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
+        """Regression: a blank form field must not 500 with decimal.InvalidOperation."""
+        with pytest.raises(ValidationError, match="Amount cannot be empty"):
+            RFPService.create_rfp(
+                ap_number="A0005", rfp_date=date(2026, 1, 15), payee=supplier,
+                particulars="Blank amount", amount="", segment=segment,
+                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+                user=alywin,
+            )
+
+    def test_empty_advance_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="Amount cannot be empty"):
+            RFPService.create_rfp(
+                ap_number="A0006", rfp_date=date(2026, 1, 15), payee=supplier,
+                particulars="Blank advance", amount="85000.00", segment=segment,
+                advance_amount="",
+                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+                user=alywin,
+            )
+
+    def test_malformed_amount_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="Invalid amount"):
+            RFPService.create_rfp(
+                ap_number="A0007", rfp_date=date(2026, 1, 15), payee=supplier,
+                particulars="Text in amount", amount="85000.abc", segment=segment,
+                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+                user=alywin,
+            )
+
+    def test_thousands_separators_are_stripped(self, company, segment, supplier, alywin, accounts):
+        """Users may paste '85,000.00'; money() normalizes it."""
+        rfp = RFPService.create_rfp(
+            ap_number="A0008", rfp_date=date(2026, 1, 15), payee=supplier,
+            particulars="Comma amount", amount="85,000.00", segment=segment,
+            lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+            user=alywin,
+        )
+        assert rfp.amount == Decimal("85000.00")
+
 
 class TestRFPApproval:
     def test_four_level_chain(self, company, segment, supplier, rfp_lines, alywin):

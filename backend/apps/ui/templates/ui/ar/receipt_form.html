@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}New Acknowledgment Receipt — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-3xl">
+<div class="p-6">
   <a href="{% url 'ui:receipt_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Acknowledgment receipts</a>
   <h1 class="text-xl font-semibold text-slate-900 mt-1">New Acknowledgment Receipt</h1>
   <p class="text-sm text-slate-500 mt-1">ACCTG-FOR-005 · posts the cash.collection JE on save (ADR-015).</p>
@@ -28,7 +28,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cash_account">Cash account (Dr)</label>
-        <select name="cash_account" id="id_cash_account" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <select name="cash_account" id="id_cash_account" data-searchable required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% for acc in cash_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
         </select>
       </div>

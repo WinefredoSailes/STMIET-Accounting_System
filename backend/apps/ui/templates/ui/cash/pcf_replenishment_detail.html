@@ -1,10 +1,10 @@
 {% extends "ui/base.html" %}
 {% block title %}PCF Voucher {{ replen.id }} — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl">
+<div class="p-6">
   <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Replenishments</a>
 
-  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
       <div>
         <div class="text-lg font-bold text-slate-900">PETTY CASH VOUCHER</div>
@@ -29,7 +29,7 @@
 
     <div class="px-6 pb-4">
       <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
-      <table class="w-full text-sm">
+      <table class="w-full text-sm min-w-[720px]">
         <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th class="px-3 py-2">PURPOSE OF PAYMENT</th>

@@ -144,6 +144,13 @@ class Account(AuditableModel):
     # - is_cash_equivalent, is_bank (treasury), is_receivable, is_payable
     # are needed for AR/AP bridge; keep minimal here, extend in later phases.
     description = models.TextField(blank=True)
+    # COA workbook (COA-STMIET-2026.xlsx) columns D-G, carried verbatim so the
+    # Trial Balance export reproduces the workbook's CLASSIFICATION / CATEGORY /
+    # Sub-Accounts / Major Accounts columns exactly.
+    classification = models.CharField(max_length=64, blank=True)
+    category = models.CharField(max_length=64, blank=True)
+    sub_accounts = models.CharField(max_length=64, blank=True)
+    major_accounts = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ["code"]

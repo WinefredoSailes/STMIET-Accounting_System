@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Bank Reconciliation — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Bank Reconciliation</h1>
@@ -12,8 +12,8 @@
       <a href="{% url 'ui:recon_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ Reconcile</a>
     </div>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[700px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">Cycle</th>
@@ -26,7 +26,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for r in recons %}
+        {% for r in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2">{{ r.cycle.cycle_start|date:"M d" }}–{{ r.cycle.cycle_end|date:"M d" }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ r.bank_account.code }}</td>
@@ -45,4 +45,5 @@
     </table>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

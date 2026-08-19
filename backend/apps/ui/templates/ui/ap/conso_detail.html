@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}CONSO {{ batch.batch_no }} — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl">
+<div class="p-6">
   <a href="{% url 'ui:conso_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; CONSO batches</a>
   <div class="mt-1 flex items-center justify-between">
     <h1 class="text-xl font-semibold text-slate-900">{{ batch.batch_no }}</h1>
@@ -14,8 +14,8 @@
   </div>
   <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · Total ₱{{ total|floatformat:2 }}</p>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[720px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">AP No</th>

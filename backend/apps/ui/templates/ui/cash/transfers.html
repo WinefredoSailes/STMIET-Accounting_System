@@ -2,7 +2,7 @@
 {% load ui_filters %}
 {% block title %}Inter-Account Transfers — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-4 sm:p-6 max-w-6xl">
+<div class="p-4 sm:p-6">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">INTER-ACCOUNT TRANSFERS</h1>
@@ -10,7 +10,7 @@
     </div>
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
     <div class="p-4 border-b border-slate-100">
       <h2 class="text-sm font-semibold text-slate-700">New transfer</h2>
       <form method="post" action="{% url 'ui:transfer_create' %}" class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm items-end">

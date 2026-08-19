@@ -16,34 +16,34 @@
   <div class="min-h-full flex">
     {% if request.user.is_authenticated %}
     <aside id="sidebar"
-      class="fixed inset-y-0 left-0 z-40 w-56 -translate-x-full transform bg-slate-900 text-slate-200 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0">
-      <div class="relative px-4 py-4 border-b border-slate-700 flex items-center gap-2.5">
+      class="fixed inset-y-0 left-0 z-40 w-56 -translate-x-full transform bg-white border-r border-slate-200 text-slate-700 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0">
+      <div class="relative px-4 py-4 border-b border-slate-200 flex items-center gap-2.5">
         <img src="{% static 'img/logo.svg' %}" alt="STMIET logo" class="h-9 w-9 rounded-lg shadow">
         <div>
-          <div class="font-semibold text-white text-sm leading-tight">STMIET</div>
+          <div class="font-semibold text-slate-900 text-sm leading-tight">STMIET</div>
           <div class="text-[11px] text-slate-400">Accounting System</div>
         </div>
         <button onclick="toggleSidebar(false)" aria-label="Close menu"
-          class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-slate-400 hover:text-white hover:bg-slate-800 text-lg leading-none">×</button>
+          class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 text-lg leading-none">×</button>
       </div>
       <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-2 text-sm">
         {% include "ui/_sidebar.html" %}
       </nav>
-      <div class="px-4 py-3 border-t border-slate-700 text-xs">
-        <div class="text-slate-300">{{ request.user.get_full_name|default:request.user.username }}</div>
+      <div class="px-4 py-3 border-t border-slate-200 text-xs">
+        <div class="text-slate-600">{{ request.user.get_full_name|default:request.user.username }}</div>
         <form method="post" action="{% url 'ui:logout' %}">
           {% csrf_token %}
-          <button type="submit" class="mt-1 text-slate-400 hover:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Sign out</button>
+          <button type="submit" class="mt-1 text-slate-500 hover:text-slate-900 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Sign out</button>
         </form>
       </div>
     </aside>
     {% endif %}
     <main class="flex-1 min-w-0 overflow-x-hidden">
       {% if request.user.is_authenticated %}
-      <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-slate-900 px-4 py-3 shadow-md">
+      <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-white border-b border-slate-200 px-4 py-3 shadow-sm">
         <button onclick="toggleSidebar(true)" aria-label="Open menu"
-          class="rounded-md px-2 py-1 text-slate-200 hover:text-white hover:bg-slate-800">☰</button>
-        <span class="font-semibold text-white text-sm">STMIET Accounting</span>
+          class="rounded-md px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100">☰</button>
+        <span class="font-semibold text-slate-900 text-sm">STMIET Accounting</span>
       </header>
       {% endif %}
       {% if messages %}
@@ -74,6 +74,239 @@
         if (window.innerWidth < 1024) toggleSidebar(false);
       });
     }
+
+    // ---- Searchable combobox: turns any <select data-searchable> into a
+    // filterable dropdown panel while keeping the native select (name/value)
+    // for form submission. The panel is rendered as a child of <body> and
+    // positioned with fixed coordinates, so opening it can never shift the
+    // table rows/columns it belongs to. Delegated listeners keep dynamically
+    // cloned "add line" rows working. ----
+    var sbCounter = 0;
+
+    function openSearchable(wrap) {
+      var panel = buildPanel(wrap);
+      positionPanel(wrap, panel);
+      panel.classList.remove('hidden');
+      var query = panel.querySelector('.searchable-query');
+      query.value = '';
+      applyFilter(panel);
+      query.focus();
+      wrap.querySelector('.searchable-trigger').classList.add('border-indigo-500');
+    }
+
+    function closeSearchable(wrap) {
+      var panel = document.getElementById('sb-panel-' + wrap.dataset.sbId);
+      if (panel) panel.remove();
+      wrap.querySelector('.searchable-trigger').classList.remove('border-indigo-500');
+    }
+
+    function buildPanel(wrap) {
+      var old = document.getElementById('sb-panel-' + wrap.dataset.sbId);
+      if (old) old.remove();
+      var panel = document.createElement('div');
+      panel.id = 'sb-panel-' + wrap.dataset.sbId;
+      panel.className = 'searchable-panel hidden z-50 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden';
+      panel.style.position = 'fixed';
+      panel.sbWrap = wrap;
+
+      var searchRow = document.createElement('div');
+      searchRow.className = 'flex items-center gap-2 border-b border-slate-200 px-3 py-2';
+      var query = document.createElement('input');
+      query.type = 'text';
+      query.className = 'searchable-query w-full text-sm focus:outline-none';
+      query.placeholder = wrap.querySelector('select').dataset.searchPlaceholder || 'Search by code or title…';
+      query.autocomplete = 'off';
+      query.sbWrap = wrap;
+      searchRow.appendChild(query);
+      panel.appendChild(searchRow);
+
+      var list = document.createElement('div');
+      list.className = 'searchable-list max-h-56 overflow-y-auto py-1';
+      var select = wrap.querySelector('select');
+      for (var i = 0; i < select.options.length; i++) {
+        var opt = select.options[i];
+        var item = document.createElement('div');
+        item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
+        item.dataset.value = opt.value;
+        item.sbWrap = wrap;
+        var code = document.createElement('span');
+        code.className = 'font-mono text-xs text-slate-500';
+        code.textContent = opt.value;
+        var title = document.createElement('span');
+        title.className = 'text-slate-700';
+        title.textContent = opt.textContent;
+        item.appendChild(code);
+        item.appendChild(title);
+        list.appendChild(item);
+      }
+      panel.appendChild(list);
+      document.body.appendChild(panel);
+      return panel;
+    }
+
+    function positionPanel(wrap, panel) {
+      var rect = wrap.querySelector('.searchable-trigger').getBoundingClientRect();
+      panel.style.top = (rect.bottom + 4) + 'px';
+      panel.style.left = rect.left + 'px';
+      panel.style.width = rect.width + 'px';
+    }
+
+    function positionOpenPanels() {
+      var panels = document.querySelectorAll('.searchable-panel:not(.hidden)');
+      for (var i = 0; i < panels.length; i++) {
+        positionPanel(panels[i].sbWrap, panels[i]);
+      }
+    }
+    document.addEventListener('scroll', positionOpenPanels, true);
+    window.addEventListener('resize', positionOpenPanels);
+
+    function applyFilter(panel) {
+      var q = panel.querySelector('.searchable-query').value.trim().toLowerCase();
+      var items = panel.querySelectorAll('.searchable-item');
+      var first = null;
+      for (var i = 0; i < items.length; i++) {
+        var match = items[i].textContent.toLowerCase().indexOf(q) !== -1;
+        items[i].hidden = !match;
+        items[i].classList.remove('bg-indigo-50');
+        if (match && first === null) first = items[i];
+      }
+      if (first) first.classList.add('bg-indigo-50');
+    }
+
+    function selectItem(wrap, item) {
+      if (!item || item.hidden) return;
+      var select = wrap.querySelector('select');
+      select.value = item.dataset.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      var label = wrap.querySelector('.searchable-label');
+      var chosen = select.selectedOptions.length ? select.selectedOptions[0].textContent : '— select —';
+      label.textContent = chosen;
+      label.classList.toggle('text-slate-700', !!select.value);
+      label.classList.toggle('text-slate-400', !select.value);
+      closeSearchable(wrap);
+      wrap.querySelector('.searchable-trigger').focus();
+    }
+
+    function activeItem(panel) {
+      var items = panel.querySelectorAll('.searchable-item:not([hidden])');
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].classList.contains('bg-indigo-50')) return items[i];
+      }
+      return items.length ? items[0] : null;
+    }
+
+    function moveActive(panel, dir) {
+      var items = Array.prototype.slice.call(panel.querySelectorAll('.searchable-item:not([hidden])'));
+      if (!items.length) return;
+      var cur = activeItem(panel);
+      var idx = Math.max(0, items.indexOf(cur));
+      var next = items[Math.min(items.length - 1, idx + dir)];
+      for (var i = 0; i < items.length; i++) items[i].classList.remove('bg-indigo-50');
+      next.classList.add('bg-indigo-50');
+      next.scrollIntoView({ block: 'nearest' });
+    }
+
+    function enhanceSearchable(root) {
+      var list = (root || document).querySelectorAll('select[data-searchable]');
+      for (var i = 0; i < list.length; i++) {
+        var select = list[i];
+        if (select.dataset.searchEnhanced) continue;
+        select.dataset.searchEnhanced = '1';
+
+        var wrap = document.createElement('div');
+        wrap.className = 'searchable-wrap relative';
+        wrap.dataset.sbId = ++sbCounter;
+
+        var compact = select.hasAttribute('data-search-compact');
+        var trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'searchable-trigger w-full rounded-md border border-slate-300 bg-white text-left flex items-center justify-between gap-2 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' +
+          (compact ? ' px-2 py-1.5 text-xs' : ' px-3 py-2 text-sm');
+        var label = document.createElement('span');
+        label.className = 'searchable-label truncate';
+        var chosen = select.selectedOptions.length ? select.selectedOptions[0].textContent : '— select —';
+        label.textContent = chosen;
+        label.classList.toggle('text-slate-700', !!select.value);
+        label.classList.toggle('text-slate-400', !select.value);
+        trigger.appendChild(label);
+        var chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        chevron.setAttribute('class', 'h-4 w-4 text-slate-400 shrink-0');
+        chevron.setAttribute('viewBox', '0 0 20 20');
+        chevron.setAttribute('fill', 'currentColor');
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill-rule', 'evenodd');
+        path.setAttribute('d', 'M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z');
+        path.setAttribute('clip-rule', 'evenodd');
+        chevron.appendChild(path);
+        trigger.appendChild(chevron);
+
+        wrap.appendChild(trigger);
+        select.classList.add('hidden');
+        select.parentNode.insertBefore(wrap, select);
+        wrap.appendChild(select);
+      }
+    }
+
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('.searchable-panel')) return;
+      var item = e.target.closest ? e.target.closest('.searchable-item') : null;
+      if (item) {
+        selectItem(item.sbWrap, item);
+        return;
+      }
+      var wrap = e.target.closest ? e.target.closest('.searchable-wrap') : null;
+      var panels = document.querySelectorAll('.searchable-panel:not(.hidden)');
+      if (wrap) {
+        for (var i = 0; i < panels.length; i++) {
+          if (wrap.dataset.sbId !== panels[i].sbWrap.dataset.sbId) panels[i].remove();
+        }
+        if (e.target.closest('.searchable-trigger')) {
+          var panel = document.getElementById('sb-panel-' + wrap.dataset.sbId);
+          if (!panel || panel.classList.contains('hidden')) openSearchable(wrap);
+          else closeSearchable(wrap);
+        }
+      } else {
+        for (var j = 0; j < panels.length; j++) panels[j].remove();
+      }
+    });
+
+    document.addEventListener('input', function (e) {
+      if (e.target.classList && e.target.classList.contains('searchable-query')) {
+        applyFilter(e.target.closest('.searchable-panel'));
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (!e.target.classList) return;
+      if (e.target.classList.contains('searchable-trigger')) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          openSearchable(e.target.closest('.searchable-wrap'));
+        }
+      } else if (e.target.classList.contains('searchable-query')) {
+        var wrap = e.target.sbWrap;
+        var panel = e.target.closest('.searchable-panel');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          moveActive(panel, 1);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          moveActive(panel, -1);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          var active = activeItem(panel);
+          if (active) selectItem(wrap, active);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeSearchable(wrap);
+          wrap.querySelector('.searchable-trigger').focus();
+        }
+      }
+    });
+
+    enhanceSearchable(document);
+    var searchObserver = new MutationObserver(function () { enhanceSearchable(document); });
+    searchObserver.observe(document.body, { childList: true, subtree: true });
   </script>
   {% block extra_js %}{% endblock %}
 </body>

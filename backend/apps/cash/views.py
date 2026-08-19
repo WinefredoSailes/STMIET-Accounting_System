@@ -2,6 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
+
 from .models import (
     BankAccount,
     BankReconciliation,
@@ -128,6 +130,22 @@ class CashFlowStatementViewSet(viewsets.ReadOnlyModelViewSet):
         cf = CashFlowService.generate(period_start, period_end, segment)
         out = self.get_serializer(cf)
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        """GET /api/cash/cash-flow/export/?segment=&period_start=&period_end=
+        — workbook mirroring the CF sheet of STATEMENT-OF-CASH-FLOW.xlsx."""
+        from datetime import date
+
+        from apps.foundation.models import Segment
+
+        segment = Segment.objects.get(pk=request.query_params.get("segment"))
+        period_start = date.fromisoformat(request.query_params.get("period_start"))
+        period_end = date.fromisoformat(request.query_params.get("period_end"))
+        wb = build_cash_flow_statement(segment, period_start, period_end)
+        return xlsx_response(
+            wb, f"STATEMENT-OF-CASH-FLOW-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
+        )
 
 
 class BankReconciliationViewSet(viewsets.ModelViewSet):

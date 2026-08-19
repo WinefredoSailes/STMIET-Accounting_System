@@ -20,11 +20,14 @@ urlpatterns = [
     path("journal/<int:pk>/reverse/", views.je_reverse, name="je_reverse"),
     # Reporting
     path("reports/trial-balance/", views.trial_balance, name="trial_balance"),
+    path("reports/trial-balance/export/", views.trial_balance_export, name="trial_balance_export"),
     path("reports/month-end-close/", views.month_end_close, name="month_end_close"),
     path("reports/month-end-close/advance/", views.month_end_advance, name="month_end_advance"),
     path("reports/month-end-close/complete/", views.month_end_complete, name="month_end_complete"),
     path("reports/cash-flow/", views.cash_flow, name="cash_flow"),
+    path("reports/cash-flow/export/", views.cash_flow_export, name="cash_flow_export"),
     path("reports/<str:statement_type>/", views.statement, name="statement"),
+    path("reports/<str:statement_type>/export/", views.statement_export, name="statement_export"),
     # AR
     path("ar/customers/", views.customer_list, name="customer_list"),
     path("ar/customers/new/", views.customer_create, name="customer_create"),

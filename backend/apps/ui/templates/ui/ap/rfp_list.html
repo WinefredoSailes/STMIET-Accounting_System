@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}Requests for Payment — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-6xl">
+<div class="p-6">
   <div class="flex items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-slate-900">Requests for Payment</h1>
@@ -36,8 +36,8 @@
     </div>
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-    <table class="w-full text-sm">
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[900px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3">AP No</th>
@@ -50,7 +50,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for rfp in rfps %}
+        {% for rfp in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2.5 font-mono text-xs">
             <a href="{% url 'ui:rfp_detail' rfp.id %}" class="font-semibold text-indigo-600 hover:text-indigo-800">{{ rfp.ap_number }}</a>
@@ -92,4 +92,5 @@
     </table>
   </div>
 </div>
+  {% include "ui/partials/pagination.html" %}
 {% endblock %}

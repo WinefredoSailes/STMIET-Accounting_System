@@ -1,7 +1,7 @@
 {% extends "ui/base.html" %}
 {% block title %}New Journal Entry — STMIET Accounting{% endblock %}
 {% block content %}
-<div class="p-6 max-w-4xl">
+<div class="p-6">
   <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
   <h1 class="text-xl font-semibold text-slate-900 mt-1">New Journal Entry</h1>
   <p class="text-sm text-slate-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
@@ -43,8 +43,8 @@
              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
     </div>
 
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <table class="w-full text-sm min-w-[760px]">
         <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th class="px-4 py-3 w-8">#</th>
@@ -58,7 +58,7 @@
           <tr>
             <td class="px-4 py-2 text-slate-400 line-no">1</td>
             <td class="px-4 py-2">
-              <select name="account" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+              <select name="account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 <option value="">— select —</option>
                 {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
               </select>
