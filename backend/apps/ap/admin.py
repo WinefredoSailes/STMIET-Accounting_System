@@ -17,7 +17,7 @@ class RFPLineInline(admin.TabularInline):
 
 @admin.register(RFPDocument)
 class RFPDocumentAdmin(admin.ModelAdmin):
-    list_display = ("ap_number", "rfp_date", "payee", "amount", "advance_amount", "status", "conso")
+    list_display = ("ap_number", "rfp_date", "payee", "amount", "status", "conso")
     list_filter = ("status", "segment")
     search_fields = ("ap_number", "payee__name", "particulars")
     inlines = [RFPLineInline]

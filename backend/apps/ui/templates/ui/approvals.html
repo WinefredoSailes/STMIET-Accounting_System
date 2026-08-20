@@ -1,0 +1,78 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}My Approvals — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900">My Approvals</h1>
+  <p class="text-sm text-slate-500 mt-1">
+    Documents waiting on your step &mdash; you hold the <span class="font-medium">{{ my_role }}</span> role.
+    Nothing here moves without the assigned approver (ADR-020/036).
+  </p>
+
+  {% if total == 0 %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 p-10 text-center">
+    <div class="text-4xl">&#10003;</div>
+    <div class="mt-2 text-sm font-medium text-slate-700">Your queue is clear.</div>
+    {% if my_role == "no approval role" %}
+    <div class="mt-1 text-sm text-slate-500">
+      Your account has no approval role assigned &mdash; ask the administrator to set one
+      (Admin &rarr; User profiles) so documents can be routed to you.
+    </div>
+    {% else %}
+    <div class="mt-1 text-sm text-slate-500">No document is currently waiting on your approval.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% for role, label, items in grouped %}
+  <div class="mt-6">
+    <div class="flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-slate-900 uppercase tracking-wider">As {{ label }}</h2>
+      <span class="text-xs text-slate-500">{{ assignees|get_item:role|default:"Unassigned" }}</span>
+    </div>
+    <div class="mt-2 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <table class="w-full text-sm min-w-[720px]">
+        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-3">Document</th>
+            <th class="px-4 py-3">Description</th>
+            <th class="px-4 py-3">Date</th>
+            <th class="px-4 py-3 text-right">Amount</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for item in items %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-2.5 font-mono text-xs">
+              <a class="text-indigo-600 hover:underline" href="{% if item.detail|length > 1 %}{% url item.detail.0 item.detail.1 %}{% else %}{% url item.detail.0 %}{% endif %}">{{ item.number }}</a>
+            </td>
+            <td class="px-4 py-2.5 text-slate-600">{{ item.title|default:"—" }}</td>
+            <td class="px-4 py-2.5">{{ item.date|date:"M d, Y"|default:"—" }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">₱ {{ item.amount|floatformat:2 }}</td>
+            <td class="px-4 py-2.5">
+              <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">Awaiting {{ label }}</span>
+            </td>
+            <td class="px-4 py-2.5 text-right">
+              <form method="post" action="{% if item.action|length > 1 %}{% url item.action.0 item.action.1 %}{% else %}{% url item.action.0 %}{% endif %}">
+                {% csrf_token %}
+                <button type="submit" class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">{{ item.action_label }}</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if my_role != "no approval role" and total > 0 %}
+  <p class="mt-4 text-xs text-slate-400">
+    Approvals are recorded against your login: every step shows who approved and when.
+    CNR approval is required only when an RFP exceeds ₱100,000.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

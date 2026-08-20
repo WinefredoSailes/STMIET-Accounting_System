@@ -60,11 +60,8 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
             ap_number=ap_number,
             rfp_date=data.get("rfp_date"),
             payee=payee,
-            particulars=data.get("particulars"),
-            amount=data.get("amount"),
             segment=segment,
             purpose=data.get("purpose", ""),
-            advance_amount=data.get("advance_amount", "20000.00"),
             lines=lines,
             user=request.user,
         )
@@ -87,7 +84,10 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
         step = request.data.get("step")  # checked / acctg_approved / fin_approved
         if not step:
             return Response({"detail": "step required"}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.core.approvals import require_approval_role
+
         try:
+            require_approval_role(request.user, step)
             rfp = RFPService.advance_step(rfp, role=step, user=request.user)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -96,7 +96,10 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def approve_cnr(self, request, pk=None):
         rfp = self.get_object()
+        from apps.core.approvals import require_approval_role
+
         try:
+            require_approval_role(request.user, "coo")
             rfp = RFPService.approve_cnr(rfp, user=request.user)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

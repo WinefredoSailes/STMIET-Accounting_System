@@ -19,7 +19,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class RFPLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = RFPLine
-        fields = ("id", "line_no", "segment", "account", "amount", "description")
+        fields = ("id", "line_no", "side", "segment", "account", "amount", "description")
 
 
 class RFPDocumentSerializer(serializers.ModelSerializer):
@@ -29,11 +29,11 @@ class RFPDocumentSerializer(serializers.ModelSerializer):
         model = RFPDocument
         fields = (
             "id", "ap_number", "last_ap", "rfp_date", "payee", "particulars", "purpose",
-            "segment", "amount", "advance_amount", "status", "ap_balance",
+            "segment", "amount", "status",
             "conso", "conso_line_no", "journal_entry", "created_by", "checked_by",
             "approved_by_acctg", "approved_by_fin", "approved_by_cnr", "lines",
         )
-        read_only_fields = ("ap_balance", "journal_entry")
+        read_only_fields = ("journal_entry",)
 
 
 class CONSOBatchSerializer(serializers.ModelSerializer):

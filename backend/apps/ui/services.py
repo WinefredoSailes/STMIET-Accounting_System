@@ -211,8 +211,8 @@ def rfp_timeline(rfp):
         "prepared": "Requested by",
         "submitted": "Submitted",
         "checked": "Checked / Recommending",
-        "acctg_approved": "Accounting Manager",
-        "fin_approved": "Finance Manager",
+        "acctg_approved": "Accounting Head",
+        "fin_approved": "Finance Head",
         "cnr_approved": "CNR Approval",
     }
     out = []

@@ -9,6 +9,7 @@ canonical 5-digit COA in /excel-files/COA-STMIET-2026.xlsx:
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import models
 
 from apps.core.models import AuditableModel
@@ -171,4 +172,38 @@ class Account(AuditableModel):
         if last in (0, 3, 6):
             return {0: "DHPP", 3: "DMIE", 6: "OPS"}[last]
         return "ALL"
+
+
+class UserProfile(AuditableModel):
+    """Holds the approval role of a login (ADR-020, ADR-036).
+
+    Three positions drive every approval:
+      - `staff`  : accounting assistant / bookkeeper / accounting staff /
+                   cashier — prepares and submits documents (same access).
+      - `head`   : the Accounting & Finance Head (Alywin Aidan D. Baje in
+                   the demo seed). He checks, and approves as accounting
+                   head AND finance head — every RFP, every CV.
+      - `coo`    : the COO, who acts as CNR approver for RFPs above P100k.
+
+    The "My Approvals" inbox and the role gates on the approve endpoints
+    are driven exclusively by this mapping.
+    """
+
+    class ApprovalRole(models.TextChoices):
+        STAFF = "staff", "Accounting Staff / Assistant / Bookkeeper / Cashier"
+        HEAD = "head", "Accounting & Finance Head"
+        COO = "coo", "COO (CNR)"
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
+    )
+    approval_role = models.CharField(
+        max_length=16, choices=ApprovalRole.choices, blank=True, default=""
+    )
+
+    class Meta:
+        ordering = ["user__username"]
+
+    def __str__(self):
+        return f"{self.user} — {self.get_approval_role_display() or 'no role'}"
 

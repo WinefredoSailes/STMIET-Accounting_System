@@ -50,11 +50,9 @@ SUPPLIERS = [
 ]
 
 ROLES = [
-    ("checker", "Checker"),
-    ("acctg", "Accounting Head"),
-    ("fin", "Finance Manager"),
-    ("cnr", "CNR Manager"),
-    ("cashier", "Cashier"),
+    ("staff", "Accounting Assistant", "staff"),
+    ("alywin", "Alywin Aidan D. Baje", "head"),
+    ("coo", "Chief Operating Officer (CNR)", "coo"),
 ]
 
 
@@ -80,12 +78,17 @@ class Command(BaseCommand):
 
     def _users(self):
         U = get_user_model()
-        for username, first in ROLES:
+        from apps.foundation.models import UserProfile
+
+        for username, first, role in ROLES:
             user, created = U.objects.get_or_create(username=username, defaults={"first_name": first})
             if created:
                 user.set_password("Demo@2026")
                 user.is_staff = True
                 user.save()
+            UserProfile.objects.update_or_create(
+                user=user, defaults={"approval_role": role}
+            )
         self.stdout.write(f"users: {U.objects.count()}")
 
     def _segments(self):
@@ -184,7 +187,7 @@ class Command(BaseCommand):
                 cash_account=pnb,
                 segment=seg,
                 applied_to=inv,
-                user=self._user("cashier"),
+                user=self._user("staff"),
             )
             self.stdout.write("AR-2026-0003 posted (applied to SI-2026-0001)")
         if not AcknowledgmentReceipt.objects.filter(receipt_no="AR-2026-0501").exists():
@@ -195,7 +198,7 @@ class Command(BaseCommand):
                 amount="12500.00",
                 cash_account=coh,
                 segment=seg,
-                user=self._user("cashier"),
+                user=self._user("staff"),
             )
             self.stdout.write("AR-2026-0501 posted (unearned)")
         today = date.today()
@@ -218,7 +221,7 @@ class Command(BaseCommand):
             ("A2026-001", date(2026, 1, 7), "60000.00", "63210", "Fuel transport subcontract"),
             ("A2026-002", date(2026, 1, 13), "150000.00", "63210", "Bulk fuel purchase (CNR escalation)"),
         ]
-        for ap_number, rfp_date, amount, expense_code, particulars in specs:
+        for ap_number, rfp_date, amount, expense_code, description in specs:
             if RFPDocument.objects.filter(ap_number=ap_number).exists():
                 created.append(RFPDocument.objects.get(ap_number=ap_number))
                 continue
@@ -226,12 +229,18 @@ class Command(BaseCommand):
                 ap_number=ap_number,
                 rfp_date=rfp_date,
                 payee=payee,
-                particulars=particulars,
-                amount=amount,
                 segment=seg,
-                advance_amount="20000.00",
-                lines=[{"segment": seg, "account_code": expense_code, "amount": amount}],
-                user=self._user("cashier"),
+                lines=[
+                    {
+                        "side": "dr", "segment": seg, "account_code": expense_code,
+                        "amount": amount, "description": description,
+                    },
+                    {
+                        "side": "cr", "segment": seg, "account_code": "20000",
+                        "amount": amount, "description": f"AP - {payee.name}",
+                    },
+                ],
+                user=self._user("staff"),
             )
             self._approve_chain(rfp)
             created.append(rfp)
@@ -239,17 +248,18 @@ class Command(BaseCommand):
         return created
 
     def _approve_chain(self, rfp):
-        """Walk the RFP through the ADR-020 chain with distinct users."""
+        """ADR-036: Alywin (head) checks + approves acctg + fin; the COO
+        signs as CNR only above P100k."""
         from apps.ap.services import RFPService
 
         if rfp.status == "prepared":
-            RFPService.advance_step(rfp, role="checked", user=self._user("checker"))
+            RFPService.advance_step(rfp, role="checked", user=self._user("alywin"))
         if rfp.status == "checked":
-            RFPService.advance_step(rfp, role="acctg_approved", user=self._user("acctg"))
+            RFPService.advance_step(rfp, role="acctg_approved", user=self._user("alywin"))
         if rfp.status == "acctg_approved":
-            RFPService.advance_step(rfp, role="fin_approved", user=self._user("fin"))
+            RFPService.advance_step(rfp, role="fin_approved", user=self._user("alywin"))
         if rfp.status == "fin_approved" and rfp.amount > 100000:
-            RFPService.approve_cnr(rfp, user=self._user("cnr"))
+            RFPService.approve_cnr(rfp, user=self._user("coo"))
         return rfp
 
     def _conso_post(self, rfps, segs):
@@ -265,7 +275,7 @@ class Command(BaseCommand):
                 rfp.conso = batch
                 rfp.save(update_fields=["conso", "updated_at"])
         if batch.status != "posted" and all(r.status in ("fin_approved", "cnr_approved") for r in rfps):
-            CONSOService.post_batch(batch, user=self._user("acctg"))
+            CONSOService.post_batch(batch, user=self._user("alywin"))
             self.stdout.write(f"CONSO-2026-01 posted: {len(rfps)} RFPs")
 
     def _cv_chain(self, suppliers, banks, segs):
@@ -285,25 +295,25 @@ class Command(BaseCommand):
                 gross_amount="60000.00",
                 withheld_tax="6000.00",
                 check_no="CHK-0001",
-                user=self._user("cashier"),
+                user=self._user("staff"),
             )
             self.stdout.write("CV-2026-0001 created")
         disb = CheckDisbursement.objects.filter(cv=cv).first()
         if cv.status == "created":
             if not disb or disb.status == "created":
-                CheckDisbursementService.sign_cnr(cv, user=self._user("cnr"))
+                CheckDisbursementService.sign_cnr(cv, user=self._user("coo"))
             cv.status = "signed"
-            cv.signed_by = self._user("cnr")
+            cv.signed_by = self._user("coo")
             cv.save(update_fields=["status", "signed_by", "updated_at"])
         if cv.status == "signed":
             if not disb or disb.status == "signed":
-                CheckDisbursementService.release_quibs(cv, user=self._user("fin"))
+                CheckDisbursementService.release_quibs(cv, user=self._user("alywin"))
             cv.status = "released"
-            cv.released_by = self._user("fin")
+            cv.released_by = self._user("alywin")
             cv.save(update_fields=["status", "released_by", "updated_at"])
         if cv.status == "released":
             if not disb or disb.status == "released":
-                CheckDisbursementService.clear(cv, banks["PNB-DHPP"], user=self._user("acctg"))
+                CheckDisbursementService.clear(cv, banks["PNB-DHPP"], user=self._user("alywin"))
             cv.status = "cleared"
             cv.save(update_fields=["status", "updated_at"])
         self.stdout.write("CV-2026-0001 signed/released/cleared")
@@ -319,7 +329,7 @@ class Command(BaseCommand):
             amount="25000.00",
             purpose="fund transfer to PNB",
             transfer_date=date(2026, 1, 14),
-            user=self._user("fin"),
+            user=self._user("alywin"),
         )
         self.stdout.write("transfer BDO-DHPP -> PNB-DHPP 25,000 posted")
 
@@ -340,7 +350,7 @@ class Command(BaseCommand):
             },
         )
         if adv.liquidated_amount == 0 and adv.status != "liquidated":
-            AdvanceService.liquidate(adv, amount="5000.00", liquidate_date=date(2026, 1, 15), user=self._user("fin"))
+            AdvanceService.liquidate(adv, amount="5000.00", liquidate_date=date(2026, 1, 15), user=self._user("alywin"))
             self.stdout.write("advance Alywin B. granted + partially liquidated")
 
     def _cycles_and_reports(self, segs):

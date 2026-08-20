@@ -8,10 +8,10 @@ The RFP (ACCTG-FOR-012) is the central document (ADR-018):
   - 4-level approval chain (ADR-020): Prepared -> Checked (Alywin) ->
     Acctg Manager -> Finance Manager; >P100k escalates to CNR
   - P2,500 payment threshold: >= RFP, < petty cash voucher (ADR-022)
-  - Canonical JE (RESOLUTION #5):
-      Dr [Expense/Inventory/Asset]  {TOTAL}
-          Cr Advances to Employees  {advance, default 20,000}
-          Cr AP - Vendor             {TOTAL - advance}
+  - Distribution lines carry an explicit Dr/Cr side; the posted JE is built
+    exactly from the lines as entered and must balance (Dr total = Cr total).
+    Credit accounts (AP, payables to officers, advances clearing, WHT) are
+    entered as lines like any debit/expense account.
   - CONSO batch grading approval by Accounting Head posts all RFPs' JEs
     together (POSTING_RULES 7.2/7.3)
 
@@ -64,17 +64,17 @@ class RFPDocument(AuditableModel):
     last_ap = models.CharField(max_length=16, blank=True)  # per-vendor previous A####
     rfp_date = models.DateField(db_index=True)
     payee = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="rfps")
-    particulars = models.CharField(max_length=500)
+    # Mirrors the first distribution line's description (the form has no
+    # separate "purpose of payment" box); used for register/detail display.
+    particulars = models.CharField(max_length=500, blank=True)
     purpose = models.CharField(max_length=128, blank=True)
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="rfps")
+    # Total of the DEBIT lines (the amount being paid). Credit lines balance it.
     amount = models.DecimalField(max_digits=18, decimal_places=2)
-    # ADR-021: standing credit to Advances to Employees (default P20,000),
-    # overridable per RFP.
-    advance_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("20000.00"))
     # ADR-018 status chain.
     status = models.CharField(max_length=24, default="draft", db_index=True)
-    # Multi-segment charge lines (ADR-023): one or more debits splitting
-    # {TOTAL} across segments; computed debits must sum to amount.
+    # Dr/Cr distribution lines (ADR-023): every line names a COA account and
+    # its side; debits must equal credits so the posted JE balances.
     conso = models.ForeignKey(
         "CONSOBatch", null=True, blank=True, on_delete=models.PROTECT, related_name="rfps"
     )
@@ -91,20 +91,23 @@ class RFPDocument(AuditableModel):
     class Meta:
         ordering = ["-rfp_date", "-ap_number"]
 
-    @property
-    def ap_balance(self):
-        return self.amount - self.advance_amount
-
     def __str__(self):
         return f"{self.ap_number} {self.payee} {self.amount} ({self.status})"
 
 
 class RFPLine(models.Model):
-    """One debit charge line of the RFP (ADR-023: segment split). The sum of
-    line amounts must equal the RFP total. Each line names the COA account."""
+    """One Dr/Cr distribution line of the RFP (ADR-023). The sum of debit
+    lines is the RFP total; the sum of credit lines must equal it. Each line
+    names the COA account and its side — the posted JE is built exactly from
+    these lines."""
+
+    class Side(models.TextChoices):
+        DEBIT = "dr", "Dr"
+        CREDIT = "cr", "Cr"
 
     rfp = models.ForeignKey(RFPDocument, on_delete=models.PROTECT, related_name="lines")
     line_no = models.PositiveIntegerField()
+    side = models.CharField(max_length=2, choices=Side.choices, default=Side.DEBIT)
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="rfp_lines")
     account = models.ForeignKey("foundation.Account", on_delete=models.PROTECT, related_name="rfp_lines")
     amount = models.DecimalField(max_digits=18, decimal_places=2)

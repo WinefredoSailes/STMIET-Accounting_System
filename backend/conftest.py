@@ -40,6 +40,21 @@ def user(db):
 
 
 @pytest.fixture
+def role_users(db):
+    """One user per approval position with a UserProfile (ADR-036 map):
+    staff prepares, head (Alywin) checks + approves acctg/fin, coo signs CNR."""
+    from apps.foundation.models import UserProfile
+
+    U = get_user_model()
+    out = {}
+    for role in ("staff", "head", "coo"):
+        u = U.objects.create_user(username=role, password="x")
+        UserProfile.objects.create(user=u, approval_role=role)
+        out[role] = u
+    return out
+
+
+@pytest.fixture
 def accounts(db):
     """Canonical 5-digit COA slice needed by posting tests (ADR-003)."""
     rows = [

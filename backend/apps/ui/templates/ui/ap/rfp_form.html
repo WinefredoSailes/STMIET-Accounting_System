@@ -27,44 +27,30 @@
         <input type="date" name="rfp_date" id="id_rfp_date" required
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
-      <div class="md:col-span-2">
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_particulars">Purpose of payment</label>
-        <textarea name="particulars" id="id_particulars" required rows="3" maxlength="500"
-                  class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"></textarea>
-      </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
         <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
         </select>
       </div>
-      <div>
+      <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_purpose">Cost center / ref.</label>
         <input type="text" name="purpose" id="id_purpose" maxlength="128"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_amount">Total amount (₱)</label>
-        <input type="number" step="0.01" min="2500" name="amount" id="id_amount" required
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_advance_amount">Advance credit (₱)</label>
-        <input type="number" step="0.01" min="0" name="advance_amount" id="id_advance_amount" value="20000.00"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
-      </div>
     </div>
 
     <div class="px-6 py-3 border-t border-slate-200 text-xs uppercase tracking-wider text-slate-500">
-      Distribution charges — chart of accounts
+      Distribution charges — chart of accounts (Dr/Cr)
     </div>
     <div class="px-6 pb-4">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm min-w-[880px]">
         <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th class="py-2">#</th>
             <th class="py-2">Account (GL)</th>
-            <th class="py-2">Segment</th>
+            <th class="py-2 w-24">Dr / Cr</th>
+            <th class="py-2 w-32">Segment</th>
             <th class="py-2">Description</th>
             <th class="py-2 text-right w-40">Amount</th>
           </tr>
@@ -79,6 +65,12 @@
               </select>
             </td>
             <td class="py-2">
+              <select name="line_side" class="line-side w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="dr">Dr</option>
+                <option value="cr">Cr</option>
+              </select>
+            </td>
+            <td class="py-2">
               <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
               </select>
@@ -89,11 +81,15 @@
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="4" class="py-2 text-right font-semibold">TOTAL</td>
-            <td id="total-lines" class="py-2 text-right font-semibold tabular-nums">0.00</td>
+            <td colspan="5" class="py-2 text-right font-semibold">TOTAL — DEBIT</td>
+            <td id="total-dr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
           </tr>
           <tr>
-            <td colspan="5" class="py-2">
+            <td colspan="5" class="py-2 text-right font-semibold">TOTAL — CREDIT</td>
+            <td id="total-cr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
+          </tr>
+          <tr>
+            <td colspan="6" class="py-2">
               <button type="button" id="add-line"
                       class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
                 + Add line
@@ -102,7 +98,8 @@
           </tr>
         </tfoot>
       </table>
-      <p class="mt-2 text-xs text-slate-500">Lines must total the RFP amount — the service rejects mismatches. Minimum RFP is ₱2,500 (use PCV below it).</p>
+      <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Debits and credits balance.</p>
+      <p class="mt-1 text-xs text-slate-500">Every line carries its own Dr/Cr side — credit accounts (AP, payables to officers, advances clearing, WHT) are entered as lines just like expenses. Debits must equal credits; minimum RFP is ₱2,500 (use PCV below it).</p>
     </div>
 
     <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
@@ -120,21 +117,41 @@
   const body = document.getElementById('lines-body');
   const tpl = body.querySelector('tr');
   const addBtn = document.getElementById('add-line');
-  const total = document.getElementById('total-lines');
+  const drTotal = document.getElementById('total-dr');
+  const crTotal = document.getElementById('total-cr');
+  const hint = document.getElementById('balance-hint');
 
   function recalc() {
-    let sum = 0;
-    body.querySelectorAll('.line-amount').forEach(function (i) {
-      sum += parseFloat(i.value) || 0;
+    let dr = 0, cr = 0;
+    body.querySelectorAll('tr').forEach(function (row) {
+      const amt = parseFloat(row.querySelector('.line-amount').value) || 0;
+      const side = row.querySelector('.line-side').value;
+      if (side === 'cr') cr += amt; else dr += amt;
     });
-    total.textContent = sum.toFixed(2);
+    drTotal.textContent = dr.toFixed(2);
+    crTotal.textContent = cr.toFixed(2);
+    if (dr !== cr) {
+      hint.textContent = 'Debits and credits do not balance (Dr ' + dr.toFixed(2) + ' vs Cr ' + cr.toFixed(2) + ').';
+      hint.className = 'mt-2 text-xs text-red-700 font-medium';
+    } else {
+      hint.textContent = 'Debits and credits balance.';
+      hint.className = 'mt-2 text-xs text-emerald-700';
+    }
   }
   addBtn.addEventListener('click', function () {
     const row = tpl.cloneNode(true);
     row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    row.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
+    const accSel = row.querySelector('select[data-searchable]');
+    if (accSel) {
+      accSel.removeAttribute('data-search-enhanced');
+      const wrap = accSel.closest('.searchable-wrap');
+      if (wrap) wrap.replaceWith(accSel);
+      accSel.classList.add('hidden');
+    }
     row.querySelector('.line-no').textContent = body.querySelectorAll('tr').length + 1;
     body.appendChild(row);
-    row.querySelectorAll('.line-amount').forEach(function (i) { i.addEventListener('input', recalc); });
+    row.querySelectorAll('.line-amount, .line-side').forEach(function (i) { i.addEventListener('input', recalc); });
   });
   body.addEventListener('input', recalc);
   recalc();

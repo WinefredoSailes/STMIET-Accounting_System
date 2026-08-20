@@ -1,7 +1,8 @@
 """AP contract tests (BUILD-PLAN Phase 3).
 
-- RFP canonical JE: Dr lines | Cr Advances 20k | Cr AP balance (RESOLUTION #5)
-- P2,500 threshold; advance < total; line sums must equal amount
+- RFP JE is built exactly from the Dr/Cr distribution lines as entered;
+  Dr total must equal Cr total, amount = total of debit lines
+- P2,500 threshold on the debit total
 - 4-level approval, same-person rule, CNR escalation >P100k (ADR-020)
 - CONSO batch posts all RFPs atomically (POSTING_RULES 7.3)
 - CV clears AP with WHT split (7.4)
@@ -31,7 +32,10 @@ def supplier(db, segment):
 
 @pytest.fixture
 def rfp_lines(db, segment, accounts):
-    return [{"segment": segment, "account_code": "61100", "amount": "85000.00"}]
+    return [
+        {"side": "dr", "segment": segment, "account_code": "61100", "amount": "85000.00", "description": "Fuel delivery"},
+        {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00", "description": "AP - Shandong Fuel Depot"},
+    ]
 
 
 @pytest.fixture
@@ -42,140 +46,188 @@ def alywin(db):
 
 
 class TestRFPCreation:
-    def test_canonical_je_balances(self, company, segment, supplier, rfp_lines, alywin):
+    def test_manual_sides_drive_amount_and_particulars(self, company, segment, supplier, rfp_lines, alywin):
         rfp = RFPService.create_rfp(
             ap_number="A0001", rfp_date=date(2026, 1, 15), payee=supplier,
-            particulars="Fuel delivery", amount="85000.00", segment=segment,
-            lines=rfp_lines, user=alywin,
+            segment=segment, lines=rfp_lines, user=alywin,
         )
-        assert rfp.advance_amount == Decimal("20000.00")
-        assert rfp.ap_balance == Decimal("65000.00")
+        assert rfp.amount == Decimal("85000.00")  # total of the debit lines
+        assert rfp.particulars == "Fuel delivery"  # mirrors the first line's description
         assert supplier.last_ap == "A0001"
+        sides = {l.side for l in rfp.lines.all()}
+        assert sides == {"dr", "cr"}
 
-    def test_below_threshold_rejected(self, company, segment, supplier, alywin):
+    def test_below_threshold_rejected(self, company, segment, supplier, alywin, accounts):
         with pytest.raises(ValidationError, match="petty cash"):
             RFPService.create_rfp(
-                ap_number="A0002", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="Small", amount="2400.00", segment=segment,
-                lines=[{"segment": segment, "account_code": "61100", "amount": "2400.00"}],
+                ap_number="A0002", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "2400.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "2400.00"},
+                ],
                 user=alywin,
             )
 
-    def test_line_sums_must_match_amount(self, company, segment, supplier, alywin):
-        with pytest.raises(ValidationError, match="Charge lines total"):
+    def test_unbalanced_lines_rejected(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="do not balance"):
             RFPService.create_rfp(
-                ap_number="A0003", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="Mismatch", amount="10000.00", segment=segment,
-                advance_amount="5000.00",
-                lines=[{"segment": segment, "account_code": "61100", "amount": "9999.00"}],
+                ap_number="A0003", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "10000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
+                ],
                 user=alywin,
             )
 
-    def test_advance_must_be_less_than_total(self, company, segment, supplier, alywin):
-        with pytest.raises(ValidationError, match="Advance credit"):
+    def test_invalid_side_rejected(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="must be Dr or Cr"):
             RFPService.create_rfp(
-                ap_number="A0004", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="No-op", amount="20000.00", segment=segment,
-                advance_amount="20000.00",
-                lines=[{"segment": segment, "account_code": "61100", "amount": "20000.00"}],
+                ap_number="A0004", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "xx", "segment": segment, "account_code": "61100", "amount": "85000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00"},
+                ],
+                user=alywin,
+            )
+
+    def test_zero_amount_line_rejected(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="greater than zero"):
+            RFPService.create_rfp(
+                ap_number="A0005", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "0"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00"},
+                ],
                 user=alywin,
             )
 
     def test_empty_amount_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
-        """Regression: a blank form field must not 500 with decimal.InvalidOperation."""
+        """Regression: a blank line amount must not 500 with decimal.InvalidOperation."""
         with pytest.raises(ValidationError, match="Amount cannot be empty"):
             RFPService.create_rfp(
-                ap_number="A0005", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="Blank amount", amount="", segment=segment,
-                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
-                user=alywin,
-            )
-
-    def test_empty_advance_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
-        with pytest.raises(ValidationError, match="Amount cannot be empty"):
-            RFPService.create_rfp(
-                ap_number="A0006", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="Blank advance", amount="85000.00", segment=segment,
-                advance_amount="",
-                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+                ap_number="A0006", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": ""},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00"},
+                ],
                 user=alywin,
             )
 
     def test_malformed_amount_raises_friendly_validation_error(self, company, segment, supplier, alywin, accounts):
         with pytest.raises(ValidationError, match="Invalid amount"):
             RFPService.create_rfp(
-                ap_number="A0007", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars="Text in amount", amount="85000.abc", segment=segment,
-                lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+                ap_number="A0007", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "85000.abc"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00"},
+                ],
                 user=alywin,
             )
 
     def test_thousands_separators_are_stripped(self, company, segment, supplier, alywin, accounts):
         """Users may paste '85,000.00'; money() normalizes it."""
         rfp = RFPService.create_rfp(
-            ap_number="A0008", rfp_date=date(2026, 1, 15), payee=supplier,
-            particulars="Comma amount", amount="85,000.00", segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "85000.00"}],
+            ap_number="A0008", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "85,000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "85000.00"},
+            ],
             user=alywin,
         )
         assert rfp.amount == Decimal("85000.00")
 
+    def test_credit_account_lines_are_allowed(self, company, segment, supplier, alywin, accounts):
+        """'Payables to officers' style credit lines are valid (Dr/Cr per line)."""
+        rfp = RFPService.create_rfp(
+            ap_number="A0009", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "85000.00", "description": "Machinery parts"},
+                {"side": "cr", "segment": segment, "account_code": "21010", "amount": "85000.00", "description": "Payables to officers"},
+            ],
+            user=alywin,
+        )
+        assert rfp.amount == Decimal("85000.00")
+        cr_line = rfp.lines.get(side="cr")
+        assert cr_line.account.code == "21010"
+
 
 class TestRFPApproval:
-    def test_four_level_chain(self, company, segment, supplier, rfp_lines, alywin):
-        check = type("U", (), {})()
-        # Real users for each role.
+    def test_chain_with_head_holding_all_steps(self, company, segment, supplier,
+                                               rfp_lines, alywin):
+        """ADR-036: the Accounting & Finance Head (Alywin) checks then
+        approves acctg + fin on the same RFP; the COO is a fresh hand."""
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
-        checker = User.objects.create_user(username="checker", password="x")
-        acctg = User.objects.create_user(username="acctg", password="x")
-        fin = User.objects.create_user(username="fin", password="x")
+        head = User.objects.create_user(username="head", password="x")
+        coo = User.objects.create_user(username="coo", password="x")
 
         rfp = RFPService.create_rfp(
-            ap_number="A0010", rfp_date=date(2026, 1, 15), payee=supplier,
-            particulars="Chain", amount="50000.00", segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "50000.00"}],
+            ap_number="A0010", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00"},
+            ],
             user=alywin,
         )
         assert rfp.status == "prepared"
 
-        rfp = RFPService.advance_step(rfp, role="checked", user=checker)
-        assert rfp.status == "checked"
-        rfp = RFPService.advance_step(rfp, role="acctg_approved", user=acctg)
-        rfp = RFPService.advance_step(rfp, role="fin_approved", user=fin)
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
         assert rfp.status == "fin_approved"
-        assert rfp.approved_by_fin == fin
+        assert rfp.checked_by == head and rfp.approved_by_acctg == head
+        assert rfp.approved_by_fin == head
 
-        # Same person cannot hold two roles (checked then acctg_approved).
+        # The preparer cannot approve their own disbursement.
         rfp2 = RFPService.create_rfp(
-            ap_number="A0011", rfp_date=date(2026, 1, 16), payee=supplier,
-            particulars="Same person", amount="5000.00", segment=segment,
-            advance_amount="4000.00",
-            lines=[{"segment": segment, "account_code": "61100", "amount": "5000.00"}],
+            ap_number="A0011", rfp_date=date(2026, 1, 16), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
+            ],
             user=alywin,
         )
-        rfp2 = RFPService.advance_step(rfp2, role="checked", user=checker)
-        with pytest.raises(ValidationError, match="same user"):
-            RFPService.advance_step(rfp2, role="acctg_approved", user=checker)
+        with pytest.raises(ValidationError, match="cannot approve it again"):
+            RFPService.advance_step(rfp2, role="checked", user=alywin)
+
+        # Re-recording a step is an explicit error, never silent.
+        with pytest.raises(ValidationError, match="already recorded"):
+            RFPService.advance_step(rfp, role="fin_approved", user=head)
+
+        # The COO must be a fresh hand: someone who handled an earlier step
+        # cannot sign as CNR.
+        rfp3 = RFPService.create_rfp(
+            ap_number="A0012", rfp_date=date(2026, 1, 17), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "150000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "150000.00"},
+            ],
+            user=alywin,
+        )
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp3 = RFPService.advance_step(rfp3, role=role, user=head)
+        with pytest.raises(ValidationError, match="did not"):
+            RFPService.approve_cnr(rfp3, user=head)
+        rfp3 = RFPService.approve_cnr(rfp3, user=coo)
+        assert rfp3.approved_by_cnr == coo
 
     def test_cnr_escalation(self, company, segment, supplier, rfp_lines, alywin):
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
-        checker = User.objects.create_user(username="checker2", password="x")
-        acctg = User.objects.create_user(username="acctg2", password="x")
-        fin = User.objects.create_user(username="fin2", password="x")
+        head = User.objects.create_user(username="head", password="x")
         cnr = User.objects.create_user(username="cnr", password="x")
 
         rfp = RFPService.create_rfp(
-            ap_number="A0020", rfp_date=date(2026, 1, 15), payee=supplier,
-            particulars="Big", amount="150000.00", segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "150000.00"}],
+            ap_number="A0020", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "150000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "150000.00"},
+            ],
             user=alywin,
         )
-        for role, u in (("checked", checker), ("acctg_approved", acctg), ("fin_approved", fin)):
-            rfp = RFPService.advance_step(rfp, role=role, user=u)
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
         rfp = RFPService.approve_cnr(rfp, user=cnr)
         assert rfp.approved_by_cnr == cnr
 
@@ -185,20 +237,20 @@ class TestCONSOPosting:
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
-        checker = User.objects.create_user(username="checker3", password="x")
-        acctg = User.objects.create_user(username="acctg3", password="x")
-        fin = User.objects.create_user(username="fin3", password="x")
+        head = User.objects.create_user(username="head", password="x")
 
         rfp1, rfp2 = [], []
         for i, amt in enumerate(("30000.00", "40000.00"), start=1):
             r = RFPService.create_rfp(
-                ap_number=f"A888{i}0", rfp_date=date(2026, 1, 15), payee=supplier,
-                particulars=f"Batch {i}", amount=amt, segment=segment,
-                lines=[{"segment": segment, "account_code": "61100", "amount": amt}],
+                ap_number=f"A888{i}0", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": amt},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": amt},
+                ],
                 user=alywin,
             )
-            for role, u in (("checked", checker), ("acctg_approved", acctg), ("fin_approved", fin)):
-                r = RFPService.advance_step(r, role=role, user=u)
+            for role in ("checked", "acctg_approved", "fin_approved"):
+                r = RFPService.advance_step(r, role=role, user=head)
             rfp1.append(r)
 
         batch = CONSOBatch.objects.create(batch_no="CONSO-2026-01", conso_date=date(2026, 1, 20))
@@ -206,7 +258,7 @@ class TestCONSOPosting:
             r.conso = batch
             r.save(update_fields=["conso", "updated_at"])
 
-        CONSOService.post_batch(batch, user=acctg)
+        CONSOService.post_batch(batch, user=head)
 
         batch.refresh_from_db()
         assert batch.status == "posted"
@@ -217,17 +269,18 @@ class TestCONSOPosting:
             je = r.journal_entry
             assert je.is_balanced
             lines = {l.line_no: l for l in je.lines.all()}
-            # line 1 debit = amount; last line credit = AP balance.
+            # lines are posted exactly as entered: Dr expense, Cr AP.
             assert lines[1].debit == r.amount
-            assert lines[3].credit == r.ap_balance
-            assert lines[2].account.code == "12070"  # advances DHPP
+            assert lines[2].credit == r.amount
+            assert lines[2].account.code == "20000"  # AP DHPP
 
     def test_batch_requires_finance_approval(self, company, segment, supplier, rfp_lines, alywin, accounts):
         rfp = RFPService.create_rfp(
-            ap_number="A88809", rfp_date=date(2026, 1, 15), payee=supplier,
-            particulars="Unapproved", amount="5000.00", segment=segment,
-            advance_amount="4000.00",
-            lines=[{"segment": segment, "account_code": "61100", "amount": "5000.00"}],
+            ap_number="A88809", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
+            ],
             user=alywin,
         )
         batch = CONSOBatch.objects.create(batch_no="CONSO-2026-02", conso_date=date(2026, 1, 20))

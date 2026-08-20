@@ -22,10 +22,13 @@ User = get_user_model()
 
 @pytest.fixture
 def roles(db):
-    """One active user per approval role (same person cannot hold two)."""
+    """One active user per approval position: staff, head (Alywin), coo."""
+    from apps.foundation.models import UserProfile
+
     out = {}
-    for username in ("checker", "acctg", "fin", "cnr", "cashier"):
+    for username in ("staff", "head", "coo"):
         out[username] = User.objects.create_user(username=username, password="x")
+        UserProfile.objects.create(user=out[username], approval_role=username)
     return out
 
 
@@ -87,8 +90,8 @@ class TestEndToEndWorkflow:
         from apps.cash.services import CashCycleService, CashFlowService, CollectiblesService
         from apps.posting.models import JournalEntry, PostingStatus
 
-        cashier = roles["cashier"]
-        client.force_login(cashier)
+        staff = roles["staff"]
+        client.force_login(staff)
 
         # 1. Customer master --------------------------------------------------
         resp = client.post(
@@ -117,79 +120,82 @@ class TestEndToEndWorkflow:
         )
 
         # 4. RFP created + approved via the UI buttons -------------------------
-        # 4a. Invalid submissions must NOT 500: blank amount, blank date,
-        # malformed amount — the form re-renders with an error.
+        # 4a. Invalid submissions must NOT 500: blank line amount, blank date,
+        # malformed amount, unbalanced Dr/Cr — the form re-renders with an error.
         from apps.ap.models import RFPDocument
 
         before = RFPDocument.objects.count()
         for bad in (
-            {"amount": "", "advance_amount": "20000.00", "rfp_date": "2026-01-07"},
-            {"amount": "150000.00", "advance_amount": "20000.00", "rfp_date": ""},
-            {"amount": "150000.00x", "advance_amount": "20000.00", "rfp_date": "2026-01-07"},
+            {"line_amount": ["", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
+            {"line_amount": ["150000.00", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": ""},
+            {"line_amount": ["150000.00x", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
+            {"line_amount": ["150000.00", "50000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
         ):
             resp = client.post(
                 "/ap/rfps/new/",
                 {"payee": supplier.id, "segment": segment.id, **bad,
-                 "particulars": "E2E bulk fuel", "purpose": "purchase",
-                 "line_segment": [segment.id], "line_account": ["61100"],
-                 "line_amount": ["150000.00"], "line_description": ["Fuel"],
+                 "purpose": "purchase",
+                 "line_segment": [segment.id, segment.id],
+                 "line_account": ["61100", "20000"],
+                 "line_description": ["Fuel", "AP - E2E Fuel Depot"],
                  },
             )
             assert resp.status_code == 200, f"bad RFP posted {bad!r} -> {resp.status_code}"
         assert RFPDocument.objects.count() == before  # nothing persisted
 
-        # 4b. Comma thousands and a blank advance credit are tolerated:
-        # money() strips separators; empty advance reverts to the 20k default.
+        # 4b. Comma thousands are tolerated: money() strips separators.
         resp = client.post(
             "/ap/rfps/new/",
             {"payee": supplier.id, "segment": segment.id, "rfp_date": "2026-01-07",
-             "particulars": "E2E blank advance", "purpose": "purchase",
-             "amount": "150,000.00", "advance_amount": "",
-             "line_segment": [segment.id], "line_account": ["61100"],
-             "line_amount": ["150000.00"], "line_description": ["Fuel"],
+             "purpose": "purchase",
+             "line_segment": [segment.id, segment.id],
+             "line_account": ["61100", "20000"],
+             "line_amount": ["150,000.00", "150000.00"],
+             "line_side": ["dr", "cr"],
+             "line_description": ["Fuel", "AP - E2E Fuel Depot"],
              },
         )
         assert resp.status_code == 302
-        default_adv = RFPDocument.objects.get(particulars="E2E blank advance")
-        assert default_adv.amount == Decimal("150000.00")
-        assert default_adv.advance_amount == Decimal("20000.00")
+        comma_rfp = RFPDocument.objects.get(payee=supplier, amount=Decimal("150000.00"))
+        assert comma_rfp.particulars == "Fuel"  # mirrors the first line description
 
         # 4c. Happy path: valid RFP created + approved step by step.
         resp = client.post(
             "/ap/rfps/new/",
             {"payee": supplier.id, "segment": segment.id, "rfp_date": "2026-01-07",
-             "particulars": "E2E bulk fuel", "purpose": "purchase",
-             "amount": "150000.00", "advance_amount": "20000.00",
-             "line_segment": [segment.id], "line_account": ["61100"],
-             "line_amount": ["150000.00"], "line_description": ["Fuel"],
+             "purpose": "purchase",
+             "line_segment": [segment.id, segment.id],
+             "line_account": ["61100", "20000"],
+             "line_amount": ["150000.00", "150000.00"],
+             "line_side": ["dr", "cr"],
+             "line_description": ["E2E bulk fuel", "AP - E2E Fuel Depot"],
              },
         )
         assert resp.status_code == 302
         rfp = RFPDocument.objects.get(payee=supplier, particulars="E2E bulk fuel")
         assert rfp.status == "prepared"
-        # 4d. Routing guard: an out-of-order approver (cashier has no step here)
-        # must not move the RFP; the redirect keeps it in "prepared".
-        client.force_login(roles["cashier"])
+        # 4d. Routing guard: the preparer (staff) has no step on a prepared
+        # RFP and cannot approve it — the redirect keeps it in "prepared".
+        client.force_login(roles["staff"])
         client.post(f"/ap/rfps/{rfp.id}/approve/")
         rfp.refresh_from_db()
         assert rfp.status == "prepared"
-        # check -> acctg -> fin, each by a different user
-        client.force_login(roles["checker"])
+        # head (Alywin) checks then approves acctg + fin — two clicks,
+        # two statuses, same person (ADR-036 relaxed same-user rule)
+        client.force_login(roles["head"])
         client.post(f"/ap/rfps/{rfp.id}/approve/")
-        client.force_login(roles["acctg"])
         client.post(f"/ap/rfps/{rfp.id}/approve/")
-        client.force_login(roles["fin"])
         client.post(f"/ap/rfps/{rfp.id}/approve/")
         rfp.refresh_from_db()
         assert rfp.status == "fin_approved"
-        # CNR escalation (above P100k)
-        client.force_login(roles["cnr"])
+        # CNR escalation (above P100k) — only the COO is a fresh hand
+        client.force_login(roles["coo"])
         client.post(f"/ap/rfps/{rfp.id}/approve-cnr/")
         rfp.refresh_from_db()
         assert rfp.status == "cnr_approved"
 
         # 5. CONSO batch: open -> add RFP -> post -----------------------------
-        client.force_login(roles["acctg"])
+        client.force_login(roles["head"])
         resp = client.post("/ap/conso/new/", {"conso_date": "2026-01-16"})
         assert resp.status_code == 302
         from apps.ap.models import CONSOBatch
@@ -205,7 +211,7 @@ class TestEndToEndWorkflow:
         assert rfp.journal_entry.status == PostingStatus.POSTED
 
         # 6. CV lifecycle through the UI --------------------------------------
-        client.force_login(roles["cashier"])
+        client.force_login(roles["staff"])
         resp = client.post(
             "/ap/cv/new/",
             {"rfp": rfp.id, "bank_account": accounts["10110"].id,
@@ -217,11 +223,10 @@ class TestEndToEndWorkflow:
 
         cv = CheckVoucher.objects.get()
         assert cv.journal_entry.status == PostingStatus.POSTED
-        client.force_login(roles["cnr"])
+        client.force_login(roles["coo"])
         client.post(f"/ap/cv/{cv.id}/sign/")
-        client.force_login(roles["fin"])
+        client.force_login(roles["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
-        client.force_login(roles["acctg"])
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -237,7 +242,7 @@ class TestEndToEndWorkflow:
             bank_name="PNB", bank_code="PNB", gl_account=accounts["10010"],
             segment=segment,
         )
-        client.force_login(roles["acctg"])
+        client.force_login(roles["head"])
         resp = client.post(
             "/cash/transfers/new/",
             {"from_account": bank_from.id, "to_account": bank_to.id,
@@ -251,10 +256,10 @@ class TestEndToEndWorkflow:
         # 8. Advance + liquidation --------------------------------------------
         from apps.ap.services import AdvanceService
 
-        client.force_login(roles["acctg"])
+        client.force_login(roles["head"])
         adv = AdvanceService.start(
             employee_name="E2E Officer", kind="officer", segment=segment,
-            granted_date=date(2026, 1, 8), amount="20000.00", user=roles["fin"],
+            granted_date=date(2026, 1, 8), amount="20000.00", user=roles["head"],
         )
         resp = client.post(
             f"/ap/advances/{adv.id}/liquidate/",
@@ -266,7 +271,7 @@ class TestEndToEndWorkflow:
         assert adv.liquidated_amount == Decimal("5000.00")
 
         # 9. Weekly cycles + COLLECTIBLES + cash flow --------------------------
-        client.force_login(roles["cashier"])
+        client.force_login(roles["staff"])
         resp = client.post(
             "/cash/cycles/generate/",
             {"segment": segment.id, "start_date": "2026-01-06", "end_date": "2026-01-26"},

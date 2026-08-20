@@ -93,6 +93,35 @@ def logout_view(request):
 
 
 # ---------------------------------------------------------------------------
+# My Approvals (ADR-036): the named-person inbox, grouped by role
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def my_approvals(request):
+    from apps.core.approvals import (
+        approval_role_of,
+        group_by_role,
+        pending_approval_queue,
+        role_assignee,
+        ROLE_LABELS,
+    )
+
+    queues = pending_approval_queue(request.user)
+    my_role = approval_role_of(request.user)
+    return render(
+        request,
+        "ui/approvals.html",
+        {
+            "grouped": group_by_role(queues),
+            "total": len(queues),
+            "my_role": ROLE_LABELS.get(my_role, "no approval role"),
+            "assignees": {r: role_assignee(r) for r in ("staff", "head", "coo")},
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
@@ -541,6 +570,7 @@ def rfp_create(request):
             lines = []
             seg_ids = request.POST.getlist("line_segment")
             codes = request.POST.getlist("line_account")
+            sides = request.POST.getlist("line_side")
             amounts = request.POST.getlist("line_amount")
             descs = request.POST.getlist("line_description")
             for i, seg_id in enumerate(seg_ids):
@@ -548,6 +578,7 @@ def rfp_create(request):
                     continue
                 lines.append(
                     {
+                        "side": (sides[i] if i < len(sides) else "") or "dr",
                         "segment": Segment.objects.get(pk=seg_id),
                         "account_code": codes[i],
                         "amount": amounts[i] or 0,
@@ -560,11 +591,8 @@ def rfp_create(request):
                 ap_number=ap_number,
                 rfp_date=date.fromisoformat(rfp_date),
                 payee=payee,
-                particulars=request.POST["particulars"].strip(),
-                amount=request.POST["amount"],
                 segment=segment,
                 purpose=request.POST.get("purpose", ""),
-                advance_amount=request.POST.get("advance_amount") or "20000.00",
                 lines=lines,
                 user=request.user,
             )
@@ -586,11 +614,39 @@ def rfp_create(request):
 @login_required
 def rfp_detail(request, pk):
     from apps.ap.models import RFPDocument
+    from apps.core.approvals import (
+        approval_role_of,
+        role_assignee,
+        ROLE_LABELS,
+        RFP_NEXT_ROLE,
+    )
 
     rfp = get_object_or_404(
         RFPDocument.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
     )
-    return render(request, "ui/ap/rfp_detail.html", {"rfp": rfp, "timeline": rfp_timeline(rfp)})
+    cr_total = sum((l.amount for l in rfp.lines.all() if l.side == "cr"), Decimal("0.00"))
+
+    awaiting = None
+    role = RFP_NEXT_ROLE.get(rfp.status)
+    if rfp.status == "fin_approved" and rfp.amount > 100000:
+        role = "coo"
+    if role:
+        awaiting = {
+            "role": role,
+            "label": ROLE_LABELS[role],
+            "assignee": role_assignee(role),
+            "you_hold": approval_role_of(request.user) == role,
+        }
+    return render(
+        request,
+        "ui/ap/rfp_detail.html",
+        {
+            "rfp": rfp,
+            "timeline": rfp_timeline(rfp),
+            "cr_total": cr_total,
+            "awaiting": awaiting,
+        },
+    )
 
 
 @login_required
@@ -615,6 +671,7 @@ def rfp_submit(request, pk):
 def rfp_approve(request, pk):
     from apps.ap.models import RFPDocument
     from apps.ap.services import RFPService
+    from apps.core.approvals import require_approval_role
 
     rfp = get_object_or_404(RFPDocument, pk=pk)
     next_roles = {"prepared": "checked", "submitted": "checked", "checked": "acctg_approved", "acctg_approved": "fin_approved"}
@@ -622,6 +679,7 @@ def rfp_approve(request, pk):
     try:
         if not role:
             raise ValueError(f"No approval step available from status '{rfp.status}'.")
+        require_approval_role(request.user, role)
         rfp = RFPService.advance_step(rfp, role=role, user=request.user)
         messages.success(request, f"RFP {rfp.ap_number} approved at '{role}'.")
     except (AccountingError, ValueError) as exc:
@@ -634,9 +692,11 @@ def rfp_approve(request, pk):
 def rfp_approve_cnr(request, pk):
     from apps.ap.models import RFPDocument
     from apps.ap.services import RFPService
+    from apps.core.approvals import require_approval_role
 
     rfp = get_object_or_404(RFPDocument, pk=pk)
     try:
+        require_approval_role(request.user, "coo")
         rfp = RFPService.approve_cnr(rfp, user=request.user)
         messages.success(request, f"RFP {rfp.ap_number} approved by CNR.")
     except AccountingError as exc:
@@ -877,50 +937,65 @@ def cv_detail(request, pk):
 @login_required
 @require_POST
 def cv_sign(request, pk):
-    """created -> signed (CNR signs the check)."""
+    """created -> signed (COO signs the check)."""
     from apps.ap.models import CheckVoucher
+    from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(CheckVoucher, pk=pk)
-    if cv.status == "created":
-        cv.status = "signed"
-        cv.signed_by = request.user
-        cv.save(update_fields=["status", "signed_by", "updated_at"])
-        messages.success(request, f"CV {cv.cv_number} signed.")
-    else:
-        messages.error(request, f"CV cannot be signed from status '{cv.status}'.")
+    try:
+        if cv.status == "created":
+            require_approval_role(request.user, "coo")
+            cv.status = "signed"
+            cv.signed_by = request.user
+            cv.save(update_fields=["status", "signed_by", "updated_at"])
+            messages.success(request, f"CV {cv.cv_number} signed.")
+        else:
+            messages.error(request, f"CV cannot be signed from status '{cv.status}'.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
     return redirect("ui:cv_detail", pk=pk)
 
 
 @login_required
 @require_POST
 def cv_release(request, pk):
-    """signed -> released (treasury releases the check)."""
+    """signed -> released (Accounting & Finance Head releases the check)."""
     from apps.ap.models import CheckVoucher
+    from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(CheckVoucher, pk=pk)
-    if cv.status == "signed":
-        cv.status = "released"
-        cv.released_by = request.user
-        cv.save(update_fields=["status", "released_by", "updated_at"])
-        messages.success(request, f"CV {cv.cv_number} released.")
-    else:
-        messages.error(request, f"CV cannot be released from status '{cv.status}'.")
+    try:
+        if cv.status == "signed":
+            require_approval_role(request.user, "head")
+            cv.status = "released"
+            cv.released_by = request.user
+            cv.save(update_fields=["status", "released_by", "updated_at"])
+            messages.success(request, f"CV {cv.cv_number} released.")
+        else:
+            messages.error(request, f"CV cannot be released from status '{cv.status}'.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
     return redirect("ui:cv_detail", pk=pk)
 
 
 @login_required
 @require_POST
 def cv_clear(request, pk):
-    """released -> cleared (check encashed)."""
+    """released -> cleared (Accounting & Finance Head books the encashment)."""
     from apps.ap.models import CheckVoucher
+    from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(CheckVoucher, pk=pk)
-    if cv.status == "released":
-        cv.status = "cleared"
-        cv.save(update_fields=["status", "updated_at"])
-        messages.success(request, f"CV {cv.cv_number} cleared.")
-    else:
-        messages.error(request, f"CV cannot be cleared from status '{cv.status}'.")
+    try:
+        if cv.status == "released":
+            require_approval_role(request.user, "head")
+            cv.status = "cleared"
+            cv.save(update_fields=["status", "updated_at"])
+            messages.success(request, f"CV {cv.cv_number} cleared.")
+        else:
+            messages.error(request, f"CV cannot be cleared from status '{cv.status}'.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
     return redirect("ui:cv_detail", pk=pk)
 
 
@@ -1215,6 +1290,9 @@ def cash_short_approve(request, pk):
 
     ws = get_object_or_404(CashShortExcessWorksheet, pk=pk)
     try:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
         CashShortService.approve(ws, request.user)
         messages.success(request, "Variance approved.")
     except AccountingError as exc:

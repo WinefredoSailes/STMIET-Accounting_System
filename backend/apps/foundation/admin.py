@@ -1,6 +1,22 @@
 from django.contrib import admin
 
-from apps.foundation.models import Account, Company, FiscalPeriod, FiscalYear, Segment
+from apps.foundation.models import (
+    Account,
+    Company,
+    FiscalPeriod,
+    FiscalYear,
+    Segment,
+    UserProfile,
+)
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "approval_role")
+    list_filter = ("approval_role",)
+    search_fields = ("user__username", "user__first_name", "user__last_name")
+    autocomplete_fields = ("user",)
+    list_select_related = ("user",)
 
 
 @admin.register(Company)

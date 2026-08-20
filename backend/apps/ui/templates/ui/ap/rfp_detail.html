@@ -39,11 +39,12 @@
 
     <div class="px-6 pb-4">
       <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution charges</div>
-      <table class="w-full text-sm min-w-[760px]">
+      <table class="w-full text-sm min-w-[820px]">
         <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th class="px-3 py-2">#</th>
             <th class="px-3 py-2">Account</th>
+            <th class="px-3 py-2 w-20">Dr / Cr</th>
             <th class="px-3 py-2">Segment</th>
             <th class="px-3 py-2">Description</th>
             <th class="px-3 py-2 text-right">Amount</th>
@@ -54,6 +55,9 @@
           <tr>
             <td class="px-3 py-2 text-slate-400">{{ line.line_no }}</td>
             <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }} <span class="font-sans text-slate-500">{{ line.account.name }}</span></td>
+            <td class="px-3 py-2">
+              <span class="inline-flex rounded-md px-2 py-0.5 text-xs font-semibold {% if line.side == 'dr' %}bg-indigo-50 text-indigo-700{% else %}bg-slate-100 text-slate-600{% endif %}">{{ line.get_side_display }}</span>
+            </td>
             <td class="px-3 py-2 text-xs">{{ line.segment.code }}</td>
             <td class="px-3 py-2 text-slate-600">{{ line.description|default:"—" }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|floatformat:2 }}</td>
@@ -62,12 +66,12 @@
         </tbody>
         <tfoot class="bg-slate-50 font-semibold">
           <tr>
-            <td colspan="4" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+            <td colspan="5" class="px-3 py-2 text-right">TOTAL — DEBIT</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ rfp.amount|floatformat:2 }}</td>
           </tr>
           <tr class="font-normal text-slate-600">
-            <td colspan="4" class="px-3 py-2 text-right">ADVANCE CREDIT</td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ rfp.advance_amount|floatformat:2 }}</td>
+            <td colspan="5" class="px-3 py-2 text-right">TOTAL — CREDIT</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ cr_total|floatformat:2 }}</td>
           </tr>
         </tfoot>
       </table>
@@ -76,6 +80,22 @@
 
   <div class="mt-4 bg-white rounded-xl border border-slate-200 p-6">
     <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Approval chain (ADR-020)</div>
+    {% if awaiting %}
+    <div class="mb-4 flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+      <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+      <div class="text-sm">
+        <span class="font-semibold text-amber-900">Awaiting {{ awaiting.label }}</span>
+        {% if awaiting.assignee %}
+        <span class="text-amber-800"> — {{ awaiting.assignee }}</span>
+        {% endif %}
+        {% if awaiting.you_hold %}
+        <span class="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">this is your step</span>
+        {% else %}
+        <span class="ml-1 text-xs text-amber-700">(the approve button is shown to the assigned role only)</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
     <ol class="flex flex-wrap gap-2">
       {% for step in timeline %}
       <li class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
@@ -101,20 +121,28 @@
     </div>
     {% elif rfp.status == "submitted" or rfp.status == "checked" or rfp.status == "acctg_approved" %}
     <div class="mt-4">
+      {% if awaiting.you_hold %}
       <form method="post" action="{% url 'ui:rfp_approve' rfp.id %}">
         {% csrf_token %}
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
           {% if rfp.status == "submitted" or rfp.status == "prepared" %}Check (Recommending approver){% elif rfp.status == "checked" %}Approve (Accounting Manager){% else %}Approve (Finance Manager){% endif %}
         </button>
       </form>
+      {% else %}
+      <p class="text-sm text-slate-500">The approve button is shown to the {{ awaiting.label }} only.</p>
+      {% endif %}
     </div>
     {% elif rfp.status == "fin_approved" %}
     <div class="mt-4">
       {% if rfp.amount > 100000 %}
-      <form method="post" action="{% url 'ui:rfp_approve_cnr' rfp.id %}">
-        {% csrf_token %}
-        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve (CNR — required &gt; ₱100k)</button>
-      </form>
+        {% if awaiting.you_hold %}
+        <form method="post" action="{% url 'ui:rfp_approve_cnr' rfp.id %}">
+          {% csrf_token %}
+          <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve (CNR — required &gt; ₱100k)</button>
+        </form>
+        {% else %}
+        <p class="text-sm text-slate-500">The CNR approve button is shown to the CNR Manager only.</p>
+        {% endif %}
       {% else %}
       <p class="text-sm text-slate-500">Fully approved — ready for CONSO batch (API).</p>
       {% endif %}

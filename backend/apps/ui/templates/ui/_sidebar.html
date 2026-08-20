@@ -2,6 +2,14 @@
 <div class="space-y-0.5 px-2">
   <a href="{% url 'ui:dashboard' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'dashboard' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Dashboard</a>
 
+  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Approvals</div>
+  <a href="{% url 'ui:my_approvals' %}" class="flex items-center gap-2 rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'my_approvals' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">
+    <span>My Approvals</span>
+    {% if pending_approval_count %}
+    <span class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{{ pending_approval_count }}</span>
+    {% endif %}
+  </a>
+
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Journal</div>
   <a href="{% url 'ui:je_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'je_list' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Journal Entries</a>
   <a href="{% url 'ui:general_journal' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">General Journal</a>

@@ -333,14 +333,12 @@ class TestRFPScreen:
             "payee": supplier.id,
             "segment": segment.id,
             "rfp_date": "2026-01-15",
-            "particulars": "Fuel for DHPP generators",
             "purpose": "GEN-FUEL",
-            "amount": "50000.00",
-            "advance_amount": "20000.00",
-            "line_segment": [segment.id],
-            "line_account": ["61100"],
-            "line_amount": ["50000.00"],
-            "line_description": ["Fuel purchase"],
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_amount": ["50000.00", "50000.00"],
+            "line_side": ["dr", "cr"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
         })
         assert resp.status_code == 302
         from apps.ap.models import RFPDocument
@@ -348,15 +346,16 @@ class TestRFPScreen:
         rfp = RFPDocument.objects.get()
         assert rfp.status == "prepared"
         assert rfp.amount == Decimal("50000.00")
-        assert rfp.lines.count() == 1
+        assert rfp.lines.count() == 2
+        assert rfp.particulars == "Fuel purchase"  # mirrors the first line
         supplier.refresh_from_db()
         assert supplier.last_ap == rfp.ap_number
 
     def test_rfp_full_approval_chain(self, client, company, segment, accounts, fiscal_period,
                                      user, supplier):
         """prepared -> submitted -> checked -> acctg_approved -> fin_approved
-        -> cnr_approved (amount > P100k). Each role needs a distinct user
-        (ADR-020)."""
+        -> cnr_approved (amount > P100k). The head (Alywin) checks + approves
+        acctg/fin; only the COO may sign as CNR (ADR-036)."""
         from apps.ap.models import RFPDocument
         from apps.ap.services import RFPService
 
@@ -364,33 +363,36 @@ class TestRFPScreen:
             ap_number="A0001",
             rfp_date=date(2026, 1, 15),
             payee=supplier,
-            particulars="Machinery parts",
-            amount="150000.00",
             segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "150000.00"}],
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "150000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "150000.00"},
+            ],
             user=user,
         )
         User = get_user_model()
-        checker = User.objects.create_user(username="checker", password="x")
-        acctg = User.objects.create_user(username="acctg", password="x")
-        fin = User.objects.create_user(username="fin", password="x")
-        cnr = User.objects.create_user(username="cnr", password="x")
+        head = User.objects.create_user(username="head", password="x")
+        coo = User.objects.create_user(username="coo", password="x")
+        from apps.foundation.models import UserProfile
+
+        for u, role in ((head, "head"), (coo, "coo")):
+            UserProfile.objects.create(user=u, approval_role=role)
 
         resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
         rfp.refresh_from_db()
         assert rfp.status == "submitted"
 
-        for username, expected in [("checker", "checked"), ("acctg", "acctg_approved"), ("fin", "fin_approved")]:
-            client.force_login(User.objects.get(username=username))
+        client.force_login(head)
+        for expected in ("checked", "acctg_approved", "fin_approved"):
             resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
             rfp.refresh_from_db()
-            assert rfp.status == expected, username
+            assert rfp.status == expected
 
-        client.force_login(cnr)
+        client.force_login(coo)
         resp = client.post(f"/ap/rfps/{rfp.id}/approve-cnr/")
         rfp.refresh_from_db()
         assert rfp.status == "cnr_approved"
-        assert rfp.approved_by_cnr == cnr
+        assert rfp.approved_by_cnr == coo
 
     def test_rfp_same_user_cannot_approve(self, client, company, segment, accounts,
                                           fiscal_period, user, supplier):
@@ -401,10 +403,11 @@ class TestRFPScreen:
             ap_number="A0002",
             rfp_date=date(2026, 1, 15),
             payee=supplier,
-            particulars="Parts",
-            amount="30000.00",
             segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "30000.00"}],
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+            ],
             user=user,
         )
         resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
@@ -419,10 +422,11 @@ class TestRFPScreen:
             ap_number="A0003",
             rfp_date=date(2026, 1, 15),
             payee=supplier,
-            particulars="Parts",
-            amount="30000.00",
             segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "30000.00"}],
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+            ],
             user=user,
         )
         rfp = RFPDocument.objects.get()
@@ -525,11 +529,11 @@ class TestCheckVoucherScreen:
             ap_number="A0001",
             rfp_date=date(2026, 1, 15),
             payee=supplier,
-            particulars="Fuel for generators",
-            amount="20000.00",
-            advance_amount="5000.00",
             segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "20000.00"}],
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00"},
+            ],
             user=user,
         )
         rfp.status = "fin_approved"
@@ -561,7 +565,7 @@ class TestCheckVoucherScreen:
         assert cv.journal_entry.lines.count() == 3  # Dr AP | Cr Cash | Cr WHT
 
     def test_cv_lifecycle(self, client, company, segment, accounts, fiscal_period,
-                          user, approved_rfp):
+                          user, approved_rfp, role_users):
         from apps.ap.models import CheckVoucher
         from apps.ap.services import CVPaymentService
 
@@ -576,20 +580,25 @@ class TestCheckVoucherScreen:
             user=user,
         )
         # release before sign is blocked
+        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "created"
 
+        # COO signs, head (Alywin) releases and clears (ADR-036)
+        client.force_login(role_users["coo"])
         client.post(f"/ap/cv/{cv.id}/sign/")
         cv.refresh_from_db()
         assert cv.status == "signed"
-        assert cv.signed_by == user
+        assert cv.signed_by == role_users["coo"]
 
+        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "released"
-        assert cv.released_by == user
+        assert cv.released_by == role_users["head"]
 
+        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -766,6 +775,8 @@ class TestCashShortScreen:
         )
 
     def test_record_and_approve(self, client, company, segment, accounts, cycle, user):
+        from apps.foundation.models import UserProfile
+
         resp = client.post("/cash/short/new/", {
             "cycle": cycle.id,
             "expected_cash": "10000.00",
@@ -780,6 +791,8 @@ class TestCashShortScreen:
         assert ws.variance == Decimal("-500.00")
         assert ws.status == "open"
 
+        # The head approves variances; the reporter cannot (ADR-036).
+        UserProfile.objects.create(user=user, approval_role="head")
         client.post(f"/cash/short/{ws.id}/approve/")
         ws.refresh_from_db()
         assert ws.status == "approved"
@@ -799,11 +812,11 @@ class TestCONSOScreen:
             ap_number="A0001",
             rfp_date=date(2026, 1, 15),
             payee=supplier,
-            particulars="Fuel for generators",
-            amount="20000.00",
-            advance_amount="5000.00",
             segment=segment,
-            lines=[{"segment": segment, "account_code": "61100", "amount": "20000.00"}],
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00"},
+            ],
             user=user,
         )
         rfp.status = "fin_approved"
@@ -907,3 +920,186 @@ class TestCollectionsSummaryScreen:
         assert "VARIANCE" in body
         assert "TOTAL DEBITS" in body
         assert "TOTAL CREDITS" in body
+
+
+class TestMyApprovals:
+    """The named-person inbox (ADR-036): each position sees exactly its queue,
+    approve buttons act only for the assigned role, and mistakes are loud.
+    head = Alywin (checks + acctg + fin), coo = CNR above P100k only."""
+
+    @pytest.fixture
+    def supplier(self, db, company, segment, accounts):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", default_segment=segment
+        )
+
+    def _create(self, amount, segment, supplier, user, ap_number):
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        return RFPService.create_rfp(
+            ap_number=ap_number,
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": amount},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": amount},
+            ],
+            user=user,
+        )
+
+    def _approve_through(self, rfp, role_users, until):
+        from apps.ap.services import RFPService
+
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            RFPService.advance_step(rfp, role=role, user=role_users["head"])
+            if role == until:
+                return
+
+    def test_inbox_routes_the_chain(self, client, company, segment, accounts, supplier,
+                                    role_users, user):
+        rfp = self._create("50000.00", segment, supplier, role_users["staff"], "A2001")
+
+        # Prepared RFPs are not in anyone's inbox: staff must submit first.
+        client.force_login(role_users["head"])
+        resp = client.get("/approvals/")
+        assert resp.status_code == 200
+        assert b"A2001" not in resp.content
+
+        client.force_login(role_users["staff"])
+        resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
+        assert resp.status_code == 302
+        rfp.refresh_from_db()
+        assert rfp.status == "submitted"
+
+        # The head's inbox shows the submitted RFP and approves it inline
+        # three times (check -> acctg -> fin, same person, two clicks each).
+        client.force_login(role_users["head"])
+        resp = client.get("/approvals/")
+        assert b"A2001" in resp.content
+        assert b"Awaiting Accounting &amp; Finance Head" in resp.content
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+        assert resp.status_code == 302
+        rfp.refresh_from_db()
+        assert rfp.status == "checked"
+        assert rfp.checked_by == role_users["head"]
+
+        resp = client.get("/approvals/")
+        assert b"A2001" in resp.content
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "acctg_approved"
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
+        # Fully approved below P100k: out of every inbox (the bare number
+        # can linger in a success message, so assert on the chip).
+        resp = client.get("/approvals/")
+        assert b"Awaiting Accounting &amp; Finance Head" not in resp.content
+        assert b"Awaiting Accounting & Finance Head" not in resp.content
+
+    def test_cnr_queue_only_above_100k(self, client, company, segment, accounts,
+                                       supplier, role_users):
+        big = self._create("150000.00", segment, supplier, role_users["staff"], "A2002")
+        small = self._create("50000.00", segment, supplier, role_users["staff"], "A2003")
+        for rfp in (big, small):
+            self._approve_through(rfp, role_users, "fin_approved")
+        assert big.status == "fin_approved" and small.status == "fin_approved"
+
+        # Small RFP needs no CNR; the big one lands in the COO's inbox.
+        client.force_login(role_users["coo"])
+        body = client.get("/approvals/").content
+        assert b"A2002" in body
+        assert b"A2003" not in body
+
+        client.post(f"/ap/rfps/{big.id}/approve-cnr/")
+        big.refresh_from_db()
+        assert big.status == "cnr_approved"
+        assert big.approved_by_cnr == role_users["coo"]
+
+    def test_wrong_role_approve_is_loud(self, client, company, segment, accounts,
+                                        supplier, role_users):
+        rfp = self._create("50000.00", segment, supplier, role_users["staff"], "A2004")
+        self._approve_through(rfp, role_users, "checked")
+        client.force_login(role_users["coo"])
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/", follow=True)
+        rfp.refresh_from_db()
+        assert rfp.status == "checked"  # nothing moved
+        assert b"Accounting &amp; Finance Head" in resp.content  # names the assignee
+        assert b"was not moved" in resp.content
+
+    def test_cv_and_cash_short_queues(self, client, company, segment, accounts,
+                                      supplier, role_users, user):
+        from apps.ap.models import CheckVoucher, CONSOBatch
+        from apps.ap.services import CVPaymentService
+
+        rfp = self._create("20000.00", segment, supplier, role_users["staff"], "A2005")
+        self._approve_through(rfp, role_users, "fin_approved")
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0001", cv_date=date(2026, 1, 20),
+            payee=supplier, bank_account=accounts["10110"],
+            gross_amount="20000.00", rfp=rfp, user=user,
+        )
+        from apps.cash.models import CashShortExcessWorksheet, WeeklyCashCycle
+
+        cycle = WeeklyCashCycle.objects.create(
+            cycle_start="2026-01-06", cycle_end="2026-01-12", segment=segment
+        )
+        ws = CashShortExcessWorksheet.objects.create(
+            cycle=cycle, segment=segment, expected_cash=Decimal("10000.00"),
+            actual_cash=Decimal("9500.00"), variance=Decimal("-500.00"),
+            cause="miscount", cause_category="cashier",
+            created_by=role_users["staff"],
+        )
+
+        client.force_login(role_users["coo"])
+        body = client.get("/approvals/").content
+        assert b"CV-2026-0001" in body and b"Sign" in body
+        client.post(f"/ap/cv/{cv.id}/sign/")
+        cv.refresh_from_db()
+        assert cv.status == "signed"
+
+        client.force_login(role_users["head"])
+        body = client.get("/approvals/").content
+        assert b"CV-2026-0001" in body and b"Release" in body
+        assert b"variance" in body  # the open cash short worksheet too
+        client.post(f"/ap/cv/{cv.id}/release/")
+        client.post(f"/cash/short/{ws.id}/approve/")
+        cv.refresh_from_db()
+        ws.refresh_from_db()
+        assert cv.status == "released"
+        assert ws.status == "approved"
+
+        client.force_login(role_users["head"])
+        body = client.get("/approvals/").content
+        assert b"CV-2026-0001" in body and b"Clear" in body
+        client.post(f"/ap/cv/{cv.id}/clear/")
+        cv.refresh_from_db()
+        assert cv.status == "cleared"
+
+    def test_user_without_role_has_empty_inbox(self, client, company, segment, accounts,
+                                               supplier, role_users):
+        rfp = self._create("50000.00", segment, supplier, role_users["staff"], "A2006")
+        client.force_login(role_users["staff"])  # staff has a role but no steps
+        resp = client.get("/approvals/")
+        assert resp.status_code == 200
+        assert b"A2006" not in resp.content
+        client.force_login(get_user_model().objects.create_user(username="guest", password="x"))
+        resp = client.get("/approvals/")
+        assert resp.status_code == 200
+        assert b"no approval role" in resp.content
+
+    def test_sidebar_badge_shows_pending_count(self, client, company, segment, accounts,
+                                               supplier, role_users):
+        rfp = self._create("50000.00", segment, supplier, role_users["staff"], "A2007")
+        resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
+        assert resp.status_code == 302
+        client.force_login(role_users["head"])
+        # The badge (amber pill) is rendered by the context processor on every screen.
+        resp = client.get("/journal/general/")
+        assert resp.status_code == 200
+        assert b"My Approvals" in resp.content
+        assert b"bg-amber-500" in resp.content

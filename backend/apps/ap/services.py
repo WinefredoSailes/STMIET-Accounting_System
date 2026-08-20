@@ -4,8 +4,9 @@ Rules enforced (ADR-018/019/020/022 + POSTING_RULES 7.2-7.4):
   - P2,500 threshold: below -> petty cash path (rejected here); >= -> RFP.
   - 4-level approval before CONSO; same person cannot hold two roles.
   - Amounts > P100,000 also require CNR approval (ADR-020 escalation).
-  - Canonical RFP JE: Dr [lines sum {TOTAL}] | Cr Advances {define}
-    | Cr AP {TOTAL - advances} (RESOLUTION #5).
+  - RFP JE is built exactly from the Dr/Cr distribution lines as entered;
+    Dr total must equal Cr total (credit accounts such as AP, payables to
+    officers, and advances clearing are entered as lines).
   - CONSO approval posts every RFP in the batch atomically.
   - CV clears AP with WHT split.
 """
@@ -73,30 +74,42 @@ class RFPService:
         ap_number: str,
         rfp_date: date,
         payee: Supplier,
-        particulars: str,
-        amount,
         segment,
         purpose: str = "",
-        advance_amount: Decimal = Decimal("20000.00"),
-        lines: list[dict],  # [{segment, account_code, amount}]
+        lines: list[dict],  # [{side, segment, account_code, amount, description}]
         last_ap: str = "",
         user=None,
     ) -> RFPDocument:
-        amount = money(amount)
-        advance = money(advance_amount)
-        if amount < RFP_MIN_AMOUNT:
+        """Create an RFP whose lines carry explicit Dr/Cr sides. The RFP amount
+        is the total of the debit lines; debits must equal credits so the
+        posted JE balances, and must meet the P2,500 threshold (ADR-022)."""
+        dr_total = Decimal("0.00")
+        cr_total = Decimal("0.00")
+        parsed = []
+        for line in lines:
+            amt = money(line["amount"])
+            if amt <= 0:
+                raise ValidationError("Each charge line must have an amount greater than zero.")
+            side = str(line.get("side") or "dr").lower()
+            if side not in ("dr", "cr"):
+                raise ValidationError(f"Line side must be Dr or Cr, got '{side}'.")
+            parsed.append((side, amt))
+            if side == "dr":
+                dr_total += amt
+            else:
+                cr_total += amt
+        if dr_total <= 0:
+            raise ValidationError("An RFP needs at least one debit (Dr) line.")
+        if dr_total != cr_total:
             raise ValidationError(
-                f"Amount {amount} is below the RFP threshold {RFP_MIN_AMOUNT}; use the petty cash voucher."
+                f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
-        if advance >= amount:
-            raise ValidationError("Advance credit must be less than RFP total.")
-
-        line_total = sum(money(l["amount"]) for l in lines)
-        if line_total != amount:
+        if dr_total < RFP_MIN_AMOUNT:
             raise ValidationError(
-                f"Charge lines total {line_total} but RFP amount is {amount}."
+                f"Amount {dr_total} is below the RFP threshold {RFP_MIN_AMOUNT}; use the petty cash voucher."
             )
 
+        particulars = lines[0].get("description", "") if lines else ""
         rfp = RFPDocument.objects.create(
             ap_number=ap_number,
             last_ap=last_ap or (payee.last_ap if payee else ""),
@@ -105,8 +118,7 @@ class RFPService:
             particulars=particulars,
             purpose=purpose,
             segment=segment,
-            amount=amount,
-            advance_amount=advance,
+            amount=dr_total,
             status="prepared",
             created_by=user,
         )
@@ -114,6 +126,7 @@ class RFPService:
             RFPLine.objects.create(
                 rfp=rfp,
                 line_no=i,
+                side=str(line.get("side") or "dr").lower(),
                 segment=line["segment"],
                 account=_account(line["account_code"]),
                 amount=money(line["amount"]),
@@ -129,6 +142,28 @@ class RFPService:
         """Move the RFP forward one approval role (ADR-020)."""
         if rfp.status == "posted":
             raise PostingError(f"RFP {rfp.ap_number} is already posted.")
+
+        # ADR-036: the Accounting & Finance Head legitimately holds the
+        # checked / acctg_approved / fin_approved trio on the same RFP —
+        # but nobody else may hold two steps, the preparer may not approve
+        # their own disbursement, and the COO (CNR) must stay a fresh hand.
+        prior_steps = [
+            s
+            for s, uid in (
+                ("checked", rfp.checked_by_id),
+                ("acctg_approved", rfp.approved_by_acctg_id),
+                ("fin_approved", rfp.approved_by_fin_id),
+            )
+            if uid and uid == user.id
+        ]
+        if user.id in (rfp.created_by_id, rfp.approved_by_cnr_id):
+            raise ValidationError(
+                "The person who prepared an RFP (or approved it as COO/CNR) "
+                "cannot approve it again."
+            )
+        if role in prior_steps:
+            raise ValidationError("This user already recorded this approval step.")
+
         # "submitted" (the API submit action) continues the chain at "checked".
         current = "prepared" if rfp.status == "submitted" else rfp.status
         try:
@@ -141,11 +176,6 @@ class RFPService:
 
         field = ROLE_TO_FIELD[role]
 
-        # Same person cannot hold two roles on the same RFP (ADR-020).
-        holders = [rfp.created_by_id, rfp.checked_by_id, rfp.approved_by_acctg_id, rfp.approved_by_fin_id]
-        if user.id in [h for h in holders if h]:
-            raise ValidationError("The same user cannot approve an RFP at two levels.")
-
         setattr(rfp, field, user)
         rfp.status = role
         rfp.save(update_fields=[field, "status", "updated_at"])
@@ -157,6 +187,18 @@ class RFPService:
             raise ValidationError("CNR approval is only required above P100,000.")
         if rfp.status != "fin_approved":
             raise ValidationError("CNR approval comes after finance approval.")
+        # ADR-036: the COO who signs as CNR must be a fresh hand.
+        holders = [
+            rfp.created_by_id,
+            rfp.checked_by_id,
+            rfp.approved_by_acctg_id,
+            rfp.approved_by_fin_id,
+        ]
+        if user.id in [h for h in holders if h]:
+            raise ValidationError(
+                "The COO/CNR approval must come from a person who did not "
+                "handle the earlier steps of this RFP."
+            )
         rfp.approved_by_cnr = user
         rfp.status = "cnr_approved"
         rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
@@ -203,26 +245,18 @@ class CONSOService:
                 source_doc_no=rfp.ap_number,
                 created_by=user,
             )
-            # Debits: RFP charge lines (must sum to amount - enforced at create).
+            # JE = the Dr/Cr distribution lines exactly as entered (must
+            # balance at create: Dr total == Cr total).
             for i, line in enumerate(rfp.lines.order_by("line_no"), start=1):
+                kwargs = (
+                    {"debit": line.amount}
+                    if line.side == RFPLine.Side.DEBIT
+                    else {"credit": line.amount}
+                )
                 JournalEntryLine.objects.create(
                     entry=entry, line_no=i, account=line.account,
-                    debit=line.amount, description=line.description or rfp.particulars,
+                    description=line.description or rfp.particulars, **kwargs,
                 )
-            # Credits: standing advance + AP balance (canonical formula).
-            line_no = len(rfp.lines.all()) + 1
-            JournalEntryLine.objects.create(
-                entry=entry, line_no=line_no,
-                account=_segment_account(SEGMENT_ADVANCES, rfp.segment),
-                credit=rfp.advance_amount,
-                description="Advances to Employees (clearing)",
-            )
-            JournalEntryLine.objects.create(
-                entry=entry, line_no=line_no + 1,
-                account=_segment_account(SEGMENT_AP, rfp.segment),
-                credit=rfp.ap_balance,
-                description=f"AP - {rfp.payee.name}",
-            )
             entry.recalc_totals()
             # ADR-033: CNR approval (the last RFP gate) is the JE approval gate
             # for entries above the threshold; PostingService refuses them as DRAFT.
