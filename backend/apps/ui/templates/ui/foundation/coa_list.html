@@ -7,7 +7,9 @@
       <h1 class="text-xl font-semibold text-slate-900">CHART OF ACCOUNTS</h1>
       <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s) — imported from COA-STMIET-2026.xlsx. Read-only; changes go through the master file or Django admin.</p>
     </div>
-    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+    <form method="get" class="flex flex-wrap items-center gap-2 text-sm"
+      hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-push-url="true"
+      hx-trigger="submit, input changed delay:300ms from:[name=q], change from:[name=segment], change from:[name=account_type]">
       <input type="search" name="q" value="{{ q }}" placeholder="Code or name…" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
         <option value="">All segments</option>
@@ -25,33 +27,8 @@
     </form>
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-    <table class="w-full text-sm min-w-[760px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3">Code</th>
-          <th class="px-4 py-3">Account Name</th>
-          <th class="px-4 py-3">Segment</th>
-          <th class="px-4 py-3">Type</th>
-          <th class="px-4 py-3">Normal Balance</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for a in page_obj %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-1.5 tabular-nums font-medium">{{ a.code }}</td>
-          <td class="px-4 py-1.5">{{ a.name }}</td>
-          <td class="px-4 py-1.5">
-            <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ a.segment }}</span>
-          </td>
-          <td class="px-4 py-1.5 text-slate-600">{{ a.get_account_type_display }}</td>
-          <td class="px-4 py-1.5 uppercase text-xs">{{ a.normal_balance }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No accounts match. Try clearing the filters — or run <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">py manage.py import_coa</code>.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div id="coa-table">
+    {% include "ui/foundation/_coa_rows.html" %}
   </div>
   {% include "ui/partials/pagination.html" %}
 </div>

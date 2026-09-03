@@ -23,7 +23,7 @@ from decimal import Decimal
 
 from django.db import models
 
-from apps.core.models import AuditableModel
+from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
 class SupplierType(models.TextChoices):
@@ -34,7 +34,7 @@ class SupplierType(models.TextChoices):
     OTHER = "other", "Other"
 
 
-class Supplier(AuditableModel):
+class Supplier(SoftDeleteMixin, AuditableModel):
     """Supplier/Vendor master (ADR-024). LAST AP is auto-tracked (pain #5)."""
 
     code = models.CharField(max_length=32, unique=True)

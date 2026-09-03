@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from django.db import models
 
-from apps.core.models import AuditableModel
+from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
 class AssetStatus(models.TextChoices):
@@ -26,7 +26,7 @@ class AssetStatus(models.TextChoices):
     DISPOSED = "disposed", "Disposed"
 
 
-class AssetCategory(AuditableModel):
+class AssetCategory(SoftDeleteMixin, AuditableModel):
     """Asset classification with useful life and account defaults.
 
     Per-category lives from BUILD-PLAN Phase 7. Accounts follow the
@@ -59,7 +59,7 @@ class AssetCategory(AuditableModel):
         return f"{self.code} ({self.useful_life_years}y)"
 
 
-class Asset(AuditableModel):
+class Asset(SoftDeleteMixin, AuditableModel):
     """One fixed asset in the register (ADR-xxx Phase 7).
 
     The acquisition journal debits the asset account 17xxx-19xxx and credits

@@ -14,36 +14,11 @@ from django.db import transaction
 
 from apps.core.exceptions import ValidationError
 from apps.core.money import money
+from apps.foundation.models import SegmentAccountMap, resolve_segment_account
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 
 from .models import Asset, AssetDisposal, AssetStatus, DepreciationSchedule
-
-# Segment -> funding/credit account defaults for acquisition (9.1):
-# AP (200xx), Cash (100xx), Loans (270xx).
-SEGMENT_AP = {"DHPP": "20000", "DMIE": "20003", "OPS": "20006"}
-SEGMENT_CASH = {"DHPP": "10010", "DMIE": "10013", "OPS": "10016"}
-SEGMENT_LOANS = {"DHPP": "27000", "DMIE": "27003", "OPS": "27006"}
-# Gain on disposal (9.3) per segment.
-SEGMENT_GAIN = {"DHPP": "43070", "DMIE": "43083", "OPS": "43096"}
-# Loss on disposal — 9.3 "Or: 6xxx Other Expense". Default per segment.
-SEGMENT_LOSS = {"DHPP": "62000", "DMIE": "62003", "OPS": "62003"}
-
-
-def _account(code: str):
-    from apps.foundation.models import Account
-
-    try:
-        return Account.objects.get(code=code)
-    except Account.DoesNotExist as exc:
-        raise ValidationError(f"COA account {code} not found.") from exc
-
-
-def _segment_account(map_: dict, segment) -> object:
-    code = map_.get(segment.code)
-    if not code:
-        raise ValidationError(f"Segment {segment.code} has no account mapping.")
-    return _account(code)
 
 
 class AssetService:
@@ -99,15 +74,18 @@ class AssetService:
             created_by=user,
         )
 
-        # 9.1 JE: Dr Asset {cost + fees} | Cr funding source.
+        # 9.1 JE: Dr Asset {cost + fees} | Cr funding source. Resolve only the
+        # selected source (a cash purchase must not require a loans account).
         total = cost + fees
-        credit_account = {
-            "ap": _segment_account(SEGMENT_AP, segment),
-            "cash": _segment_account(SEGMENT_CASH, segment),
-            "loan": _segment_account(SEGMENT_LOANS, segment),
-        }.get(funding_source)
-        if credit_account is None:
+        fund_role = {
+            "ap": SegmentAccountMap.ROLE_AP,
+            "cash": SegmentAccountMap.ROLE_CASH,
+            "loan": SegmentAccountMap.ROLE_LOANS,
+        }
+        role = fund_role.get(funding_source)
+        if role is None:
             raise ValidationError(f"Unknown funding source '{funding_source}'.")
+        credit_account = resolve_segment_account(segment, role)
 
         entry = JournalEntry.objects.create(
             entry_no=asset_no,
@@ -284,7 +262,7 @@ class DisposalService:
         if proceeds > 0:
             JournalEntryLine.objects.create(
                 entry=entry, line_no=line_no,
-                account=cash_account or _segment_account(SEGMENT_CASH, asset.segment),
+                account=cash_account or resolve_segment_account(asset.segment, SegmentAccountMap.ROLE_CASH),
                 debit=proceeds, description=f"Disposal proceeds {asset.name}",
             )
             line_no += 1
@@ -304,13 +282,13 @@ class DisposalService:
         if loss > 0:
             JournalEntryLine.objects.create(
                 entry=entry, line_no=line_no,
-                account=loss_account or _account(SEGMENT_LOSS.get(asset.segment.code, "62000")),
+                account=loss_account or resolve_segment_account(asset.segment, SegmentAccountMap.ROLE_DISPOSAL_LOSS),
                 debit=loss, description=f"Loss on disposal {asset.name}",
             )
         elif gain > 0:
             JournalEntryLine.objects.create(
                 entry=entry, line_no=line_no,
-                account=_segment_account(SEGMENT_GAIN, asset.segment), credit=gain,
+                account=resolve_segment_account(asset.segment, SegmentAccountMap.ROLE_DISPOSAL_GAIN), credit=gain,
                 description=f"Gain on disposal {asset.name}",
             )
         entry.recalc_totals()

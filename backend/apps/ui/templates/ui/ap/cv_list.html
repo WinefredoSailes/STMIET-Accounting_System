@@ -25,32 +25,14 @@
           <th class="px-4 py-3 text-right">WHT</th>
           <th class="px-4 py-3 text-right">Net</th>
           <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for cv in page_obj %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-mono text-xs">
-            <a href="{% url 'ui:cv_detail' cv.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ cv.cv_number }}</a>
-          </td>
-          <td class="px-4 py-2">{{ cv.cv_date|date:"M d, Y" }}</td>
-          <td class="px-4 py-2">{{ cv.payee.name }}</td>
-          <td class="px-4 py-2 font-mono text-xs">{{ cv.rfp.ap_number|default:"—" }}</td>
-          <td class="px-4 py-2 font-mono text-xs">{{ cv.check_no|default:"—" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ cv.gross_amount|floatformat:2 }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ cv.withheld_tax|floatformat:2 }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ cv.net_amount|floatformat:2 }}</td>
-          <td class="px-4 py-2">
-            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-              {% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800
-              {% elif cv.status == 'created' %}bg-slate-100 text-slate-600
-              {% else %}bg-amber-100 text-amber-800{% endif %}">
-              {{ cv.status }}
-            </span>
-          </td>
-        </tr>
+        {% include "ui/ap/_cv_row.html" %}
         {% empty %}
-        <tr><td colspan="9" class="px-4 py-8 text-center text-slate-400">No check vouchers yet.</td></tr>
+        <tr><td colspan="10" class="px-4 py-8 text-center text-slate-400">No check vouchers yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

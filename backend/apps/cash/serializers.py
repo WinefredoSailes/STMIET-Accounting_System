@@ -26,7 +26,7 @@ class CashCycleActivitySerializer(serializers.ModelSerializer):
 class BankAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankAccount
-        fields = ("id", "code", "name", "account_type", "bank_name", "bank_code", "gl_account", "segment", "adb_required", "custodian", "is_active")
+        fields = ("id", "code", "name", "account_type", "bank_name", "bank_code", "gl_account", "company", "adb_required", "custodian", "is_active")
 
 
 class WeeklyCashCycleSerializer(serializers.ModelSerializer):
@@ -46,7 +46,7 @@ class BankReconciliationSerializer(serializers.ModelSerializer):
 class PettyCashFundSerializer(serializers.ModelSerializer):
     class Meta:
         model = PettyCashFund
-        fields = ("id", "fund_code", "name", "custodian", "imprest_amount", "replenish_trigger_pct", "gl_account", "segment", "is_active")
+        fields = ("id", "fund_code", "name", "custodian", "imprest_amount", "replenish_trigger_pct", "gl_account", "company", "is_active")
 
 
 class PCFReplenishmentSerializer(serializers.ModelSerializer):

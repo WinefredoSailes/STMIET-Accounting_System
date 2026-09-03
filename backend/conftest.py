@@ -82,6 +82,29 @@ def accounts(db):
 
 
 @pytest.fixture
+def segment_account_map(db, segment, accounts):
+    """Seed the data-driven SegmentAccountMap rows (Phase 2) for the test
+    segment, binding each role to the conftest COA slice. ap/assets services
+    resolve these rows — services never hardcode COA codes. Roles whose account
+    is not in the slice are skipped."""
+    from apps.foundation.models import SegmentAccountMap
+
+    roles = {
+        SegmentAccountMap.ROLE_AP: "20000",
+        SegmentAccountMap.ROLE_AP_WHT: "64110",
+        SegmentAccountMap.ROLE_CASH: "10010",
+        SegmentAccountMap.ROLE_LOANS: "27010",
+        SegmentAccountMap.ROLE_DISPOSAL_GAIN: "43070",
+        SegmentAccountMap.ROLE_DISPOSAL_LOSS: "62000",
+    }
+    for role, code in roles.items():
+        acc = accounts.get(code)
+        if acc is not None:
+            SegmentAccountMap.objects.create(segment=segment, role=role, account=acc)
+    return segment
+
+
+@pytest.fixture
 def rfp_rule(db, accounts):
     """ADR-018 canonical rule: Dr TOTAL | Cr advances 20k | Cr AP balance."""
     rule = PostingRule.objects.create(

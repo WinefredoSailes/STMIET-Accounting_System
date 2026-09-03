@@ -1,0 +1,68 @@
+{% extends "ui/base.html" %}
+{% block title %}VAT — SI Level — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">VAT EXTRACTION (SI LEVEL)</h1>
+      <p class="text-sm text-slate-500 mt-1">12% VAT-inclusive → output VAT derived per sales invoice (2550Q prep). No GL VAT accounts unless approved.</p>
+    </div>
+    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+      <input type="date" name="period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <span class="text-slate-400">to</span>
+      <input type="date" name="period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Extract</button>
+    </form>
+  </div>
+
+  {% if summary %}
+  <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Invoices</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">{{ summary.count }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Gross / Net Sales</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">₱{{ summary.gross|floatformat:2 }} / ₱{{ summary.net|floatformat:2 }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Output VAT</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums text-indigo-700">₱{{ summary.output_vat|floatformat:2 }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Invoice</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Gross</th>
+          <th class="px-4 py-3 text-right">Net</th>
+          <th class="px-4 py-3 text-right">Output VAT</th>
+          <th class="px-4 py-3">Balanced</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in computations %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ c.invoice.invoice_no }}</td>
+          <td class="px-4 py-2">{{ c.invoice.transaction_date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2">{{ c.segment.code }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.gross_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.net_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ c.output_vat|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if c.is_balanced %}bg-emerald-100 text-emerald-800{% else %}bg-red-100 text-red-800{% endif %}">{{ c.is_balanced|yesno:"OK,NOT" }}</span>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">{% if period_start %}No booked invoices in the period.{% else %}Pick a period and click Extract.{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

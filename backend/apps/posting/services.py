@@ -187,7 +187,7 @@ class PostingService:
         from apps.foundation.calendar import cycle_range_for
         from datetime import timedelta
 
-        start, end = cycle_range_for(entry.transaction_date)
+        start, end = cycle_range_for(entry.transaction_date, company=entry.company)
         reversal_date = end + timedelta(days=1)
 
         with transaction.atomic():

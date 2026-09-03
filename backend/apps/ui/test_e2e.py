@@ -80,7 +80,8 @@ def doc_sequences(db, company):
 class TestEndToEndWorkflow:
 
     def test_january_happy_path_renders_every_screen(
-        self, client, company, segment, accounts, fiscal_period, user, roles, supplier, doc_sequences
+        self, client, company, segment, accounts, fiscal_period, user, roles, supplier, doc_sequences,
+        segment_account_map
     ):
         from apps.ar.models import ARInvoice, AcknowledgmentReceipt, Customer
         from apps.cash.models import (
@@ -235,12 +236,12 @@ class TestEndToEndWorkflow:
         bank_from = BankAccount.objects.create(
             code="E2E-BDO", name="BDO E2E", account_type="checking",
             bank_name="BDO", bank_code="BDO", gl_account=accounts["10110"],
-            segment=segment,
+            company=company,
         )
         bank_to = BankAccount.objects.create(
             code="E2E-PNB", name="PNB E2E", account_type="checking",
             bank_name="PNB", bank_code="PNB", gl_account=accounts["10010"],
-            segment=segment,
+            company=company,
         )
         client.force_login(roles["head"])
         resp = client.post(
@@ -281,7 +282,7 @@ class TestEndToEndWorkflow:
         cycle = WeeklyCashCycle.objects.get(cycle_start=date(2026, 1, 6))
         CollectiblesService.generate(cycle)
         assert CollectiblesWorksheet.objects.filter(cycle=cycle).count() == 2
-        cf = CashFlowService.generate(date(2026, 1, 6), date(2026, 1, 26), segment)
+        cf = CashFlowService.generate(date(2026, 1, 6), date(2026, 1, 26), segment.company)
         assert cf.identity_holds
 
         # 10. Render all six register screens ---------------------------------
@@ -340,8 +341,8 @@ class TestEndToEndWorkflow:
         assert wb["January 2026 CGSE"]["H37"].value > 0
 
         wb = export(
-            "/reports/cash-flow/export/?segment=%d&period_start=2026-01-06&period_end=2026-01-26"
-            % segment.id)
+            "/reports/cash-flow/export/?company=%d&period_start=2026-01-06&period_end=2026-01-26"
+            % company.id)
         assert wb["CF"]["H5"].value == "Amounts in pesos"
         assert wb["CF"]["H25"].value is not None
 

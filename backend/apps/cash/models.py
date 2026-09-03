@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from django.db import models
 
-from apps.core.models import AuditableModel
+from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
 class BankAccountType(models.TextChoices):
@@ -43,10 +43,15 @@ class ActivityType(models.TextChoices):
     LOAN_CLEARED = "loan_cleared", "Checks Cleared for Loan / Fuel"
 
 
-class BankAccount(AuditableModel):
-    """One bank account or PCF/COH fund (ADR-026). 12 accounts / 9 banks + PCF&COH."""
+class BankAccount(SoftDeleteMixin, AuditableModel):
+    """One bank account or PCF/COH fund (ADR-026). 12 accounts / 9 banks + PCF&COH.
 
-    code = models.CharField(max_length=16, unique=True)  # e.g. PNB-DHPP, 1VB-OPS
+    Banks are COMPANY-LEVEL master data: a shared bank (checking/savings) serves
+    every segment of the company, and its activity is attributed per posted GL
+    segment inside each segment's cash cycle sheet (ADR-028).
+    """
+
+    code = models.CharField(max_length=16, unique=True)  # e.g. PNB-CHK, PNB-SAV
     name = models.CharField(max_length=255)
     account_type = models.CharField(max_length=16, choices=BankAccountType.choices)
     bank_name = models.CharField(max_length=128, blank=True)
@@ -54,7 +59,7 @@ class BankAccount(AuditableModel):
     gl_account = models.OneToOneField(
         "foundation.Account", on_delete=models.PROTECT, related_name="bank_account"
     )
-    segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="bank_accounts")
+    company = models.ForeignKey("foundation.Company", on_delete=models.PROTECT, related_name="bank_accounts")
     # ADB maintaining balance requirement
     adb_required = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("5000.00"))
     # For PCF funds: custodian
@@ -149,7 +154,7 @@ class BankReconciliation(AuditableModel):
         return f"Recon {self.cycle} {self.bank_account}: diff {self.difference}"
 
 
-class PettyCashFund(AuditableModel):
+class PettyCashFund(SoftDeleteMixin, AuditableModel):
     """Petty Cash fund (ADR-027). 3 funds: Leaslyn (General), Treasury (Maintenance), Alywin (Technical).
     85% replenishment trigger. Imprest model.
     """
@@ -172,7 +177,7 @@ class PettyCashFund(AuditableModel):
     gl_account = models.OneToOneField(
         "foundation.Account", on_delete=models.PROTECT, related_name="pcf_fund"
     )
-    segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="pcf_funds")
+    company = models.ForeignKey("foundation.Company", on_delete=models.PROTECT, related_name="pcf_funds")
     is_active = models.BooleanField(default=True)
 
     class Meta:

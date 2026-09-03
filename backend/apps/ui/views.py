@@ -7,6 +7,7 @@ service functions the DRF API uses, so the UI and the API can never drift.
 
 from datetime import date, timedelta
 from decimal import Decimal
+import json
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout
@@ -345,12 +346,13 @@ def statement_export(request, statement_type):
 @login_required
 def cash_flow_export(request):
     """Download STATEMENT-OF-CASH-FLOW.xlsx CF mirror for a cycle period."""
+    from apps.foundation.models import Company
     from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
 
-    seg = Segment.objects.get(pk=request.GET.get("segment"))
+    company = Company.objects.get(pk=request.GET.get("company"))
     period_start = date.fromisoformat(request.GET.get("period_start"))
     period_end = date.fromisoformat(request.GET.get("period_end"))
-    wb = build_cash_flow_statement(seg, period_start, period_end)
+    wb = build_cash_flow_statement(company, period_start, period_end)
     return xlsx_response(
         wb, f"STATEMENT-OF-CASH-FLOW-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
     )
@@ -714,6 +716,7 @@ def bank_create(request):
     if request.method == "POST":
         try:
             from apps.cash.models import BankAccount
+            from apps.foundation.models import Company
 
             BankAccount.objects.create(
                 code=request.POST["code"].strip(),
@@ -722,7 +725,7 @@ def bank_create(request):
                 bank_name=request.POST.get("bank_name", ""),
                 bank_code=request.POST.get("bank_code", ""),
                 gl_account=Account.objects.get(pk=request.POST["gl_account"]),
-                segment=Segment.objects.get(pk=request.POST["segment"]),
+                company=Company.objects.first(),
                 adb_required=money(request.POST.get("adb_required") or 0),
             )
             messages.success(request, "Bank account created.")
@@ -941,18 +944,28 @@ def cv_sign(request, pk):
     from apps.ap.models import CheckVoucher
     from apps.core.approvals import require_approval_role
 
-    cv = get_object_or_404(CheckVoucher, pk=pk)
+    cv = get_object_or_404(
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"), pk=pk
+    )
+    is_htmx = request.headers.get("HX-Request")
     try:
         if cv.status == "created":
             require_approval_role(request.user, "coo")
             cv.status = "signed"
             cv.signed_by = request.user
             cv.save(update_fields=["status", "signed_by", "updated_at"])
-            messages.success(request, f"CV {cv.cv_number} signed.")
+            msg = f"CV {cv.cv_number} signed."
+            messages.success(request, msg)
         else:
-            messages.error(request, f"CV cannot be signed from status '{cv.status}'.")
+            msg = f"CV cannot be signed from status '{cv.status}'."
+            messages.error(request, msg)
     except AccountingError as exc:
-        messages.error(request, str(exc))
+        msg = str(exc)
+        messages.error(request, msg)
+    if is_htmx:
+        response = render(request, "ui/ap/_cv_row.html", {"cv": cv})
+        response["HX-Trigger"] = json.dumps({"showToast": msg})
+        return response
     return redirect("ui:cv_detail", pk=pk)
 
 
@@ -963,18 +976,28 @@ def cv_release(request, pk):
     from apps.ap.models import CheckVoucher
     from apps.core.approvals import require_approval_role
 
-    cv = get_object_or_404(CheckVoucher, pk=pk)
+    cv = get_object_or_404(
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"), pk=pk
+    )
+    is_htmx = request.headers.get("HX-Request")
     try:
         if cv.status == "signed":
             require_approval_role(request.user, "head")
             cv.status = "released"
             cv.released_by = request.user
             cv.save(update_fields=["status", "released_by", "updated_at"])
-            messages.success(request, f"CV {cv.cv_number} released.")
+            msg = f"CV {cv.cv_number} released."
+            messages.success(request, msg)
         else:
-            messages.error(request, f"CV cannot be released from status '{cv.status}'.")
+            msg = f"CV cannot be released from status '{cv.status}'."
+            messages.error(request, msg)
     except AccountingError as exc:
-        messages.error(request, str(exc))
+        msg = str(exc)
+        messages.error(request, msg)
+    if is_htmx:
+        response = render(request, "ui/ap/_cv_row.html", {"cv": cv})
+        response["HX-Trigger"] = json.dumps({"showToast": msg})
+        return response
     return redirect("ui:cv_detail", pk=pk)
 
 
@@ -1073,7 +1096,7 @@ def pcf_replenishment_detail(request, pk):
     from apps.cash.models import PCFReplenishment
 
     replen = get_object_or_404(
-        PCFReplenishment.objects.select_related("fund__custodian", "fund__segment"),
+        PCFReplenishment.objects.select_related("fund__custodian", "fund__company"),
         pk=pk,
     )
     return render(request, "ui/cash/pcf_replenishment_detail.html", {"replen": replen})
@@ -1100,13 +1123,15 @@ def pcf_create(request):
 
     if request.method == "POST":
         try:
+            from apps.foundation.models import Company
+
             PettyCashFund.objects.create(
                 fund_code=request.POST["fund_code"],
                 name=request.POST["name"].strip(),
                 custodian=get_user_model().objects.get(pk=request.POST["custodian"]),
                 imprest_amount=money(request.POST.get("imprest_amount") or 0),
                 gl_account=Account.objects.get(pk=request.POST["gl_account"]),
-                segment=Segment.objects.get(pk=request.POST["segment"]),
+                company=Company.objects.first(),
             )
             messages.success(request, "Petty cash fund created.")
             return redirect("ui:pcf_list")
@@ -1289,14 +1314,21 @@ def cash_short_approve(request, pk):
     from apps.cash.services import CashShortService
 
     ws = get_object_or_404(CashShortExcessWorksheet, pk=pk)
+    is_htmx = request.headers.get("HX-Request")
     try:
         from apps.core.approvals import require_approval_role
 
         require_approval_role(request.user, "head")
         CashShortService.approve(ws, request.user)
-        messages.success(request, "Variance approved.")
+        msg = "Variance approved."
+        messages.success(request, msg)
     except AccountingError as exc:
-        messages.error(request, str(exc))
+        msg = str(exc)
+        messages.error(request, msg)
+    if is_htmx:
+        response = render(request, "ui/cash/_cash_short_row.html", {"ws": ws})
+        response["HX-Trigger"] = json.dumps({"showToast": msg})
+        return response
     return redirect("ui:cash_short_list")
 
 
@@ -1366,7 +1398,12 @@ def coa_list(request):
         "segments": Segment.objects.order_by("code"),
         "types": AccountType.choices,
     }
-    return render(request, "ui/foundation/coa_list.html", ctx)
+    template = (
+        "ui/foundation/_coa_rows.html"
+        if request.headers.get("HX-Request")
+        else "ui/foundation/coa_list.html"
+    )
+    return render(request, template, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1376,20 +1413,28 @@ def coa_list(request):
 
 @login_required
 def cash_flow(request):
-    """Cash Flow Statement (ADR-031) — generates on GET with period + segment."""
-    from apps.cash.models import CashFlowStatement
+    """Cash Flow Statement (ADR-031) — monthly cadence by default; a custom
+    period_start/period_end still works (legacy GET form / API e2e uses it)."""
+    from apps.cash.models import CashFlowStatement, WeeklyCashCycle
     from apps.cash.services import CashFlowService
+    from apps.foundation.models import Company
 
-    seg = Segment.objects.filter(pk=request.GET.get("segment")).first()
+    company = Company.objects.first()
     latest = CashFlowStatement.objects.order_by("-period_end").first()
-    if seg and request.GET.get("period_start"):
+    year = int(request.GET.get("year") or date.today().year)
+    month = int(request.GET.get("month") or date.today().month)
+    if company:
         try:
-            latest = CashFlowService.generate(
-                period_start=date.fromisoformat(request.GET["period_start"]),
-                period_end=date.fromisoformat(request.GET["period_end"]),
-                segment=seg,
-            )
-            messages.success(request, f"Cash flow generated for {seg.code}.")
+            if request.GET.get("period_start"):
+                latest = CashFlowService.generate(
+                    period_start=date.fromisoformat(request.GET["period_start"]),
+                    period_end=date.fromisoformat(request.GET["period_end"]),
+                    company=company,
+                )
+                messages.success(request, f"Cash flow generated for {company.code}.")
+            elif request.GET.get("month"):
+                latest = CashFlowService.generate_month(company, year, month)
+                messages.success(request, f"Cash flow generated for {company.code} — {month:02d}/{year}.")
         except (ValueError, AccountingError) as exc:
             messages.error(request, str(exc))
     ctx = cash_flow_options()
@@ -1400,7 +1445,7 @@ def cash_flow(request):
             "investing": -latest.asset_acquisitions,
             "financing": latest.loan_proceeds - latest.loan_repayments,
         }
-    ctx.update({"seg": seg, "latest": latest, "nets": nets})
+    ctx.update({"latest": latest, "nets": nets, "year": year, "month": month})
     return render(request, "ui/cash/cash_flow.html", ctx)
 
 
@@ -1445,6 +1490,180 @@ def aging(request):
     ctx = aging_context(as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
     return render(request, "ui/ar/aging.html", ctx)
+
+
+@login_required
+def ap_aging(request):
+    """AP aging buckets + per-RFP open payable register as of a date."""
+    from .services import ap_aging_context
+
+    as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
+    ctx = ap_aging_context(as_of)
+    ctx["page_obj"] = _page(request, ctx.pop("register"))
+    return render(request, "ui/ap/aging.html", ctx)
+
+
+@login_required
+def fleet_fuel(request):
+    """Fleet fuel management report: per-vehicle consumption + register."""
+    from apps.fleet.models import Vehicle
+    from apps.fleet.services import fleet_fuel_summary, record_fuel_log
+
+    if request.method == "POST":
+        try:
+            vehicle = Vehicle.objects.get(pk=request.POST["vehicle"])
+            record_fuel_log(
+                vehicle=vehicle,
+                logged_at=date.fromisoformat(request.POST["logged_at"]),
+                liters=request.POST["liters"],
+                cost_amount=request.POST["cost_amount"],
+                segment=(
+                    Segment.objects.filter(pk=request.POST["segment"]).first()
+                    if request.POST.get("segment")
+                    else None
+                ),
+                notes=request.POST.get("notes", ""),
+                user=request.user,
+            )
+            messages.success(request, f"Fuel log recorded for {vehicle.plate_no}.")
+        except (Vehicle.DoesNotExist, ValueError, AccountingError) as exc:
+            messages.error(request, str(exc))
+
+    start = request.GET.get("start") or None
+    end = request.GET.get("end") or None
+    segment = request.GET.get("segment") or None
+    ctx = fleet_fuel_summary(start=start, end=end, segment=segment)
+    ctx.update(
+        {
+            "vehicles": Vehicle.objects.select_related("segment").order_by("plate_no"),
+            "segments": Segment.objects.order_by("code"),
+            "start": start or "",
+            "end": end or "",
+            "segment_sel": segment or "",
+        }
+    )
+    ctx["page_obj"] = _page(request, ctx.pop("rows"))
+    return render(request, "ui/fleet/fuel.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# Tax & compliance (Phase 9)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def tax_dashboard(request):
+    """Tax & compliance hub: calendar, VAT, WHT certs, income tax provision."""
+    from apps.tax.models import IncomeTaxProvision, TaxCalendar, VATComputation
+    from apps.tax.services import TaxCalendarService
+
+    from .services import tax_calendar_context
+
+    ctx = {"provisions": IncomeTaxProvision.objects.select_related("segment", "journal_entry").order_by("-filing_period")}
+    ctx.update(tax_calendar_context())
+    return render(request, "ui/tax/dashboard.html", ctx)
+
+
+@login_required
+def tax_vat(request):
+    """VAT at SI level (Phase 9): extract output VAT for a period."""
+    from apps.tax.models import VATComputation
+    from apps.tax.services import VATService
+
+    computations = []
+    summary = None
+    period_start = request.GET.get("period_start")
+    period_end = request.GET.get("period_end")
+    if period_start and period_end:
+        company = Company.objects.first()
+        if company:
+            computations = VATService.extract_for_period(
+                company, date.fromisoformat(period_start), date.fromisoformat(period_end)
+            )
+            summary = VATService.period_summary(computations)
+    return render(
+        request, "ui/tax/vat.html",
+        {"computations": computations, "summary": summary,
+         "period_start": period_start or "", "period_end": period_end or ""},
+    )
+
+
+@login_required
+def tax_wht(request):
+    """BIR 2307/2306 prep from posted CV withholding (Phase 9)."""
+    from apps.tax.services import WithholdingService
+
+    cert_type = request.GET.get("cert_type", "2307")
+    period_start = request.GET.get("period_start") or None
+    period_end = request.GET.get("period_end") or None
+    rows = WithholdingService.build_certificates(
+        cert_type=cert_type,
+        period_start=date.fromisoformat(period_start) if period_start else None,
+        period_end=date.fromisoformat(period_end) if period_end else None,
+    )
+    return render(
+        request, "ui/tax/wht.html",
+        {"rows": rows, "cert_type": cert_type,
+         "period_start": period_start or "", "period_end": period_end or ""},
+    )
+
+
+@login_required
+def tax_provision(request):
+    """Income tax provision: Dr 64600 | Cr income tax payable (Phase 9)."""
+    from apps.tax.models import IncomeTaxProvision
+    from apps.tax.services import IncomeTaxService
+
+    if request.method == "POST":
+        try:
+            segment = Segment.objects.get(pk=request.POST["segment"])
+            prov = IncomeTaxService.provision(
+                company=segment.company,
+                segment=segment,
+                taxable_income=request.POST["taxable_income"],
+                filing_period=request.POST["filing_period"],
+                rate=request.POST.get("rate") or None,
+                user=request.user,
+            )
+            messages.success(request, f"Income tax provision ₱{prov.tax_amount} posted.")
+            return redirect("ui:tax_dashboard")
+        except (Segment.DoesNotExist, ValueError, AccountingError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request, "ui/tax/provision.html",
+        {"segments": Segment.objects.order_by("code")},
+    )
+
+
+@login_required
+def tax_calendar(request):
+    """Tax calendar: file/paid tracking updates."""
+    from apps.tax.models import TaxCalendar
+    from apps.tax.services import TaxCalendarService
+
+    from .services import tax_calendar_context
+
+    if request.method == "POST":
+        calendar_id = request.POST.get("calendar_id")
+        status = request.POST.get("status")
+        calendar = get_object_or_404(TaxCalendar, pk=calendar_id)
+        try:
+            TaxCalendarService.mark(
+                calendar, status=status,
+                filed_date=date.fromisoformat(request.POST["filed_date"]) if request.POST.get("filed_date") else None,
+                paid_date=date.fromisoformat(request.POST["paid_date"]) if request.POST.get("paid_date") else None,
+                user=request.user,
+            )
+            messages.success(request, f"{calendar.form} {calendar.filing_period} marked {status}.")
+        except ValueError as exc:
+            messages.error(request, str(exc))
+        return redirect("ui:tax_dashboard")
+    ctx = tax_calendar_context()
+    ctx["STATUSES"] = [
+        ("not_due", "Not due"), ("due", "Due"), ("filed", "Filed"),
+        ("paid", "Paid"), ("overdue", "Overdue"),
+    ]
+    return render(request, "ui/tax/calendar.html", ctx)
 
 
 # ---------------------------------------------------------------------------

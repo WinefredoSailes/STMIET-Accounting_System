@@ -1,0 +1,127 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Fleet Fuel Report — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">FLEET FUEL REPORT</h1>
+      <p class="text-sm text-slate-500 mt-1">Per-vehicle fuel consumption and cost. Fuel spend is booked to the GL through RFPs / loan clearances (POSTING_RULES 11); these logs are the operational register that drives the management report.</p>
+      <form method="get" class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        <span class="text-slate-400">to</span>
+        <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <option value="">All segments</option>
+          {% for seg in segments %}
+          <option value="{{ seg.code }}" {% if segment_sel == seg.code %}selected{% endif %}>{{ seg.code }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
+      </form>
+    </div>
+    <form method="post" class="w-full lg:max-w-sm rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+      {% csrf_token %}
+      <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Log fuel</div>
+      <div class="space-y-2">
+        <select name="vehicle" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <option value="">Vehicle…</option>
+          {% for v in vehicles %}
+          <option value="{{ v.id }}">{{ v.plate_no }} — {{ v.make_model }}</option>
+          {% endfor %}
+        </select>
+        <div class="flex gap-2">
+          <input type="date" name="logged_at" value="{{ start }}" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+            <option value="">Seg</option>
+            {% for seg in segments %}
+            <option value="{{ seg.id }}">{{ seg.code }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <input type="number" name="liters" step="0.01" min="0" placeholder="Liters" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <input type="number" name="cost_amount" step="0.01" min="0" placeholder="Cost (₱)" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <input type="text" name="notes" placeholder="Notes (optional)" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <button type="submit" class="mt-3 w-full rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Record fuel</button>
+    </form>
+  </div>
+
+  <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Total fuel (period)</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">{{ liters_total|money }} L</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Total cost (period)</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">₱{{ cost_total|money }}</div>
+    </div>
+  </div>
+
+  {% if per_vehicle %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[560px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Plate No</th>
+          <th class="px-4 py-3">Make / Model</th>
+          <th class="px-4 py-3 text-right">Liters</th>
+          <th class="px-4 py-3 text-right">Cost</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for v in per_vehicle %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ v.plate_no }}</td>
+          <td class="px-4 py-2">{{ v.make_model|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ v.liters|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ v.cost|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="2" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-slate-500">Total</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ liters_total|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ cost_total|money }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Vehicle</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Liters</th>
+          <th class="px-4 py-3 text-right">Cost</th>
+          <th class="px-4 py-3">Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for log in page_obj %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ log.logged_at|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ log.vehicle.plate_no }}</td>
+          <td class="px-4 py-2">{{ log.segment.code|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ log.liters|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ log.cost_amount|money }}</td>
+          <td class="px-4 py-2 text-xs text-slate-600">{{ log.notes|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No fuel logs match the filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "ui/partials/pagination.html" %}
+  {% else %}
+  <div class="mt-6 text-center text-slate-400">No fuel logs recorded in the filtered period. Use the Log fuel form to record consumption.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -8,6 +8,7 @@ from apps.core.exceptions import ValidationError
 from apps.foundation.models import Company, Segment
 
 from .excel_export import (
+    build_income_statement,
     build_statement_of_changes_in_equity,
     build_statement_of_cost_of_sales,
     build_statement_of_financial_position,
@@ -116,6 +117,7 @@ class FinancialStatementViewSet(viewsets.ReadOnlyModelViewSet):
         """
         statement_type = request.query_params.get("statement_type")
         builders = {
+            "is": ("INCOME-STATEMENT", build_income_statement),
             "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
             "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
             "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
@@ -123,7 +125,7 @@ class FinancialStatementViewSet(viewsets.ReadOnlyModelViewSet):
         }
         if statement_type not in builders:
             return Response(
-                {"detail": "statement_type must be one of: sfp, soce, cos, te."},
+                {"detail": "statement_type must be one of: is, sfp, soce, cos, te."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         company = Company.objects.get(pk=request.query_params.get("company"))

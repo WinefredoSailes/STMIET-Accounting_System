@@ -114,6 +114,15 @@ class TestScreens:
         "/cash/collections-summary/",
         "/cash/short/",
         "/cash/short/new/",
+        "/cash/transfers/",
+        "/ap/aging/",
+        "/reports/cash-flow/",
+        "/reports/fleet/fuel/",
+        "/reports/tax/",
+        "/reports/tax/vat/",
+        "/reports/tax/wht/",
+        "/reports/tax/provision/",
+        "/reports/tax/calendar/",
         "/assets/",
         "/assets/new/",
     ]
@@ -452,8 +461,18 @@ class TestAssetScreen:
 
     def test_asset_lifecycle(self, client, company, segment, accounts, fiscal_period,
                              user, category):
+        from apps.foundation.models import SegmentAccountMap
+
         Account.objects.create(code="27000", name="Loans Payable - DHPP", account_type="liability")
-        Account.objects.create(code="62000", name="Loss on Disposal", account_type="expense")
+        loss_acc = Account.objects.create(code="62000", name="Loss on Disposal", account_type="expense")
+        # Data-driven segment default accounts (Phase 2): the COA slice here
+        # lacks a loans/gain code, so map only the roles this test exercises.
+        SegmentAccountMap.objects.create(
+            segment=segment, role=SegmentAccountMap.ROLE_CASH, account=accounts["10010"]
+        )
+        SegmentAccountMap.objects.create(
+            segment=segment, role=SegmentAccountMap.ROLE_DISPOSAL_LOSS, account=loss_acc
+        )
         resp = client.post("/assets/new/", {
             "name": "Diesel Generator",
             "category": category.id,
@@ -492,7 +511,7 @@ class TestAssetScreen:
         assert asset.disposal.status == "posted"
 
     def test_asset_detail_shows_schedule(self, client, company, segment, accounts,
-                                         fiscal_period, user, category):
+                                         fiscal_period, user, category, segment_account_map):
         from apps.assets.models import Asset
         from apps.assets.services import AssetService
 
@@ -544,7 +563,7 @@ class TestCheckVoucherScreen:
         return rfp
 
     def test_cv_create_posts(self, client, company, segment, accounts, fiscal_period,
-                             user, approved_rfp):
+                             user, approved_rfp, segment_account_map):
         resp = client.post("/ap/cv/new/", {
             "rfp": approved_rfp.id,
             "cv_date": "2026-01-16",
@@ -565,7 +584,7 @@ class TestCheckVoucherScreen:
         assert cv.journal_entry.lines.count() == 3  # Dr AP | Cr Cash | Cr WHT
 
     def test_cv_lifecycle(self, client, company, segment, accounts, fiscal_period,
-                          user, approved_rfp, role_users):
+                          user, approved_rfp, role_users, segment_account_map):
         from apps.ap.models import CheckVoucher
         from apps.ap.services import CVPaymentService
 
@@ -604,7 +623,7 @@ class TestCheckVoucherScreen:
         assert cv.status == "cleared"
 
     def test_cv_detail_renders(self, client, company, segment, accounts, fiscal_period,
-                               user, approved_rfp):
+                               user, approved_rfp, segment_account_map):
         from apps.ap.services import CVPaymentService
 
         cv = CVPaymentService.create_cv(
@@ -635,7 +654,7 @@ class TestPCFReplenishmentScreen:
             custodian=user,
             imprest_amount=Decimal("20000.00"),
             gl_account=accounts["10110"],
-            segment=segment,
+            company=company,
         )
 
     def test_replenish_creates(self, client, company, segment, accounts, fiscal_period,
@@ -730,7 +749,7 @@ class TestReconScreen:
             name="BDO Checking",
             account_type="checking",
             gl_account=accounts["10110"],
-            segment=segment,
+            company=company,
         )
 
     def test_recon_create(self, client, company, segment, accounts, cycle, bank):
@@ -887,7 +906,7 @@ class TestCollectionsSummaryScreen:
         BankAccount.objects.create(
             code="EW-1", name="EW Checking", account_type="checking",
             bank_name="EW Bank", bank_code="EW",
-            gl_account=accounts["10110"], segment=segment,
+            gl_account=accounts["10110"], company=company,
         )
         invoice = ARInvoice.objects.create(
             invoice_no="SI-2026-001", customer=customer,
@@ -1032,7 +1051,7 @@ class TestMyApprovals:
         assert b"was not moved" in resp.content
 
     def test_cv_and_cash_short_queues(self, client, company, segment, accounts,
-                                      supplier, role_users, user):
+                                      supplier, role_users, user, segment_account_map):
         from apps.ap.models import CheckVoucher, CONSOBatch
         from apps.ap.services import CVPaymentService
 
@@ -1103,3 +1122,231 @@ class TestMyApprovals:
         assert resp.status_code == 200
         assert b"My Approvals" in resp.content
         assert b"bg-amber-500" in resp.content
+
+
+class TestStatementChaining:
+    """Phase 8b: the UI chains the IS net profit into SFP equity and the SOCE."""
+
+    @pytest.fixture
+    def statement_fixture(self, db, company, segment, accounts, fiscal_period, user):
+        from apps.foundation.models import Account
+
+        for code, name, atype, nb in [
+            ("30000", "E.Bagatua Capital - DHPP", "equity", "credit"),
+            ("40000", "Sales - Fuel Hauling", "revenue", "credit"),
+            ("50000", "COGS - Fuel Purchase", "expense", "debit"),
+            ("61000", "Operating Expenses", "expense", "debit"),
+        ]:
+            Account.objects.create(
+                code=code, name=name, account_type=atype, segment="DHPP", normal_balance=nb
+            )
+
+        def post(code_lines, entry_no, desc):
+            je = JournalEntry.objects.create(
+                entry_no=entry_no,
+                company=company,
+                segment=segment,
+                transaction_date=date(2026, 1, 10),
+                status=PostingStatus.APPROVED,
+                description=desc,
+                created_by=user,
+            )
+            for i, (code, raw) in enumerate(code_lines, start=1):
+                amt = Decimal(raw)
+                JournalEntryLine.objects.create(
+                    entry=je,
+                    line_no=i,
+                    account=Account.objects.get(code=code),
+                    debit=amt if amt >= 0 else Decimal("0.00"),
+                    credit=-amt if amt < 0 else Decimal("0.00"),
+                )
+            je.recalc_totals()
+            PostingService.post(je, user=user)
+
+        post([("10010", "400000.00"), ("30000", "-400000.00")], "JE-C1", "Opening capital")
+        post([("12030", "250000.00"), ("40000", "-250000.00")], "JE-C2", "Fuel sales")
+        post([("50000", "150000.00"), ("20000", "-150000.00")], "JE-C3", "COGS")
+        post([("61000", "25000.00"), ("20000", "-25000.00")], "JE-C4", "Operating expenses")
+
+    def test_sfp_and_soce_carry_is_net_profit(self, company, statement_fixture, user):
+        from apps.ui.services import StatementService
+
+        is_fs = StatementService.generate(
+            statement_type="is", period_start="2026-01-01", period_end="2026-01-31", user=user
+        )
+        net = is_fs.rows_by_key()["net_profit"]["amounts"]["GRAND"]
+        assert net == "75000.00"
+
+        sfp = StatementService.generate(
+            statement_type="sfp", period_start="2026-01-01", period_end="2026-01-31", user=user
+        )
+        assert sfp.rows_by_key()["eq_net_profit"]["amounts"]["GRAND"] == net
+
+        soce = StatementService.generate(
+            statement_type="soce", period_start="2026-01-01", period_end="2026-01-31", user=user
+        )
+        assert soce.rows_by_key()["soce_net_profit"]["amounts"]["GRAND"] == net
+
+
+class TestAPAgingScreen:
+    @pytest.fixture
+    def open_rfp(self, db, company, segment, accounts, user):
+        from apps.ap.models import Supplier
+
+        supplier = Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="depot", default_segment=segment
+        )
+        from apps.ap.services import RFPService
+
+        rfp = RFPService.create_rfp(
+            ap_number="A0001",
+            rfp_date=date(2026, 1, 5),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "posted"  # open payable: no clearing CV yet
+        rfp.save(update_fields=["status", "updated_at"])
+        return rfp, supplier
+
+    def test_buckets_and_register(self, client, company, segment, accounts, open_rfp):
+        rfp, supplier = open_rfp
+        resp = client.get("/ap/aging/?as_of=2026-03-31")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "AP AGING" in body
+        assert "A0001" in body
+        # 1/5 -> 3/31 is 85 days: bucket 61-90, open 20,000 (money-filtered: 20,000.00).
+        assert "A0001" in body
+        assert "20,000.00" in body
+
+    def test_cleared_rfp_not_open(self, client, company, segment, accounts,
+                                  open_rfp, fiscal_period, user, segment_account_map):
+        from apps.ap.services import CVPaymentService
+
+        rfp, supplier = open_rfp
+        CVPaymentService.create_cv(
+            cv_number="CV-2026-0001",
+            cv_date=date(2026, 2, 1),
+            payee=supplier,
+            bank_account=accounts["10110"],
+            gross_amount="20000.00",
+            withheld_tax="0.00",
+            rfp=rfp,
+            user=user,
+        )
+        resp = client.get("/ap/aging/?as_of=2026-03-31")
+        body = resp.content.decode()
+        assert "No open payables" in body
+
+
+class TestFleetFuelScreen:
+    @pytest.fixture
+    def vehicle(self, db, company, segment, accounts):
+        from apps.fleet.models import Vehicle
+
+        v = Vehicle.objects.create(plate_no="XV-123", make_model="Isuzu NPR", segment=segment)
+        return v
+
+    def test_record_and_report(self, client, company, segment, accounts, vehicle):
+        resp = client.post("/reports/fleet/fuel/", {
+            "vehicle": vehicle.id,
+            "logged_at": "2026-01-15",
+            "liters": "120.50",
+            "cost_amount": "7500.00",
+            "segment": "",
+            "notes": "DHPP run",
+        })
+        assert resp.status_code == 200
+        from apps.fleet.models import FuelLog
+
+        log = FuelLog.objects.get()
+        assert log.liters == Decimal("120.50")
+        assert log.cost_amount == Decimal("7500.00")
+
+        body = client.get("/reports/fleet/fuel/").content.decode()
+        assert "XV-123" in body
+        assert "120.50" in body
+        assert "7,500.00" in body
+
+    def test_filter_by_segment(self, client, company, segment, accounts, vehicle):
+        from apps.fleet.services import record_fuel_log
+
+        record_fuel_log(
+            vehicle=vehicle, logged_at=date(2026, 1, 15), liters="50.00",
+            cost_amount="3000.00", segment=segment,
+        )
+        body = client.get(f"/reports/fleet/fuel/?segment={segment.code}").content.decode()
+        assert "50.00" in body
+        body = client.get("/reports/fleet/fuel/?segment=OPS").content.decode()
+        assert "50.00" not in body
+
+
+class TestHTMXPartialUpdates:
+    def test_coa_filter_returns_fragment(self, client, company, accounts):
+        resp = client.get(
+            "/foundation/coa/?q=100&segment=&account_type=", HTTP_HX_REQUEST="true"
+        )
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "10010" in body
+        # fragment only: no page chrome, no sidebar
+        assert "STMIET" not in body
+        assert "AP Aging" not in body
+
+    def test_cash_short_approve_swaps_row(self, client, company, segment, accounts, user):
+        from apps.cash.models import CashShortExcessWorksheet, WeeklyCashCycle
+        from apps.foundation.models import UserProfile
+
+        cycle = WeeklyCashCycle.objects.create(
+            cycle_start="2026-01-06", cycle_end="2026-01-12", segment=segment
+        )
+        ws = CashShortExcessWorksheet.objects.create(
+            cycle=cycle, segment=segment, expected_cash="10000.00",
+            actual_cash="9500.00", variance="-500.00", cause="Miscount", status="open",
+        )
+        UserProfile.objects.create(user=user, approval_role="head")
+        resp = client.post(f"/cash/short/{ws.id}/approve/", {}, HTTP_HX_REQUEST="true")
+        assert resp.status_code == 200
+        assert resp.headers["HX-Trigger"]
+        ws.refresh_from_db()
+        assert ws.status == "approved"
+        assert "approved" in resp.content.decode()
+
+    def test_cv_sign_swaps_row(self, client, company, segment, accounts, fiscal_period,
+                               user, role_users, segment_account_map):
+        from apps.ap.models import Supplier
+        from apps.ap.services import CVPaymentService, RFPService
+
+        supplier = Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment", default_segment=segment
+        )
+        rfp = RFPService.create_rfp(
+            ap_number="A0001", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "10000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "10000.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "fin_approved"
+        rfp.checked_by = user
+        rfp.approved_by_acctg = user
+        rfp.approved_by_fin = user
+        rfp.save()
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0001", cv_date=date(2026, 1, 16), payee=supplier,
+            bank_account=accounts["10110"], gross_amount="10000.00", withheld_tax="0.00",
+            rfp=rfp, user=user,
+        )
+        client.force_login(role_users["coo"])
+        resp = client.post(f"/ap/cv/{cv.id}/sign/", {}, HTTP_HX_REQUEST="true")
+        assert resp.status_code == 200
+        assert resp.headers["HX-Trigger"]
+        cv.refresh_from_db()
+        assert cv.status == "signed"
+        assert "signed" in resp.content.decode()

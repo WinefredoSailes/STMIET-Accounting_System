@@ -212,6 +212,21 @@ class MonthEndClose(AuditableModel):
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     closed_at = models.DateTimeField(null=True, blank=True)
+    # §13 posted journal entries: revenue/expense close (13.1+13.2) and the
+    # appropriation entry (13.3), when the COA carries the needed reserve
+    # accounts. Set by MonthEndCloseService.close_period / appropriation.
+    revenue_close_entry = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    expense_close_entry = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    appropriation_entry = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         ordering = ["-fiscal_period__period_no"]

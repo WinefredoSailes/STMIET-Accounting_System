@@ -12,7 +12,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 
-from apps.core.models import AuditableModel
+from apps.core.models import AuditableModel, SoftDeleteMixin
 
 # Segment tags (ADR-003). 0=DHPP, 3=DMIE, 6=OPS, and the 4th segment (STPC) is
 # carried via due-from/payable placeholder accounts 15500/25500 rather than a
@@ -25,14 +25,25 @@ SEGMENT_CHOICES = [
 ]
 
 
-class Company(AuditableModel):
+class Company(SoftDeleteMixin, AuditableModel):
     """Legal entities the books are kept for (ADR-014 master data)."""
+
+    class CashCycleType(models.TextChoices):
+        WEEKLY = "weekly", "Weekly (Tue->Mon)"
+        MONTHLY = "monthly", "Monthly (calendar)"
 
     code = models.CharField(max_length=16, unique=True)
     name = models.CharField(max_length=255)
     tin = models.CharField("TIN", max_length=32, blank=True)
     address = models.CharField(max_length=255, blank=True)
     rdo_code = models.CharField("RDO", max_length=8, blank=True)
+    # Cash-cycle shape (ADR-013). STMIET runs the classic weekly Tue->Mon sheet;
+    # other companies may adopt a monthly calendar cycle or different weekdays.
+    cash_cycle = models.CharField(
+        max_length=16, choices=CashCycleType.choices, default=CashCycleType.WEEKLY
+    )
+    cycle_start_weekday = models.PositiveSmallIntegerField(default=1)  # 1 = Tuesday
+    cycle_end_weekday = models.PositiveSmallIntegerField(default=0)  # 0 = Monday
 
     class Meta:
         verbose_name_plural = "companies"
@@ -42,7 +53,7 @@ class Company(AuditableModel):
         return f"{self.code} {self.name}"
 
 
-class Segment(AuditableModel):
+class Segment(SoftDeleteMixin, AuditableModel):
     """Business segments (cost centers) used in GL reporting (ADR-003)."""
 
     code = models.CharField(max_length=8, unique=True)
@@ -124,7 +135,7 @@ NORMAL_BALANCE = {
 }
 
 
-class Account(AuditableModel):
+class Account(SoftDeleteMixin, AuditableModel):
     """One chart-of-accounts node (5-digit code, hierarchy, segment key).
 
     ADR-003: the last digit is the segment tag for 1xxx/2xxx rollups; for
@@ -172,6 +183,67 @@ class Account(AuditableModel):
         if last in (0, 3, 6):
             return {0: "DHPP", 3: "DMIE", 6: "OPS"}[last]
         return "ALL"
+
+
+class SegmentAccountMap(AuditableModel):
+    """Data-driven segment default accounts (Phase 2).
+
+    Replaces the hardcoded per-segment account dicts in ap/assets services with
+    COA master links: a `role` names the accounting intent (ap, cash, loans,
+    disposal gain/loss, withholding tax) and each (segment, role) resolves to
+    exactly one postable COA account. Rows are seeded from the COA importer, so
+    account codes exist only as DB data; services never hardcode COA codes.
+    """
+
+    ROLE_AP = "ap"
+    ROLE_AP_WHT = "ap_wht"
+    ROLE_CASH = "cash"
+    ROLE_LOANS = "loans"
+    ROLE_DISPOSAL_GAIN = "disposal_gain"
+    ROLE_DISPOSAL_LOSS = "disposal_loss"
+    ROLE_INCOME_TAX = "income_tax"
+    ROLE_VAT_OUTPUT = "vat_output"
+    ROLE_CHOICES = [
+        (ROLE_AP, "Accounts payable (CV Dr)"),
+        (ROLE_AP_WHT, "Withholding tax expanded (CV Cr)"),
+        (ROLE_CASH, "Cash default (proceeds / funding)"),
+        (ROLE_LOANS, "Loans payable (financed acquisition)"),
+        (ROLE_DISPOSAL_GAIN, "Gain on asset disposal"),
+        (ROLE_DISPOSAL_LOSS, "Loss on asset disposal"),
+        (ROLE_INCOME_TAX, "Income tax payable (provision Cr)"),
+        (ROLE_VAT_OUTPUT, "Output VAT payable (SI extraction Cr)"),
+    ]
+
+    segment = models.ForeignKey(Segment, on_delete=models.PROTECT, related_name="account_maps")
+    role = models.CharField(max_length=24, choices=ROLE_CHOICES)
+    account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="+")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ("segment", "role")
+        ordering = ["segment__code", "role"]
+
+    def __str__(self):
+        return f"{self.segment.code}:{self.role} -> {self.account.code}"
+
+
+def resolve_segment_account(segment, role) -> Account:
+    """The COA account a segment uses for an accounting role (Phase 2).
+
+    The data lives in SegmentAccountMap (seeded by import_coa); services pass
+    the segment and role, never a hardcoded COA code. A missing row is a master
+    data problem and fails loudly.
+    """
+    from apps.core.exceptions import ValidationError
+
+    code = segment.code if hasattr(segment, "code") else str(segment)
+    try:
+        mapping = SegmentAccountMap.objects.get(segment__code=code, role=role)
+    except SegmentAccountMap.DoesNotExist as exc:
+        raise ValidationError(
+            f"Segment {code} has no mapped account for role '{role}'."
+        ) from exc
+    return mapping.account
 
 
 class UserProfile(AuditableModel):

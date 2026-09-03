@@ -37,7 +37,21 @@ from .models import (
     StatementType,
 )
 
-SEGMENT_CODES = ["DHPP", "DMIE", "OPS"]
+def segment_codes() -> list[str]:
+    """Reporting columns = the active Segment master rows (data-driven, Phase 2).
+
+    Statement columns (per-segment + GRAND) are derived from the Segment table
+    instead of the former hardcoded ['DHPP','DMIE','OPS'] list, so adding or
+    removing a segment flows straight into every generated statement.
+    """
+    from apps.foundation.models import Segment
+
+    codes = list(
+        Segment.objects.filter(is_active=True)
+        .order_by("code")
+        .values_list("code", flat=True)
+    )
+    return codes or ["ALL"]
 
 
 class TrialBalanceService:
@@ -557,14 +571,14 @@ class FinancialStatementService:
         values: dict[str, dict[str, Decimal]] = {}
 
         for key, qty in quantities.items():
-            values[key] = {seg: money(qty) for seg in SEGMENT_CODES + ["GRAND"]}
+            values[key] = {seg: money(qty) for seg in segment_codes() + ["GRAND"]}
         for key, val in inputs.items():
             if isinstance(val, dict):
                 per = {seg: money(v) for seg, v in val.items()}
                 values[key] = per
-                values[key]["GRAND"] = money(sum(per.get(s, Decimal("0.00")) for s in SEGMENT_CODES))
+                values[key]["GRAND"] = money(sum(per.get(s, Decimal("0.00")) for s in segment_codes()))
             else:
-                values[key] = {seg: money(val) for seg in SEGMENT_CODES + ["GRAND"]}
+                values[key] = {seg: money(val) for seg in segment_codes() + ["GRAND"]}
 
         for line in lines:
             if line.key in values:
@@ -582,21 +596,21 @@ class FinancialStatementService:
                 if line.left_ref and line.left_ref in values:
                     values[line.key] = dict(values[line.left_ref])
                 else:
-                    values[line.key] = {seg: Decimal("0.00") for seg in SEGMENT_CODES + ["GRAND"]}
+                    values[line.key] = {seg: Decimal("0.00") for seg in segment_codes() + ["GRAND"]}
             elif line.mode == StatementLineMode.QUANTITY:
-                values[line.key] = {seg: Decimal("0.00") for seg in SEGMENT_CODES + ["GRAND"]}
+                values[line.key] = {seg: Decimal("0.00") for seg in segment_codes() + ["GRAND"]}
             elif line.mode == StatementLineMode.DIFFERENCE:
                 left = values.get(line.left_ref, {})
                 right = values.get(line.right_ref, {})
                 values[line.key] = {
                     col: money((left.get(col, Decimal("0.00")) or 0) - (right.get(col, Decimal("0.00")) or 0))
-                    for col in SEGMENT_CODES + ["GRAND"]
+                    for col in segment_codes() + ["GRAND"]
                 }
             elif line.mode == StatementLineMode.RATIO:
                 left = values.get(line.left_ref, {})
                 right = values.get(line.right_ref, {})
                 row = {}
-                for col in SEGMENT_CODES + ["GRAND"]:
+                for col in segment_codes() + ["GRAND"]:
                     denom = right.get(col, Decimal("0.00")) or 0
                     row[col] = ((left.get(col, 0) or 0) * 100 / denom) if denom else Decimal("0.00")
                 values[line.key] = {k: money(v) for k, v in row.items()}
@@ -605,16 +619,16 @@ class FinancialStatementService:
                 w = Decimal(line.weight or 0)
                 values[line.key] = {
                     col: money((base.get(col, 0) or 0) * w)
-                    for col in SEGMENT_CODES + ["GRAND"]
+                    for col in segment_codes() + ["GRAND"]
                 }
             elif line.mode == StatementLineMode.SUM:
                 children = [v for v in by_key.values() if v.parent_id == line.id]
                 row = {}
-                for col in SEGMENT_CODES + ["GRAND"]:
+                for col in segment_codes() + ["GRAND"]:
                     row[col] = sum((values[c.key].get(col, Decimal("0.00")) or 0) for c in children)
                 values[line.key] = {k: money(v) for k, v in row.items()}
             else:
-                values[line.key] = {seg: Decimal("0.00") for seg in SEGMENT_CODES + ["GRAND"]}
+                values[line.key] = {seg: Decimal("0.00") for seg in segment_codes() + ["GRAND"]}
 
         data = []
         for line in lines:
@@ -661,12 +675,12 @@ class FinancialStatementService:
         selected = list(dict.fromkeys(selected))
 
         row = {}
-        for seg in SEGMENT_CODES:
+        for seg in segment_codes():
             total = Decimal("0.00")
             for code in selected:
                 total += balances.get(code, {}).get(seg, Decimal("0.00"))
             row[seg] = money(total * Decimal(line.sign or 1))
-        row["GRAND"] = money(sum(row.get(s, Decimal("0.00")) for s in SEGMENT_CODES))
+        row["GRAND"] = money(sum(row.get(s, Decimal("0.00")) for s in segment_codes()))
         return row
 
     @classmethod
@@ -735,3 +749,283 @@ class MonthEndCloseService:
         mec.fiscal_period.is_closed = True
         mec.fiscal_period.save(update_fields=["is_closed", "updated_at"])
         return mec
+
+    # ------------------------------------------------------------------ §13
+    # Closing journal entries (BUILD-PLAN Batch D). §13.1/13.2 transfer
+    # period revenue and expense balances into E.Bagatua Capital; §13.3 moves
+    # net income into appropriation reserves when the COA carries them.
+
+    CAPITAL_FAMILY = {"DHPP": "30000", "DMIE": "30003", "OPS": "30006"}
+
+    @classmethod
+    def _capital_account(cls, segment):
+        from apps.foundation.models import Account
+
+        candidates = {segment.code: cls.CAPITAL_FAMILY.get(segment.code, "30000")}
+        code = candidates.get(segment.code, "30000")
+        try:
+            return Account.objects.get(code=code, is_postable=True, account_type="equity")
+        except Account.DoesNotExist:
+            # Shared equity account (30000, segment ALL) is the fallback.
+            try:
+                return Account.objects.get(code="30000", is_postable=True, account_type="equity")
+            except Account.DoesNotExist as exc:
+                from apps.core.exceptions import ValidationError
+
+                raise ValidationError(
+                    "No equity capital account (30000/30003/30006) in COA to close into."
+                ) from exc
+
+    @classmethod
+    def _period_accounts(cls, company, segment, period_start, period_end):
+        """Revenue + expense account balances for one segment in the window."""
+        balances = TrialBalanceService.segment_balances(
+            company, start=period_start, end=period_end
+        )
+        from apps.foundation.models import Account
+
+        return balances, Account
+
+    @classmethod
+    def close_segment(cls, company, segment, period_start, period_end, *, user=None):
+        """Post §13.1 + §13.2 closing entries for a segment; returns (rev_je, exp_je).
+
+        - §13.1 : Dr each revenue account   | Cr Capital ({net_revenue})
+        - §13.2 : Dr Capital ({total_exp})   | Cr each expense account
+        Net income (revenue - expense) flows into Capital's balance.
+        """
+        from django.db import transaction
+
+        from apps.foundation.models import Account
+        from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
+        from apps.posting.services import PostingService
+
+        period_range = (
+            TrialBalanceService.segment_balances(company, start=period_start, end=period_end)
+        )
+        capital = cls._capital_account(segment)
+
+        # revenue-close legs: (acct, debit, credit) — credit-normal accounts are
+        # debited, debit-normal (contra_revenue) are credited; the capital leg
+        # balances to the net income.
+        rev_legs: list[tuple] = []
+        exp_legs: list[tuple] = []
+        rev_net = Decimal("0.00")
+        exp_net = Decimal("0.00")
+        for code, per_seg in period_range.items():
+            # Close only this segment's balance (ADR-011: no fictitious
+            # cross-segment allocation at close time).
+            bal = Decimal(per_seg.get(segment.code, "0"))
+            if bal == 0:
+                continue
+            try:
+                acct = Account.objects.get(code=code, is_postable=True)
+            except Account.DoesNotExist:
+                continue
+            # Only close realized nominal accounts in this segment; skip
+            # accounts whose segment disagrees (ADR-011) and non-nominal types.
+            if acct.segment not in (segment.code, "ALL"):
+                continue
+            if acct.account_type in ("revenue", "contra_revenue"):
+                if acct.normal_balance == "credit":
+                    rev_legs.append((acct, money(bal), Decimal("0.00"), f"Close {acct.code}"))
+                    rev_net += bal
+                else:  # debit-normal contra (sales discount)
+                    rev_legs.append((acct, Decimal("0.00"), money(bal), f"Close {acct.code}"))
+                    rev_net -= bal
+            elif acct.account_type in ("expense", "contra_expense"):
+                if acct.normal_balance == "debit":
+                    exp_legs.append((acct, Decimal("0.00"), money(bal), f"Close {acct.code}"))
+                    exp_net += bal
+                else:  # credit-normal contra expense (purchase discount, gain)
+                    exp_legs.append((acct, money(bal), Decimal("0.00"), f"Close {acct.code}"))
+                    exp_net -= bal
+
+        # §13.1: revenue close. Income accounts zeroed against capital.
+        rev_entry = None
+        if rev_legs:
+            capital_cr = money(rev_net)
+            end_d = str(period_end).replace("-", "")
+            rev_entry = cls._post_close_je(
+                company=company, segment=segment, entry_no=f"CLR-{company.pk}-{segment.code}-{end_d}",
+                transaction_date=period_end, description=f"Close revenue {segment.code}",
+                source_doc_no=f"{company.pk}:{segment.code}:{period_end}",
+                lines=rev_legs + [(capital, Decimal("0.00"), capital_cr, "Close to capital")]
+                if capital_cr > 0
+                else rev_legs + [(capital, abs(capital_cr), Decimal("0.00"), "Close to capital")],
+                user=user,
+            )
+
+        # §13.2: expense close. Capital debited, each expense credited.
+        exp_entry = None
+        if exp_legs:
+            capital_dr = money(exp_net)
+            end_d = str(period_end).replace("-", "")
+            exp_entry = cls._post_close_je(
+                company=company, segment=segment, entry_no=f"CLE-{company.pk}-{segment.code}-{end_d}",
+                transaction_date=period_end, description=f"Close expenses {segment.code}",
+                source_doc_no=f"{company.pk}:{segment.code}:{period_end}",
+                lines=[(capital, capital_dr, Decimal("0.00"), "Close expenses to capital")]
+                      + exp_legs,
+                user=user,
+            )
+
+        return rev_entry, exp_entry
+
+    @classmethod
+    def close_period(cls, mec: MonthEndClose, *, segment=None, user=None) -> MonthEndClose:
+        """Post §13.1/13.2 closing JEs for the period's segment(s)."""
+        from apps.foundation.models import Segment
+
+        if mec.fiscal_period.is_closed:
+            # Closing JEs are posted before the period is locked by `complete`.
+            pass
+        period_start = mec.fiscal_period.start_date
+        period_end = mec.fiscal_period.end_date
+        company = mec.company
+
+        segments = [segment] if segment else list(Segment.objects.filter(company=company, is_active=True))
+        for seg in segments:
+            rev, exp = cls.close_segment(
+                company, seg, period_start, period_end, user=user
+            )
+            if rev is not None:
+                mec.revenue_close_entry = rev
+            if exp is not None:
+                mec.expense_close_entry = exp
+        mec.save(update_fields=["revenue_close_entry", "expense_close_entry", "updated_at"])
+        return mec
+
+    @classmethod
+    def _segment_net_income(cls, company, segment, start, end) -> Decimal:
+        """Period net income (revenue - expenses) for one segment.
+
+        Reads the posted §13 closing JEs for the segment/period so it is valid
+        both before and after `close_period` runs (it never re-reads nominal
+        balances, which the close zeroes).
+        """
+        from apps.posting.models import JournalEntry, PostingStatus
+
+        rev_total = Decimal("0.00")
+        exp_total = Decimal("0.00")
+        token = f"{company.pk}:{segment.code}:{end}"
+        rev_je = (
+            JournalEntry.objects.filter(
+                source_doc_type="CLOSE", source_doc_no=token, segment=segment,
+                entry_no__startswith="CLR-", status=PostingStatus.POSTED,
+            ).order_by("-id").first()
+        )
+        exp_je = (
+            JournalEntry.objects.filter(
+                source_doc_type="CLOSE", source_doc_no=token, segment=segment,
+                entry_no__startswith="CLE-", status=PostingStatus.POSTED,
+            ).order_by("-id").first()
+        )
+        if rev_je is not None:
+            rev_total = rev_je.total_credit
+        if exp_je is not None:
+            exp_total = exp_je.total_debit
+        return money(rev_total - exp_total)
+
+    @classmethod
+    def apply_appropriations(cls, mec: MonthEndClose, *, segment=None, user=None) -> MonthEndClose:
+        """§13.3 appropriation JE — data-driven via SegmentAccountMap reserve roles.
+
+        Only posts when the COA defines the two appropriation-reserve accounts
+        (repairs & maintenance, tithing). With the current COA (no 3xxxx
+        reserve accounts) this is a no-op that leaves the appropriation pending
+        rather than inventing account codes.
+        """
+        from apps.foundation.models import Segment, SegmentAccountMap
+
+        segments = [segment] if segment else list(Segment.objects.filter(company=mec.company, is_active=True))
+        period = mec.fiscal_period
+
+        rm_role = "appropriation_rm"
+        tithing_role = "appropriation_tithing"
+        ten = Decimal("0.1000")
+        posted_any = False
+        for seg in segments:
+            net_income = cls._segment_net_income(
+                mec.company, seg, period.start_date, period.end_date
+            )
+            if net_income <= 0:
+                continue
+            rm_acct = SegmentAccountMap.objects.filter(
+                segment=seg, role=rm_role, is_active=True).first()
+            tith_acct = SegmentAccountMap.objects.filter(
+                segment=seg, role=tithing_role, is_active=True).first()
+            if rm_acct is None or tith_acct is None:
+                continue  # COA does not carry reserve accounts for this segment.
+            from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
+            from apps.posting.services import PostingService, approve_threshold
+
+            capital = cls._capital_account(seg)
+            rm_amount = money(net_income * ten)
+            tith_amount = money(net_income * ten)
+            total_reserve = rm_amount + tith_amount
+            entry = JournalEntry(
+                entry_no=f"APP-{mec.company.pk}-{seg.code}-{str(period.end_date).replace('-', '')}",
+                company=mec.company, segment=seg,
+                transaction_date=period.end_date,
+                status=PostingStatus.DRAFT,
+                description=f"Appropriate net income {seg.code}",
+                source_doc_type="APP",
+                source_doc_no=f"{mec.company.pk}:{seg.code}:{period.end_date}",
+                created_by=user,
+            )
+            entry.save()
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=1, account=capital, debit=total_reserve,
+                description="Appropriated net income",
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=2, account=rm_acct.account, credit=rm_amount,
+                description="Repairs & Maintenance reserve (10%)",
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=3, account=tith_acct.account, credit=tith_amount,
+                description="Tithing reserve (10%)",
+            )
+            entry.recalc_totals()
+            if entry.total_debit > approve_threshold():
+                entry.status = PostingStatus.APPROVED
+                entry.save(update_fields=["status", "updated_at"])
+            PostingService.post(entry, user=user)
+            # First successfully posted appropriation is the canonical one.
+            if not posted_any:
+                mec.appropriation_entry = entry
+                posted_any = True
+        if posted_any:
+            mec.save(update_fields=["appropriation_entry", "updated_at"])
+        return mec
+
+    @classmethod
+    def _post_close_je(cls, *, company, segment, entry_no, transaction_date, description,
+                       source_doc_no, lines, user=None):
+        from apps.core.money import approve_threshold, money as _m
+        from django.db import transaction as _tx
+        from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
+        from apps.posting.services import PostingService
+
+        with _tx.atomic():
+            entry = JournalEntry(
+                entry_no=entry_no, company=company, segment=segment,
+                transaction_date=transaction_date, status=PostingStatus.DRAFT,
+                description=description, source_doc_type="CLOSE",
+                source_doc_no=source_doc_no, created_by=user,
+            )
+            entry.save()
+            for i, (acct, debit, credit, text) in enumerate(lines, start=1):
+                JournalEntryLine.objects.create(
+                    entry=entry, line_no=i, account=acct,
+                    debit=_m(debit), credit=_m(credit), description=text,
+                )
+            entry.recalc_totals()
+            # Month-end close is an authorized operation: auto-approve when the
+            # entry crosses the posting approval threshold.
+            if entry.total_debit > approve_threshold():
+                entry.status = PostingStatus.APPROVED
+                entry.save(update_fields=["status", "updated_at"])
+            PostingService.post(entry, user=user)
+        return entry

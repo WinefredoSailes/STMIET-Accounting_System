@@ -7,7 +7,25 @@
   <title>{% block title %}STMIET Accounting{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'img/logo.svg' %}">
   <link rel="stylesheet" href="{% static 'css/output.css' %}">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="{% static 'js/htmx.min.js' %}" defer></script>
+  <script>
+    document.addEventListener('htmx:configRequest', function (e) {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta) e.detail.headers['X-CSRFToken'] = meta.getAttribute('content');
+    });
+    document.addEventListener('htmx:beforeSwap', function (e) {
+      if (e.detail.xhr.status >= 400) e.detail.shouldSwap = false;
+    });
+    document.body.addEventListener('showToast', function (e) {
+      if (!e.detail) return;
+      var d = document.createElement('div');
+      d.className = 'fixed top-4 right-4 z-50 max-w-sm rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-lg';
+      d.textContent = typeof e.detail === 'string' ? e.detail : (e.detail.message || '');
+      document.body.appendChild(d);
+      setTimeout(function () { d.remove(); }, 4200);
+    });
+  </script>
 </head>
 <body class="h-full">
   {% if request.user.is_authenticated %}

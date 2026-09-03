@@ -9,15 +9,16 @@
       <p class="text-sm text-slate-500 mt-1">Generated from weekly cycle activities (ADR-031). Identity: Net Inc = End − Beg + ADB adjustments.</p>
     </div>
     <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-      <select name="segment" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        <option value="">Segment…</option>
-        {% for s in segments %}
-        <option value="{{ s.id }}" {% if seg and seg.id == s.id %}selected{% endif %}>{{ s.code }} — {{ s.name }}</option>
+      <select name="month" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        {% for m in months %}
+        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>
         {% endfor %}
       </select>
-      <input type="date" name="period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <span class="text-slate-400">to</span>
-      <input type="date" name="period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <select name="year" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        {% for y in years %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Generate</button>
     </form>
   </div>
@@ -50,7 +51,7 @@
     </table>
   </div>
   {% else %}
-  <div class="mt-8 text-center text-slate-400">No statement yet. Pick a segment + period and click Generate (requires generated cycles).</div>
+  <div class="mt-8 text-center text-slate-400">No statement yet. Pick a month + year and click Generate (requires generated weekly cycles).</div>
   {% endif %}
 </div>
 {% endblock %}

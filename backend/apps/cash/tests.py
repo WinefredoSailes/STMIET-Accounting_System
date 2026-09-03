@@ -48,7 +48,7 @@ def bank_account(db, segment, accounts):
     acc = accounts["10010"]
     return BankAccount.objects.create(
         code="BDO-DHPP", name="BDO Checking DHPP", account_type="checking",
-        bank_name="BDO", bank_code="BDO", gl_account=acc, segment=segment,
+        bank_name="BDO", bank_code="BDO", gl_account=acc, company=segment.company,
     )
 
 
@@ -68,7 +68,7 @@ def pcf_fund(db, segment, accounts):
         fund_code="general", name="PCF-General (Leaslyn)",
         custodian=custodian, imprest_amount=Decimal("20000.00"),
         replenish_trigger_pct=Decimal("0.85"),
-        gl_account=acc, segment=segment,
+        gl_account=acc, company=segment.company,
     )
 
 
@@ -176,7 +176,7 @@ class TestTransfers:
     def test_transfer_posts_je(self, segment, bank_account, accounts):
         to_acc = BankAccount.objects.create(
             code="PNB-DHPP", name="PNB DHPP", account_type="checking",
-            bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], segment=segment,
+            bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], company=segment.company,
         )
         tr = TransferService.transfer(
             from_account=bank_account, to_account=to_acc,
@@ -215,13 +215,13 @@ class TestCashCycleActivities:
 class TestCashFlow:
     def test_cf_generation(self, segment, bank_account, posted_je):
         CashCycleService.generate_cycle(segment, date(2026, 1, 13))
-        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment)
+        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment.company)
         assert cf.collections == Decimal("1000.00")
         assert cf.net_change == Decimal("1000.00")
 
     def test_cf_identity_holds(self, segment, bank_account, posted_je):
         CashCycleService.generate_cycle(segment, date(2026, 1, 13))
-        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment)
+        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment.company)
         assert cf.identity_holds
         # ADR-031: net_change = ending - beginning + adb
         assert (
@@ -235,7 +235,7 @@ class TestCashFlow:
 
         to_acc = BankAccount.objects.create(
             code="PNB-DHPP", name="PNB DHPP", account_type="checking",
-            bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], segment=segment,
+            bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], company=segment.company,
         )
         CashCycleService.generate_cycle(segment, date(2026, 1, 13))
         TransferService.transfer(
@@ -247,9 +247,26 @@ class TestCashFlow:
         acts = {a.activity_type: a.amount for a in cycle.activities.all()}
         # Both transfer legs land in the same activity row (5k out + 5k in).
         assert acts.get(ActivityType.INTERACCT_TRANSFER) == Decimal("10000.00")
-        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment)
+        cf = CashFlowService.generate(date(2026, 1, 13), date(2026, 1, 19), segment.company)
         # Inter-account transfers do not affect net cash (ADR-031).
         assert cf.net_change == Decimal("0.00")
+
+    def test_generate_month_aggregates_cycles(self, segment, bank_account, posted_je):
+        # ADR-031 monthly cadence: the month's weekly cycles roll up into one CF
+        # statement. Cycle 1/13-1/19 sits inside January.
+        CashCycleService.generate_cycle(segment, date(2026, 1, 13))
+        cf = CashFlowService.generate_month(segment.company, 2026, 1)
+        assert cf.period_start == date(2026, 1, 1)
+        assert cf.period_end == date(2026, 1, 31)
+        assert cf.collections == Decimal("1000.00")
+        assert cf.net_change == Decimal("1000.00")
+        assert cf.identity_holds
+
+    def test_generate_month_december_span(self, segment, bank_account, posted_je):
+        # December runs 12/1-12/31; no cycles exist there -> ValidationError
+        # ("No cycles in period") proves the month range was built correctly.
+        with pytest.raises(ValidationError):
+            CashFlowService.generate_month(segment.company, 2025, 12)
 
 
 class TestCollectibles:

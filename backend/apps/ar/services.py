@@ -140,11 +140,12 @@ class CycleLedgerService:
         )
 
         events = []
+        company = customer.segment.company if customer.segment_id else None
         for r in receipts:
-            start, _ = cycle_range_for(r["transaction_date"])
+            start, _ = cycle_range_for(r["transaction_date"], company=company)
             events.append((start, "paid", r["paid"]))
         for inv in invoices:
-            start, _ = cycle_range_for(inv["transaction_date"])
+            start, _ = cycle_range_for(inv["transaction_date"], company=company)
             events.append((start, "billed", inv["billed"]))
 
         events.sort(key=lambda e: (e[0], e[1]))

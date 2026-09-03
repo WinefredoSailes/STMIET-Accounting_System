@@ -28,6 +28,13 @@ urlpatterns = [
     path("reports/month-end-close/complete/", views.month_end_complete, name="month_end_complete"),
     path("reports/cash-flow/", views.cash_flow, name="cash_flow"),
     path("reports/cash-flow/export/", views.cash_flow_export, name="cash_flow_export"),
+    path("reports/fleet/fuel/", views.fleet_fuel, name="fleet_fuel"),
+    # Tax & compliance
+    path("reports/tax/", views.tax_dashboard, name="tax_dashboard"),
+    path("reports/tax/vat/", views.tax_vat, name="tax_vat"),
+    path("reports/tax/wht/", views.tax_wht, name="tax_wht"),
+    path("reports/tax/provision/", views.tax_provision, name="tax_provision"),
+    path("reports/tax/calendar/", views.tax_calendar, name="tax_calendar"),
     path("reports/<str:statement_type>/", views.statement, name="statement"),
     path("reports/<str:statement_type>/export/", views.statement_export, name="statement_export"),
     # AR
@@ -37,6 +44,7 @@ urlpatterns = [
     path("ar/receipts/new/", views.receipt_create, name="receipt_create"),
     path("ar/aging/", views.aging, name="aging"),
     # AP
+    path("ap/aging/", views.ap_aging, name="ap_aging"),
     path("ap/suppliers/", views.supplier_list, name="supplier_list"),
     path("ap/suppliers/new/", views.supplier_create, name="supplier_create"),
     path("ap/advances/", views.advances, name="advances"),

@@ -1,0 +1,89 @@
+{% extends "ui/base.html" %}
+{% block title %}Tax &amp; Compliance — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">TAX &amp; COMPLIANCE</h1>
+      <p class="text-sm text-slate-500 mt-1">VAT, withholding and income tax — derived from the posted GL to remove manual estimation (Phase 9).</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-sm">
+      <a href="{% url 'ui:tax_vat' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">VAT extraction</a>
+      <a href="{% url 'ui:tax_provision' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ Income tax provision</a>
+    </div>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+    <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-900">Filing calendar</h2>
+      <p class="text-xs text-slate-500 mt-0.5">{{ due }} obligation(s) due or overdue.</p>
+    </div>
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-2">Form</th>
+          <th class="px-4 py-2">Period</th>
+          <th class="px-4 py-2">Due date</th>
+          <th class="px-4 py-2 text-right">Amount</th>
+          <th class="px-4 py-2">Status</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in calendar %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ c.form }}</td>
+          <td class="px-4 py-2">{{ c.filing_period }}</td>
+          <td class="px-4 py-2">{{ c.due_date|date:"M d, Y" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.amount_due|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+              {% if c.status == 'overdue' %}bg-red-100 text-red-800
+              {% elif c.status == 'due' %}bg-amber-100 text-amber-800
+              {% elif c.status == 'paid' %}bg-emerald-100 text-emerald-800
+              {% else %}bg-slate-100 text-slate-700{% endif %}">{{ c.status }}</span>
+          </td>
+          <td class="px-4 py-2 text-right">
+            <a href="{% url 'ui:tax_calendar' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Manage →</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No filing obligations yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+    <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-900">Income tax provisions</h2>
+    </div>
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-2">Segment</th>
+          <th class="px-4 py-2">Period</th>
+          <th class="px-4 py-2 text-right">Taxable income</th>
+          <th class="px-4 py-2">Rate</th>
+          <th class="px-4 py-2 text-right">Tax</th>
+          <th class="px-4 py-2">Reference</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for p in provisions %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ p.segment.code }}</td>
+          <td class="px-4 py-2">{{ p.filing_period }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ p.taxable_income|floatformat:2 }}</td>
+          <td class="px-4 py-2">{{ p.tax_rate|stringformat:".4f" }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ p.tax_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ p.journal_entry.entry_no|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No income tax provisions booked.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -19,7 +19,7 @@ from django.db import transaction
 
 from apps.core.exceptions import PostingError, ValidationError
 from apps.core.money import money
-from apps.foundation.models import Account
+from apps.foundation.models import Account, SegmentAccountMap, resolve_segment_account
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 
@@ -45,22 +45,11 @@ ROLE_TO_FIELD = {
     "fin_approved": "approved_by_fin",
 }
 
-SEGMENT_ADVANCES = {"DHPP": "12070", "DMIE": "12073", "OPS": "12076"}
-SEGMENT_AP = {"DHPP": "20000", "DMIE": "20003", "OPS": "20006"}
-
-
 def _account(code: str) -> Account:
     try:
         return Account.objects.get(code=code)
     except Account.DoesNotExist as exc:
         raise ValidationError(f"COA account {code} not found.") from exc
-
-
-def _segment_account(map_: dict, segment) -> Account:
-    code = map_.get(segment.code)
-    if not code:
-        raise ValidationError(f"Segment {segment.code} has no account mapping.")
-    return _account(code)
 
 
 class RFPService:
@@ -326,7 +315,7 @@ class CVPaymentService:
         )
         JournalEntryLine.objects.create(
             entry=entry, line_no=1,
-            account=_segment_account(SEGMENT_AP, seg),
+            account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP),
             debit=gross, description=f"AP - {payee.name}",
         )
         JournalEntryLine.objects.create(
@@ -336,7 +325,7 @@ class CVPaymentService:
         if tax > 0:
             JournalEntryLine.objects.create(
                 entry=entry, line_no=3,
-                account=_account(SEGMENT_AP_WHT.get(seg.code, "64110")),
+                account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
                 credit=tax, description="Withholding tax (expanded)",
             )
         entry.recalc_totals()
@@ -345,9 +334,6 @@ class CVPaymentService:
         cv.status = "created"
         cv.save(update_fields=["journal_entry", "updated_at"])
         return cv
-
-
-SEGMENT_AP_WHT = {"DHPP": "64110", "DMIE": "64113", "OPS": "64116"}
 
 
 class AdvanceService:

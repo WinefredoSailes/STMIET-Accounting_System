@@ -43,3 +43,18 @@ class AuditableModel(models.Model):
         if user:
             self.updated_by = user
         self.save(update_fields=["updated_at", "updated_by"])
+
+
+class SoftDeleteMixin:
+    """Makes `Model.delete()` a soft delete (Phase 2 master data contract).
+
+    Applied to MASTER-DATA models (COA accounts, companies, segments, banks,
+    PCF funds, suppliers, customers, assets, ...) where a mistaken remove must
+    never destroy history: `.delete()` now flips `is_active` instead of
+    physically removing the row. Derived/transactional rows (journal entries,
+    GL projection, cycles, statements) deliberately keep hard-delete semantics
+    so the posting immutability guards (PostingService) stay authoritative.
+    """
+
+    def delete(self, *args, **kwargs):
+        self.soft_delete()

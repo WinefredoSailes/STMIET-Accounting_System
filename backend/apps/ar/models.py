@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from django.db import models
 
-from apps.core.models import AuditableModel
+from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
 class CustomerGroup(models.TextChoices):
@@ -30,7 +30,7 @@ class PricingTier(models.TextChoices):
     VOLUME = "volume", "Volume"
 
 
-class Customer(AuditableModel):
+class Customer(SoftDeleteMixin, AuditableModel):
     """Centralized customer master (ADR-007). One-time migration cleans the
     macro-era per-client sheets into a single registry."""
 

@@ -1,0 +1,51 @@
+{% extends "ui/base.html" %}
+{% block title %}WHT Certificates — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">WITHHOLDING CERTIFICATES (2307 / 2306)</h1>
+      <p class="text-sm text-slate-500 mt-1">Derived from posted check vouchers' withholding splits — one query, not a manual tally.</p>
+    </div>
+    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+      <select name="cert_type" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        <option value="2307" {% if cert_type == '2307' %}selected{% endif %}>2307 — Expanded</option>
+        <option value="2306" {% if cert_type == '2306' %}selected{% endif %}>2306 — Final</option>
+      </select>
+      <input type="date" name="period_start" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <span class="text-slate-400">to</span>
+      <input type="date" name="period_end" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
+    </form>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">CV No</th>
+          <th class="px-4 py-3">Payee</th>
+          <th class="px-4 py-3">TIN</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Gross</th>
+          <th class="px-4 py-3 text-right">Tax Withheld</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in rows %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ r.cv_number }}</td>
+          <td class="px-4 py-2">{{ r.payee.name }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ r.tin|default:"—" }}</td>
+          <td class="px-4 py-2">{{ r.segment.code|default:"—" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.gross_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.tax_amount|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No CVs with withheld tax match the filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

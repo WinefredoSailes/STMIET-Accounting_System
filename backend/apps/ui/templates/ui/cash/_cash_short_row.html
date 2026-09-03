@@ -1,0 +1,23 @@
+{# One cash-short row — swapped on inline HTMX approval. #}
+<tr class="hover:bg-slate-50">
+  <td class="px-4 py-2">{{ ws.cycle.cycle_start|date:"M d" }}–{{ ws.cycle.cycle_end|date:"M d" }}</td>
+  <td class="px-4 py-2 text-xs">{{ ws.segment.code }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ ws.expected_cash|floatformat:2 }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ ws.actual_cash|floatformat:2 }}</td>
+  <td class="px-4 py-2 text-right font-medium tabular-nums {% if ws.variance < 0 %}text-red-600{% else %}text-emerald-700{% endif %}">{{ ws.variance|floatformat:2 }}</td>
+  <td class="px-4 py-2 text-xs text-slate-600 max-w-xs truncate">{{ ws.cause|default:"—" }}</td>
+  <td class="px-4 py-2">
+    <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+      {% if ws.status == 'approved' %}bg-emerald-100 text-emerald-800
+      {% else %}bg-amber-100 text-amber-800{% endif %}">{{ ws.status }}</span>
+  </td>
+  <td class="px-4 py-2">
+    {% if ws.status == "open" %}
+    <button type="button" hx-post="{% url 'ui:cash_short_approve' ws.id %}"
+      hx-target="closest tr" hx-swap="outerHTML"
+      class="text-sm font-medium text-emerald-600 hover:text-emerald-800">Approve</button>
+    {% else %}
+    <span class="text-xs text-slate-400">—</span>
+    {% endif %}
+  </td>
+</tr>

@@ -20,7 +20,7 @@
         <div class="flex justify-between"><dt class="text-slate-500">Custodian</dt><dd class="font-medium">{{ fund.custodian.get_full_name|default:fund.custodian.username }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">Imprest</dt><dd class="font-medium tabular-nums">₱ {{ fund.imprest_amount|floatformat:2 }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">GL account</dt><dd class="font-mono text-xs">{{ fund.gl_account.code }}</dd></div>
-        <div class="flex justify-between"><dt class="text-slate-500">Segment</dt><dd class="text-xs">{{ fund.segment.code }}</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-500">Company</dt><dd class="text-xs">{{ fund.company.code }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">Trigger</dt><dd class="tabular-nums">{{ fund.replenish_trigger_pct|floatformat:0 }}%</dd></div>
       </dl>
     </div>

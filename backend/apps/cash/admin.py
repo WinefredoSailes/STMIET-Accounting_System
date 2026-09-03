@@ -17,8 +17,8 @@ from .models import (
 
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "bank_name", "account_type", "segment", "adb_required", "is_active")
-    list_filter = ("account_type", "segment", "is_active")
+    list_display = ("code", "name", "bank_name", "account_type", "company", "adb_required", "is_active")
+    list_filter = ("account_type", "company", "is_active")
     search_fields = ("code", "name", "bank_name")
 
 

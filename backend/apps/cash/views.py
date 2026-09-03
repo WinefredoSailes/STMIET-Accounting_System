@@ -43,7 +43,7 @@ from .services import (
 class BankAccountViewSet(viewsets.ModelViewSet):
     queryset = BankAccount.objects
     serializer_class = BankAccountSerializer
-    filterset_fields = ["account_type", "segment", "is_active"]
+    filterset_fields = ["account_type", "company", "is_active"]
     search_fields = ["code", "name", "bank_name"]
 
 
@@ -124,25 +124,25 @@ class CashFlowStatementViewSet(viewsets.ReadOnlyModelViewSet):
     def generate(self, request):
         period_start = request.data.get("period_start")
         period_end = request.data.get("period_end")
-        segment_id = request.data.get("segment")
-        from apps.foundation.models import Segment
-        segment = Segment.objects.get(pk=segment_id)
-        cf = CashFlowService.generate(period_start, period_end, segment)
+        company_id = request.data.get("company")
+        from apps.foundation.models import Company
+        company = Company.objects.get(pk=company_id)
+        cf = CashFlowService.generate(period_start, period_end, company)
         out = self.get_serializer(cf)
         return Response(out.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="export")
     def export(self, request):
-        """GET /api/cash/cash-flow/export/?segment=&period_start=&period_end=
+        """GET /api/cash/cash-flow/export/?company=&period_start=&period_end=
         — workbook mirroring the CF sheet of STATEMENT-OF-CASH-FLOW.xlsx."""
         from datetime import date
 
-        from apps.foundation.models import Segment
+        from apps.foundation.models import Company
 
-        segment = Segment.objects.get(pk=request.query_params.get("segment"))
+        company = Company.objects.get(pk=request.query_params.get("company"))
         period_start = date.fromisoformat(request.query_params.get("period_start"))
         period_end = date.fromisoformat(request.query_params.get("period_end"))
-        wb = build_cash_flow_statement(segment, period_start, period_end)
+        wb = build_cash_flow_statement(company, period_start, period_end)
         return xlsx_response(
             wb, f"STATEMENT-OF-CASH-FLOW-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
         )

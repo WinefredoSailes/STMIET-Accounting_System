@@ -366,6 +366,83 @@ class TestMonthEndClose:
             MonthEndCloseService.complete(mec)
 
 
+class TestClosingJournals:
+    """§13 closing entries (Batch D): revenue/expense close into Capital
+    (13.1/13.2) and appropriation reserves (13.3), all data-driven."""
+
+    def test_close_segment_posts_balanced_jes(self, company, segments, coa, jan, period_data):
+        end = jan.end_date
+        rev, exp = MonthEndCloseService.close_segment(
+            company, segments["DHPP"], jan.start_date, end
+        )
+        # Revenue close: DHPP sales 40000 250k + gain 43070 5k debited, the
+        # 40500 contra_revenue (5k, debit-normal) credited => net Cr Capital 250k.
+        assert rev is not None and rev.is_posted
+        assert rev.total_debit == rev.total_credit == Decimal("255000.00")
+        cap = coa["30000"]
+        cap_credit = sum(
+            l.credit for l in rev.lines.all() if l.account_id == cap.pk
+        )
+        assert cap_credit == Decimal("250000.00")
+        # Expense close: DHPP COGS 150k+10k + opp 8+2+3+12k + nonop 1+2k = 188k Dr.
+        assert exp is not None and exp.is_posted
+        assert exp.total_debit == exp.total_credit == Decimal("188000.00")
+
+    def test_close_zeroes_nominal_dhpp(self, company, segments, coa, jan, period_data):
+        rev, exp = MonthEndCloseService.close_segment(
+            company, segments["DHPP"], jan.start_date, jan.end_date
+        )
+        # After closing, DHPP nominal accounts have zero period balance.
+        bal = TrialBalanceService.segment_balances(company, start=jan.start_date, end=jan.end_date)
+        for acct in coa.values():
+            if acct.account_type in ("revenue", "contra_revenue", "expense", "contra_expense"):
+                assert Decimal(bal.get(acct.code, {}).get("DHPP", "0")) == 0, acct.code
+
+    def test_close_period_links_jes(self, company, segments, coa, jan, period_data):
+        mec = MonthEndCloseService.get_or_create(jan)
+        mec = MonthEndCloseService.close_period(mec, user=None)
+        assert mec.revenue_close_entry is not None
+        assert mec.expense_close_entry is not None
+
+    def test_appropriation_noop_without_reserve_accounts(
+        self, company, segments, coa, jan, period_data
+    ):
+        # Current COA has no 3xxxx reserve accounts -> §13.3 defers (no JE).
+        mec = MonthEndCloseService.get_or_create(jan)
+        mec = MonthEndCloseService.close_period(mec, user=None)
+        mec = MonthEndCloseService.apply_appropriations(mec, user=None)
+        assert mec.appropriation_entry is None
+
+    def test_appropriation_posts_balanced_je_when_reserves_resolved(
+        self, company, segments, coa, jan, period_data
+    ):
+        from apps.foundation.models import SegmentAccountMap
+
+        rm = Account.objects.create(
+            code="33010", name="Appropriation Reserve - R&M", account_type="equity",
+            segment="DHPP", normal_balance="credit",
+        )
+        tith = Account.objects.create(
+            code="33020", name="Appropriation Reserve - Tithing", account_type="equity",
+            segment="DHPP", normal_balance="credit",
+        )
+        SegmentAccountMap.objects.create(
+            segment=segments["DHPP"], role="appropriation_rm", account=rm,
+            is_active=True,
+        )
+        SegmentAccountMap.objects.create(
+            segment=segments["DHPP"], role="appropriation_tithing", account=tith,
+            is_active=True,
+        )
+        mec = MonthEndCloseService.get_or_create(jan)
+        mec = MonthEndCloseService.close_period(mec, user=None)
+        mec = MonthEndCloseService.apply_appropriations(mec, user=None)
+        app = mec.appropriation_entry
+        assert app is not None and app.is_posted
+        assert app.total_debit == app.total_credit
+        assert app.total_debit > 0
+
+
 class TestExcelExport:
     """Excel builders mirror the source workbooks cell-for-cell (the builders
     only; the HTTP export endpoints are covered by the e2e suite). Values are
@@ -495,7 +572,7 @@ class TestExcelExport:
         BankAccount.objects.create(
             code="PNB-DHPP", name="PNB DHPP", account_type="checking",
             bank_name="PNB", bank_code="PNB", gl_account=coa["10010"],
-            segment=dhpp, adb_required=Decimal("5000.00"),
+            company=dhpp.company, adb_required=Decimal("5000.00"),
         )
         WeeklyCashCycle.objects.create(
             cycle_start=date(2026, 1, 6), cycle_end=date(2026, 1, 12),
@@ -518,7 +595,7 @@ class TestExcelExport:
         ]:
             CashCycleActivity.objects.create(cycle=c2, activity_type=atype, amount=Decimal(amount))
 
-        wb = build_cash_flow_statement(dhpp, date(2026, 1, 6), date(2026, 1, 19))
+        wb = build_cash_flow_statement(dhpp.company, date(2026, 1, 6), date(2026, 1, 19))
         ws = wb["CF"]
         assert ws["B2"].value == "SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING"
         assert ws["H5"].value == "Amounts in pesos"

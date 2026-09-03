@@ -1,0 +1,61 @@
+{% extends "ui/base.html" %}
+{% block title %}Tax Calendar — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-slate-900">TAX CALENDAR</h1>
+      <p class="text-sm text-slate-500 mt-1">Filing obligations and filed/paid tracking (removes manual estimation).</p>
+    </div>
+    <a href="{% url 'ui:tax_dashboard' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Tax Dashboard</a>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Form</th>
+          <th class="px-4 py-3">Period</th>
+          <th class="px-4 py-3">Due date</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Update</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in calendar %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs font-medium">{{ c.form }}</td>
+          <td class="px-4 py-2">{{ c.filing_period }}</td>
+          <td class="px-4 py-2">{{ c.due_date|date:"M d, Y" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.amount_due|floatformat:2 }}</td>
+          <td class="px-4 py-2">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+              {% if c.status == 'overdue' %}bg-red-100 text-red-800
+              {% elif c.status == 'due' %}bg-amber-100 text-amber-800
+              {% elif c.status == 'paid' %}bg-emerald-100 text-emerald-800
+              {% else %}bg-slate-100 text-slate-700{% endif %}">{{ c.status }}</span>
+          </td>
+          <td class="px-4 py-2">
+            <form method="post" class="flex items-center gap-1.5">
+              {% csrf_token %}
+              <input type="hidden" name="calendar_id" value="{{ c.id }}">
+              <select name="status" class="rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+                {% for value, label in STATUSES %}
+                <option value="{{ value }}" {% if c.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <input type="date" name="filed_date" value="{{ c.filed_date|date:"Y-m-d" }}" class="rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none" title="Filed date">
+              <input type="date" name="paid_date" value="{{ c.paid_date|date:"Y-m-d" }}" class="rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none" title="Paid date">
+              <button type="submit" class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No filing obligations yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -22,7 +22,7 @@ from decimal import Decimal
 
 from django.http import HttpResponse
 
-from apps.reporting.models import StatementType
+from apps.reporting.models import StatementTemplate, StatementType
 
 try:
     from openpyxl import Workbook
@@ -408,6 +408,7 @@ def build_statement_of_cost_of_sales(company, period_start: date, period_end: da
     section_header(8, "Distribution and Hauling of Petroleum Products (DHPP)")
     column_headers(9)
     account_lines(COS_DHPP_ROWS, 10)
+    ws.cell(row=22, column=1, value="COGS - DHPP")
     segment_total(22, "cos_dhpp_total", [2, 3, 5])
     ws.cell(row=23, column=1, value="VOLUME IN LITERS")
     ws.cell(row=23, column=3, value=0)
@@ -420,11 +421,13 @@ def build_statement_of_cost_of_sales(company, period_start: date, period_end: da
     section_header(25, "Distribution of Machineries and Industrial Equipment (DMIE)")
     column_headers(26)
     account_lines(COS_DMIE_ROWS, 27)
+    ws.cell(row=45, column=1, value="COGS - DMIE")
     segment_total(45, "cos_dmie_total", [2, 3, 5])
 
     section_header(46, "Other Products and Services (OPS)")
     column_headers(47)
     account_lines(COS_OPS_ROWS, 48)
+    ws.cell(row=53, column=1, value="COGS - OPS")
     segment_total(53, "cos_ops_total", [2, 3, 5])
 
     ws.cell(row=54, column=1, value="TOTAL COST OF SALES")
@@ -536,22 +539,25 @@ def build_statement_of_total_expenses(company, period_start: date, period_end: d
 # ---------------------------------------------------------------------------
 
 
-def build_cash_flow_statement(segment, period_start: date, period_end: date) -> "Workbook":
+def build_cash_flow_statement(company, period_start: date, period_end: date) -> "Workbook":
     """CF sheet: operating / investing / financing / net change / ADB.
 
-    Values are recomputed from the period's CashCycleActivity rows (the same
-    source CashFlowService.generate uses), so every CF line is itemized.
+    Banks are company-level, so the workbook consolidates EVERY segment's cycle
+    sheets in the period into the company cash position (ADR-031), matching
+    CashFlowService.generate — so every CF line is itemized and identical to
+    the screen.
     """
     from django.db.models import Sum
 
     from apps.cash.models import ActivityType, BankAccount, CashCycleActivity, WeeklyCashCycle
+    from apps.cash.services import CashFlowService
 
     if Workbook is None:  # pragma: no cover
         raise ImportError("openpyxl required for Excel export.")
 
     cycles = list(WeeklyCashCycle.objects.filter(
-        segment=segment, cycle_start__gte=period_start, cycle_end__lte=period_end
-    ).order_by("cycle_start"))
+        segment__company=company, cycle_start__gte=period_start, cycle_end__lte=period_end
+    ).order_by("cycle_start", "segment__code"))
     totals = dict(CashCycleActivity.objects.filter(
         cycle__in=cycles
     ).values_list("activity_type").annotate(total=Sum("amount")))
@@ -572,18 +578,9 @@ def build_cash_flow_statement(segment, period_start: date, period_end: date) -> 
     net_financing = borrowed - loan_cleared
     net_change = net_operating + net_investing + net_financing
 
-    first = cycles[0] if cycles else None
-    adb = Decimal("0.00")
-    for bank in BankAccount.objects.filter(segment=segment, is_active=True):
-        adb += bank.adb_required
-    if first:
-        prev = WeeklyCashCycle.objects.filter(
-            segment=segment, cycle_end__lt=first.cycle_start
-        ).order_by("-cycle_end").first()
-        beginning = prev.closing_balance if prev else Decimal("0.00")
-        ending = cycles[-1].closing_balance - adb
-    else:
-        beginning = ending = Decimal("0.00")
+    adb = CashFlowService._adb_total(company)
+    beginning = CashFlowService._opening_cash(company, period_start)
+    ending = CashFlowService._ending_cash(company, period_start, period_end) - adb if cycles else Decimal("0.00")
 
     wb = Workbook()
     ws = wb.active
@@ -618,4 +615,84 @@ def build_cash_flow_statement(segment, period_start: date, period_end: date) -> 
     amount_row(23, "Add: CASH AT THE BEGINNING OF THE CYCLE", beginning)
     amount_row(24, "Less: ADB, Maintaining Balance", adb)
     amount_row(25, "CASH AVAILABLE AT THE END OF THE CYCLE", ending)
+    return wb
+
+
+# ---------------------------------------------------------------------------
+# Income Statement (INCOME-STATEMENT.xlsx — sheet "MARCH 2026")
+# ---------------------------------------------------------------------------
+
+
+def build_income_statement(company, period_start: date, period_end: date,
+                           net_profit: Decimal | str | None = None) -> "Workbook":
+    """MARCH 2026 sheet: sales / COGS / gross profit / other income / expenses
+    / net profit, then Financial Metrics and Computation of Appropriations.
+
+    Layout (segment blocks) mirrors the source workbook: ACCOUNTS + DHPP block
+    (IPPC/STPC/STMIET sub-columns) + DMIE block + OPS block + GRAND TOTAL. The
+    GL only models three segments, so the DHPP sub-columns carry the DHPP
+    aggregate and the STPC/STMIET sub-columns are left blank. Every number is
+    recomputed from the posted GL via FinancialStatementService.generate.
+    """
+    from apps.reporting.services import FinancialStatementService
+
+    if Workbook is None:  # pragma: no cover
+        raise ImportError("openpyxl required for Excel export.")
+
+    inputs = {}
+    if net_profit is not None:
+        try:
+            inputs["app_basis"] = str(net_profit)
+        except (TypeError, ValueError):
+            pass
+
+    fs = FinancialStatementService.generate(
+        company=company, statement_type=StatementType.INCOME_STATEMENT,
+        period_start=period_start, period_end=period_end, inputs=inputs or None,
+    )
+    rows = fs.rows_by_key()
+
+    def amt(key, seg):
+        v = rows.get(key, {}).get("amounts", {}).get(seg)
+        return v if v is not None else (Decimal("0.00") if seg != "GRAND" else "0.00")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{period_start:%B %Y}"
+    ws.merge_cells("B1:G4")
+    ws["B1"] = (f"\n{company.name}\nStatement of Profit / Loss\n"
+                f"{period_start:%B}")
+    ws.merge_cells("B5:G5")
+    ws["B5"] = f"MONTH OF  {period_start:%B %Y}\n"
+    ws.merge_cells("A6:A7")
+    ws["A6"] = "ACCOUNTS"
+    ws["B6"] = "Segment A\n(DHPP)"
+    ws["E6"] = "Segment B \n(DMIE)"
+    ws["F6"] = "Segment C \n(OPS)"
+    ws["G6"] = "GRAND TOTAL"
+    for col, label in [(2, "IPPC"), (3, "STPC"), (4, "STMIET"),
+                       (5, "STMIET"), (6, "STMIET"), (7, "GRAND TOTAL")]:
+        ws.cell(row=7, column=col, value=label)
+
+    template = StatementTemplate.objects.get(statement_type=StatementType.INCOME_STATEMENT)
+    row = 8
+    for line in template.lines.order_by("line_no"):
+        if line.is_hidden:
+            continue
+        key = line.key
+        ws.cell(row=row, column=1, value=line.title)
+        amounts = rows.get(key, {}).get("amounts", {})
+        grand = amounts.get("GRAND")
+        # Ratio / percent / input lines carry a single value across all columns.
+        if line.mode in ("ratio", "percent", "input") or grand is None:
+            for col in range(2, 8):
+                ws.cell(row=row, column=col, value=grand)
+        else:
+            ws.cell(row=row, column=2, value=amt(key, "DHPP"))
+            ws.cell(row=row, column=3, value=0)
+            ws.cell(row=row, column=4, value=0)
+            ws.cell(row=row, column=5, value=amt(key, "DMIE"))
+            ws.cell(row=row, column=6, value=amt(key, "OPS"))
+            ws.cell(row=row, column=7, value=grand)
+        row += 1
     return wb

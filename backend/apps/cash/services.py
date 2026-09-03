@@ -62,7 +62,7 @@ class CashCycleService:
     @classmethod
     def generate_cycle(cls, segment, cycle_start: date) -> WeeklyCashCycle:
         """Build or refresh a cycle sheet from posted GL entries."""
-        cycle_end = cycle_start + timedelta(days=6)
+        _, cycle_end = cycle_range_for(cycle_start, company=segment.company)
         with transaction.atomic():
             cycle, created = WeeklyCashCycle.objects.update_or_create(
                 cycle_start=cycle_start,
@@ -81,9 +81,12 @@ class CashCycleService:
         """Derive ADR-028 activity rows from posted GL for this cycle/segment."""
         from apps.posting.models import GeneralLedger
 
-        # Get all bank/PCF accounts for this segment
+        # Banks are company-level: every active bank of the company participates
+        # in each segment's cycle sheet; the GL row's segment attributes the
+        # activity to that segment's cycle.
         bank_ids = list(
-            BankAccount.objects.filter(segment=cycle.segment, is_active=True).values_list("gl_account_id", flat=True)
+            BankAccount.objects.filter(company=cycle.segment.company, is_active=True)
+            .values_list("gl_account_id", flat=True)
         )
         if not bank_ids:
             return
@@ -138,15 +141,22 @@ class CashCycleService:
 
     @classmethod
     def generate_range(cls, segment, start_date: date, end_date: date) -> list[WeeklyCashCycle]:
-        """Generate all cycles in range."""
+        """Generate all cycles in range (weekly stepping or monthly per company)."""
+        monthly = getattr(segment.company, "cash_cycle", "weekly") == "monthly"
         cycles = []
         current = start_date
         while current <= end_date:
-            cycle_start, _ = cycle_range_for(current)
+            cycle_start, cycle_end = cycle_range_for(current, company=segment.company)
             if cycle_start > end_date:
                 break
             cycles.append(cls.generate_cycle(segment, cycle_start))
-            current = cycle_start + timedelta(days=7)
+            if monthly:
+                if cycle_start.month == 12:
+                    current = date(cycle_start.year + 1, 1, 1)
+                else:
+                    current = date(cycle_start.year, cycle_start.month + 1, 1)
+            else:
+                current = cycle_start + timedelta(days=7)
         return cycles
 
 
@@ -227,15 +237,16 @@ class PCFService:
 
     @classmethod
     @transaction.atomic
-    def post_replenishment(cls, replen: PCFReplenishment, user=None) -> PCFReplenishment:
+    def post_replenishment(cls, replen: PCFReplenishment, user=None, *, segment=None) -> PCFReplenishment:
         """Post the replenishment JE: Dr Expense lines | Cr Cash."""
         from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
         from apps.posting.services import PostingService
 
+        seg = segment or replen.fund.company.segments.order_by("code").first()
         entry = JournalEntry.objects.create(
             entry_no=f"PCF-REP-{replen.id}",
-            company=replen.fund.segment.company,
-            segment=replen.fund.segment,
+            company=replen.fund.company,
+            segment=seg,
             transaction_date=replen.request_date,
             status=PostingStatus.DRAFT,
             description=f"PCF replenishment {replen.fund}",
@@ -284,6 +295,7 @@ class TransferService:
         purpose: str,
         reference: str = "",
         transfer_date: date | None = None,
+        segment=None,
         user=None,
     ) -> InterAccountTransfer:
         amount = money(amount)
@@ -291,6 +303,8 @@ class TransferService:
             raise ValidationError("Transfer amount must be positive.")
         if from_account == to_account:
             raise ValidationError("From and to accounts must differ.")
+        if from_account.company_id != to_account.company_id:
+            raise ValidationError("Transfers are only allowed within one company.")
 
         transfer = InterAccountTransfer.objects.create(
             transfer_date=transfer_date or date.today(),
@@ -305,10 +319,11 @@ class TransferService:
         from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
         from apps.posting.services import PostingService
 
+        seg = segment or from_account.company.segments.order_by("code").first()
         entry = JournalEntry.objects.create(
             entry_no=f"TRF-{transfer.id}",
-            company=from_account.segment.company,
-            segment=from_account.segment,
+            company=from_account.company,
+            segment=seg,
             transaction_date=transfer.transfer_date,
             status=PostingStatus.DRAFT,
             description=f"Inter-account transfer: {purpose}",
@@ -334,17 +349,23 @@ class TransferService:
 class CashFlowService:
     """Cash Flow Statement from cycle activities (ADR-031).
 
+    Banks are company-level master data, so the statement is COMPANY-WIDE: the
+    period's per-segment cycle sheets (ADR-028) are consolidated into one cash
+    position, and the ADB maintaining balance is the company's full bank pool.
+
     Identity (must hold for every generated statement):
         net_change == ending_cash - beginning_cash + adb_adjustments
     (January 2026 reference: -941,691.96 = 1,316,150.58 - 2,412,842.54 + 155,000.)
     """
 
     @classmethod
-    def generate(cls, period_start: date, period_end: date, segment) -> CashFlowStatement:
+    def generate(cls, period_start: date, period_end: date, company) -> CashFlowStatement:
         cycles = list(
             WeeklyCashCycle.objects.filter(
-                segment=segment, cycle_start__gte=period_start, cycle_end__lte=period_end
-            ).order_by("cycle_start")
+                segment__company=company,
+                cycle_start__gte=period_start,
+                cycle_end__lte=period_end,
+            ).order_by("cycle_start", "segment__code")
         )
         if not cycles:
             raise ValidationError("No cycles in period.")
@@ -376,11 +397,11 @@ class CashFlowService:
         net_financing = borrowed - loan_cleared
         net_change = net_operating + net_investing + net_financing
 
-        beginning_cash = cls._opening_cash(cycles[0])
-        adb = cls._adb_total(segment)
+        beginning_cash = cls._opening_cash(company, period_start)
+        adb = cls._adb_total(company)
         # ADR-031 convention: "CASH AVAILABLE AT END" = total closing minus the
         # ADB maintained during the period (kept from the identity test).
-        ending_cash = cycles[-1].closing_balance - adb
+        ending_cash = cls._ending_cash(company, period_start, period_end) - adb
 
         cf = CashFlowStatement.objects.create(
             period_start=period_start,
@@ -398,18 +419,51 @@ class CashFlowService:
         return cf
 
     @classmethod
-    def _opening_cash(cls, first_cycle: WeeklyCashCycle) -> Decimal:
-        prev = WeeklyCashCycle.objects.filter(
-            segment=first_cycle.segment, cycle_end__lt=first_cycle.cycle_start
-        ).order_by("-cycle_end").first()
-        return prev.closing_balance if prev else Decimal("0.00")
+    def generate_month(cls, company, year: int, month: int) -> CashFlowStatement:
+        """ADR-031 monthly cash flow: aggregate the month's weekly cycles."""
+        first = date(year, month, 1)
+        if month == 12:
+            last = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last = date(year, month + 1, 1) - timedelta(days=1)
+        return cls.generate(first, last, company)
 
     @classmethod
-    def _adb_total(cls, segment) -> Decimal:
-        """Sum of required maintaining balances for the segment's active banks
+    def _opening_cash(cls, company, first_day: date) -> Decimal:
+        """Sum of the closing balances of the latest cycle ENDING BEFORE the
+        period, across the company's segments (ADR-031 beginning cash)."""
+        prev = WeeklyCashCycle.objects.filter(
+            segment__company=company, cycle_end__lt=first_day
+        )
+        total = Decimal("0.00")
+        for sid in set(prev.values_list("segment_id", flat=True)):
+            last = prev.filter(segment_id=sid).order_by("-cycle_start").first()
+            if last:
+                total += last.closing_balance
+        return money(total)
+
+    @classmethod
+    def _ending_cash(cls, company, period_start: date, period_end: date) -> Decimal:
+        """Sum of the closing balances of the latest cycle in the period, across
+        the company's segments (ADR-031 ending cash, before ADB)."""
+        qs = WeeklyCashCycle.objects.filter(
+            segment__company=company,
+            cycle_start__gte=period_start,
+            cycle_end__lte=period_end,
+        )
+        total = Decimal("0.00")
+        for sid in set(qs.values_list("segment_id", flat=True)):
+            last = qs.filter(segment_id=sid).order_by("-cycle_start").first()
+            if last:
+                total += last.closing_balance
+        return money(total)
+
+    @classmethod
+    def _adb_total(cls, company) -> Decimal:
+        """Sum of required maintaining balances for the company's active banks
         (ADR-031 reporting adjustment, not a real cash outflow)."""
         return (
-            BankAccount.objects.filter(segment=segment, is_active=True).aggregate(
+            BankAccount.objects.filter(company=company, is_active=True).aggregate(
                 total=Sum("adb_required")
             )["total"]
         ) or Decimal("0.00")

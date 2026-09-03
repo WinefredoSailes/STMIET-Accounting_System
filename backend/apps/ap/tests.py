@@ -291,7 +291,7 @@ class TestCONSOPosting:
 
 
 class TestCVPayment:
-    def test_wht_split_clears_ap(self, company, segment, supplier, accounts, alywin):
+    def test_wht_split_clears_ap(self, company, segment, supplier, accounts, alywin, segment_account_map):
         cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0001", cv_date=date(2026, 1, 25),
             payee=supplier, bank_account=accounts["10010"],
@@ -307,7 +307,7 @@ class TestCVPayment:
         assert lines[3].credit == Decimal("200.00")  # Cr WHT
         assert lines[3].account.code == "64110"
 
-    def test_no_wht_when_zero(self, company, segment, supplier, accounts, alywin):
+    def test_no_wht_when_zero(self, company, segment, supplier, accounts, alywin, segment_account_map):
         cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0002", cv_date=date(2026, 1, 26),
             payee=supplier, bank_account=accounts["10010"],

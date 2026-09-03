@@ -25,7 +25,7 @@ def asset_accounts(db, segment):
     rows = [
         ("10010", "Cash on Hand", "asset", "DHPP"),
         ("20000", "A/Payables - Current - DHPP", "liability", "DHPP"),
-        ("27000", "Loans Payable", "liability", "DHPP"),
+        ("27010", "Loans Payable", "liability", "DHPP"),
         ("17010", "Fuel Tankers", "asset", "DHPP"),
         ("50110", "COGS - Depreciation of Fuel Tankers_DHPP", "expense", "DHPP"),
         ("61600", "Depreciation Expense_DHPP", "expense", "DHPP"),
@@ -58,7 +58,27 @@ def tanker_category(db, asset_accounts):
 
 
 @pytest.fixture
-def asset(company, segment, tanker_category, asset_accounts):
+def segment_account_map(db, segment, asset_accounts):
+    """Bind the asset-test COA slice into SegmentAccountMap (shadows conftest)."""
+    from apps.foundation.models import SegmentAccountMap
+
+    roles = {
+        SegmentAccountMap.ROLE_AP: "20000",
+        SegmentAccountMap.ROLE_AP_WHT: "64110",
+        SegmentAccountMap.ROLE_CASH: "10010",
+        SegmentAccountMap.ROLE_LOANS: "27010",
+        SegmentAccountMap.ROLE_DISPOSAL_GAIN: "43070",
+        SegmentAccountMap.ROLE_DISPOSAL_LOSS: "62000",
+    }
+    for role, code in roles.items():
+        acc = asset_accounts.get(code)
+        if acc is not None:
+            SegmentAccountMap.objects.create(segment=segment, role=role, account=acc)
+    return segment
+
+
+@pytest.fixture
+def asset(company, segment, tanker_category, asset_accounts, segment_account_map):
     """Acquire a P60,000 tanker on 2026-01-15 (kept under the 100k JE
     approval threshold so posting proceeds without a second approver)."""
     return AssetService.acquire(
@@ -93,7 +113,7 @@ class TestAcquisition:
                 segment=segment, acquisition_date=date(2026, 1, 16), cost="0.00",
             )
 
-    def test_loan_financed_credits_loans(self, company, segment, tanker_category, asset_accounts):
+    def test_loan_financed_credits_loans(self, company, segment, tanker_category, asset_accounts, segment_account_map):
         asset = AssetService.acquire(
             asset_no="FA-2026-0003", name="Financed Tanker", category=tanker_category,
             segment=segment, acquisition_date=date(2026, 1, 16), cost="60000.00",

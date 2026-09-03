@@ -11,9 +11,11 @@ from decimal import Decimal
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from apps.core.money import money
 from apps.foundation.calendar import cycle_range_for
 from apps.foundation.models import FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, PostingStatus
+from apps.reporting.models import StatementType
 from apps.reporting.services import MonthEndCloseService, StatementTemplateService, TrialBalanceService as TBSvc
 
 
@@ -94,15 +96,31 @@ class StatementService:
     }
 
     @classmethod
-    def generate(cls, *, statement_type, period_start, period_end, user=None):
+    def generate(cls, *, statement_type, period_start, period_end, user=None, inputs=None):
         from apps.reporting.services import FinancialStatementService
 
         StatementTemplateService.seed_defaults()  # layouts must exist to generate
+        # Chain the statements (ADR-011): the IS net profit is fed into the
+        # SFP equity and the SOCE as their INPUT-mode rows, so the UI mirrors
+        # the DRF run_all behavior instead of rendering zeros.
+        if inputs is None and statement_type in ("sfp", "soce"):
+            is_fs = FinancialStatementService.generate(
+                company=cls._company(),
+                statement_type=StatementType.INCOME_STATEMENT,
+                period_start=date.fromisoformat(period_start),
+                period_end=date.fromisoformat(period_end),
+                user=user,
+            )
+            profited_key = "eq_net_profit" if statement_type == "sfp" else "soce_net_profit"
+            inputs = {
+                profited_key: is_fs.rows_by_key()["net_profit"]["amounts"]["GRAND"]
+            }
         return FinancialStatementService.generate(
             company=cls._company(),
             statement_type=statement_type,
             period_start=date.fromisoformat(period_start),
             period_end=date.fromisoformat(period_end),
+            inputs=inputs,
             user=user,
         )
 
@@ -251,13 +269,13 @@ def list_cycles(*, limit=20):
 def list_pcf_funds():
     from apps.cash.models import PettyCashFund
 
-    return PettyCashFund.objects.select_related("gl_account", "segment", "custodian").order_by("fund_code")
+    return PettyCashFund.objects.select_related("gl_account", "company", "custodian").order_by("fund_code")
 
 
 def list_pcf_replenishments(*, limit=100):
     from apps.cash.models import PCFReplenishment
 
-    return PCFReplenishment.objects.select_related("fund__custodian", "fund__segment").order_by("-request_date")[:limit]
+    return PCFReplenishment.objects.select_related("fund__custodian", "fund__company").order_by("-request_date")[:limit]
 
 
 def list_cv(*, limit=100):
@@ -542,7 +560,7 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
     rows = []
     total_debit = total_credit = Decimal("0.00")
     for entry in entries:
-        cycle_start, cycle_end = cycle_range_for(entry.transaction_date)
+        cycle_start, cycle_end = cycle_range_for(entry.transaction_date, company=entry.company)
         if cycle_start.month == cycle_end.month:
             cycle_label = f"{cycle_start:%b} {cycle_start.day}-{cycle_end.day}, {cycle_start:%Y}"
         else:
@@ -590,8 +608,13 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
 
 
 def cash_flow_options():
-    """Segments pickable on the Cash Flow screen."""
-    return {"segments": list(Segment.objects.order_by("code"))}
+    """Picker options for the Cash Flow screen (monthly cadence, ADR-031)."""
+    this_year = date.today().year
+    return {
+        "segments": list(Segment.objects.order_by("code")),
+        "months": list(range(1, 13)),
+        "years": list(range(this_year, this_year - 3, -1)),
+    }
 
 
 def collectibles_cycle_options():
@@ -637,6 +660,73 @@ def aging_context(as_of: date) -> dict:
     }
 
 
+def ap_aging_context(as_of: date) -> dict:
+    """AP aging buckets + per-RFP open-payable register for an as-of date.
+
+    Open AP = the RFP's gross amount minus the gross of check vouchers that
+    actually posted their clearing JEs (POSTING_RULES 7.4: Dr AP gross | Cr
+    Cash net + Cr WHT). Buckets 30/60/90/120+ by RFP date.
+    """
+    from apps.ap.models import CheckVoucher, RFPDocument
+
+    cleared = {
+        row["rfp_id"]: row["paid"] or Decimal("0.00")
+        for row in (
+            CheckVoucher.objects.filter(journal_entry__isnull=False)
+            .exclude(rfp__isnull=True)
+            .values("rfp_id")
+            .annotate(paid=Sum("gross_amount"))
+        )
+    }
+
+    buckets = {
+        "0-30": Decimal("0.00"),
+        "31-60": Decimal("0.00"),
+        "61-90": Decimal("0.00"),
+        "91-120": Decimal("0.00"),
+        "120+": Decimal("0.00"),
+    }
+    register = []
+    for rfp in (
+        RFPDocument.objects.filter(status="posted")
+        .select_related("payee", "segment")
+        .order_by("rfp_date")
+    ):
+        paid = cleared.get(rfp.id, Decimal("0.00"))
+        balance = rfp.amount - paid
+        if balance <= 0:
+            continue
+        age_days = max((as_of - rfp.rfp_date).days, 0)
+        key = (
+            "0-30" if age_days <= 30
+            else "31-60" if age_days <= 60
+            else "61-90" if age_days <= 90
+            else "91-120" if age_days <= 120
+            else "120+"
+        )
+        buckets[key] += balance
+        register.append(
+            {
+                "ap_number": rfp.ap_number,
+                "payee": rfp.payee.name,
+                "date": rfp.rfp_date,
+                "segment": rfp.segment.code,
+                "status": rfp.status.replace("_", " ").title(),
+                "amount": rfp.amount,
+                "paid": paid,
+                "balance": balance,
+                "age_days": age_days,
+            }
+        )
+    return {
+        "as_of": as_of,
+        "buckets": [{"bucket": k, "amount": money(v)} for k, v in buckets.items()],
+        "bucket_total": sum(buckets.values()),
+        "register": register,
+        "register_total": sum(r["balance"] for r in register),
+    }
+
+
 def advances_context():
     """AdvanceToEmployee ledger rows with outstanding balances."""
     from apps.ap.models import AdvanceToEmployee
@@ -663,8 +753,27 @@ def transfers_context():
     """Inter-account transfers + bank accounts for the transfer form."""
     from apps.cash.models import BankAccount, InterAccountTransfer
 
-    banks = BankAccount.objects.filter(is_active=True).select_related("segment", "gl_account").order_by("code")
+    banks = BankAccount.objects.filter(is_active=True).select_related("company", "gl_account").order_by("code")
     return {
         "banks": banks,
         "transfers": InterAccountTransfer.objects.select_related("from_account", "to_account", "journal_entry").order_by("-transfer_date"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tax & compliance (Phase 9)
+# ---------------------------------------------------------------------------
+
+
+def tax_calendar_context():
+    """TaxCalendar rows: upcoming + filed obligations, grouped by status."""
+    from apps.tax.models import TaxCalendar
+
+    from apps.foundation.models import Company
+
+    company = Company.objects.first()
+    qs = TaxCalendar.objects.filter(company=company).order_by("due_date", "form")
+    return {
+        "calendar": list(qs),
+        "due": qs.filter(status__in=["due", "overdue"]).count(),
     }

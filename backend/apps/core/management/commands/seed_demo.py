@@ -16,24 +16,21 @@ from django.core.management.base import BaseCommand
 
 CASH_COH = "10010"
 
+# Shared banks (one row-set per bank) mapped to the revised SEPT-2026 COA cash
+# codes. Banks are COMPANY-LEVEL (Phase 2): one checking + one savings row per
+# bank serve every segment; PCF/COH is a pcf_coh row. account_type:
+# checking / savings / pcf_coh.
 BANKS = [
-    ("PNB-DHPP", "Cash in Bank - PNB", "PNB", "10040"),
-    ("PNB-DMIE", "Cash in Bank - PNB", "PNB", "10043"),
-    ("PNB-OPS", "Cash in Bank - PNB", "PNB", "10046"),
-    ("MBTC-DHPP", "Cash in Bank - MBTC", "MBTC", "10080"),
-    ("MBTC-DMIE", "Cash in Bank - MBTC", "MBTC", "10083"),
-    ("MBTC-OPS", "Cash in Bank - MBTC", "MBTC", "10086"),
-    ("BDO-DHPP", "Cash in Bank - BDO Unibank", "BDO", "10070"),
-    ("BDO-DMIE", "Cash in Bank - BDO Unibank", "BDO", "10073"),
-    ("BDO-OPS", "Cash in Bank - BDO Unibank", "BDO", "10076"),
-    ("EW-DHPP", "Due from Other Bank - EW", "EW", "10020"),
-    ("1VB-DHPP", "Cash in Bank - 1VB", "1VB", "10030"),
-    ("PSBC-DHPP", "Cash in Bank - PSBC Savings", "PSBC", "10050"),
-    ("KB-DHPP", "Cash in Bank - KB", "KB", "10060"),
-    ("RCBC-DHPP", "Cash in Bank - RCBC", "RCBC", "10090"),
-    ("COH-DHPP", "Cash on Hand - DHPP", "", CASH_COH),
-    ("COH-DMIE", "Cash on Hand - DMIE", "", "10013"),
-    ("COH-OPS", "Cash on Hand - OPS", "", "10016"),
+    ("PNB-CHK", "Cash in Bank - PNB", "PNB", "10040", "checking"),
+    ("BDO-CHK", "Cash in Bank - BDO Unibank", "BDO", "10070", "checking"),
+    ("MBTC-CHK", "Cash in Bank - MBTC", "MBTC", "10080", "checking"),
+    ("RCBC-CHK", "Cash in Bank - RCBC", "RCBC", "10090", "checking"),
+    ("1VB-CHK", "Cash in Bank - 1VB", "1VB", "10030", "checking"),
+    ("KB-CHK", "Cash in Bank - KB", "KB", "10060", "checking"),
+    ("PSBC-SAV", "Cash in Bank - PSBC Savings", "PSBC", "10050", "savings"),
+    ("PSBC-CHK", "Cash in Bank - PSBC Checking", "PSBC", "10110", "checking"),
+    ("EW-DFB", "Due from Other Bank - EW", "EW", "10020", "checking"),
+    ("COH", "Cash on Hand", "", CASH_COH, "pcf_coh"),
 ]
 
 CUSTOMERS = [
@@ -100,10 +97,11 @@ class Command(BaseCommand):
 
     def _banks(self, segs):
         from apps.cash.models import BankAccount
-        from apps.foundation.models import Account
+        from apps.foundation.models import Account, Company
 
+        company = Company.objects.first() or segs["DHPP"].company
         out = {}
-        for code, name, bank_code, gl in BANKS:
+        for code, name, bank_code, gl, account_type in BANKS:
             account = Account.objects.filter(code=gl).first()
             if not account:
                 continue
@@ -111,12 +109,12 @@ class Command(BaseCommand):
                 code=code,
                 defaults={
                     "name": name,
-                    "account_type": "pcf_coh" if gl == CASH_COH else "checking",
+                    "account_type": account_type,
                     "bank_name": bank_code,
                     "bank_code": bank_code,
                     "gl_account": account,
-                    "segment": segs[account.segment],
-                    "adb_required": "0.00" if gl == CASH_COH else "5000.00",
+                    "company": company,
+                    "adb_required": "0.00" if account_type == "pcf_coh" else "5000.00",
                 },
             )
             out[code] = bank
@@ -218,8 +216,8 @@ class Command(BaseCommand):
         payee = suppliers["PTT-001"]
         created = []
         specs = [
-            ("A2026-001", date(2026, 1, 7), "60000.00", "63210", "Fuel transport subcontract"),
-            ("A2026-002", date(2026, 1, 13), "150000.00", "63210", "Bulk fuel purchase (CNR escalation)"),
+            ("A2026-001", date(2026, 1, 7), "60000.00", "50000", "Fuel purchase (CNR escalation)"),
+            ("A2026-002", date(2026, 1, 13), "150000.00", "50000", "Bulk fuel purchase (CNR escalation)"),
         ]
         for ap_number, rfp_date, amount, expense_code, description in specs:
             if RFPDocument.objects.filter(ap_number=ap_number).exists():
@@ -313,7 +311,7 @@ class Command(BaseCommand):
             cv.save(update_fields=["status", "released_by", "updated_at"])
         if cv.status == "released":
             if not disb or disb.status == "released":
-                CheckDisbursementService.clear(cv, banks["PNB-DHPP"], user=self._user("alywin"))
+                CheckDisbursementService.clear(cv, banks["PNB-CHK"], user=self._user("alywin"))
             cv.status = "cleared"
             cv.save(update_fields=["status", "updated_at"])
         self.stdout.write("CV-2026-0001 signed/released/cleared")
@@ -321,17 +319,17 @@ class Command(BaseCommand):
     def _transfers(self, banks, segs):
         from apps.cash.services import TransferService
 
-        if banks["BDO-DHPP"].transfers_out.exists():
+        if banks["BDO-CHK"].transfers_out.exists():
             return
         TransferService.transfer(
-            from_account=banks["BDO-DHPP"],
-            to_account=banks["PNB-DHPP"],
+            from_account=banks["BDO-CHK"],
+            to_account=banks["PNB-CHK"],
             amount="25000.00",
             purpose="fund transfer to PNB",
             transfer_date=date(2026, 1, 14),
             user=self._user("alywin"),
         )
-        self.stdout.write("transfer BDO-DHPP -> PNB-DHPP 25,000 posted")
+        self.stdout.write("transfer BDO-CHK -> PNB-CHK 25,000 posted")
 
     def _advances(self, segs):
         from decimal import Decimal
@@ -364,7 +362,7 @@ class Command(BaseCommand):
         if jan6:
             CollectiblesService.generate(jan6)
         if not CashFlowStatement.objects.exists():
-            CashFlowService.generate(date(2026, 1, 6), date(2026, 1, 26), seg)
+            CashFlowService.generate(date(2026, 1, 6), date(2026, 1, 26), seg.company)
         self.stdout.write("cycles + collectibles + cash flow generated")
 
     def _user(self, username):
