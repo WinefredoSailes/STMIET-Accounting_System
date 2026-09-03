@@ -423,6 +423,45 @@ class TestRFPScreen:
         rfp.refresh_from_db()
         assert rfp.status == "prepared"
 
+    def test_rfp_approve_swaps_row_inline(self, client, company, segment, accounts,
+                                          fiscal_period, user, supplier):
+        """HTMX inline approval swaps the row partial in place (Phase 8b)."""
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        rfp = RFPService.create_rfp(
+            ap_number="A0004",
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+            ],
+            user=user,
+        )
+        User = get_user_model()
+        head = User.objects.create_user(username="head9", password="x")
+        from apps.foundation.models import UserProfile
+
+        UserProfile.objects.create(user=head, approval_role="head")
+        client.force_login(head)
+
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/", {}, HTTP_HX_REQUEST="true")
+        assert resp.status_code == 200
+        assert resp.headers["HX-Trigger"]
+        rfp.refresh_from_db()
+        assert rfp.status == "checked"
+
+        # Row partial reflects the advanced status badge and toast trigger.
+        body = resp.content.decode()
+        assert "rfp-row-" in body
+        assert "Checked" in body
+        assert "showToast" in resp.headers["HX-Trigger"]
+
+        # The head acts at every step, so a next inline action is still shown.
+        assert "hx-post" in body
+
     def test_rfp_detail_shows_timeline(self, client, company, segment, accounts, supplier, user):
         from apps.ap.models import RFPDocument
         from apps.ap.services import RFPService

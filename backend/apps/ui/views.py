@@ -430,12 +430,36 @@ def supplier_list(request):
     return render(request, "ui/ap/supplier_list.html", {"page_obj": _page(request, list_suppliers())})
 
 
+def _rfp_approval_info(rfp, role):
+    """Inline-approval facts for one RFP row (HTMX row swap).
+
+    Mirror of apps.core.approvals.RFP_NEXT_ROLE / rfp_queue: `can_act` is true
+    only when the caller holds the role the RFP is waiting on.
+    """
+    from apps.core.approvals import RFP_NEXT_ROLE
+
+    next_role = RFP_NEXT_ROLE.get(rfp.status)
+    can_act = bool(next_role) and role == next_role
+    label = "Check" if rfp.status in ("prepared", "submitted") else "Approve"
+    return {
+        "has_action": can_act,
+        "next_role": next_role,
+        "label": label,
+    }
+
+
 @login_required
 def rfp_list(request):
+    from apps.core.approvals import approval_role_of
+
+    role = approval_role_of(request.user)
+    page = _page(request, list_rfps(limit=None))
+    for rfp in page.object_list:
+        rfp.approval_info = _rfp_approval_info(rfp, role)
     return render(
         request,
         "ui/ap/rfp_list.html",
-        {"page_obj": _page(request, list_rfps(limit=None)), "summary": rfp_summary()},
+        {"page_obj": page, "summary": rfp_summary()},
     )
 
 
@@ -673,19 +697,27 @@ def rfp_submit(request, pk):
 def rfp_approve(request, pk):
     from apps.ap.models import RFPDocument
     from apps.ap.services import RFPService
-    from apps.core.approvals import require_approval_role
+    from apps.core.approvals import approval_role_of, require_approval_role
 
     rfp = get_object_or_404(RFPDocument, pk=pk)
     next_roles = {"prepared": "checked", "submitted": "checked", "checked": "acctg_approved", "acctg_approved": "fin_approved"}
     role = next_roles.get(rfp.status)
+    is_hx = bool(request.headers.get("HX-Request"))
     try:
         if not role:
             raise ValueError(f"No approval step available from status '{rfp.status}'.")
         require_approval_role(request.user, role)
         rfp = RFPService.advance_step(rfp, role=role, user=request.user)
-        messages.success(request, f"RFP {rfp.ap_number} approved at '{role}'.")
+        msg = f"RFP {rfp.ap_number} approved at '{role}'."
+        messages.success(request, msg)
     except (AccountingError, ValueError) as exc:
-        messages.error(request, str(exc))
+        msg = str(exc)
+        messages.error(request, msg)
+    if is_hx:
+        rfp.approval_info = _rfp_approval_info(rfp, approval_role_of(request.user))
+        response = render(request, "ui/ap/_rfp_row.html", {"rfp": rfp})
+        response["HX-Trigger"] = json.dumps({"showToast": msg})
+        return response
     return redirect("ui:rfp_detail", pk=pk)
 
 

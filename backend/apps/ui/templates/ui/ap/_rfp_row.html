@@ -1,0 +1,57 @@
+{% comment %}
+Single RFP row for the on-screen list. Rendered twice:
+  * full page (ui/ap/rfp_list.html)
+  * HTMX row swap (rfp_approve returns exactly this partial, so the row
+    replacement never scrolls or reloads the table).
+
+rfp.approval_info (set in views.rfp_list / rfp_approve) decides whether an
+inline Approve/Check action is shown: only for the role the RFP is waiting on.
+{% endcomment %}
+<tr id="rfp-row-{{ rfp.id }}" class="hover:bg-slate-50">
+  <td class="px-4 py-2.5 font-mono text-xs">
+    <a href="{% url 'ui:rfp_detail' rfp.id %}" class="font-semibold text-indigo-600 hover:text-indigo-800">{{ rfp.ap_number }}</a>
+  </td>
+  <td class="px-4 py-2.5">{{ rfp.rfp_date|date:"M d, Y" }}</td>
+  <td class="px-4 py-2.5 font-medium">{{ rfp.payee.name }}</td>
+  <td class="px-4 py-2.5">
+    <span class="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{{ rfp.segment.code }}</span>
+  </td>
+  <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ rfp.particulars }}</td>
+  <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ rfp.amount|floatformat:2 }}</td>
+  <td class="px-4 py-2.5">
+    <div class="flex items-center gap-2 justify-end">
+      <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
+        {% if rfp.status == 'posted' %}bg-emerald-100 text-emerald-800
+        {% elif rfp.status == 'rejected' %}bg-red-100 text-red-700
+        {% elif rfp.status == 'cnr_approved' %}bg-violet-100 text-violet-700
+        {% elif rfp.status == 'fin_approved' %}bg-violet-100 text-violet-700
+        {% elif rfp.status == 'acctg_approved' %}bg-blue-100 text-blue-700
+        {% elif rfp.status == 'checked' %}bg-blue-100 text-blue-700
+        {% else %}bg-slate-100 text-slate-600{% endif %}">
+        {% if rfp.status == 'posted' %}Posted
+        {% elif rfp.status == 'rejected' %}Rejected
+        {% elif rfp.status == 'cnr_approved' %}Approved (CNR)
+        {% elif rfp.status == 'fin_approved' %}Approved (Fin)
+        {% elif rfp.status == 'acctg_approved' %}Approved (Acctg)
+        {% elif rfp.status == 'checked' %}Checked
+        {% elif rfp.status == 'submitted' %}Submitted
+        {% else %}Prepared{% endif %}
+      </span>
+      {% if rfp.approval_info.has_action %}
+      <form
+        hx-post="{% url 'ui:rfp_approve' rfp.id %}"
+        hx-target="#rfp-row-{{ rfp.id }}"
+        hx-swap="outerHTML"
+        hx-indicator="#rfp-row-{{ rfp.id }}"
+        class="inline-flex"
+      >
+        {% csrf_token %}
+        <button type="submit"
+          class="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+          {{ rfp.approval_info.label }}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </td>
+</tr>
