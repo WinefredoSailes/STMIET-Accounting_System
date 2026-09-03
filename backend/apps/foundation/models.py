@@ -203,6 +203,7 @@ class SegmentAccountMap(AuditableModel):
     ROLE_DISPOSAL_LOSS = "disposal_loss"
     ROLE_INCOME_TAX = "income_tax"
     ROLE_VAT_OUTPUT = "vat_output"
+    ROLE_OPENING_EQUITY = "opening_equity"
     ROLE_CHOICES = [
         (ROLE_AP, "Accounts payable (CV Dr)"),
         (ROLE_AP_WHT, "Withholding tax expanded (CV Cr)"),
@@ -212,6 +213,7 @@ class SegmentAccountMap(AuditableModel):
         (ROLE_DISPOSAL_LOSS, "Loss on asset disposal"),
         (ROLE_INCOME_TAX, "Income tax payable (provision Cr)"),
         (ROLE_VAT_OUTPUT, "Output VAT payable (SI extraction Cr)"),
+        (ROLE_OPENING_EQUITY, "Opening balance plug (asset register seeding)"),
     ]
 
     segment = models.ForeignKey(Segment, on_delete=models.PROTECT, related_name="account_maps")

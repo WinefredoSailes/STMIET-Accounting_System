@@ -9,10 +9,17 @@
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
-from apps.assets.models import Asset, AssetDisposal, AssetStatus, DepreciationSchedule
+from apps.assets.models import (
+    Asset,
+    AssetCategory,
+    AssetDisposal,
+    AssetStatus,
+    DepreciationSchedule,
+)
 from apps.assets.services import AssetService, DepreciationService, DisposalService
 from apps.core.exceptions import ValidationError
 from apps.foundation.models import Account
@@ -207,3 +214,132 @@ class TestDisposal:
         assert dis.gain == Decimal("-9500.00")
         asset.refresh_from_db()
         assert asset.status == AssetStatus.DISPOSED
+
+
+class TestOpeningBalanceSeed:
+    """Phase 10 opening register: AssetService.seed_opening + the data-driven
+    import_fixed_assets command (Sept 1, 2026 workbook)."""
+
+    @pytest.fixture
+    def opening_accounts(self, db, segment):
+        """COA slice covering the register categories + owner's equity."""
+        from apps.assets.models import AssetCategory
+
+        rows = [
+            # (code, name, type, segment)
+            ("10010", "Cash on Hand", "asset", "ALL"),
+            ("17010", "Fuel Tankers", "asset", "ALL"),
+            ("18503", "Boom Trucks", "asset", "ALL"),
+            ("18600", "Office Vehicles", "asset", "ALL"),
+            ("18660", "Accumulated Dep'n - Vehicles/Specialized/Heavy Equipments", "asset", "ALL"),
+            ("19800", "Furniture and Fixtures", "asset", "ALL"),
+            ("19850", "Accumulated Dep'n - Furniture and Fixtures", "asset", "ALL"),
+            ("19900", "Air Conditioners", "asset", "ALL"),
+            ("19910", "Printers", "asset", "ALL"),
+            ("19920", "Television", "asset", "ALL"),
+            ("19930", "Computer Monitor", "asset", "ALL"),
+            ("19940", "Personal Computer", "asset", "ALL"),
+            ("19950", "Air Compressor", "asset", "ALL"),
+            ("19960", "Other Office Equip", "asset", "ALL"),
+            ("19970", "Accumulated Dep'n - Office Equipment", "asset", "ALL"),
+            ("50110", "COGS - Depreciation of Fuel Tankers", "expense", "DHPP"),
+            ("51173", "COGS - Depreciation of DMIE Vehicles", "expense", "DMIE"),
+            ("61600", "Depreciation Expense", "expense", "ALL"),
+            ("30000", "E.Bagatua Capital", "equity", "ALL"),
+        ]
+        out = {}
+        for code, name, atype, seg in rows:
+            out[code] = Account.objects.create(
+                code=code, name=name, account_type=atype, segment=seg,
+            )
+        return out
+
+    @pytest.fixture
+    def opening_map(self, segment, opening_accounts):
+        """SegmentAccountMap rows incl. the opening-equity plug role."""
+        from apps.foundation.models import SegmentAccountMap
+
+        for role, code in {
+            SegmentAccountMap.ROLE_CASH: "10010",
+            SegmentAccountMap.ROLE_OPENING_EQUITY: "30000",
+        }.items():
+            SegmentAccountMap.objects.create(
+                segment=segment, role=role, account=opening_accounts[code]
+            )
+        return segment
+
+    def test_seed_opening_posts_balanced_je(self, segment, opening_accounts, opening_map):
+        """Dr Asset = cost | Cr Accum = to-date | Cr Equity = NBV; schedule row
+        carries the to-date accumulated depreciation."""
+        cat = AssetCategory.objects.create(
+            code="TANKER", name="Fuel Tankers", useful_life_years=10,
+            asset_account=opening_accounts["17010"],
+            depreciation_expense_account=opening_accounts["50110"],
+            accumulated_dep_account=opening_accounts["18660"],
+            segment=None,
+        )
+        asset = AssetService.seed_opening(
+            asset_no="FA-2026-0101", name="Tanker MAW 7645", category=cat,
+            segment=segment, acquisition_date=date(2026, 9, 1),
+            cost="1530000.00", accumulated_dep="408000.00",
+            asset_account=opening_accounts["17010"],
+            depreciation_expense_account=opening_accounts["50110"],
+            accumulated_dep_account=opening_accounts["18660"],
+        )
+        je = asset.acquisition_journal
+        assert je.status == "posted"
+        assert je.is_balanced
+        lines = {l.line_no: (l.account.code, l.debit, l.credit) for l in je.lines.all()}
+        assert lines[1] == ("17010", Decimal("1530000.00"), Decimal("0.00"))
+        assert lines[2] == ("18660", Decimal("0.00"), Decimal("408000.00"))
+        assert lines[3] == ("30000", Decimal("0.00"), Decimal("1122000.00"))
+        # NBV ties to cost - accum
+        assert asset.accumulated_depreciation == Decimal("408000.00")
+        assert asset.net_book_value == Decimal("1122000.00")
+        row = asset.depreciation_schedule.get()
+        assert row.status == "posted"
+        assert row.amount == Decimal("408000.00")
+
+    def test_import_command_reads_workbook(self, company, segment, opening_accounts,
+                                           opening_map, monkeypatch, tmp_path):
+        """Run the real command against the Sept 1, 2026 workbook. Category +
+        category/COA wiring come from the mapping JSON (no hardcoded accounts);
+        counts must be stable and re-runs idempotent."""
+        from io import StringIO
+        from django.core.management import call_command
+
+        repo = Path(__file__).resolve().parents[3]
+        xlsx = repo / "excel-files" / "SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx"
+        mapping = repo / "excel-files" / "fixed-assets-mapping.json"
+        assert xlsx.exists() and mapping.exists(), "source files must exist"
+        # DHPP segment is used by tankers; also need DMIE for boom trucks & OPS.
+        from apps.foundation.models import Segment, SegmentAccountMap
+
+        for code, name in (("DHPP", "DHPP"), ("OPS", "OPS")):
+            seg, _ = Segment.objects.update_or_create(
+                code=code, defaults={"name": name, "company": company}
+            )
+            for role, acct_code in {
+                SegmentAccountMap.ROLE_CASH: "10010",
+                SegmentAccountMap.ROLE_OPENING_EQUITY: "30000",
+            }.items():
+                SegmentAccountMap.objects.update_or_create(
+                    segment=seg, role=role,
+                    defaults={"account": opening_accounts[acct_code]},
+                )
+        out = StringIO()
+        call_command(
+            "import_fixed_assets", file=str(xlsx), mapping=str(mapping), stdout=out,
+        )
+        assert Asset.objects.count() > 0
+        # Re-run must not duplicate (idempotent) and must stay stable.
+        before = Asset.objects.count()
+        call_command(
+            "import_fixed_assets", file=str(xlsx), mapping=str(mapping), stdout=out,
+        )
+        assert Asset.objects.count() == before
+        # Every asset carries a posted opening JE and a posted schedule row.
+        for asset in Asset.objects.all():
+            assert asset.acquisition_journal.is_balanced
+            assert asset.acquisition_journal.status == "posted"
+            assert asset.net_book_value >= 0

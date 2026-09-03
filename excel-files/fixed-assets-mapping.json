@@ -1,0 +1,53 @@
+{
+  "as_of": "2026-09-01",
+  "company": "STMIET",
+  "asset_no_prefix": "FA-2026-",
+  "sections": {
+    "VEHICLE": {
+      "A. FUEL TANKERS": {
+        "category": "TANKER", "life": 10, "segment": "DHPP",
+        "asset": "17010", "accum": "18660", "dep_exp": "50110"
+      },
+      "B. BOOM TRUCK": {
+        "category": "BOOM_TRUCK", "life": 10, "segment": "DHPP",
+        "asset": "18503", "accum": "18660", "dep_exp": "51173"
+      },
+      "C. OFFICE VEHICLE": {
+        "category": "OFFICE_VEHICLE", "life": 5, "segment": "OPS",
+        "asset": "18600", "accum": "18660", "dep_exp": "61600"
+      }
+    },
+    "FURNITURE & FIXTURES": {
+      "__default__": {
+        "category": "FURNITURE", "life": 3, "segment": "OPS",
+        "asset": "19800", "accum": "19850", "dep_exp": "61600"
+      }
+    },
+    "OFFICE EQUIPMENT": {
+      "__default__": {
+        "category": "OFFICE_EQUIP", "life": 3, "segment": "OPS",
+        "asset": "19960", "accum": "19970", "dep_exp": "61600"
+      },
+      "__rules__": [
+        {"match": "AIRCONDITIONER", "asset": "19900"},
+        {"match": "PRINTER", "asset": "19910"},
+        {"match": "TELEVISION", "asset": "19920"},
+        {"match": "PC MONITOR", "asset": "19930"},
+        {"match": "LAPTOP", "asset": "19940"},
+        {"match": "PERSONAL COMPUTER", "asset": "19940"},
+        {"match": "DESKTOP", "asset": "19940"},
+        {"match": "COMPUTER", "asset": "19940"}
+      ]
+    },
+    "OTHERS": {
+      "__default__": {
+        "category": "OTHER_EQ", "life": 5, "segment": "OPS",
+        "asset": "19960", "accum": "19970", "dep_exp": "61600"
+      },
+      "__rules__": [
+        {"match": "AIR COMPRESSOR", "asset": "19950"},
+        {"match": "INVERTER", "asset": "19960"}
+      ]
+    }
+  }
+}

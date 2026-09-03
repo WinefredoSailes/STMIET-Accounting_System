@@ -207,6 +207,7 @@ class Command(BaseCommand):
             SegmentAccountMap.ROLE_LOANS: "27010",
             SegmentAccountMap.ROLE_DISPOSAL_GAIN: "43070",
             SegmentAccountMap.ROLE_DISPOSAL_LOSS: "62000",
+            SegmentAccountMap.ROLE_OPENING_EQUITY: "30000",
         }
         count = 0
         for seg in Segment.objects.filter(company=company):

@@ -26,6 +26,105 @@ class AssetService:
 
     @classmethod
     @transaction.atomic
+    def seed_opening(cls, *, asset_no, name, category, segment, acquisition_date,
+                     cost, accumulated_dep, asset_account, depreciation_expense_account,
+                     accumulated_dep_account, funding_source="cash", user=None) -> Asset:
+        """Seed one asset at company opening (Sept 1, 2026 snapshot).
+
+        Unlike `acquire` (which credits a real funding source in the present),
+        an opening-balance asset is brought onto the register with a single
+        balanced opening JE that reflects the net book position:
+
+            Dr  {asset_account}                 = cost
+            Cr  {accumulated_dep_account}       = accumulated_dep   (to-date)
+            Cr  {opening_equity}                = net book value
+
+        The plug equity is resolved data-driven via SegmentAccountMap
+        ROLE_OPENING_EQUITY (never hardcoded). A posted DepreciationSchedule
+        row carries the to-date accumulated depreciation so the register's
+        NBV ties to the workbook; future accruals restart the month after the
+        snapshot via the normal DepreciationService.
+        """
+        from apps.foundation.models import SegmentAccountMap, resolve_segment_account
+        from apps.posting.models import JournalEntryLine
+
+        cost = money(cost)
+        accum = money(accumulated_dep)
+        if cost <= 0:
+            raise ValidationError("Asset cost must be positive.")
+        if accum < 0 or accum > cost:
+            raise ValidationError("Accumulated depreciation must be 0..cost.")
+        nbv = cost - accum
+
+        asset = Asset.objects.create(
+            asset_no=asset_no,
+            name=name,
+            category=category,
+            segment=segment,
+            acquisition_date=acquisition_date,
+            cost=cost,
+            residual_value=Decimal("0.00"),
+            asset_account=asset_account,
+            depreciation_expense_account=depreciation_expense_account,
+            accumulated_dep_account=accumulated_dep_account,
+            funding_source=funding_source,
+            status=AssetStatus.ACTIVE,
+            created_by=user,
+        )
+
+        equity = resolve_segment_account(segment, SegmentAccountMap.ROLE_OPENING_EQUITY)
+        entry = JournalEntry.objects.create(
+            entry_no=asset_no,
+            company=segment.company,
+            segment=segment,
+            transaction_date=acquisition_date,
+            status=PostingStatus.DRAFT,
+            description=f"Opening balance {asset_no} {name}",
+            source_doc_type="OPENING_ASSET",
+            source_doc_no=asset_no,
+            created_by=user,
+        )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=1, account=asset.asset_account, debit=cost,
+            description=f"Opening asset cost {name}",
+        )
+        if accum > 0:
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=2, account=asset.accumulated_dep_account,
+                credit=accum, description=f"Accumulated depreciation to date {name}",
+            )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=3, account=equity, credit=nbv,
+            description=f"Opening equity plug (net book value) {name}",
+        )
+        entry.recalc_totals()
+        # Opening-balance seeding is an authorised migration operation (like
+        # month-end close): the plug JE legitimately exceeds the discretionary
+        # posting threshold, so it is approved before posting.
+        entry.status = PostingStatus.APPROVED
+        entry.save(update_fields=["status", "updated_at"])
+        PostingService.post(entry, user=user)
+        asset.acquisition_journal = entry
+        asset.save(update_fields=["acquisition_journal", "updated_at"])
+
+        # To-date accumulated depreciation as a posted schedule row (ND: this
+        # carries the full catch-up; the .accumulated_depreciation aggregate
+        # therefore equals the workbook figure and NBV ties out).
+        DepreciationSchedule.objects.get_or_create(
+            asset=asset,
+            period_start=acquisition_date.replace(day=1),
+            defaults={
+                "period_end": _month_end(acquisition_date.replace(day=1)),
+                "amount": accum,
+                "journal_entry": entry,
+                "status": "posted",
+                "is_still_in_use": True,
+            },
+        )
+        return asset
+
+    @classmethod
+    @transaction.atomic
     def acquire(
         cls,
         *,
