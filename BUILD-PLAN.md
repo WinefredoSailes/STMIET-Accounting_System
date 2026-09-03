@@ -152,8 +152,8 @@
 - [x] Disposal (Dr Cash + Accum Dep | Cr Asset + gain/loss 43070-96)
 - [x] Depreciation schedule + fully-depreciated-still-in-use flag (Alywin pain)
 - [x] Asset↔Vehicle link (Vehicles are assets — 17000-18650)
-- [ ] Seed per-segment accum-dep accounts beyond 18513 (Boom Trucks) + residual-value convention w/ Alywin
-- [ ] Confirm loss-on-disposal account (62000/62003 Impairment vs dedicated 6xxx) w/ Alywin
+- [x] Assets link to the authoritative revised Sept 2026 COA accum-dep accounts (18660 Vehicles/Heavy Equip, 19760 Building, 19850 Furniture, 19970 Office Equip) via `Asset.accumulated_dep_account` (data-driven, no per-segment seeding needed — revised COA is the source of truth)
+- [x] Confirm loss-on-disposal account = 62000 Impairment Loss (revised Sept 2026 COA; `ROLE_DISPOSAL_LOSS` → 62000)
 
 **Done when:** Asset register live; acquisition/depreciation/disposal post via API with gain/loss; fully-depreciated-still-in-use visible.
 

@@ -29,7 +29,8 @@ def asset_accounts(db, segment):
         ("17010", "Fuel Tankers", "asset", "DHPP"),
         ("50110", "COGS - Depreciation of Fuel Tankers_DHPP", "expense", "DHPP"),
         ("61600", "Depreciation Expense_DHPP", "expense", "DHPP"),
-        ("18513", "Accumulated Dep'n - Boom Trucks", "asset", "DMIE"),
+        # Authoritative accum-dep for vehicles/heavy equipment (revised Sept 2026 COA).
+        ("18660", "Accumulated Dep'n - Vehicles/Specialized/Heavy Equipments", "asset", "ALL"),
         ("43070", "Income from Disposal - DHPP", "revenue", "DHPP"),
         ("62000", "Impairment Loss_DHPP", "expense", "DHPP"),
     ]
@@ -52,7 +53,7 @@ def tanker_category(db, asset_accounts):
         useful_life_years=10,
         asset_account=asset_accounts["17010"],
         depreciation_expense_account=asset_accounts["50110"],
-        accumulated_dep_account=asset_accounts["18513"],
+        accumulated_dep_account=asset_accounts["18660"],
         segment=None,
     )
 
