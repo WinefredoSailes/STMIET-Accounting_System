@@ -13,7 +13,9 @@ from .models import (
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
-        fields = ("id", "code", "name", "supplier_type", "tin", "address", "contact_no", "last_ap", "default_segment")
+        fields = ("id", "code", "name", "supplier_type", "tin", "address", "contact_no",
+                  "owner_name", "email", "contact_person", "position", "attachments_required",
+                  "last_ap", "default_segment")
 
 
 class RFPLineSerializer(serializers.ModelSerializer):

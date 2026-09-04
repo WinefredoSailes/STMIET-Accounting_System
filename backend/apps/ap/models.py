@@ -35,14 +35,25 @@ class SupplierType(models.TextChoices):
 
 
 class Supplier(SoftDeleteMixin, AuditableModel):
-    """Supplier/Vendor master (ADR-024). LAST AP is auto-tracked (pain #5)."""
+    """Supplier/Vendor master (ADR-024). LAST AP is auto-tracked (pain #5).
+
+    Columns mirror the finance head's LIST-OF-SUPPLIERS master (Sept 2026),
+    which is the authoritative source for the supplier model.
+    """
 
     code = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=255)
     supplier_type = models.CharField(max_length=16, choices=SupplierType.choices, default=SupplierType.OTHER)
     tin = models.CharField("TIN", max_length=32, blank=True)
     address = models.CharField(max_length=255, blank=True)
-    contact_no = models.CharField(max_length=32, blank=True)
+    contact_no = models.CharField(max_length=255, blank=True)
+    owner_name = models.CharField("Owner/Representative/President", max_length=255, blank=True)
+    email = models.EmailField("Email Address", blank=True)
+    contact_person = models.CharField("Contact Person", max_length=255, blank=True)
+    position = models.CharField("Position", max_length=128, blank=True)
+    attachments_required = models.BooleanField(
+        "Attachment Needed (BIR-COR, DTI/SEC, Business Permit)", default=False
+    )
     # Per-vendor numbering: previous RFP for this supplier (ADR-019 gap tracking).
     last_ap = models.CharField(max_length=16, blank=True)
     default_segment = models.ForeignKey(

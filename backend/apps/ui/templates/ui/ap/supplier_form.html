@@ -15,8 +15,13 @@
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Name</label>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Business Name</label>
         <input type="text" name="name" id="id_name" required maxlength="255"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_owner_name">Owner/Representative/President</label>
+        <input type="text" name="owner_name" id="id_owner_name" maxlength="255"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
@@ -28,6 +33,11 @@
           <option value="govt">Government</option>
           <option value="other">Other</option>
         </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_email">Email Address</label>
+        <input type="email" name="email" id="id_email"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_default_segment">Default segment</label>
@@ -42,12 +52,29 @@
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_no">Contact no.</label>
-        <input type="text" name="contact_no" id="id_contact_no" maxlength="32"
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_person">Contact Person</label>
+        <input type="text" name="contact_person" id="id_contact_person" maxlength="255"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_position">Position</label>
+        <input type="text" name="position" id="id_position" maxlength="128"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_no">Contact Numbers</label>
+        <input type="text" name="contact_no" id="id_contact_no" maxlength="255"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div class="flex items-end">
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="attachments_required" id="id_attachments_required" value="1"
+                 class="rounded border-slate-300 text-indigo-600">
+          Attachment needed (BIR-COR, DTI/SEC, Business Permit)
+        </label>
+      </div>
       <div class="md:col-span-2">
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_address">Address</label>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_address">Business Address</label>
         <input type="text" name="address" id="id_address" maxlength="255"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>

@@ -24,6 +24,9 @@ from apps.ap.services import (
 from apps.core.exceptions import ValidationError
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 
+from django.core.management import call_command
+from io import StringIO
+
 
 @pytest.fixture
 def supplier(db, segment):
@@ -337,3 +340,29 @@ class TestAdvanceLifecycle:
         )
         with pytest.raises(ValidationError):
             AdvanceService.liquidate(adv, amount="6000.00", liquidate_date=date(2026, 1, 20))
+
+
+class TestImportSuppliers:
+    def test_creates_and_is_idempotent(self, tmp_path, company, segment):
+        from apps.ap.models import SupplierType
+        from apps.foundation.models import Segment as SegmentModel
+
+        SegmentModel.objects.create(code="DMIE", name="DMIE", company=company)
+
+        path = tmp_path / "suppliers.csv"
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["CODE", "NAME", "TYPE", "DEFAULT SEGMENT", "TIN"])
+            writer.writerow(["V001", "Depot One", "depot", "DHPP", "111"])
+            writer.writerow(["V002", "Equip Two", "equipment", "DMIE", "222"])
+        call_command("import_suppliers", file=str(path), stdout=StringIO())
+
+        s1 = Supplier.objects.get(code="V001")
+        assert s1.default_segment.code == "DHPP"
+        assert s1.supplier_type == SupplierType.DEPOT
+        assert s1.tin == "111"
+        assert Supplier.objects.get(code="V002").default_segment.code == "DMIE"
+
+        call_command("import_suppliers", file=str(path), stdout=StringIO())
+        assert Supplier.objects.filter(code="V001").count() == 1
