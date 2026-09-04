@@ -24,6 +24,9 @@ from apps.core.exceptions import ValidationError
 from apps.foundation.calendar import cycle_range_for
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 
+from django.core.management import call_command
+from io import StringIO
+
 
 @pytest.fixture
 def customer(db, segment, company):
@@ -173,3 +176,31 @@ class TestCycleLedger:
         by_bucket = {row["bucket"]: row["amount"] for row in aging}
         assert by_bucket["120+"] == Decimal("7000.00")
         assert by_bucket["0-30"] == Decimal("3000.00")
+
+
+class TestImportCustomers:
+    def test_creates_and_is_idempotent(self, tmp_path, company, segment):
+        from apps.ar.models import CustomerGroup, PricingTier
+        from apps.foundation.models import Segment as SegmentModel
+
+        SegmentModel.objects.create(code="DMIE", name="DMIE", company=company)
+
+        path = tmp_path / "customers.csv"
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["CODE", "NAME", "SEGMENT", "GROUP", "PRICING TIER", "TIN"])
+            writer.writerow(["X001", "Client One", "DHPP", "fuel", "volume", "111"])
+            writer.writerow(["X002", "Client Two", "DMIE", "equipment", "patron", "222"])
+        call_command("import_customers", file=str(path), stdout=StringIO())
+
+        c1 = Customer.objects.get(code="X001")
+        assert c1.segment.code == "DHPP"
+        assert c1.group == CustomerGroup.FUEL
+        assert c1.pricing_tier == PricingTier.VOLUME
+        assert c1.tin == "111"
+        c2 = Customer.objects.get(code="X002")
+        assert c2.segment.code == "DMIE"
+
+        call_command("import_customers", file=str(path), stdout=StringIO())
+        assert Customer.objects.filter(code="X001").count() == 1

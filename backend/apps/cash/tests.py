@@ -11,8 +11,10 @@
 
 from datetime import date, timedelta
 from decimal import Decimal
+from io import StringIO
 
 import pytest
+from django.core.management import call_command
 
 from apps.cash.models import (
     BankAccount,
@@ -322,3 +324,43 @@ class TestCashShort:
         )
         CashShortService.approve(ws, None)
         assert ws.status == "approved"
+
+
+class TestImportBanks:
+    def test_creates_and_idempotent(self, tmp_path, company, accounts):
+        acc_bdo = accounts["10110"]  # BDO Checking from conftest COA slice
+        acc_coh = accounts["10010"]  # Cash on Hand
+        path = tmp_path / "banks.csv"
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["CODE", "NAME", "TYPE", "BANK NAME", "BANK CODE", "GL ACCOUNT", "ADB REQUIRED"])
+            writer.writerow(["BK1", "BDO Checking", "checking", "BDO", "BDO", acc_bdo.code, "5000"])
+            writer.writerow(["BK2", "Petty Cash", "coh", "", "", acc_coh.code, "0"])
+        call_command("import_banks", file=str(path), stdout=StringIO())
+
+        bk1 = BankAccount.objects.get(code="BK1")
+        assert bk1.account_type == "checking"
+        assert bk1.gl_account_id == acc_bdo.id
+        assert float(bk1.adb_required) == 5000.00
+        assert BankAccount.objects.get(code="BK2").account_type == "pcf_coh"
+
+        call_command("import_banks", file=str(path), stdout=StringIO())
+        assert BankAccount.objects.filter(code="BK1").count() == 1
+
+    def test_gl_conflict_is_skipped(self, tmp_path, company, accounts):
+        acc = accounts["10010"]
+        BankAccount.objects.create(
+            code="EXIST", name="Existing", account_type="checking",
+            gl_account=acc, company=company,
+        )
+        path = tmp_path / "banks.csv"
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["CODE", "NAME", "TYPE", "GL ACCOUNT"])
+            writer.writerow(["NEWBK", "New Bank", "checking", acc.code])
+        out = StringIO()
+        call_command("import_banks", file=str(path), stdout=out)
+        assert not BankAccount.objects.filter(code="NEWBK").exists()
+        assert "already used" in out.getvalue()
