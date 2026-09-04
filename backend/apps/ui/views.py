@@ -13,7 +13,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
@@ -566,6 +566,11 @@ def supplier_create(request):
                 tin=request.POST.get("tin", ""),
                 address=request.POST.get("address", ""),
                 contact_no=request.POST.get("contact_no", ""),
+                owner_name=request.POST.get("owner_name", ""),
+                email=request.POST.get("email", ""),
+                contact_person=request.POST.get("contact_person", ""),
+                position=request.POST.get("position", ""),
+                attachments_required=bool(request.POST.get("attachments_required")),
                 default_segment=Segment.objects.get(pk=segment) if segment else None,
             )
             messages.success(request, "Supplier created.")
@@ -1157,10 +1162,14 @@ def pcf_create(request):
         try:
             from apps.foundation.models import Company
 
+            custodian = None
+            if request.POST.get("custodian"):
+                custodian = get_user_model().objects.get(pk=request.POST["custodian"])
             PettyCashFund.objects.create(
-                fund_code=request.POST["fund_code"],
+                fund_code=request.POST["fund_code"].strip(),
                 name=request.POST["name"].strip(),
-                custodian=get_user_model().objects.get(pk=request.POST["custodian"]),
+                custodian_name=request.POST.get("custodian_name", "").strip(),
+                custodian=custodian,
                 imprest_amount=money(request.POST.get("imprest_amount") or 0),
                 gl_account=Account.objects.get(pk=request.POST["gl_account"]),
                 company=Company.objects.first(),
@@ -1173,7 +1182,6 @@ def pcf_create(request):
         request,
         "ui/cash/pcf_form.html",
         {
-            "segments": Segment.objects.order_by("code"),
             "accounts": pcf_gl_candidates(),
             "custodians": get_user_model().objects.order_by("username"),
         },
@@ -1765,3 +1773,82 @@ def transfer_create(request):
     except (BankAccount.DoesNotExist, ValueError, AccountingError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:transfers")
+
+
+# ---------------------------------------------------------------------------
+# User management (superadmin): who does what + approval hierarchy (ADR-020/036)
+# ---------------------------------------------------------------------------
+
+
+def _require_superuser(request):
+    """Gate a view to the superadmin. Must follow a ``@login_required``."""
+    if not request.user.is_superuser:
+        raise PermissionDenied("Superadmin access required for user management.")
+
+
+@login_required
+def user_management(request):
+    """Users & approval roles — the single "who does what" screen.
+
+    Superadmin only. Lists every login with its approval role (staff -> head
+    -> coo) and any petty-cash funds the user is custodian of, and posts role
+    / active changes inline.
+    """
+    _require_superuser(request)
+    from apps.core.approvals import APPROVAL_ROLES, ROLE_LABELS
+    from apps.foundation.services import UserManagementService
+    from apps.cash.models import PettyCashFund
+
+    return render(
+        request,
+        "ui/foundation/user_management.html",
+        {
+            "rows": UserManagementService.list_users(),
+            "role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES],
+            "pcf_count": PettyCashFund.objects.exclude(custodian=None).count(),
+        },
+    )
+
+
+@login_required
+@require_POST
+def user_create(request):
+    """Create a new login (optionally with an approval role)."""
+    _require_superuser(request)
+    from apps.foundation.services import UserManagementService
+
+    try:
+        u = UserManagementService.create_user(
+            username=request.POST.get("username", ""),
+            first_name=request.POST.get("first_name", ""),
+            last_name=request.POST.get("last_name", ""),
+            email=request.POST.get("email", ""),
+            role=request.POST.get("role", ""),
+            password=request.POST.get("password") or None,
+        )
+        messages.success(request, f"Created login '{u.username}'.")
+    except (IntegrityError, ValueError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:user_management")
+
+
+@login_required
+@require_POST
+def user_update(request, pk):
+    """Update an existing user's approval role / active flag."""
+    _require_superuser(request)
+    from apps.foundation.services import UserManagementService
+    from apps.foundation.models import UserProfile
+
+    user = get_object_or_404(get_user_model(), pk=pk)
+    try:
+        UserManagementService.assign_role(user=user, role=request.POST.get("role", ""))
+        active = request.POST.get("is_active") == "1"
+        if user.is_active != active:
+            UserManagementService.set_active(user=user, is_active=active)
+        messages.success(
+            request, f"Updated '{user.username}' (role: {request.POST.get('role', '') or 'unassigned'})."
+        )
+    except (UserProfile.DoesNotExist, ValueError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:user_management")

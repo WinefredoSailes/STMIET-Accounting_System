@@ -92,4 +92,8 @@ urlpatterns = [
     path("assets/<int:pk>/", views.asset_detail, name="asset_detail"),
     path("assets/<int:pk>/depreciate/", views.asset_depreciate, name="asset_depreciate"),
     path("assets/<int:pk>/dispose/", views.asset_dispose, name="asset_dispose"),
+    # User management (superadmin)
+    path("settings/users/", views.user_management, name="user_management"),
+    path("settings/users/new/", views.user_create, name="user_create"),
+    path("settings/users/<int:pk>/update/", views.user_update, name="user_update"),
 ]

@@ -63,4 +63,9 @@
   <a href="{% url 'ui:statement' 'te' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Total Expenses</a>
   <a href="{% url 'ui:statement' 'soce' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Changes in Equity</a>
   <a href="{% url 'ui:month_end_close' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Month-End Close</a>
+
+  {% if request.user.is_superuser %}
+  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Settings / Admin</div>
+  <a href="{% url 'ui:user_management' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'user_management' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">User Management</a>
+  {% endif %}
 </div>
