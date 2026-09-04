@@ -224,14 +224,14 @@
 
 ## PHASE 10 — MIGRATION, UAT & GO-LIVE *[est. 4-6 wks]*
 
-> **UAT READINESS (Sept 2026 daily cycle).** System & workflow-complete: 239 tests green, `manage.py check` clean. Real Sept-1-2026 data loaded → COA 185, 11 banks, 4 PCF custodian funds, 8 suppliers, 54 fixed assets (opening posted & balanced Dr Asset | Cr Accum Dep | Cr opening equity). Superadmin User Management drives roles (staff→head→coo). Every daily-cycle screen renders (`/settings/users/`, `/ap/...`, `/cash/...`, `/ar/...`, `/assets/`). **Remaining before full UAT breadth:** real customer master (~200+) not yet loaded (no source file) — workflows built, data pending; vehicles not loaded; payroll/inventory bridges later-phase.
+> **UAT READINESS (Sept 2026 daily cycle).** System & workflow-complete: 239 tests green, `manage.py check` clean. Real Sept-1-2026 data loaded → COA 185, 11 banks, 4 PCF custodian funds, 8 suppliers, **123 customers (owner + contact + address, segment DHPP)**, 54 fixed assets (opening posted & balanced Dr Asset | Cr Accum Dep | Cr opening equity). Superadmin User Management drives roles (staff→head→coo); superadmin can also create/edit the customer master (owner column + phone editable inline). Every daily-cycle screen renders (`/settings/users/`, `/ap/...`, `/cash/...`, `/ar/...`, `/assets/`). **Remaining before full UAT breadth:** vehicles not loaded (no source file); payroll/inventory bridges later-phase.
 
 - [x] Master data migration — **import commands built & verified (idempotent, header-name column mapping, model after `import_coa`):** `import_customers`, `import_suppliers`, `import_banks` (GL-account uniqueness enforced), `import_vehicles` (links to `Asset.vehicle`), `import_fixed_assets`; `import_coa` pre-existing
   - [x] COA (185 accts, revised Sept-2026 — authoritative) — loaded
   - [x] Banks (11 funded) + PCF (4 custodian funds) — loaded from `CASH-SEPTEMBER-1-2026.xlsx`
   - [x] Suppliers (8) — loaded from `LIST-OF-SUPPLIERS-SEPTEMBER-01-2026.xlsx`
   - [x] Fixed assets (54) — loaded from `SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx`
-  - [ ] Customers (~200+) — **import command ready, source file not yet provided**
+  - [x] Customers (123) — loaded from `customers_20260904_132120.csv` (`import_customers`; "Business Name"/"Contact #"/"Owner" aliases + `--default-segment` fallback; superadmin can edit the master in `/ar/customers/`)
   - [ ] Vehicles — **import command ready, source file not yet provided**
   - [ ] Employees (payroll feed) — **import not yet wired**
 - [x] **UAT re-base to the real Sept-2026 figures** — `import_cash_summary` (data-driven from `excel-files/CASH-SEPTEMBER-1-2026.xlsx`, keyed by ACCOUNT NUMBER, all banks + 4 PCF custodians mapped onto the EXISTING 185-account cash GL 10000–10140, no new COA accounts): 11 funded banks + 4 PCF funds + custodian User accounts seeded (`--post-opening` delegates to `import_opening_balances`); PNB Savings 0.00 out of scope (no COA yet). `flush_demo` run first so the DB holds ONLY the real opening.
