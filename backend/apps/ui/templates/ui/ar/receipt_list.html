@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Receipts — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -35,7 +36,7 @@
             {{ r.get_payment_method_display }}
             {% if r.check_no %}<span class="text-slate-400">· {{ r.check_no }}</span>{% endif %}
           </td>
-          <td class="px-4 py-2 text-right font-medium">{{ r.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium">{{ r.amount|money }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No receipts yet.</td></tr>

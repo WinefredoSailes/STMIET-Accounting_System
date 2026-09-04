@@ -48,9 +48,9 @@
         <tr class="{% if row.is_subtotal %}bg-slate-50 font-semibold{% elif row.is_section %}bg-indigo-50 font-medium{% else %}hover:bg-slate-50{% endif %}">
           <td class="px-4 py-2 {% if row.is_hidden %}opacity-40{% endif %}">{{ row.title }}</td>
           {% for seg in segments %}
-          <td class="px-4 py-2 tabular-nums">{{ row.amounts|get_item:seg.code }}</td>
+          <td class="px-4 py-2 tabular-nums">{{ row.amounts|get_item:seg.code|money }}</td>
           {% endfor %}
-          <td class="px-4 py-2 text-right tabular-nums font-medium">{{ row.amounts.GRAND }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-medium">{{ row.amounts.GRAND|money }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No statement generated yet. Pick a period and click Generate.</td></tr>

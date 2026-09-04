@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}CONSO Batches — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -31,7 +32,7 @@
           </td>
           <td class="px-4 py-2">{{ b.conso_date|date:"M d, Y" }}</td>
           <td class="px-4 py-2 text-right">{{ b.rfps.count }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ b.total_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ b.total_amount|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
               {% if b.status == 'posted' %}bg-emerald-100 text-emerald-800

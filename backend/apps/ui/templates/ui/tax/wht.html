@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}WHT Certificates — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6">
@@ -38,8 +39,8 @@
           <td class="px-4 py-2">{{ r.payee.name }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ r.tin|default:"—" }}</td>
           <td class="px-4 py-2">{{ r.segment.code|default:"—" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ r.gross_amount|floatformat:2 }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.tax_amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.gross_amount|money }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.tax_amount|money }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No CVs with withheld tax match the filter.</td></tr>

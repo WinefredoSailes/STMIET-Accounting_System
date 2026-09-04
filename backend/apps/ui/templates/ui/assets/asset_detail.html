@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}{{ asset.asset_no }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -32,15 +33,15 @@
     </div>
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Cost</dt>
-      <dd class="mt-1 font-medium tabular-nums">₱ {{ asset.cost|floatformat:2 }}</dd>
+      <dd class="mt-1 font-medium tabular-nums">₱ {{ asset.cost|money }}</dd>
     </div>
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Accumulated depreciation</dt>
-      <dd class="mt-1 font-medium tabular-nums">₱ {{ accumulated|floatformat:2 }}</dd>
+      <dd class="mt-1 font-medium tabular-nums">₱ {{ accumulated|money }}</dd>
     </div>
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Net book value</dt>
-      <dd class="mt-1 font-semibold tabular-nums">₱ {{ nbv|floatformat:2 }}</dd>
+      <dd class="mt-1 font-semibold tabular-nums">₱ {{ nbv|money }}</dd>
     </div>
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Useful life</dt>
@@ -62,7 +63,7 @@
         {% for row in schedule %}
         <tr>
           <td class="px-4 py-2">{{ row.period_start|date:"M Y" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ row.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ row.amount|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if row.status == 'posted' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ row.status }}</span>
           </td>

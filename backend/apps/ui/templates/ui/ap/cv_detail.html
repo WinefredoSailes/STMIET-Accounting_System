@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}CV {{ cv.cv_number }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -50,7 +51,7 @@
             <td class="px-3 py-2">{{ line.segment.code }}</td>
             <td class="px-3 py-2">{{ cv.rfp.purpose|default:"OS" }}</td>
             <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }}</td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|floatformat:2 }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -64,9 +65,9 @@
 
       <table class="mt-4 ml-auto w-72 text-sm">
         <tbody class="divide-y divide-slate-100">
-          <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|floatformat:2 }}</td></tr>
-          <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|floatformat:2 }}</td></tr>
-          <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|floatformat:2 }}</td></tr>
+          <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td></tr>
+          <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td></tr>
+          <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|money }}</td></tr>
         </tbody>
       </table>
     </div>

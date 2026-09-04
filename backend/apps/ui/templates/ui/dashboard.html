@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Dashboard — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -74,8 +75,8 @@
             <td class="px-4 py-2.5">{{ je.transaction_date|date:"M d, Y" }}</td>
             <td class="px-4 py-2.5 text-slate-600">{{ je.description|truncatechars:40 }}</td>
             <td class="px-4 py-2.5">{{ je.segment.code }}</td>
-            <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_debit|floatformat:2 }}</td>
-            <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_credit|floatformat:2 }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_debit|money }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_credit|money }}</td>
             <td class="px-4 py-2.5">
               <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
                 {% if je.status == 'posted' %}bg-emerald-100 text-emerald-800

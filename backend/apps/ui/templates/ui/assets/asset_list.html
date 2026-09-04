@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Fixed Assets — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -32,7 +33,7 @@
           <td class="px-4 py-2 text-xs">{{ a.category.name }}</td>
           <td class="px-4 py-2 text-xs">{{ a.segment.code }}</td>
           <td class="px-4 py-2">{{ a.acquisition_date|date:"M d, Y" }}</td>
-          <td class="px-4 py-2 text-right font-medium">{{ a.cost|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium">{{ a.cost|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
               {% if a.status == 'active' %}bg-emerald-100 text-emerald-800

@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}CONSO {{ batch.batch_no }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -12,7 +13,7 @@
       {{ batch.status }}
     </span>
   </div>
-  <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · Total ₱{{ total|floatformat:2 }}</p>
+  <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · Total ₱{{ total|money }}</p>
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[720px]">
@@ -33,7 +34,7 @@
           </td>
           <td class="px-4 py-2">{{ m.payee.name }}</td>
           <td class="px-4 py-2 text-xs text-slate-600 max-w-xs truncate">{{ m.particulars }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ m.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ m.amount|money }}</td>
           <td class="px-4 py-2 text-xs">
             {% if m.status == 'posted' %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">posted</span>
             {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ m.status }}</span>{% endif %}
@@ -54,7 +55,7 @@
         <label class="block text-xs font-medium text-slate-500 mb-1" for="id_rfp">Add approved RFP</label>
         <select name="rfp" id="id_rfp" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% for r in available %}
-          <option value="{{ r.id }}">{{ r.ap_number }} · {{ r.payee.name }} · ₱{{ r.amount|floatformat:2 }}</option>
+          <option value="{{ r.id }}">{{ r.ap_number }} · {{ r.payee.name }} · ₱{{ r.amount|money }}</option>
           {% empty %}
           <option value="">— no approved RFPs left —</option>
           {% endfor %}

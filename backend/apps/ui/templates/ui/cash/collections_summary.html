@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Daily Collections JE Summary — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -54,14 +55,14 @@
           <td class="border border-slate-200 px-2 py-1">{{ row.outlet }}</td>
           <td class="border border-slate-200 px-2 py-1">{{ row.particulars }}</td>
           <td class="border border-slate-200 px-2 py-1">{{ row.po_number }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_credit|floatformat:2 }}</td>
-          {% for amt in row.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_credit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_credit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right font-semibold tabular-nums">{{ row.total|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.cash_credit|money }}</td>
+          {% for amt in row.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|money }}</td>{% endfor %}
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ar_credit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ row.ap_credit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right font-semibold tabular-nums">{{ row.total|money }}</td>
           <td class="border border-slate-200 px-2 py-1">{{ row.remarks }}</td>
         </tr>
         {% endfor %}
@@ -69,14 +70,14 @@
         {% if t.date == day.grouper %}
         <tr class="bg-slate-50 font-semibold">
           <td class="border border-slate-200 px-2 py-1" colspan="5">TOTAL {{ day.grouper|date:"M d, Y" }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_credit|floatformat:2 }}</td>
-          {% for amt in t.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_credit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_debit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_credit|floatformat:2 }}</td>
-          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.total|floatformat:2 }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.cash_credit|money }}</td>
+          {% for amt in t.bank_amounts %}<td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ amt|money }}</td>{% endfor %}
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ar_credit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_debit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.ap_credit|money }}</td>
+          <td class="border border-slate-200 px-2 py-1 text-right tabular-nums">{{ t.total|money }}</td>
           <td class="border border-slate-200 px-2 py-1"></td>
         </tr>
         {% endif %}
@@ -86,35 +87,35 @@
       <tfoot>
         <tr class="bg-slate-100 font-semibold">
           <td colspan="5" class="border border-slate-300 px-2 py-2">TOTAL</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_debit|floatformat:2 }}</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_credit|floatformat:2 }}</td>
-          {% for amt in bank_totals %}<td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ amt|floatformat:2 }}</td>{% endfor %}
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_debit|floatformat:2 }}</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_credit|floatformat:2 }}</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_debit|floatformat:2 }}</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_credit|floatformat:2 }}</td>
-          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_debit|money }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.cash_credit|money }}</td>
+          {% for amt in bank_totals %}<td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ amt|money }}</td>{% endfor %}
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_debit|money }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ar_credit|money }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_debit|money }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.ap_credit|money }}</td>
+          <td class="border border-slate-300 px-2 py-2 text-right tabular-nums">{{ totals.total|money }}</td>
           <td class="border border-slate-300 px-2 py-2"></td>
         </tr>
         <tr class="bg-slate-50">
           <td colspan="5" class="border border-slate-300 px-2 py-1 text-sm">Prepared and submitted by:</td>
           <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
           <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">TOTAL DEBITS</td>
-          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ debit_total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ debit_total|money }}</td>
           <td class="border border-slate-300 px-2 py-1"></td>
         </tr>
         <tr>
           <td colspan="5" class="border border-slate-300 px-2 py-1 text-sm">Received by:</td>
           <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
           <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">TOTAL CREDITS</td>
-          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ credit_total|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ credit_total|money }}</td>
           <td class="border border-slate-300 px-2 py-1"></td>
         </tr>
         <tr>
           <td colspan="5" class="border border-slate-300 px-2 py-1"></td>
           <td colspan="9" class="border border-slate-300 px-2 py-1"></td>
           <td colspan="2" class="border border-slate-300 px-2 py-1 text-sm">VARIANCE</td>
-          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ variance|floatformat:2 }}</td>
+          <td class="border border-slate-300 px-2 py-1 text-right tabular-nums">{{ variance|money }}</td>
           <td class="border border-slate-300 px-2 py-1"></td>
         </tr>
       </tfoot>

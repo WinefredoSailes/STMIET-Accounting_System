@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Requests for Payment — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -17,21 +18,21 @@
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs uppercase tracking-wider text-slate-500">Total RFPs</div>
       <div class="mt-1 text-2xl font-bold text-slate-900">{{ summary.total }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.total_amount|floatformat:2 }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.total_amount|money }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs uppercase tracking-wider text-slate-500">Pending approval</div>
       <div class="mt-1 text-2xl font-bold text-amber-600">{{ summary.pending }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.pending_amount|floatformat:2 }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.pending_amount|money }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs uppercase tracking-wider text-slate-500">Approved, for CONSO</div>
       <div class="mt-1 text-2xl font-bold text-violet-600">{{ summary.approved }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.approved_amount|floatformat:2 }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.approved_amount|money }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs uppercase tracking-wider text-slate-500">Posted (CONSO'd)</div>
-      <div class="mt-1 text-2xl font-bold text-emerald-600">{{ summary.posted_amount|floatformat:2 }}</div>
+      <div class="mt-1 text-2xl font-bold text-emerald-600">{{ summary.posted_amount|money }}</div>
       <div class="text-xs text-slate-500 mt-1">amount in GL</div>
     </div>
   </div>

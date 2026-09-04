@@ -50,7 +50,7 @@
             </td>
             <td class="px-4 py-2.5 text-slate-600">{{ item.title|default:"—" }}</td>
             <td class="px-4 py-2.5">{{ item.date|date:"M d, Y"|default:"—" }}</td>
-            <td class="px-4 py-2.5 text-right tabular-nums">₱ {{ item.amount|floatformat:2 }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">₱ {{ item.amount|money }}</td>
             <td class="px-4 py-2.5">
               <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">Awaiting {{ label }}</span>
             </td>

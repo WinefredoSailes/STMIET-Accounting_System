@@ -1,10 +1,11 @@
+{% load ui_filters %}
 {# One cash-short row — swapped on inline HTMX approval. #}
 <tr class="hover:bg-slate-50">
   <td class="px-4 py-2">{{ ws.cycle.cycle_start|date:"M d" }}–{{ ws.cycle.cycle_end|date:"M d" }}</td>
   <td class="px-4 py-2 text-xs">{{ ws.segment.code }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ ws.expected_cash|floatformat:2 }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ ws.actual_cash|floatformat:2 }}</td>
-  <td class="px-4 py-2 text-right font-medium tabular-nums {% if ws.variance < 0 %}text-red-600{% else %}text-emerald-700{% endif %}">{{ ws.variance|floatformat:2 }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ ws.expected_cash|money }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ ws.actual_cash|money }}</td>
+  <td class="px-4 py-2 text-right font-medium tabular-nums {% if ws.variance < 0 %}text-red-600{% else %}text-emerald-700{% endif %}">{{ ws.variance|money }}</td>
   <td class="px-4 py-2 text-xs text-slate-600 max-w-xs truncate">{{ ws.cause|default:"—" }}</td>
   <td class="px-4 py-2">
     <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium

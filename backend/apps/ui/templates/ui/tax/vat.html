@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}VAT — SI Level — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6">
@@ -23,11 +24,11 @@
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">Gross / Net Sales</div>
-      <div class="mt-1 text-lg font-semibold tabular-nums">₱{{ summary.gross|floatformat:2 }} / ₱{{ summary.net|floatformat:2 }}</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">₱{{ summary.gross|money }} / ₱{{ summary.net|money }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">Output VAT</div>
-      <div class="mt-1 text-lg font-semibold tabular-nums text-indigo-700">₱{{ summary.output_vat|floatformat:2 }}</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums text-indigo-700">₱{{ summary.output_vat|money }}</div>
     </div>
   </div>
   {% endif %}
@@ -51,9 +52,9 @@
           <td class="px-4 py-2 font-mono text-xs font-medium">{{ c.invoice.invoice_no }}</td>
           <td class="px-4 py-2">{{ c.invoice.transaction_date|date:"Y-m-d" }}</td>
           <td class="px-4 py-2">{{ c.segment.code }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ c.gross_amount|floatformat:2 }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ c.net_amount|floatformat:2 }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ c.output_vat|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.gross_amount|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.net_amount|money }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ c.output_vat|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if c.is_balanced %}bg-emerald-100 text-emerald-800{% else %}bg-red-100 text-red-800{% endif %}">{{ c.is_balanced|yesno:"OK,NOT" }}</span>
           </td>

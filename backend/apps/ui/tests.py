@@ -971,8 +971,8 @@ class TestCollectionsSummaryScreen:
         body = resp.content.decode()
         assert "DAILY COLLECTIONS JOURNAL ENTRIES SUMMARY" in body
         assert "MORTE FUEL-BAYLIMANGO" in body
-        assert "10000.00" in body          # cash on hand collection
-        assert "15000.00" in body          # bank collection + totals
+        assert "10,000.00" in body         # cash on hand collection (comma-separated)
+        assert "15,000.00" in body         # bank collection + totals
         assert "EW" in body                # bank column header
         assert "SI-2026-001" in body       # applied-invoice remark / particulars
         assert "VARIANCE" in body

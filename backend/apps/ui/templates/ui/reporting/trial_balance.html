@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Trial Balance — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -34,8 +35,8 @@
           <td class="px-4 py-2 font-mono text-xs">{{ row.code }}</td>
           <td class="px-4 py-2">{{ row.name }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ row.segment }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance >= 0 %}{{ row.balance|floatformat:2 }}{% endif %}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance < 0 %}{{ row.balance|floatformat:2 }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance >= 0 %}{{ row.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance < 0 %}{{ row.balance|money }}{% endif %}</td>
         </tr>
         {% empty %}
         <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No balances for this period.</td></tr>
@@ -44,8 +45,8 @@
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
           <td colspan="3" class="px-4 py-3 text-right">TOTALS</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ totals.0|floatformat:2 }}</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ totals.1|floatformat:2 }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ totals.0|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ totals.1|money }}</td>
         </tr>
       </tfoot>
     </table>

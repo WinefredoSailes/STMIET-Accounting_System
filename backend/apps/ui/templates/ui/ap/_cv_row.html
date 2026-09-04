@@ -1,3 +1,4 @@
+{% load ui_filters %}
 {# One check-voucher row — swapped on inline HTMX sign/release transitions. #}
 <tr class="hover:bg-slate-50">
   <td class="px-4 py-2 font-mono text-xs">
@@ -7,9 +8,9 @@
   <td class="px-4 py-2">{{ cv.payee.name }}</td>
   <td class="px-4 py-2 font-mono text-xs">{{ cv.rfp.ap_number|default:"—" }}</td>
   <td class="px-4 py-2 font-mono text-xs">{{ cv.check_no|default:"—" }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ cv.gross_amount|floatformat:2 }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ cv.withheld_tax|floatformat:2 }}</td>
-  <td class="px-4 py-2 text-right font-medium tabular-nums">{{ cv.net_amount|floatformat:2 }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td>
+  <td class="px-4 py-2 text-right font-medium tabular-nums">{{ cv.net_amount|money }}</td>
   <td class="px-4 py-2">
     <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
       {% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800

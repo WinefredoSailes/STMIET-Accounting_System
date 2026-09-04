@@ -1,3 +1,4 @@
+{% load ui_filters %}
 {% comment %}
 Single RFP row for the on-screen list. Rendered twice:
   * full page (ui/ap/rfp_list.html)
@@ -17,7 +18,7 @@ inline Approve/Check action is shown: only for the role the RFP is waiting on.
     <span class="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{{ rfp.segment.code }}</span>
   </td>
   <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ rfp.particulars }}</td>
-  <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ rfp.amount|floatformat:2 }}</td>
+  <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ rfp.amount|money }}</td>
   <td class="px-4 py-2.5">
     <div class="flex items-center gap-2 justify-end">
       <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium

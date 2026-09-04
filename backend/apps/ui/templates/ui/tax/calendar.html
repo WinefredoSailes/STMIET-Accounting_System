@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Tax Calendar — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6">
@@ -28,7 +29,7 @@
           <td class="px-4 py-2 font-mono text-xs font-medium">{{ c.form }}</td>
           <td class="px-4 py-2">{{ c.filing_period }}</td>
           <td class="px-4 py-2">{{ c.due_date|date:"M d, Y" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ c.amount_due|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.amount_due|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
               {% if c.status == 'overdue' %}bg-red-100 text-red-800

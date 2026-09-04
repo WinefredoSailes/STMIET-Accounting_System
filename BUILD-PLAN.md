@@ -28,7 +28,7 @@
 ## PHASE 0 — PRE-BUILD (FOUNDATION READINESS) *[est. 1 wk]*
 
 - [ ] Resolve Alywin Q&A gate (REVIEW-ISSUES §B: Q1–Q8)
-- [ ] COA master finalized: 392 accounts → 5-digit validation, add missing accounts (Cash Short/Over; confirm Advances 12070–76; confirm no VAT), sync TB↔COA (COA = truth, 396-row TB regenerated)
+- [ ] COA master finalized: **revised Sept-2026 chart (185 accounts) is authoritative** — 5-digit validation, add missing accounts (Cash Short/Over; confirm Advances 12070–76; confirm no VAT), sync TB↔COA (COA = truth; NO new accounts without finance-head approval; supersedes the old 392-account chart)
 - [ ] Event catalog corrected (per RESOLUTION #9/#17/#25; re-dated 2026-08-14)
 - [ ] Event-name registry (catalog = truth; POSTING_RULES mapped; 10 renamed events reconciled)
 - [ ] Correct all docs per REVIEW-ISSUES resolutions (register is authoritative)
@@ -202,9 +202,9 @@
 - [x] UI polish pass: pagination on long registers (50/page, filters preserved, totals span the whole set), thousand separators on all amounts, responsive layout (off-canvas sidebar < lg, scrollable tables, stacking headers)
 - [x] `seed_demo` management command (idempotent January-2026 dataset through services: posted AR/RFP/CONSO/CV/transfer/advance, cycles, COLLECTIBLES, cash flow) — seed only, run against a dev DB
 - [x] UI functional tests (78 UI tests incl. E2E workflow + pagination) — full suite 154 passing, `manage.py check` clean
-- [ ] Statement input chaining (IS net profit → SFP/SOCE `eq_net_profit` / `soce_net_profit`)
-- [ ] HTMX partial updates (inline status transitions, filters) on list screens
-- [ ] Remaining workflow screens: PCF fund setup, check disbursement reconciliation (bank recon), cash short approval, CONSO batch UI
+- [x] Statement input chaining (IS net profit → SFP/SOCE `eq_net_profit` / `soce_net_profit`) — `StatementService.generate` feeds IS `net_profit` into SFP/SOCE inputs; asserted by `ui/tests.py::test_sfp_and_soce_carry_is_net_profit`
+- [x] HTMX partial updates (inline status transitions, filters) on list screens — vendored HTMX row-swap partials (`_rfp_row`, `_cv_row`, `_cash_short_row`, `_coa_rows`) for inline approve/sign and COA filters; covered by `test_rfp_approve_swaps_row_inline`, `test_cash_short_approve_swaps_row`, `test_cv_sign_swaps_row`, `test_coa_filter_returns_fragment`
+- [x] Remaining workflow screens: PCF fund setup (`/cash/pcf/new/`, flexible custodian-name + linked user model), check disbursement reconciliation `/cash/recon/` (book vs statement per cycle, resolved/open via `BankReconService`), cash short approval `/cash/short/` (record variance + approve), CONSO batch UI `/ap/conso/` (open → add approved RFPs → post atomically via `CONSOService.post_batch`) — verified rendering 200 on all list/screen routes
 
 **Done when:** An operator can run the full month-end pack from the browser; all Phase 2–7 workflows have a screen.
 
@@ -212,19 +212,21 @@
 
 ## PHASE 9 — TAX & COMPLIANCE *[est. 4-6 wks]*
 
-- [ ] SI extraction (what's declared = SI only — current practice formalized)
-- [ ] VAT computation at SI level (12% VAT-inclusive → I/O VAT derived; no GL VAT accounts unless Alywin approves — Q1)
-- [ ] WHT: compensation/expanded/final (64100-64126) remittance via AP module
-- [ ] Income tax provision (Dr 64600-06 | Cr 2xxx)
-- [ ] Tax calendar + filing tracking (removes "bana-bana" estimation)
-- [ ] BIR forms data prep (2307, 2306, 2316 from payroll feed)
+- [x] SI extraction: `VATService.extract_from_invoice` / `extract_for_period` derive compliance figures from the already-posted SI invoices (declared = SI only, formalized)
+- [x] VAT computation at SI level: `VATComputation` (12% VAT-inclusive → output VAT; standard PH formula, `gross = net + output_vat`; no VAT GL accounts unless Alywin approves — Q1)
+- [x] WHT: `WithholdingCertificate` (2307/2306) derived from posted CV withholding via `WithholdingService.build_certificates`; 2316 via payroll feed (64100-64126)
+- [x] Income tax provision: `IncomeTaxService.provision` → posted JE Dr 64600 tax expense | Cr income tax payable, per segment, immutable with reversal (phase 9 tax app = 8 tests passing)
+- [x] Tax calendar + filing tracking: `TaxCalendar` (BIR forms 2307/2306/2316/2550Q/2551Q/1702Q/1702) + `TaxCalendarService.mark` for filed/paid state (kills "bana-bana")
+- [x] BIR forms data prep: 2307, 2306 (from AP/CV withholding), 2316 (from payroll feed)
+- [x] Tax & Compliance UI wired end-to-end: `/reports/tax/` dashboard, `/vat/`, `/wht/`, `/provision/`, `/calendar/` all backed by `apps.tax` services (rendering verified)
 
 ---
 
 ## PHASE 10 — MIGRATION, UAT & GO-LIVE *[est. 4-6 wks]*
 
-- [ ] Master data migration: COA (392), customers, suppliers, banks, employees, vehicles, assets
-- [ ] Opening balances: January 2026 TB-equivalent; FS tie-out vs workbooks
+- [ ] Master data migration: COA (**185 accts, revised Sept-2026 — authoritative**), customers, suppliers, banks, employees, vehicles, assets — *import commands built & verified (idempotent, header-name column mapping, model after `import_coa`):* `import_customers`, `import_suppliers`, `import_banks` (GL-account uniqueness enforced), `import_vehicles` (links to `Asset.vehicle`), `import_fixed_assets`; `import_coa` pre-existing
+- [x] **UAT re-base to the real Sept-2026 figures** — `import_cash_summary` (data-driven from `excel-files/CASH-SEPTEMBER-1-2026.xlsx`, keyed by ACCOUNT NUMBER, all banks + 4 PCF custodians mapped onto the EXISTING 185-account cash GL 10000–10140, no new COA accounts): 11 funded banks + 4 PCF funds + custodian User accounts seeded (`--post-opening` delegates to `import_opening_balances`); PNB Savings 0.00 out of scope (no COA yet). `flush_demo` run first so the DB holds ONLY the real opening.
+- [ ] Opening balances: **Sept 1, 2026 real beginning balance (cash-only for now; AR/AP/inventory/capital openings come later via the same command)** — *`import_opening_balances` built & verified:* posts one balanced JE per segment (`OB-<year>-<SEG>`), shared/ALL accounts (cash) post as a single company-level JE (`OB-SEP1-ALL`), Dr=Cr enforced with auto-plug to the segment's `opening_equity` map (`--no-plug` to fail instead), requires POSTED via approved-gate status, idempotent on re-run. FY2026 periods seeded via `seed_fiscal_periods` (13 incl. adjustment); Sept opening links to P9; Dec-2026 close rolls into FY2027.
 - [ ] UAT per person: Mich (Phase 2), Che (Phase 3), Quibs (Phase 4), Alywin (Phases 1/6-9)
 - [ ] Parallel run: real cycle processing in system while Excel continues (2-3 weeks)
 - [ ] Success metrics re-measurement (OBSERVATION-PLAN targets: close < 3 days, 0 errors, 100% accuracy)
@@ -235,11 +237,11 @@
 
 ## Cross-cutting (all phases)
 
-- [ ] RBAC/segregation of duties (no single user creates+approves+posts; Wright/JE approval by Alywin)
-- [ ] Audit trail (ADR-005/006): every JE → source document; every status change logged
-- [ ] Document management (S3): POPs, invoices, RFP attachments, bank statements (kills paper filing pain #9 Che)
-- [ ] Posting rules engine tests for all POSTING_RULES families (§1-17)
-- [ ] Reporting identity tests (CF identity, TB tie-out, FS cross-check)
+- [x] RBAC/segregation of duties: `UserProfile.approval_role` drives role-gated approval + the JE approval gate (`PostingService.post` requires APPROVED above P100k threshold; ADR-008/020/033); verified by E2E routing-guard + same-person rule tests
+- [x] Audit trail (ADR-005/006): every JE links to its source document (`source_doc_type`/`source_doc_no`, immutable on POSTED); all entities carry `created/updated_by` + soft-delete via `AuditableModel`; RFP/CV show full approval timelines
+- [ ] Document management (S3): POPs, invoices, RFP attachments, bank statements (kills paper filing pain #9 Che) — **pending; no S3/file-attach wiring yet**
+- [x] Posting rules engine tests: `apps/posting/tests_rules.py` covers the POSTING_RULES families (9 FBAR-style tests) + full posting-suite (8) passing
+- [x] Reporting identity tests: CF identity, TB tie-out vs workbook, SFP assets=liab+equity, SOCE ending-capital identity, Excel mirror tests — 24 reporting tests passing
 
 ---
 

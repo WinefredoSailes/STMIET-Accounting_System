@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Reconcile Bank — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -37,7 +38,7 @@
     <a href="?cycle={{ c.id }}"
        class="bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-indigo-300 hover:bg-indigo-50">
       <div class="text-sm font-medium">{{ c.cycle_start|date:"M d, Y" }} – {{ c.cycle_end|date:"M d, Y" }}</div>
-      <div class="text-xs text-slate-500 mt-0.5">{{ c.segment.code }} · closing ₱{{ c.closing_balance|floatformat:2 }} · {{ c.status }}</div>
+      <div class="text-xs text-slate-500 mt-0.5">{{ c.segment.code }} · closing ₱{{ c.closing_balance|money }} · {{ c.status }}</div>
     </a>
     {% empty %}
     <div class="text-sm text-slate-400">No cycles yet — generate cycles first.</div>
