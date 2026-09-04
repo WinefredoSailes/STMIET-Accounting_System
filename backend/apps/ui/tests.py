@@ -921,6 +921,51 @@ class TestPCFReplenishmentScreen:
         assert fund.custodian == user
         assert fund.gl_account_id == accounts["10010"].id
 
+    def test_pcf_fund_edit(self, client, company, segment, accounts, user, fund):
+        from apps.cash.models import PettyCashFund
+
+        # Edit form prefills the existing fund.
+        resp = client.get(f"/cash/pcf/{fund.id}/update/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert fund.fund_code in body
+        assert "Save changes" in body
+
+        # Change imprest amount, custodian, and deactivate.
+        other = get_user_model().objects.create_user(
+            username="otherpf", password="x", first_name="Other", last_name="Custodian"
+        )
+        resp = client.post(f"/cash/pcf/{fund.id}/update/", {
+            "fund_code": fund.fund_code,
+            "name": "PCF-General (revised)",
+            "custodian": other.id,
+            "custodian_name": other.get_full_name(),
+            "gl_account": accounts["10010"].id,
+            "imprest_amount": "25000.00",
+            "replenish_trigger_pct": "90",
+            "is_active": "1",
+        })
+        assert resp.status_code == 302
+        fund.refresh_from_db()
+        assert fund.name == "PCF-General (revised)"
+        assert fund.imprest_amount == Decimal("25000.00")
+        assert fund.custodian_id == other.id
+        assert fund.replenish_trigger_pct == Decimal("0.9000")
+        assert fund.is_active is True
+
+        # Deactivate via the Active checkbox off.
+        resp = client.post(f"/cash/pcf/{fund.id}/update/", {
+            "fund_code": fund.fund_code,
+            "name": fund.name,
+            "custodian": other.id,
+            "gl_account": accounts["10010"].id,
+            "imprest_amount": "25000.00",
+            "replenish_trigger_pct": "90",
+        })
+        assert resp.status_code == 302
+        fund.refresh_from_db()
+        assert fund.is_active is False
+
 
 class TestReconScreen:
     @pytest.fixture

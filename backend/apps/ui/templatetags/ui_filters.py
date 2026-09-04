@@ -9,7 +9,7 @@ register = Library()
 
 @register.filter
 def get_item(mapping, key):
-    """dict[key] lookup — used for per-segment amount columns."""
+    """dict[key] lookup - used for per-segment amount columns."""
     try:
         return mapping[key]
     except (KeyError, TypeError):
@@ -21,5 +21,14 @@ def money(value):
     """Format an amount with thousand separators + 2dp: 1234567.5 -> "1,234,567.50"."""
     try:
         return f"{Decimal(value):,.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+
+
+@register.filter
+def pct(value):
+    """Fraction (0.85) -> whole-percent display (85%)."""
+    try:
+        return f"{Decimal(value) * 100:,.0f}%"
     except (InvalidOperation, TypeError, ValueError):
         return value

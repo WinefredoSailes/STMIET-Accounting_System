@@ -1307,6 +1307,42 @@ def pcf_create(request):
     )
 
 
+@login_required
+def pcf_update(request, pk):
+    """Edit an existing petty cash fund: imprest amount, custodian (re-assign
+    or remove), name, GL account, replenish trigger, and active state."""
+    from apps.cash.models import PettyCashFund
+
+    fund = get_object_or_404(PettyCashFund, pk=pk)
+    if request.method == "POST":
+        try:
+            custodian = None
+            if request.POST.get("custodian"):
+                custodian = get_user_model().objects.get(pk=request.POST["custodian"])
+            fund.name = request.POST["name"].strip()
+            fund.custodian_name = request.POST.get("custodian_name", "").strip()
+            fund.custodian = custodian
+            fund.imprest_amount = money(request.POST.get("imprest_amount") or 0)
+            fund.gl_account = Account.objects.get(pk=request.POST["gl_account"])
+            fund.replenish_trigger_pct = money(request.POST["replenish_trigger_pct"] or 0) / 100
+            fund.is_active = request.POST.get("is_active") == "1"
+            fund.save()
+            messages.success(request, f"Petty cash fund {fund.fund_code} updated.")
+            return redirect("ui:pcf_list")
+        except (ValueError, ObjectDoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/cash/pcf_form.html",
+        {
+            "editing": fund,
+            "editing_trigger_pct": int(round(fund.replenish_trigger_pct * 100)),
+            "accounts": pcf_gl_candidates(),
+            "custodians": get_user_model().objects.order_by("username"),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # AP — CONSO batch (7.3: RFP -> batch -> post atomically)
 # ---------------------------------------------------------------------------

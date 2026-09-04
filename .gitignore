@@ -28,6 +28,7 @@ COMPENSATION-REVIEW.md
 
 # Team walkthrough guide (internal only)
 /USERGUIDE.md
+/UAT-GUIDE.md
 
 # Office / media files (never commit to GitHub)
 *.xlsx

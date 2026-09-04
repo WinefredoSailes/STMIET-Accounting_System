@@ -80,6 +80,7 @@ urlpatterns = [
     path("cash/pcf/replenishments/<int:pk>/", views.pcf_replenishment_detail, name="pcf_replenishment_detail"),
     path("cash/pcf/replenishments/<int:pk>/post/", views.pcf_replenishment_post, name="pcf_replenishment_post"),
     path("cash/pcf/new/", views.pcf_create, name="pcf_create"),
+    path("cash/pcf/<int:pk>/update/", views.pcf_update, name="pcf_update"),
     path("cash/recon/", views.recon_list, name="recon_list"),
     path("cash/recon/new/", views.recon_create, name="recon_create"),
     path("cash/short/", views.cash_short_list, name="cash_short_list"),
