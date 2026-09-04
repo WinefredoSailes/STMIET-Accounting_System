@@ -351,11 +351,11 @@ def book_balance(cycle, bank):
 
 
 def pcf_gl_candidates():
-    """Asset GL accounts not yet claimed by a PCF fund (OneToOne)."""
+    """Cash/PCF asset GL accounts a fund can point to (PCF aggregates on 10000)."""
     from apps.foundation.models import Account
 
     return Account.objects.filter(
-        is_postable=True, account_type="asset", pcf_fund__isnull=True
+        is_postable=True, account_type="asset", code__startswith="100"
     ).order_by("code")
 
 

@@ -46,7 +46,7 @@ class BankReconciliationSerializer(serializers.ModelSerializer):
 class PettyCashFundSerializer(serializers.ModelSerializer):
     class Meta:
         model = PettyCashFund
-        fields = ("id", "fund_code", "name", "custodian", "imprest_amount", "replenish_trigger_pct", "gl_account", "company", "is_active")
+        fields = ("id", "fund_code", "name", "custodian_name", "custodian", "imprest_amount", "replenish_trigger_pct", "gl_account", "company", "is_active")
 
 
 class PCFReplenishmentSerializer(serializers.ModelSerializer):

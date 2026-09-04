@@ -56,6 +56,9 @@ class BankAccount(SoftDeleteMixin, AuditableModel):
     account_type = models.CharField(max_length=16, choices=BankAccountType.choices)
     bank_name = models.CharField(max_length=128, blank=True)
     bank_code = models.CharField(max_length=16, blank=True)  # e.g. PNB, BDO, 1VB
+    account_number = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    branch = models.CharField(max_length=128, blank=True)
+    signatories = models.JSONField(default=list, blank=True)
     gl_account = models.OneToOneField(
         "foundation.Account", on_delete=models.PROTECT, related_name="bank_account"
     )
@@ -155,27 +158,28 @@ class BankReconciliation(AuditableModel):
 
 
 class PettyCashFund(SoftDeleteMixin, AuditableModel):
-    """Petty Cash fund (ADR-027). 3 funds: Leaslyn (General), Treasury (Maintenance), Alywin (Technical).
-    85% replenishment trigger. Imprest model.
+    """Petty Cash fund (ADR-027). Imprest model, 85% replenishment trigger.
+
+    Funds are data-driven (not a fixed enums set) so custodians can be added,
+    removed or re-float'd without code or COA changes. Each custodian owns one
+    PettyCashFund; all funds share the single company-level 'Petty Cash Fund'
+    COA account (10000) via a ForeignKey, so the aggregate PCF balance always
+    ties to one GL while per-custodian float + replenishment history is tracked
+    on each fund row. `fund_code` is a free unique string (e.g. PCF-Ethelane);
+    `custodian_name` is the human label, independent of the linked user account.
     """
 
-    FUND_GENERAL = "general"
-    FUND_MAINTENANCE = "maintenance"
-    FUND_TECHNICAL = "technical"
-
-    FUND_CHOICES = [
-        (FUND_GENERAL, "PCF-General (Leaslyn)"),
-        (FUND_MAINTENANCE, "PCF-Maintenance (Treasury)"),
-        (FUND_TECHNICAL, "PCF-Technical (Alywin)"),
-    ]
-
-    fund_code = models.CharField(max_length=24, choices=FUND_CHOICES, unique=True)
+    fund_code = models.CharField(max_length=24, unique=True)
     name = models.CharField(max_length=128)
-    custodian = models.ForeignKey("auth.User", on_delete=models.PROTECT, related_name="pcf_funds")
+    custodian_name = models.CharField("Custodian", max_length=128, blank=True)
+    custodian = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pcf_funds",
+    )
     imprest_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("20000.00"))
     replenish_trigger_pct = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("0.8500"))
-    gl_account = models.OneToOneField(
-        "foundation.Account", on_delete=models.PROTECT, related_name="pcf_fund"
+    gl_account = models.ForeignKey(
+        "foundation.Account", on_delete=models.PROTECT, related_name="pcf_funds"
     )
     company = models.ForeignKey("foundation.Company", on_delete=models.PROTECT, related_name="pcf_funds")
     is_active = models.BooleanField(default=True)
@@ -184,7 +188,7 @@ class PettyCashFund(SoftDeleteMixin, AuditableModel):
         ordering = ["fund_code"]
 
     def __str__(self):
-        return f"{self.get_fund_code_display()} ({self.imprest_amount})"
+        return f"{self.name or self.fund_code} ({self.imprest_amount})"
 
 
 class PCFReplenishment(AuditableModel):

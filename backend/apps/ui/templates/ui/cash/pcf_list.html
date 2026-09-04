@@ -1,11 +1,12 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Petty Cash Funds — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">Petty Cash Funds</h1>
-      <p class="text-sm text-slate-500 mt-1">3 imprest funds, 85% replenishment trigger (ADR-027); vouchers per ACCTG-FOR-002.</p>
+      <p class="text-sm text-slate-500 mt-1">Imprest funds, 85% replenishment trigger (ADR-027); vouchers per ACCTG-FOR-002.</p>
     </div>
     <div class="flex items-center gap-3">
       <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishments →</a>
@@ -14,11 +15,11 @@
   <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
     {% for fund in page_obj %}
     <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="text-sm font-semibold text-slate-900">{{ fund.get_fund_code_display }}</div>
+      <div class="text-sm font-semibold text-slate-900">{{ fund.fund_code }}</div>
       <div class="text-xs text-slate-500 mt-0.5">{{ fund.name }}</div>
       <dl class="mt-3 space-y-1 text-sm">
-        <div class="flex justify-between"><dt class="text-slate-500">Custodian</dt><dd class="font-medium">{{ fund.custodian.get_full_name|default:fund.custodian.username }}</dd></div>
-        <div class="flex justify-between"><dt class="text-slate-500">Imprest</dt><dd class="font-medium tabular-nums">₱ {{ fund.imprest_amount|floatformat:2 }}</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-500">Custodian</dt><dd class="font-medium">{{ fund.custodian_name|default:"—" }}</dd></div>
+        <div class="flex justify-between"><dt class="text-slate-500">Imprest</dt><dd class="font-medium tabular-nums">₱ {{ fund.imprest_amount|money }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">GL account</dt><dd class="font-mono text-xs">{{ fund.gl_account.code }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">Company</dt><dd class="text-xs">{{ fund.company.code }}</dd></div>
         <div class="flex justify-between"><dt class="text-slate-500">Trigger</dt><dd class="tabular-nums">{{ fund.replenish_trigger_pct|floatformat:0 }}%</dd></div>

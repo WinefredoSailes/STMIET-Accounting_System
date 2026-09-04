@@ -10,12 +10,10 @@
     {% csrf_token %}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_fund_code">Fund</label>
-        <select name="fund_code" id="id_fund_code" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <option value="general">PCF-General (Leaslyn)</option>
-          <option value="maintenance">PCF-Maintenance (Treasury)</option>
-          <option value="technical">PCF-Technical (Alywin)</option>
-        </select>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_fund_code">Fund code</label>
+        <input type="text" name="fund_code" id="id_fund_code" required maxlength="24"
+               placeholder="PCF-Leaslyn"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Name</label>
@@ -23,19 +21,20 @@
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_custodian">Custodian</label>
-        <select name="custodian" id="id_custodian" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_custodian_name">Custodian name</label>
+        <input type="text" name="custodian_name" id="id_custodian_name" maxlength="128"
+               placeholder="e.g. Leaslyn L. Paghacian"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_custodian">Custodian user (optional)</label>
+        <select name="custodian" id="id_custodian" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">— none —</option>
           {% for u in custodians %}<option value="{{ u.id }}">{{ u.get_full_name|default:u.username }}</option>{% endfor %}
         </select>
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
-        <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gl_account">GL account (unclaimed)</label>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gl_account">GL account</label>
         <select name="gl_account" id="id_gl_account" data-searchable required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
         </select>

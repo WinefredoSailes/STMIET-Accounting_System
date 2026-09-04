@@ -45,8 +45,8 @@ class BankReconciliationAdmin(admin.ModelAdmin):
 
 @admin.register(PettyCashFund)
 class PettyCashFundAdmin(admin.ModelAdmin):
-    list_display = ("fund_code", "name", "custodian", "imprest_amount", "replenish_trigger_pct", "is_active")
-    list_filter = ("is_active",)
+    list_display = ("fund_code", "name", "custodian_name", "imprest_amount", "gl_account", "is_active")
+    list_filter = ("is_active", "gl_account__code")
 
 
 @admin.register(PCFReplenishment)

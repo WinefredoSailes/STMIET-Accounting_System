@@ -1,30 +1,32 @@
-"""Seed the three imprest PCF funds (ADR-027) for whatever PCF GL accounts exist.
+"""Seed the real petty-cash custodian funds (ADR-027) from the Sept 1, 2026
+SUMMARY OF CASH beginning balance (CASH-SEPTEMBER-1-2026.xlsx).
 
-The COA master (CHART-OF-ACCOUNTS_REVISED-SEPT-2026.xlsx) has a single shared
-"Petty Cash Fund" account (10000). Funds are company-level (Phase 2); each fund
-needs its own unclaimed asset GL account (OneToOne), so three funds share the
-company and are distinguished by fund_code. Segments retain the historical
-fund->segment affinity via the funds' GL accounts where per-segment PCF accounts
-still exist. Idempotent: existing fund codes are left untouched.
+The COA has a single shared 'Petty Cash Fund' account (10000). Each custodian
+owns a PettyCashFund row (flexible per-custodian model, Phase-10 rebase) and
+all funds point at 10000 via a ForeignKey — the aggregate PCF balance ties to
+one GL while per-custodian float is tracked per fund. Idempotent: existing
+fund codes are left untouched; re-runs are safe.
 """
+
+from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
 FUNDS = [
-    ("PCF-General", "General/Admin — office & general expenses"),
-    ("PCF-Maintenance", "Maintenance — repairs & maintenance"),
-    ("PCF-Technical", "Technical — allowances & field expenses"),
+    # (fund_code, name, custodian_name, imprest)
+    ("PCF-Ethelane", "Petty Cash - Ethelane O. Manuel", "Ethelane O. Manuel", "5000.00"),
+    ("PCF-Leaslyn", "Petty Cash - Leaslyn L. Paghacian", "Leaslyn L. Paghacian", "10000.00"),
+    ("PCF-Elleonor", "Petty Cash - Elleonor G. Quibong", "Elleonor G. Quibong", "10000.00"),
+    ("PCF-Alywin", "Petty Cash - Alywin Aidan D. Baje", "Alywin Aidan D. Baje", "5000.00"),
 ]
 
-IMPREST = "20000.00"
+PCF_GL = "10000"
 
 
 class Command(BaseCommand):
-    help = "Seed the three ADR-027 imprest petty cash funds."
+    help = "Seed the real per-custodian petty cash funds (Sept 1, 2026 opening)."
 
     def handle(self, *args, **options):
-        from django.contrib.auth import get_user_model
-
         from apps.cash.models import PettyCashFund
         from apps.foundation.models import Account, Company
 
@@ -32,28 +34,23 @@ class Command(BaseCommand):
         if not company:
             self.stdout.write("skip: no company seeded yet (run import_coa first)")
             return
-        custodian = get_user_model().objects.filter(is_active=True).order_by("id").first()
+        account = Account.objects.filter(code=PCF_GL, is_postable=True).first()
+        if account is None:
+            self.stdout.write(f"skip: COA account {PCF_GL} not found (run import_coa first)")
+            return
+
         created = 0
-        for fund_code, name in FUNDS:
+        for fund_code, name, custodian_name, imprest in FUNDS:
             if PettyCashFund.objects.filter(fund_code=fund_code).exists():
-                continue
-            account = Account.objects.filter(
-                code__startswith="1000", is_postable=True, pcf_fund__isnull=True,
-            ).order_by("code").first()
-            if not account:
-                self.stdout.write(
-                    f"skip {fund_code}: no unclaimed PCF GL account "
-                    f"(add e.g. 10000 'Petty Cash Fund' in COA/admin)"
-                )
                 continue
             PettyCashFund.objects.create(
                 fund_code=fund_code,
                 name=name,
-                custodian=custodian,
-                imprest_amount=IMPREST,
+                custodian_name=custodian_name,
+                imprest_amount=Decimal(imprest),
                 gl_account=account,
                 company=company,
             )
             created += 1
-            self.stdout.write(f"created {fund_code} -> {account.code}")
+            self.stdout.write(f"created {fund_code} -> {account.code} ({imprest})")
         self.stdout.write(self.style.SUCCESS(f"PCF funds seeded: {created} created."))

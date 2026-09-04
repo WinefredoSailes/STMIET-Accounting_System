@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}PCF Voucher {{ replen.id }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -48,14 +49,14 @@
             <td class="px-3 py-2">{{ exp.segment|default:"OS" }}</td>
             <td class="px-3 py-2">{{ exp.cost_center|default:"OS" }}</td>
             <td class="px-3 py-2 font-mono text-xs">{{ exp.account_code }}</td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ exp.amount|floatformat:2 }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ exp.amount|money }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot class="bg-slate-50 font-semibold">
           <tr>
             <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ replen.amount|floatformat:2 }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ replen.amount|money }}</td>
           </tr>
         </tfoot>
       </table>

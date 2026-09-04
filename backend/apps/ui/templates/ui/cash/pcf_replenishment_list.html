@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}PCF Replenishments — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -35,7 +36,7 @@
           <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
           <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|money }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
               {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
