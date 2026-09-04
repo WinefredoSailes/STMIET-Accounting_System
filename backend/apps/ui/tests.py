@@ -518,6 +518,126 @@ class TestRFPScreen:
         assert "Checked / Recommending" in resp.content.decode()
 
 
+class TestRFPRejectCycle:
+    """Approver rejects with a note; the preparer revises and resubmits
+    (ADR-020 reject/revise loop)."""
+
+    @pytest.fixture
+    def supplier(self, db, company, segment, accounts):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S999", name="Shell Fuel Depot", default_segment=segment
+        )
+
+    @pytest.fixture
+    def staff(self, db, role_users):
+        return role_users["staff"]
+
+    def _make_rfp(self, segment, supplier, staff, ap_number):
+        from apps.ap.services import RFPService
+
+        return RFPService.create_rfp(
+            ap_number=ap_number,
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+            ],
+            user=staff,
+        )
+
+    def test_reject_requires_note_and_records_it(self, client, company, segment, accounts,
+                                                 supplier, role_users, staff):
+        from apps.ap.models import RFPDocument
+
+        rfp = self._make_rfp(segment, supplier, staff, "A2101")
+        client.force_login(staff)
+        client.post(f"/ap/rfps/{rfp.id}/submit/")
+
+        client.force_login(role_users["head"])
+        # No note -> rejected.
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "checked"
+        resp = client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": ""})
+        rfp.refresh_from_db()
+        assert rfp.status == "checked"
+        assert rfp.rejection_note == ""
+
+        # With note -> rejected with details.
+        resp = client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": "Split the WHT line."})
+        rfp.refresh_from_db()
+        assert rfp.status == "rejected"
+        assert rfp.rejection_note == "Split the WHT line."
+        assert rfp.rejected_by == role_users["head"]
+        assert rfp.rejected_at is not None
+
+    def test_preparer_revises_and_resubmits(self, client, company, segment, accounts,
+                                            supplier, role_users, staff):
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        rfp = self._make_rfp(segment, supplier, staff, "A2102")
+        client.force_login(staff)
+        client.post(f"/ap/rfps/{rfp.id}/submit/")
+        client.force_login(role_users["head"])
+        client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": "Amount too low, revise."})
+        rfp.refresh_from_db()
+        assert rfp.status == "rejected"
+
+        # Non-preparer cannot revise.
+        client.force_login(role_users["head"])
+        resp = client.post(f"/ap/rfps/{rfp.id}/revise/", {})
+        assert resp.status_code == 302
+
+        # Preparer revises via the edit form.
+        client.force_login(staff)
+        resp = client.get(f"/ap/rfps/{rfp.id}/revise/")
+        assert resp.status_code == 200
+        resp = client.post(f"/ap/rfps/{rfp.id}/revise/", {
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_amount": ["35000.00", "35000.00"],
+            "line_side": ["dr", "cr"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
+        })
+        rfp.refresh_from_db()
+        assert rfp.status == "submitted"
+        assert rfp.rejection_note == ""
+        assert rfp.rejected_by is None
+        assert rfp.amount == Decimal("35000.00")
+
+        # Continues through the approval chain again.
+        client.force_login(role_users["head"])
+        for expected in ("checked", "acctg_approved", "fin_approved"):
+            resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+            rfp.refresh_from_db()
+            assert rfp.status == expected
+
+    def test_cannot_reject_posted(self, client, company, segment, accounts,
+                                  supplier, role_users, staff):
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        rfp = self._make_rfp(segment, supplier, staff, "A2103")
+        client.force_login(staff)
+        client.post(f"/ap/rfps/{rfp.id}/submit/")
+        client.force_login(role_users["head"])
+        for expected in ("checked", "acctg_approved", "fin_approved"):
+            client.post(f"/ap/rfps/{rfp.id}/approve/")
+            rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
+        # Fully approved below P100k: not awaiting an approval step.
+        resp = client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": "late change"})
+        rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
+        assert rfp.rejection_note == ""
+
+
 class TestAssetScreen:
     @pytest.fixture
     def category(self, db, accounts):
@@ -672,23 +792,23 @@ class TestCheckVoucherScreen:
             user=user,
         )
         # release before sign is blocked
-        client.force_login(role_users["head"])
+        client.force_login(role_users["staff"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "created"
 
-        # COO signs, head (Alywin) releases and clears (ADR-036)
+        # COO signs, staff (treasury, e.g. Quibs) releases, head clears (ADR-036)
         client.force_login(role_users["coo"])
         client.post(f"/ap/cv/{cv.id}/sign/")
         cv.refresh_from_db()
         assert cv.status == "signed"
         assert cv.signed_by == role_users["coo"]
 
-        client.force_login(role_users["head"])
+        client.force_login(role_users["staff"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "released"
-        assert cv.released_by == role_users["head"]
+        assert cv.released_by == role_users["staff"]
 
         client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/clear/")
@@ -1154,23 +1274,23 @@ class TestMyApprovals:
         cv.refresh_from_db()
         assert cv.status == "signed"
 
-        client.force_login(role_users["head"])
+        client.force_login(role_users["staff"])
         body = client.get("/approvals/").content
         assert b"CV-2026-0001" in body and b"Release" in body
-        assert b"variance" in body  # the open cash short worksheet too
         client.post(f"/ap/cv/{cv.id}/release/")
-        client.post(f"/cash/short/{ws.id}/approve/")
         cv.refresh_from_db()
-        ws.refresh_from_db()
         assert cv.status == "released"
-        assert ws.status == "approved"
 
+        # the open cash-short worksheet is approved by the head, who also clears the CV
         client.force_login(role_users["head"])
         body = client.get("/approvals/").content
-        assert b"CV-2026-0001" in body and b"Clear" in body
+        assert b"variance" in body and b"Clear" in body
+        client.post(f"/cash/short/{ws.id}/approve/")
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
+        ws.refresh_from_db()
         assert cv.status == "cleared"
+        assert ws.status == "approved"
 
     def test_user_without_role_has_empty_inbox(self, client, company, segment, accounts,
                                                supplier, role_users):

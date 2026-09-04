@@ -193,12 +193,106 @@ class RFPService:
         rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
         return rfp
 
+    REJECTABLE_STATUSES = ("submitted", "checked", "acctg_approved")
+
     @classmethod
-    def reject(cls, rfp: RFPDocument, *, user) -> RFPDocument:
+    def _rejectable(cls, rfp) -> bool:
+        """An RFP can be rejected only while it is actually awaiting an
+        approval step — including the CNR step on an amount above P100k."""
+        if rfp.status in ("submitted", "checked", "acctg_approved"):
+            return True
+        return rfp.status == "fin_approved" and rfp.amount > CNR_ESCALATION_THRESHOLD
+
+    @classmethod
+    def reject(cls, rfp: RFPDocument, *, user, note: str = "") -> RFPDocument:
+        """Return the RFP to the preparer with a note (reject/revise cycle).
+
+        Only while it is awaiting an approval step (not yet posted, not yet
+        drafted). A note explaining the change is mandatory — the preparer
+        reads it when they reopen the RFP to edit and resubmit.
+        """
+        from django.utils import timezone
+
         if rfp.status == "posted":
             raise PostingError("Posted RFPs cannot be rejected.")
+        if not cls._rejectable(rfp):
+            raise ValidationError(
+                f"RFP '{rfp.status}' is not awaiting an approval step; it cannot be rejected."
+            )
+        if not (note or "").strip():
+            raise ValidationError("Enter a note explaining why the RFP is being rejected.")
         rfp.status = "rejected"
-        rfp.save(update_fields=["status", "updated_at"])
+        rfp.rejected_by = user
+        rfp.rejected_at = timezone.now()
+        rfp.rejection_note = note.strip()
+        rfp.save(update_fields=["status", "rejected_by", "rejected_at", "rejection_note", "updated_at"])
+        return rfp
+
+    @classmethod
+    @transaction.atomic
+    def revise(cls, rfp: RFPDocument, *, user, lines: list[dict], purpose: str = "") -> RFPDocument:
+        """The preparer revises a rejected RFP and resubmits it.
+
+        Only the preparer may revise, and only while the RFP is `rejected`.
+        The distribution lines are replaced wholesale (mirroring create_rfp
+        validation), rejection context is cleared, and the RFP re-enters the
+        chain at "submitted" so the approvers see the corrected request.
+        """
+        if rfp.status != "rejected":
+            raise ValidationError("Only rejected RFPs can be revised and resubmitted.")
+        if user.id != rfp.created_by_id:
+            raise ValidationError(
+                f"RFP {rfp.ap_number} was prepared by another user; only the preparer may revise it."
+            )
+
+        dr_total = Decimal("0.00")
+        cr_total = Decimal("0.00")
+        parsed = []
+        for line in lines:
+            amt = money(line["amount"])
+            if amt <= 0:
+                raise ValidationError("Each charge line must have an amount greater than zero.")
+            side = str(line.get("side") or "dr").lower()
+            if side not in ("dr", "cr"):
+                raise ValidationError(f"Line side must be Dr or Cr, got '{side}'.")
+            parsed.append((side, amt))
+            if side == "dr":
+                dr_total += amt
+            else:
+                cr_total += amt
+        if dr_total <= 0:
+            raise ValidationError("An RFP needs at least one debit (Dr) line.")
+        if dr_total != cr_total:
+            raise ValidationError(
+                f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
+            )
+        if dr_total < RFP_MIN_AMOUNT:
+            raise ValidationError(
+                f"Amount {dr_total} is below the RFP threshold {RFP_MIN_AMOUNT}; use the petty cash voucher."
+            )
+
+        rfp.lines.all().delete()
+        rfp.amount = dr_total
+        rfp.particulars = lines[0].get("description", "") if lines else ""
+        rfp.purpose = purpose
+        rfp.status = "submitted"
+        rfp.rejected_by = None
+        rfp.rejected_at = None
+        rfp.rejection_note = ""
+        rfp.save(update_fields=[
+            "amount", "particulars", "purpose", "status",
+            "rejected_by", "rejected_at", "rejection_note", "updated_at",
+        ])
+        for i, line in enumerate(lines, start=1):
+            RFPLine.objects.create(
+                rfp=rfp,
+                line_no=i,
+                side=str(line.get("side") or "dr").lower(),
+                segment=line["segment"],
+                account=_account(line["account_code"]),
+                amount=money(line["amount"]),
+                description=line.get("description", ""),
+            )
         return rfp
 
 

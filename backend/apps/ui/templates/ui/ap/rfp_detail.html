@@ -123,11 +123,17 @@
     {% elif rfp.status == "submitted" or rfp.status == "checked" or rfp.status == "acctg_approved" %}
     <div class="mt-4">
       {% if awaiting.you_hold %}
-      <form method="post" action="{% url 'ui:rfp_approve' rfp.id %}">
+      <form method="post" action="{% url 'ui:rfp_approve' rfp.id %}" class="inline-block">
         {% csrf_token %}
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
           {% if rfp.status == "submitted" or rfp.status == "prepared" %}Check (Recommending approver){% elif rfp.status == "checked" %}Approve (Accounting Manager){% else %}Approve (Finance Manager){% endif %}
         </button>
+      </form>
+      <button type="button" id="reject-toggle" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+      <form method="post" action="{% url 'ui:rfp_reject' rfp.id %}" id="reject-form" class="mt-3 hidden">
+        {% csrf_token %}
+        <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The preparer will see this note before revising."></textarea>
+        <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return RFP to preparer</button>
       </form>
       {% else %}
       <p class="text-sm text-slate-500">The approve button is shown to the {{ awaiting.label }} only.</p>
@@ -137,9 +143,15 @@
     <div class="mt-4">
       {% if rfp.amount > 100000 %}
         {% if awaiting.you_hold %}
-        <form method="post" action="{% url 'ui:rfp_approve_cnr' rfp.id %}">
+        <form method="post" action="{% url 'ui:rfp_approve_cnr' rfp.id %}" class="inline-block">
           {% csrf_token %}
           <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve (CNR — required &gt; ₱100k)</button>
+        </form>
+        <button type="button" id="reject-toggle" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+        <form method="post" action="{% url 'ui:rfp_reject' rfp.id %}" id="reject-form" class="mt-3 hidden">
+          {% csrf_token %}
+          <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The preparer will see this note before revising."></textarea>
+          <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return RFP to preparer</button>
         </form>
         {% else %}
         <p class="text-sm text-slate-500">The CNR approve button is shown to the CNR Manager only.</p>
@@ -152,7 +164,32 @@
     <p class="mt-4 text-sm text-emerald-700">Fully approved by CNR — ready for CONSO batch (API).</p>
     {% elif rfp.status == "posted" %}
     <p class="mt-4 text-sm text-emerald-700">Posted through CONSO batch — GL updated.</p>
+    {% elif rfp.status == "rejected" %}
+    <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+      <div class="text-sm font-semibold text-red-800">Rejected — returned for revision</div>
+      <div class="text-xs text-slate-500 mt-1">Returned by {{ rfp.rejected_by.get_full_name|default:rfp.rejected_by }} · {{ rfp.rejected_at|date:"M d, Y H:i" }}</div>
+      <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ rfp.rejection_note }}</div>
+      {% if request.user.id == rfp.created_by_id %}
+      <a href="{% url 'ui:rfp_revise' rfp.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise & resubmit</a>
+      {% else %}
+      <p class="mt-2 text-xs text-slate-500">Only the preparer ({{ rfp.created_by.get_full_name|default:rfp.created_by }}) can revise this RFP.</p>
+      {% endif %}
+    </div>
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var toggle = document.getElementById('reject-toggle');
+  var form = document.getElementById('reject-form');
+  if (toggle && form) {
+    toggle.addEventListener('click', function () {
+      form.classList.toggle('hidden');
+    });
+  }
+})();
+</script>
 {% endblock %}

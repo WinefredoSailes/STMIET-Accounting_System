@@ -1,10 +1,10 @@
 {% extends "ui/base.html" %}
-{% block title %}New RFP — STMIET Accounting{% endblock %}
+{% block title %}{% if editing %}Revise RFP {{ editing.ap_number }}{% else %}New RFP{% endif %} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:rfp_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; RFPs</a>
   <div class="mt-1 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-slate-900">New Request for Payment</h1>
+    <h1 class="text-xl font-semibold text-slate-900">{% if editing %}Revise RFP {{ editing.ap_number }}{% else %}New Request for Payment{% endif %}</h1>
     <span class="text-xs text-slate-400">ACCTG-FOR-012 · A#### auto-assigned</span>
   </div>
 
@@ -19,23 +19,25 @@
       <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee">Payee (NAME)</label>
         <select name="payee" id="id_payee" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          {% for s in suppliers %}<option value="{{ s.id }}">{{ s.code }} — {{ s.name }}{% if s.last_ap %} (last AP {{ s.last_ap }}){% endif %}</option>{% endfor %}
+          {% for s in suppliers %}<option value="{{ s.id }}" {% if editing and editing.payee_id == s.id %}selected{% endif %}>{{ s.code }} — {{ s.name }}{% if s.last_ap %} (last AP {{ s.last_ap }}){% endif %}</option>{% endfor %}
         </select>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_rfp_date">Date of request</label>
         <input type="date" name="rfp_date" id="id_rfp_date" required
+               value="{% if editing %}{{ editing.rfp_date|date:"Y-m-d" }}{% endif %}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
         <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+          {% for seg in segments %}<option value="{{ seg.id }}" {% if editing and editing.segment_id == seg.id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
         </select>
       </div>
       <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_purpose">Cost center / ref.</label>
         <input type="text" name="purpose" id="id_purpose" maxlength="128"
+               value="{% if editing %}{{ editing.purpose }}{% endif %}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
     </div>
@@ -56,6 +58,32 @@
           </tr>
         </thead>
         <tbody id="lines-body" class="divide-y divide-slate-100">
+          {% if editing %}
+          {% for line in editing.lines.all %}
+          <tr>
+            <td class="py-2 text-slate-400 line-no">{{ forloop.counter }}</td>
+            <td class="py-2">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="">— select —</option>
+                {% for acc in accounts %}<option value="{{ acc.code }}" {% if line.account_id == acc.id %}selected{% endif %}>{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2">
+              <select name="line_side" class="line-side w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="dr" {% if line.side == 'dr' %}selected{% endif %}>Dr</option>
+                <option value="cr" {% if line.side == 'cr' %}selected{% endif %}>Cr</option>
+              </select>
+            </td>
+            <td class="py-2">
+              <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2"><input type="text" name="line_description" value="{{ line.description }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_amount" value="{{ line.amount }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums line-amount"></td>
+          </tr>
+          {% endfor %}
+          {% else %}
           <tr>
             <td class="py-2 text-slate-400 line-no">1</td>
             <td class="py-2">
@@ -78,6 +106,7 @@
             <td class="py-2"><input type="text" name="line_description" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="number" step="0.01" min="0" name="line_amount" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums line-amount"></td>
           </tr>
+          {% endif %}
         </tbody>
         <tfoot>
           <tr>
@@ -104,7 +133,7 @@
 
     <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        Create RFP (prepared)
+        {% if editing %}Save & resubmit (revised){% else %}Create RFP (prepared){% endif %}
       </button>
     </div>
   </form>

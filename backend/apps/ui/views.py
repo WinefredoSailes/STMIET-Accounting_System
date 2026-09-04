@@ -777,6 +777,91 @@ def rfp_approve_cnr(request, pk):
     return redirect("ui:rfp_detail", pk=pk)
 
 
+@login_required
+@require_POST
+def rfp_reject(request, pk):
+    """An approver returns the RFP to the preparer with a note (ADR-020
+    reject/revise cycle). Role-gated to whoever holds the current step."""
+    from apps.ap.models import RFPDocument
+    from apps.ap.services import RFPService
+    from apps.core.approvals import ROLE_LABELS, RFP_NEXT_ROLE, role_assignee, require_approval_role
+
+    rfp = get_object_or_404(RFPDocument, pk=pk)
+    role = RFP_NEXT_ROLE.get(rfp.status)
+    if rfp.status == "fin_approved" and rfp.amount > 100000:
+        role = "coo"
+    note = request.POST.get("note", "")
+    try:
+        # Rejection is valid on any in-flight step (submitted..fin_approved);
+        # if there is no current role the service will reject the status.
+        if role:
+            require_approval_role(request.user, role)
+        rfp = RFPService.reject(rfp, user=request.user, note=note)
+        messages.success(request, f"RFP {rfp.ap_number} rejected and returned to {rfp.created_by}.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:rfp_detail", pk=pk)
+
+
+@login_required
+def rfp_revise(request, pk):
+    """The preparer revises a rejected RFP and resubmits it. GET shows a
+    prefilled edit form; POST runs RFPService.revise (preparer-only)."""
+    from apps.ap.models import RFPDocument
+    from apps.ap.services import RFPService
+
+    rfp = get_object_or_404(
+        RFPDocument.objects.prefetch_related("lines"), pk=pk
+    )
+    if request.user.id != rfp.created_by_id:
+        messages.error(request, "Only the preparer may revise this RFP.")
+        return redirect("ui:rfp_detail", pk=pk)
+
+    if request.method == "POST":
+        try:
+            lines = []
+            seg_ids = request.POST.getlist("line_segment")
+            codes = request.POST.getlist("line_account")
+            sides = request.POST.getlist("line_side")
+            amounts = request.POST.getlist("line_amount")
+            descs = request.POST.getlist("line_description")
+            for i, seg_id in enumerate(seg_ids):
+                if not seg_id or not codes[i]:
+                    continue
+                lines.append(
+                    {
+                        "side": (sides[i] if i < len(sides) else "") or "dr",
+                        "segment": Segment.objects.get(pk=seg_id),
+                        "account_code": codes[i],
+                        "amount": amounts[i] or 0,
+                        "description": descs[i] if i < len(descs) else "",
+                    }
+                )
+            if not lines:
+                raise ValidationError("Add at least one charge line.")
+            rfp = RFPService.revise(
+                rfp,
+                user=request.user,
+                lines=lines,
+                purpose=request.POST.get("purpose", ""),
+            )
+            messages.success(request, f"RFP {rfp.ap_number} revised and resubmitted.")
+            return redirect("ui:rfp_detail", pk=pk)
+        except (AccountingError, ValidationError) as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/ap/rfp_form.html",
+        {
+            "editing": rfp,
+            "suppliers": list_suppliers(),
+            "segments": Segment.objects.order_by("code"),
+            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Cash — bank master + weekly cycle generation
 # ---------------------------------------------------------------------------
@@ -1043,7 +1128,7 @@ def cv_sign(request, pk):
 @login_required
 @require_POST
 def cv_release(request, pk):
-    """signed -> released (Accounting & Finance Head releases the check)."""
+    """signed -> released (Accounting staff / treasury releases the check)."""
     from apps.ap.models import CheckVoucher
     from apps.core.approvals import require_approval_role
 
@@ -1053,7 +1138,7 @@ def cv_release(request, pk):
     is_htmx = request.headers.get("HX-Request")
     try:
         if cv.status == "signed":
-            require_approval_role(request.user, "head")
+            require_approval_role(request.user, "staff")
             cv.status = "released"
             cv.released_by = request.user
             cv.save(update_fields=["status", "released_by", "updated_at"])

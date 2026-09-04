@@ -98,6 +98,11 @@ class RFPDocument(AuditableModel):
     approved_by_acctg = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_by_fin = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_by_cnr = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Reject cycle (ADR-020 revision): an approver can return the RFP to the
+    # preparer with a note; the preparer edits and resubmits.
+    rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-rfp_date", "-ap_number"]

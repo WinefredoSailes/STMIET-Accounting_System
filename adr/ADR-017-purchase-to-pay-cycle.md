@@ -109,3 +109,25 @@ RFP items can belong to different segments. Each RFP line specifies its segment.
 ### Neutral
 - PCF path is a separate simplified flow (see ADR-022)
 - CONSO is an internal document — may be absorbed into a "batch approval" feature
+
+---
+
+## Implementation scope & out-of-scope (UAT Sept 2026)
+
+The full document chain above is the **target** design. For the September-2026
+daily-cycle UAT the **wired UI ends at RFP → CONSO → CV**; the upstream
+procurement documents are recorded for later consideration, not yet built:
+
+| Document | Built in UI? | Notes |
+|----------|:---:|-------|
+| PR | No | Out of scope — dept requisition entry, not yet wired |
+| PO | No | Out of scope — no purchase-order screen |
+| RR / Goods Received | No | Out of scope — goods receipt, ties to inventory |
+| Supplier Invoice | No | Out of scope — invoice data enters via the RFP form |
+| RFP | **Yes** | Central AP doc; carries the JE and approval chain |
+| CONSO | **Yes** | Batch approval/posting of approved RFPs |
+| CV | **Yes** | created → signed (COO) → released (staff/treasury) → cleared (head) |
+
+**Consideration for later:** add PR/PO/RR (and optionally Supplier Invoice)
+screens to complete the procure-to-pay chain upstream of the RFP. This is
+tracked as future work; it does not block the daily-cycle UAT.

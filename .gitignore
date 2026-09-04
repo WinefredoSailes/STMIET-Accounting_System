@@ -26,6 +26,9 @@ Thumbs.db
 # Private business documents (payroll review, personnel data)
 COMPENSATION-REVIEW.md
 
+# Team walkthrough guide (internal only)
+/USERGUIDE.md
+
 # Office / media files (never commit to GitHub)
 *.xlsx
 *.xls

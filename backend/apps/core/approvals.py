@@ -43,11 +43,12 @@ RFP_STEP_TO_ROLE = {
     "fin_approved": "head",
 }
 
-# CV lifecycle holders: created->signed (COO), signed->released (head),
-# released->cleared (head). ACCTG-FOR-010 / 7.4.
+# CV lifecycle holders: created->signed (COO), signed->released (staff /
+# treasury e.g. Quibs), released->cleared (head approves the release).
+# ACCTG-FOR-010 / 7.4.
 CV_NEXT_ROLE = {
     "created": "coo",
-    "signed": "head",
+    "signed": "staff",
     "released": "head",
 }
 
