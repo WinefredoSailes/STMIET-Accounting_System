@@ -65,16 +65,16 @@
 
 ## PHASE 2 — ACCOUNTS RECEIVABLE (CUSTOMER LEDGER + COLLECTIONS) *[est. 6-8 wks]*
 
-- [ ] Customer master (+ one-time migration/cleanup, segment default, group Fuel/Equipment/OPS)
-- [ ] Customer ledger: Over/(Short) **cumulative** cycle model (ADR-013) — payments vs amounts payable
-- [ ] Three-tier pricing: Regular/Patron/Volume + **per-cycle price snapshots** (ADR-014; prices via Viber/FB → system data entry; kills ~70% AR rework, pain #1)
-- [ ] Acknowledgment Receipt (ACCTG-FOR-005 v3): pre-numbered YYYY-SEQ, print matches workbook (ADR-032/015)
-- [ ] Collection entry: Dr Cash | Cr Unearned 21000/21016/21023 (or Cr AR 120xx when applying to prior AR) — single event `cash.collection` (RESOLUTION #9)
-- [ ] Deposit tracking: 12-bank + PCF&COH columns; deposit = state change, NO JE (ADR-016)
-- [ ] Cycle settlement: COLLECTIBLES-derived report; two-department (Distribution vs F&A); gross mark-up = client paid − depot paid (ADR-029; NO JE)
-- [ ] Cash short/excess worksheet (CASH SHORT sheet = recon worksheet; variance requires cause + Alywin approval — ADR-030)
-- [ ] AR aging (30/60/90/120+), client statements, AR follow-up list (kills FB-paper-list pain #8)
-- [ ] Weekly collection summary auto-generated (eliminates triple data entry, pain #2)
+- [ ] Customer master (+ one-time migration/cleanup, segment default, group Fuel/Equipment/OPS) — **model + `import_customers` command ready; real master not yet loaded (no source file)**
+- [x] Customer ledger: Over/(Short) **cumulative** cycle model (ADR-013) — payments vs amounts payable (`CycleLedger`)
+- [x] Three-tier pricing: Regular/Patron/Volume + **per-cycle price snapshots** (ADR-014)
+- [x] Acknowledgment Receipt (ACCTG-FOR-005 v3): pre-numbered YYYY-SEQ
+- [x] Collection entry: Dr Cash | Cr Unearned 21000/21016/21023 (or Cr AR 120xx when applying to prior AR) — single event `cash.collection` (RESOLUTION #9)
+- [x] Deposit tracking: 12-bank + PCF&COH columns; deposit = state change, NO JE (ADR-016)
+- [x] Cycle settlement: COLLECTIBLES-derived report (ADR-029; NO JE)
+- [x] Cash short/excess worksheet (variance requires cause + approval — ADR-030)
+- [x] AR aging (30/60/90/120+), client statements, AR follow-up list (kills FB-paper-list pain #8) — `/ar/aging/`
+- [x] Weekly collection summary auto-generated (eliminates triple data entry, pain #2) — collections summary screen
 - [ ] Integrate with fuel delivery events (delivery-completed-paid/unpaid JEs — catalog #48/49)
 - [ ] Migration: AR-BLUE 2026 (1M+ rows → filtered to active), macro per-client sheets
 
@@ -84,16 +84,16 @@
 
 ## PHASE 3 — ACCOUNTS PAYABLE & PROCUREMENT *[est. 6-8 wks]*
 
-- [ ] Supplier master (Depot/Equipment/Service/Govt; TIN; "LAST AP" auto-track — kills pain #5, ADR-024)
-- [ ] PR → PO → RR → Supplier Invoice → RFP → CONSO → CV document chain (ADR-017; forms: PO_LIMDON layout, RFP ACCTG-FOR-012)
-- [ ] RFP model: A#### auto-numbering + gap enforcement (ADR-019); 4-level approval (ADR-020); P2,500 threshold enforced (ADR-022; ≥RFP, <PCV)
-- [ ] **RFP JE (canonical):** Dr Expense/Inventory/Asset {TOTAL} | Cr Advances-to-Employees 12070–76 {20,000} | Cr AP {TOTAL − 20,000} (RESOLUTION #5)
-- [ ] Advances to Employees ledger (standing 20k, liquidation, aging) — ADR-021
-- [ ] Multi-segment AP allocation (single RFP split across DHPP/DMIE/OPS — ADR-023)
-- [ ] CONSO batch: auto-generate JE per RFP batch; reviewed by Accounting Head (kills manual CONSO, pain #4)
-- [ ] Check Voucher print (ACCTG-FOR-010, exact ADR-032 layout) + Petty Cash Voucher (ACCTG-FOR-002)
-- [ ] Payment clearing: Dr AP | Cr Cash (+WHT split Dr AP {gross} | Cr Cash {net} + Cr WHT 64110-16)
-- [ ] AP aging, due-date tracking, supplier statements
+- [x] Supplier master (Depot/Equipment/Service/Govt; TIN; "LAST AP" auto-track — kills pain #5, ADR-024) — model mirrors finance-head columns (owner/email/position/contact/attachment flag); real 8-supplier master imported
+- [ ] PR → PO → RR → Supplier Invoice → RFP → CONSO → CV document chain (ADR-017; forms: PO_LIMDON layout, RFP ACCTG-FOR-012) — **RFP→CONSO→CV built; PR/PO/RR not built**
+- [x] RFP model: A#### auto-numbering + gap enforcement (ADR-019); 4-level approval (ADR-020); P2,500 threshold enforced (ADR-022; ≥RFP, <PCV)
+- [x] **RFP JE (canonical):** Dr Expense/Inventory/Asset {TOTAL} | Cr Advances-to-Employees 12070–76 {20,000} | Cr AP {TOTAL − 20,000} (RESOLUTION #5)
+- [x] Advances to Employees ledger (standing 20k, liquidation, aging) — ADR-021
+- [x] Multi-segment AP allocation (single RFP split across DHPP/DMIE/OPS — ADR-023)
+- [x] CONSO batch: auto-generate JE per RFP batch; reviewed by Accounting Head (kills manual CONSO, pain #4)
+- [ ] Check Voucher print (ACCTG-FOR-010, exact ADR-032 layout) + Petty Cash Voucher (ACCTG-FOR-002) — **CV screen/lifecycle built; exact print layout pending**
+- [x] Payment clearing: Dr AP | Cr Cash (+WHT split Dr AP {gross} | Cr Cash {net} + Cr WHT 64110-16)
+- [ ] AP aging, due-date tracking, supplier statements — **supplier list + RFP register exist; AP aging screen pending**
 - [ ] Payment-based invoice booking flag (RESOLUTION #27 — confirm in Phase 3 with observed practice)
 - [ ] Migration: RFP TEMPLATES (39 sheets), supplier invoices history
 
@@ -103,14 +103,14 @@
 
 ## PHASE 4 — CASH & BANKS (TREASURY) *[est. 4-6 wks]*
 
-- [ ] BankAccount master (12/9 banks+PCF&COH; ADB maintaining balances; account type S/C)
-- [ ] Weekly cash cycle sheet (Tue–Mon): 11 columns, 8 activity rows (ADR-028) — derived report
-- [ ] Bank reconciliation per weekly cycle (ADR-026; target <15 min/bank from 10–15; difference causes = typo/POP/cashier)
-- [ ] Petty Cash: 3 funds (Leaslyn/Treasury/Alywin), 85% replenishment trigger, ADR-027
-- [ ] Inter-account transfer (Dr Cash-To | Cr Cash-From; purpose required; ADR-030)
-- [ ] Cash Flow Statement generation from cycles (ADR-031; identity test: Net Inc = End − Beg + ADB adjustments)
-- [ ] Check disbursement tracking (CV lifecycle: created → signed CNR → released Quibs → cleared)
-- [ ] COLLECTIBLES + CASH SHORT worksheets generated from posted data (ADR-029/030)
+- [x] BankAccount master (12/9 banks+PCF&COH; ADB maintaining balances; account type S/C) — data-driven; 11 real banks imported, account_number/branch/signatories added
+- [ ] Weekly cash cycle sheet (Tue–Mon): 11 columns, 8 activity rows (ADR-028) — derived report **pending** (cycle ledger exists, sheet layout not)
+- [x] Bank reconciliation per weekly cycle (ADR-026; target <15 min/bank from 10–15; difference causes = typo/POP/cashier) — `/cash/recon/` book vs statement per cycle, resolved/open via `BankReconService`
+- [x] Petty Cash: 3 funds (Leaslyn/Treasury/Alywin), 85% replenishment trigger, ADR-027 — data-driven; 4 custodian funds (Alywin/Elleonor/Ethelane/Leaslyn) imported
+- [x] Inter-account transfer (Dr Cash-To | Cr Cash-From; purpose required; ADR-030)
+- [x] Cash Flow Statement generation from cycles (ADR-031; identity test: Net Inc = End − Beg + ADB adjustments)
+- [x] Check disbursement tracking (CV lifecycle: created → signed CNR → released Quibs → cleared)
+- [x] COLLECTIBLES + CASH SHORT worksheets generated from posted data (ADR-029/030) — collections summary + cash short approve flows built
 - [ ] Migration: SUMMARY OF CASH JANUARY 2026 (weekly cycles, CF, COLLECTIBLES, CASH SHORT)
 
 **Done when:** January 2026 data reproduces in system: CF identity -941,691.96 = 1,316,150.58 − 2,412,842.54 + 155,000 ✓; Quibs weekly cash flow < 30 min.
@@ -224,9 +224,18 @@
 
 ## PHASE 10 — MIGRATION, UAT & GO-LIVE *[est. 4-6 wks]*
 
-- [ ] Master data migration: COA (**185 accts, revised Sept-2026 — authoritative**), customers, suppliers, banks, employees, vehicles, assets — *import commands built & verified (idempotent, header-name column mapping, model after `import_coa`):* `import_customers`, `import_suppliers`, `import_banks` (GL-account uniqueness enforced), `import_vehicles` (links to `Asset.vehicle`), `import_fixed_assets`; `import_coa` pre-existing
+> **UAT READINESS (Sept 2026 daily cycle).** System & workflow-complete: 239 tests green, `manage.py check` clean. Real Sept-1-2026 data loaded → COA 185, 11 banks, 4 PCF custodian funds, 8 suppliers, 54 fixed assets (opening posted & balanced Dr Asset | Cr Accum Dep | Cr opening equity). Superadmin User Management drives roles (staff→head→coo). Every daily-cycle screen renders (`/settings/users/`, `/ap/...`, `/cash/...`, `/ar/...`, `/assets/`). **Remaining before full UAT breadth:** real customer master (~200+) not yet loaded (no source file) — workflows built, data pending; vehicles not loaded; payroll/inventory bridges later-phase.
+
+- [x] Master data migration — **import commands built & verified (idempotent, header-name column mapping, model after `import_coa`):** `import_customers`, `import_suppliers`, `import_banks` (GL-account uniqueness enforced), `import_vehicles` (links to `Asset.vehicle`), `import_fixed_assets`; `import_coa` pre-existing
+  - [x] COA (185 accts, revised Sept-2026 — authoritative) — loaded
+  - [x] Banks (11 funded) + PCF (4 custodian funds) — loaded from `CASH-SEPTEMBER-1-2026.xlsx`
+  - [x] Suppliers (8) — loaded from `LIST-OF-SUPPLIERS-SEPTEMBER-01-2026.xlsx`
+  - [x] Fixed assets (54) — loaded from `SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx`
+  - [ ] Customers (~200+) — **import command ready, source file not yet provided**
+  - [ ] Vehicles — **import command ready, source file not yet provided**
+  - [ ] Employees (payroll feed) — **import not yet wired**
 - [x] **UAT re-base to the real Sept-2026 figures** — `import_cash_summary` (data-driven from `excel-files/CASH-SEPTEMBER-1-2026.xlsx`, keyed by ACCOUNT NUMBER, all banks + 4 PCF custodians mapped onto the EXISTING 185-account cash GL 10000–10140, no new COA accounts): 11 funded banks + 4 PCF funds + custodian User accounts seeded (`--post-opening` delegates to `import_opening_balances`); PNB Savings 0.00 out of scope (no COA yet). `flush_demo` run first so the DB holds ONLY the real opening.
-- [ ] Opening balances: **Sept 1, 2026 real beginning balance (cash-only for now; AR/AP/inventory/capital openings come later via the same command)** — *`import_opening_balances` built & verified:* posts one balanced JE per segment (`OB-<year>-<SEG>`), shared/ALL accounts (cash) post as a single company-level JE (`OB-SEP1-ALL`), Dr=Cr enforced with auto-plug to the segment's `opening_equity` map (`--no-plug` to fail instead), requires POSTED via approved-gate status, idempotent on re-run. FY2026 periods seeded via `seed_fiscal_periods` (13 incl. adjustment); Sept opening links to P9; Dec-2026 close rolls into FY2027.
+- [x] Opening balances: **Sept 1, 2026 real beginning balance (cash + fixed-assets loaded; AR/AP/inventory/capital openings still pending)** — *`import_opening_balances` built & verified:* posts one balanced JE per segment (`OB-<year>-<SEG>`), shared/ALL accounts (cash) post as a single company-level JE (`OB-SEP1-ALL`), Dr=Cr enforced with auto-plug to the segment's `opening_equity` map (`--no-plug` to fail instead), requires POSTED via approved-gate status, idempotent on re-run. FY2026 periods seeded via `seed_fiscal_periods` (13 incl. adjustment); Sept opening links to P9; Dec-2026 close rolls into FY2027. Fixed-assets opening posted via `AssetService.seed_opening` (54 assets, cost 22,359,081.01 / accum 4,117,838.30 / NBV 18,241,242.71, each balanced Dr Asset | Cr Accum Dep | Cr opening equity, all POSTED).
 - [ ] UAT per person: Mich (Phase 2), Che (Phase 3), Quibs (Phase 4), Alywin (Phases 1/6-9)
 - [ ] Parallel run: real cycle processing in system while Excel continues (2-3 weeks)
 - [ ] Success metrics re-measurement (OBSERVATION-PLAN targets: close < 3 days, 0 errors, 100% accuracy)
