@@ -40,6 +40,7 @@ urlpatterns = [
     # AR
     path("ar/customers/", views.customer_list, name="customer_list"),
     path("ar/customers/new/", views.customer_create, name="customer_create"),
+    path("ar/customers/<int:pk>/update/", views.customer_update, name="customer_update"),
     path("ar/receipts/", views.receipt_list, name="receipt_list"),
     path("ar/receipts/new/", views.receipt_create, name="receipt_create"),
     path("ar/aging/", views.aging, name="aging"),

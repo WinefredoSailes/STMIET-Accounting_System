@@ -95,13 +95,12 @@ class TestEndToEndWorkflow:
         client.force_login(staff)
 
         # 1. Customer master --------------------------------------------------
-        resp = client.post(
-            "/ar/customers/new/",
-            {"code": "E2E-001", "name": "E2E Customer", "group": "fuel",
-             "segment": segment.id, "pricing_tier": "regular"},
+        # (created via the model — the master is seeded by the CSV importer and
+        # only edited by a super admin; operator screens post collections/RFPs.)
+        customer = Customer.objects.create(
+            code="E2E-001", name="E2E Customer", group="fuel",
+            segment=segment, pricing_tier="regular",
         )
-        assert resp.status_code == 302
-        customer = Customer.objects.get(code="E2E-001")
 
         # 2. AR invoice (no UI screen yet — created via the model) ------------
         inv = create_invoice(segment, customer, date(2026, 1, 6), "120000.00")

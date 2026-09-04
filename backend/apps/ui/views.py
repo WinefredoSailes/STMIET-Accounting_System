@@ -485,6 +485,8 @@ def asset_list(request):
 
 @login_required
 def customer_create(request):
+    if not request.user.is_superuser:
+        raise PermissionDenied("Only a super admin can manage the customer master.")
     if request.method == "POST":
         try:
             from apps.ar.models import Customer
@@ -498,6 +500,7 @@ def customer_create(request):
                 tin=request.POST.get("tin", ""),
                 address=request.POST.get("address", ""),
                 contact_no=request.POST.get("contact_no", ""),
+                owner_name=request.POST.get("owner_name", ""),
                 notes=request.POST.get("notes", ""),
             )
             messages.success(request, "Customer created.")
@@ -505,6 +508,37 @@ def customer_create(request):
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
     return render(request, "ui/ar/customer_form.html", {"segments": Segment.objects.order_by("code")})
+
+
+@login_required
+def customer_update(request, pk):
+    from apps.ar.models import Customer
+
+    if not request.user.is_superuser:
+        raise PermissionDenied("Only a super admin can edit the customer master.")
+    customer = get_object_or_404(Customer, pk=pk)
+    if request.method == "POST":
+        try:
+            customer.code = request.POST["code"].strip()
+            customer.name = request.POST["name"].strip()
+            customer.group = request.POST["group"]
+            customer.segment = Segment.objects.get(pk=request.POST["segment"])
+            customer.pricing_tier = request.POST["pricing_tier"]
+            customer.tin = request.POST.get("tin", "")
+            customer.address = request.POST.get("address", "")
+            customer.contact_no = request.POST.get("contact_no", "")
+            customer.owner_name = request.POST.get("owner_name", "")
+            customer.notes = request.POST.get("notes", "")
+            customer.save()
+            messages.success(request, "Customer updated.")
+            return redirect("ui:customer_list")
+        except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/customer_form.html",
+        {"segments": Segment.objects.order_by("code"), "customer": customer, "editing": True},
+    )
 
 
 @login_required

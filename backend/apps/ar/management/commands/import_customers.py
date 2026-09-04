@@ -9,10 +9,13 @@ header name, matching the pattern of import_coa / import_fixed_assets):
 
     CODE | NAME | SEGMENT | GROUP | PRICING TIER | TIN | ADDRESS | CONTACT | NOTES
 
-  - SEGMENT/SECTION    : "DHPP", "DMIE" or "OPS" (required)
+  - SEGMENT/SECTION    : "DHPP", "DMIE" or "OPS" (optional; defaults to
+                         --default-segment, e.g. for layouts without a segment
+                         column)
   - GROUP              : fuel | equipment | ops (defaults to fuel)
   - PRICING TIER       : regular | patron | volume (defaults to regular)
-  - Everything else optional.
+  - Everything else optional. "BUSINESS NAME" maps to NAME, "CONTACT #" to
+    CONTACT, "OWNER" to OWNER_NAME.
 
 The importer is idempotent: a row whose CODE already exists is updated
 (in-place) rather than duplicated — re-running is safe.
@@ -38,13 +41,14 @@ except ImportError:  # pragma: no cover
 
 HEADER_MAP = {
     "code": ("CODE", "CUSTOMER CODE", "CUST CODE", "ACCT #"),
-    "name": ("NAME", "CUSTOMER NAME", "OUTLET NAME", "CLIENT"),
+    "name": ("NAME", "CUSTOMER NAME", "BUSINESS NAME", "OUTLET NAME", "CLIENT"),
     "segment": ("SEGMENT", "SECTION", "DEPARTMENT"),
     "group": ("GROUP", "CATEGORY"),
     "pricing_tier": ("PRICING TIER", "TIER", "PRICE TIER"),
     "tin": ("TIN",),
-    "address": ("ADDRESS",),
-    "contact": ("CONTACT", "CONTACT NO", "PHONE", "MOBILE", "TEL NO"),
+    "address": ("ADDRESS", "PLACE"),
+    "contact": ("CONTACT", "CONTACT #", "CONTACT NO", "PHONE", "MOBILE", "TEL NO"),
+    "owner_name": ("OWNER", "OWNER NAME", "PROPRIETOR"),
     "notes": ("NOTES", "REMARKS"),
 }
 
@@ -79,6 +83,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--file", dest="file", default=None, help="CSV/XLSX path")
         parser.add_argument("--company", dest="company", default="STMIET")
+        parser.add_argument(
+            "--default-segment", dest="default_segment", default="DHPP",
+            help="Segment used for rows with no SEGMENT column (default DHPP)",
+        )
 
     def _load_rows(self, file_path):
         """Yield (row_dict, row_label) for each data row."""
@@ -190,7 +198,8 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
             try:
-                segment = self._resolve_segment(row.get("segment", "ALL"))
+                raw_segment = row.get("segment") or options["default_segment"]
+                segment = self._resolve_segment(raw_segment)
                 if not code:
                     base = re.sub(r"[^A-Z0-9]+", "-", name.upper())[:16].strip("-")
                     code = f"{base}-{derived_seq()}"
@@ -206,6 +215,7 @@ class Command(BaseCommand):
                         "tin": row.get("tin", ""),
                         "address": row.get("address", ""),
                         "contact_no": row.get("contact", ""),
+                        "owner_name": row.get("owner_name", ""),
                         "notes": row.get("notes", ""),
                     },
                 )

@@ -90,7 +90,6 @@ class TestScreens:
         "/reports/soce/",
         "/reports/month-end-close/",
         "/ar/customers/",
-        "/ar/customers/new/",
         "/ar/receipts/",
         "/ar/receipts/new/",
         "/ap/suppliers/",
@@ -241,8 +240,14 @@ class TestMonthEndClose:
 
 
 class TestMasterScreens:
-    def test_customer_create(self, client, company, segment, accounts):
-        resp = client.post("/ar/customers/new/", {
+    def test_customer_create(self, client, company, segment, accounts, user):
+        from django.test import Client
+
+        user.is_superuser = True
+        user.save()
+        c = Client()
+        c.force_login(user)
+        resp = c.post("/ar/customers/new/", {
             "code": "C001",
             "name": "DHPP Fuel Client",
             "group": "fuel",
@@ -258,6 +263,35 @@ class TestMasterScreens:
         c = Customer.objects.get(code="C001")
         assert c.name == "DHPP Fuel Client"
         assert c.segment == segment
+
+    def test_customer_update_superadmin_only(self, client, company, segment, accounts):
+        from apps.ar.models import Customer
+
+        cust = Customer.objects.create(
+            code="C002", name="Client Two", group="fuel", segment=segment,
+            contact_no="0000",
+        )
+        update = client.get(f"/ar/customers/{cust.pk}/update/")
+        assert update.status_code == 403
+
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+
+        sup = get_user_model().objects.create_user(username="sup", password="x", is_superuser=True)
+        c = Client()
+        c.force_login(sup)
+        resp = c.post(f"/ar/customers/{cust.pk}/update/", {
+            "code": cust.code,
+            "name": cust.name,
+            "group": "fuel",
+            "segment": segment.id,
+            "pricing_tier": "regular",
+            "contact_no": "0999-EDIT-123",
+        })
+        assert resp.status_code == 302
+        cust.refresh_from_db()
+        assert cust.contact_no == "0999-EDIT-123"
+
 
     def test_supplier_create(self, client, company, segment, accounts):
         resp = client.post("/ap/suppliers/new/", {

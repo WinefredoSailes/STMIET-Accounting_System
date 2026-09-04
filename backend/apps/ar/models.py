@@ -44,6 +44,7 @@ class Customer(SoftDeleteMixin, AuditableModel):
     tin = models.CharField("TIN", max_length=32, blank=True)
     address = models.CharField(max_length=255, blank=True)
     contact_no = models.CharField(max_length=32, blank=True)
+    owner_name = models.CharField("Owner", max_length=255, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
