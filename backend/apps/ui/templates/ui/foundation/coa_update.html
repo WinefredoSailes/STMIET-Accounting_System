@@ -1,0 +1,78 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Edit Account — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900 mb-4">Edit Account</h1>
+
+  <form method="post" class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+    {% csrf_token %}
+    <input type="hidden" name="account_id" value="{{ account.pk }}">
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Code</label>
+        <input type="text" name="code" value="{{ account.code }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none readonly" disabled>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
+        <input type="text" name="name" value="{{ account.name }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Account Type</label>
+        <select name="account_type" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          {% for code, label in types %}
+          <option value="{{ code }}" {% if account.account_type == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Segment</label>
+        <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          {% for seg in segments %}
+          <option value="{{ seg.code }}" {% if account.segment == seg.code %}selected{% endif %}>{{ seg.code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Classification</label>
+        <input type="text" name="classification" value="{{ account.classification|default:"" }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+        <input type="text" name="category" value="{{ account.category|default:"" }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Sub-Accounts</label>
+        <input type="text" name="sub_accounts" value="{{ account.sub_accounts|default:"" }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Major Accounts</label>
+        <input type="text" name="major_accounts" value="{{ account.major_accounts|default:"" }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="mb-6">
+      <label class="block text-sm font-medium text-slate-700 mb-1">Is Postable</label>
+      <div class="flex items-center">
+        <input type="checkbox" name="is_postable" {% "checked" if account.is_postable else "" } class="rounded-md bg-white border border-slate-300 py-1.5 px-3 focus:ring-2 focus:ring-indigo-500/40 cursor-pointer">
+        <span class="ml-2 text-slate-700">Postable</span>
+      </div>
+    </div>
+
+    <div class="mt-6 flex justify-end gap-3">
+      <a href="{% url 'ui:coa_list' %}" class="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</a>
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Save changes</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
