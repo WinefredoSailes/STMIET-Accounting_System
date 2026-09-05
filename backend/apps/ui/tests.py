@@ -797,7 +797,7 @@ class TestCheckVoucherScreen:
         cv.refresh_from_db()
         assert cv.status == "created"
 
-        # COO signs, staff (treasury, e.g. Quibs) releases, head clears (ADR-036)
+        # COO signs, staff release is blocked (head must approve per ADR-036)
         client.force_login(role_users["coo"])
         client.post(f"/ap/cv/{cv.id}/sign/")
         cv.refresh_from_db()
@@ -807,8 +807,15 @@ class TestCheckVoucherScreen:
         client.force_login(role_users["staff"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
+        # Staff cannot release; head must approve release
+        assert cv.status == "signed"
+
+        # Head releases the CV
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/release/")
+        cv.refresh_from_db()
         assert cv.status == "released"
-        assert cv.released_by == role_users["staff"]
+        assert cv.released_by == role_users["head"]
 
         client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/clear/")
@@ -1322,19 +1329,24 @@ class TestMyApprovals:
         client.force_login(role_users["staff"])
         body = client.get("/approvals/").content
         assert b"CV-2026-0001" in body and b"Release" in body
+        # Staff release is blocked; head must approve
+        client.post(f"/ap/cv/{cv.id}/release/")
+        cv.refresh_from_db()
+        # Staff cannot release; head must approve
+        assert cv.status == "signed"
+
+        # Head releases the CV and clears it
+        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "released"
-
-        # the open cash-short worksheet is approved by the head, who also clears the CV
-        client.force_login(role_users["head"])
-        body = client.get("/approvals/").content
-        assert b"variance" in body and b"Clear" in body
-        client.post(f"/cash/short/{ws.id}/approve/")
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
-        ws.refresh_from_db()
         assert cv.status == "cleared"
+
+        # the open cash-short worksheet is approved by the head
+        client.post(f"/cash/short/{ws.id}/approve/")
+        ws.refresh_from_db()
         assert ws.status == "approved"
 
     def test_user_without_role_has_empty_inbox(self, client, company, segment, accounts,

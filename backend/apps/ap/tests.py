@@ -65,8 +65,8 @@ class TestRFPCreation:
             RFPService.create_rfp(
                 ap_number="A0002", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
                 lines=[
-                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "2400.00"},
-                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "2400.00"},
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "1500.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "1500.00"},
                 ],
                 user=alywin,
             )

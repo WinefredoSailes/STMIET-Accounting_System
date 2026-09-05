@@ -225,9 +225,13 @@ class TestEndToEndWorkflow:
         assert cv.journal_entry.status == PostingStatus.POSTED
         client.force_login(roles["coo"])
         client.post(f"/ap/cv/{cv.id}/sign/")
-        client.force_login(roles["staff"])  # treasury staff releases the check
+        # Staff cannot release; head must release first per ADR-036
+        client.force_login(roles["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
-        client.force_login(roles["head"])  # head approves/clears the release
+        cv.refresh_from_db()
+        assert cv.status == "released"
+        assert cv.released_by == roles["head"]
+        # Head clears the released CV
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
