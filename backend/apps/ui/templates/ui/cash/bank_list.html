@@ -27,10 +27,10 @@
       <tbody class="divide-y divide-slate-100">
         {% for b in page_obj %}
         <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-mono text-xs">{{ b.code }}</td>
+<td class="px-4 py-2 font-mono text-xs">{{ b.code }}</td>
           <td class="px-4 py-2">{{ b.name }}</td>
           <td class="px-4 py-2 text-xs">{{ b.get_account_type_display }}</td>
-          <td class="px-4 py-2 text-xs">{{ b.bank_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs">{{ b.bank_name|default:"-" }}</td>
           <td class="px-4 py-2 text-xs">{{ b.company.code }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ b.gl_account.code }}</td>
           <td class="px-4 py-2 text-right">{{ b.adb_required|money }}</td>
@@ -38,6 +38,9 @@
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if b.is_active %}bg-emerald-100 text-emerald-800{% else %}bg-slate-100 text-slate-500{% endif %}">
               {{ b.is_active|yesno:"Active,Inactive" }}
             </span>
+          </td>
+          <td class="px-4 py-2 text-right">
+            <a href="{% url 'ui:bank_update' b.pk %}" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Edit</a>
           </td>
         </tr>
         {% empty %}

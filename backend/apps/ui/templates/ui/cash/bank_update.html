@@ -1,0 +1,101 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Edit Bank Account — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900 mb-4">Edit Bank Account</h1>
+
+  <form method="post" class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+    {% csrf_token %}
+    <input type="hidden" name="bank_id" value="{{ bank.pk }}">
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Code</label>
+        <input type="text" name="code" value="{{ bank.code }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none readonly" disabled>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
+        <input type="text" name="name" value="{{ bank.name }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Account Type</label>
+        <select name="account_type" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          {% for code, label in account_types %}
+          <option value="{{ code }}" {% if bank.account_type == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Bank Name</label>
+        <input type="text" name="bank_name" value="{{ bank.bank_name }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Bank Code</label>
+        <input type="text" name="bank_code" value="{{ bank.bank_code }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Account Number</label>
+        <input type="text" name="account_number" value="{{ bank.account_number }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Branch</label>
+        <input type="text" name="branch" value="{{ bank.branch }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">GL Account</label>
+        <select name="gl_account" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <option value="">--Select--</option>
+          {% for acct in accounts %}
+          <option value="{{ acct.code }}" {% if bank.gl_account and bank.gl_account.code == acct.code %}selected{% endif %}>{{ acct.code }} - {{ acct.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Custodian User</label>
+        <select name="custodian" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <option value="">--Select--</option>
+          {% for user in users %}
+          <option value="{{ user.pk }}" {% if bank.custodian and bank.custodian.pk == user.pk %}selected{% endif %}>{{ user.get_full_name|default:user.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">ADB Required</label>
+        <input type="text" name="adb_required" value="{{ bank.adb_required|money }}" class="rounded-md border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Is Active</label>
+      <div class="flex items-center">
+        <input type="checkbox" name="is_active" {% "checked" if bank.is_active else "" %} class="rounded-md bg-white border border-slate-300 py-1.5 px-3 focus:ring-2 focus:ring-indigo-500/40 cursor-pointer">
+        <span class="ml-2 text-slate-700">Active</span>
+      </div>
+    </div>
+
+    <div class="mt-6">
+      <label class="block text-sm font-medium text-slate-700 mb-1">Signatories</label>
+      <input type="text" name="signatories" value="{{ bank.signatories|default_ifnone:'[]' }}" class="rounded-md border border-slate-300 w-full px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none" placeholder='["user1", "user2"]'>
+      <p class="text-xs text-slate-500 mt-1">JSON array of signatory usernames, e.g. ["alice", "bob"]</p>
+    </div>
+
+    <div class="mt-6 flex justify-end gap-3">
+      <a href="{% url 'ui:bank_list' %}" class="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</a>
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Save changes</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

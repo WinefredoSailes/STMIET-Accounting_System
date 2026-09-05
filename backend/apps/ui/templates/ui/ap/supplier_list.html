@@ -23,6 +23,7 @@
           <th class="px-4 py-3">Email</th>
           <th class="px-4 py-3">Contact</th>
           <th class="px-4 py-3">Attachments</th>
+          <th class="px-4 py-3">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -35,13 +36,16 @@
           <td class="px-4 py-2 text-xs text-slate-500">{{ s.email|default:"—" }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ s.contact_no|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{% if s.attachments_required %}Yes{% else %}—{% endif %}</td>
+          <td class="px-4 py-2 text-xs">
+            <a href="{% url 'ui:supplier_update' s.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No suppliers yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No suppliers yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</div>
   {% include "ui/partials/pagination.html" %}
+</div>
 {% endblock %}

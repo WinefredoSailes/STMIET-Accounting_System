@@ -8,6 +8,7 @@
         <th class="px-4 py-3">Segment</th>
         <th class="px-4 py-3">Type</th>
         <th class="px-4 py-3">Normal Balance</th>
+        <th class="px-4 py-3">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
@@ -20,9 +21,12 @@
         </td>
         <td class="px-4 py-1.5 text-slate-600">{{ a.get_account_type_display }}</td>
         <td class="px-4 py-1.5 uppercase text-xs">{{ a.normal_balance }}</td>
+        <td class="px-4 py-1.5 text-right">
+          <a href="{% url 'ui:coa_update' a.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
+        </td>
       </tr>
       {% empty %}
-      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No accounts match. Try clearing the filters — or run <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">py manage.py import_coa</code>.</td></tr>
+      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No accounts match. Try clearing the filters — or run <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">py manage.py import_coa</code>.</td></tr>
       {% endfor %}
     </tbody>
   </table>

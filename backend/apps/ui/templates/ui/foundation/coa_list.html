@@ -5,26 +5,11 @@
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">CHART OF ACCOUNTS</h1>
-      <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s) — imported from COA-STMIET-2026.xlsx. Read-only; changes go through the master file or Django admin.</p>
+      <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s) — imported from COA-STMIET-2026.xlsx.</p>
     </div>
-    <form method="get" class="flex flex-wrap items-center gap-2 text-sm"
-      hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-push-url="true"
-      hx-trigger="submit, input changed delay:300ms from:[name=q], change from:[name=segment], change from:[name=account_type]">
-      <input type="search" name="q" value="{{ q }}" placeholder="Code or name…" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        <option value="">All segments</option>
-        {% for seg in segments %}
-        <option value="{{ seg.code }}" {% if segment_sel == seg.code %}selected{% endif %}>{{ seg.code }}</option>
-        {% endfor %}
-      </select>
-      <select name="account_type" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        <option value="">All types</option>
-        {% for value, label in types %}
-        <option value="{{ value }}" {% if account_type_sel == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
-    </form>
+    <div class="flex items-center gap-2">
+      <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
+    </div>
   </div>
 
   <div id="coa-table">
