@@ -120,6 +120,7 @@ class AccountType(models.TextChoices):
     CONTRA_LIABILITY = "contra_liability", "Contra-Liability"
     CONTRA_REVENUE = "contra_revenue", "Contra-Revenue"
     CONTRA_EQUITY = "contra_equity", "Contra-Equity"
+    DRAWING = "drawing", "Drawing"
 
 
 NORMAL_BALANCE = {
@@ -132,6 +133,7 @@ NORMAL_BALANCE = {
     AccountType.REVENUE: "credit",
     AccountType.CONTRA_REVENUE: "debit",
     AccountType.EXPENSE: "debit",
+    AccountType.DRAWING: "debit",
 }
 
 

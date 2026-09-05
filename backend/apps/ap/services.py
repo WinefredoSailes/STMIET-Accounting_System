@@ -32,7 +32,7 @@ from .models import (
     Supplier,
 )
 
-RFP_MIN_AMOUNT = Decimal("2500.00")
+RFP_MIN_AMOUNT = Decimal("2000.00")
 CNR_ESCALATION_THRESHOLD = Decimal("100000.00")
 
 # Approval roles in order (ADR-020 RFP matrix).

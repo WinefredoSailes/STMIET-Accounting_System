@@ -200,6 +200,12 @@ class PCFReplenishment(AuditableModel):
     # ACCTG-FOR-002 PAYEE INFORMATION: who received / is reimbursed.
     payee_name = models.CharField(max_length=255, blank=True)
     reference = models.CharField(max_length=64, blank=True)
+    # Who requested the petty cash
+    requested_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # Customer/client name for whom the petty cash is intended
+    customer_name = models.CharField("Customer Name", max_length=255, blank=True)
     # Expense breakdown from liquidation receipts
     expenses = models.JSONField(default=list)  # [{account_code, amount, description}]
     journal_entry = models.ForeignKey(
