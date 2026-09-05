@@ -8,7 +8,10 @@
     </h2>
   </div>
 
-  <form method="post" class="space-y-4" hx-post="{% url 'ui:coa_create' if not editing else 'ui:coa_update' account.pk %}" hx-target="closest div.p-6" swap="outer">
+  <form method="post" class="space-y-4"
+    data-hx-post-create="{% url 'ui:coa_create' %}"
+    data-hx-post-update="{% url 'ui:coa_update' account.pk %}"
+    hx-target="closest div.p-6" swap="outer">
     {% csrf_token %}
     {% if editing %}
       <input type="hidden" name="pk" value="{{ account.pk }}">
@@ -60,17 +63,25 @@
         {% endfor %}
       </select>
     </div>
-  </div>
 
-  <div class="flex justify-end mt-6 gap-3">
-    <button type="submit"
-      class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
-      {% if editing %}Update{% else %}Save{% endif %}
-    </button>
-    <a href="{% url 'ui:coa_list' %}"
-      class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300/40">
-      Cancel
-    </a>
-  </div>
+    <script>
+      // Set the HTMX hx-post URL based on create vs edit mode
+      const form = document.querySelector('form');
+      if (form.dataset.hxPostUpdate) {
+        form.setAttribute('hx-post', form.dataset.editing ? form.dataset.hxPostUpdate : form.dataset.hxPostCreate);
+      }
+    </script>
+
+    <div class="flex justify-end mt-6 gap-3">
+      <button type="submit"
+        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+        {% if editing %}Update{% else %}Save{% endif %}
+      </button>
+      <a href="{% url 'ui:coa_list' %}"
+        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300/40">
+        Cancel
+      </a>
+    </div>
+  </form>
 </div>
 {% endblock %}
