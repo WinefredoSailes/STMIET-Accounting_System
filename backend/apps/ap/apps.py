@@ -6,3 +6,6 @@ class ApConfig(AppConfig):
     name = 'apps.ap'
     verbose_name = "AP (payables)"
 
+    def ready(self):
+        import apps.ap.signals  # noqa: F401
+

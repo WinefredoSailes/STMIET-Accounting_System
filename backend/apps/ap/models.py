@@ -66,6 +66,31 @@ class Supplier(SoftDeleteMixin, AuditableModel):
     def __str__(self):
         return f"{self.code} {self.name}"
 
+    def save(self, *args, **kwargs):
+        """Auto-generate supplier code on create (S001, S002, ... pattern per ADR-038)."""
+        from apps.sequences.models import DocumentSequence
+        from datetime import datetime
+
+        # Only generate code on new records (no pk yet)
+        if not self.pk:
+            # Get the company from the default_segment's company
+            company = self.default_segment.company if self.default_segment else None
+
+            if company:
+                # Get current year
+                year = datetime.datetime.now().year
+
+                # Auto-generate code using DocumentSequence with form_code="SU"
+                # Pattern: S{SEQ:03d} -> S001, S002, etc.
+                self.code = DocumentSequence.next_number(
+                    company=company,
+                    form_code="SU",
+                    year=year,
+                    pattern="S{SEQ:03d}",
+                )
+
+        super().save(*args, **kwargs)
+
 
 class RFPDocument(AuditableModel):
     """Request for Payment (ACCTG-FOR-012). The JE is embedded in the RFP
@@ -103,6 +128,9 @@ class RFPDocument(AuditableModel):
     rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     rejected_at = models.DateTimeField(null=True, blank=True)
     rejection_note = models.TextField(blank=True)
+    # Revision audit trail (ADR-038): track RFP revisions and Finance Head notes
+    revision_count = models.PositiveSmallIntegerField(default=0)
+    finance_notes = models.TextField(blank=True, help_text="Notes from Finance Head for Ellen/COO")
 
     class Meta:
         ordering = ["-rfp_date", "-ap_number"]
