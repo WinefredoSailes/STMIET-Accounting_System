@@ -1,0 +1,46 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Trial Balance Print — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900 mb-4">Trial Balance</h1>
+  <p class="text-sm text-slate-500 mb-6">Signed balances from posted GL (ADR-005) as of {{ as_of }}.<br>{{ segment|default:"All segments" }} segment{{ segment|pluralize }}{% if segment %} selected{% endif %}.</p>
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[1300px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Code</th>
+          <th class="px-4 py-3">Account</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Debit</th>
+          <th class="px-4 py-3 text-right">Credit</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in rows %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs">{{ row.code }}</td>
+          <td class="px-4 py-2">{{ row.name }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500">{{ row.segment }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "debit" %}{{ row.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "credit" %}{{ row.balance|money }}{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No balances for this period.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="3" class="px-4 py-3 text-right">TOTALS</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ debit|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ credit|money }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+<script>
+  window.onafterprint = () => window.close();
+</script>
+{% endblock %}

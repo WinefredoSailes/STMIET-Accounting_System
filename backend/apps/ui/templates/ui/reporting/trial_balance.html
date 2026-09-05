@@ -18,6 +18,16 @@
     </form>
   </div>
 
+  <div class="flex items-center gap-2 mt-2">
+    <select name="format" id="id_format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+      <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
+      <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
+      <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
+    </select>
+    <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
+    <a href="{% url 'ui:trial_balance_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  </div>
+
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[1300px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
@@ -35,8 +45,8 @@
           <td class="px-4 py-2 font-mono text-xs">{{ row.code }}</td>
           <td class="px-4 py-2">{{ row.name }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ row.segment }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance >= 0 %}{{ row.balance|money }}{% endif %}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.balance < 0 %}{{ row.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "debit" %}{{ row.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "credit" %}{{ row.balance|money }}{% endif %}</td>
         </tr>
         {% empty %}
         <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No balances for this period.</td></tr>
@@ -45,11 +55,21 @@
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
           <td colspan="3" class="px-4 py-3 text-right">TOTALS</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ totals.0|money }}</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ totals.1|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ debit|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ credit|money }}</td>
         </tr>
       </tfoot>
     </table>
   </div>
 </div>
+
+<script>
+  const formatSelect = document.getElementById('id_format');
+  const form = formatSelect.closest('form');
+  form.addEventListener('change', () => {
+    const params = new URLSearchParams(form.querySelector('input[name="as_of"]').value ? new URLSearchParams(form) : {});
+    const newHref = form.action + '?format=' + formatSelect.value;
+    window.location.href = newHref;
+  });
+</script>
 {% endblock %}

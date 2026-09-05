@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
       <h1 class="text-xl font-semibold text-slate-900">CASH FLOW STATEMENT</h1>
-      <p class="text-sm text-slate-500 mt-1">Generated from weekly cycle activities (ADR-031). Identity: Net Inc = End − Beg + ADB adjustments.</p>
+      <p class="text-sm text-slate-500 mt-1">Generated from weekly cycle activities (ADR-031).</p>
     </div>
     <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
       <select name="month" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
@@ -19,7 +19,13 @@
         <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Generate</button>
+      <select name="format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+        <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
+        <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
+        <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
+      </select>
+      <button type="submit" name="export" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Generate</button>
+      <a href="{% url 'ui:cash_flow_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/40">Print</a>
     </form>
   </div>
 
@@ -54,4 +60,14 @@
   <div class="mt-8 text-center text-slate-400">No statement yet. Pick a month + year and click Generate (requires generated weekly cycles).</div>
   {% endif %}
 </div>
-{% endblock %}
+
+<script>
+  const formatSelect = document.querySelector('select[name="format"]');
+  if (formatSelect) {
+    formatSelect.addEventListener('change', () => {
+      const form = formatSelect.closest('form');
+      const newHref = form.action + '?format=' + formatSelect.value;
+      window.location.href = newHref;
+    });
+  }
+</script>

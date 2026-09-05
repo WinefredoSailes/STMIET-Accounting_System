@@ -1,0 +1,48 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Statement Print — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900 mb-4">{{ label }}</h1>
+  <p class="text-sm text-slate-500 mb-6">Period: {{ period_start|date:"M d, Y" }} – {{ period_end|date:"M d, Y" }}.</p>
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Line</th>
+          {% for seg in segments %}
+          <th class="px-4 py-3">{{ seg.code }}</th>
+          {% endfor %}
+          <th class="px-4 py-3 text-right">GRAND</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in rows %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">{{ row.title }}</td>
+          {% for seg in segments %}
+          <td class="px-4 py-2 tabular-nums">{{ row.amounts|get_item:seg.code|money }}</td>
+          {% endfor %}
+          <td class="px-4 py-2 text-right tabular-nums font-medium">{{ row.amounts.GRAND|money }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No data generated yet.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          {% for seg in segments %}
+          <td class="px-4 py-3 text-right">{{ seg.code|default:"" }}</td>
+          {% endfor %}
+          <td class="px-4 py-3 text-right">GRAND</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<script>
+  window.onafterprint = () => window.close();
+</script>
+{% endblock %}

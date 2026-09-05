@@ -16,12 +16,16 @@
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Generate</button>
     </form>
   </div>
-  <script>
-    const end = new Date(); const first = new Date(end.getFullYear(), end.getMonth(), 1);
-    const fmt = d => d.toISOString().slice(0, 10);
-    document.getElementById('id_period_start').value = fmt(first);
-    document.getElementById('id_period_end').value = fmt(end);
-  </script>
+
+  <div class="flex items-center gap-2 mt-2">
+    <select name="format" id="id_format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+      <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
+      <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
+      <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
+    </select>
+    <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
+    <a href="{% url 'ui:statement_print' statement_type %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  </div>
 
   {% if statement %}
   <div class="mt-4 flex items-center gap-3 text-sm">
@@ -30,7 +34,6 @@
     </span>
     <span class="text-slate-500">{{ statement.period_start|date:"M d, Y" }} – {{ statement.period_end|date:"M d, Y" }} · {% if statement.status == "final" %}final{% else %}draft{% endif %} · generated {{ statement.generated_at|timesince }} ago</span>
   </div>
-  {% endif %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-auto">
     <table class="w-full text-sm min-w-[640px]">
@@ -58,5 +61,17 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
 </div>
+
+<script>
+  const formatSelect = document.getElementById('id_format');
+  if (formatSelect) {
+    formatSelect.addEventListener('change', () => {
+      const form = formatSelect.closest('form');
+      const newHref = form.action + '?format=' + formatSelect.value;
+      window.location.href = newHref;
+    });
+  }
+</script>
 {% endblock %}

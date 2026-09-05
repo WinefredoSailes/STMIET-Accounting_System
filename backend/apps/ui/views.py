@@ -300,11 +300,26 @@ def trial_balance(request):
 
 @login_required
 def trial_balance_export(request):
-    """Download TRIAL-BALANCE.xlsx mirror (year-wise monthly Dr/Cr pairs)."""
-    from apps.reporting.excel_export import build_trial_balance, xlsx_response
-
+    """Download trial balance as XLSX / CSV / PDF."""
+    fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
     year = int(request.GET.get("year") or date.today().year)
+
+    from apps.ui.services import TrialBalanceService
+    rows, (debit, credit) = TrialBalanceService.rows(as_of=f"{year}-12-31")
+
+    if fmt == "csv":
+        header = ["Code", "Account", "Segment", "Normal Balance", "Balance"]
+        data = [[r["code"], r["name"], r["segment"], r["normal_balance"], r["balance"]] for r in rows]
+        return csv_response(data, f"TRIAL-BALANCE-{year}.csv", header=header)
+
+    if fmt == "pdf":
+        column_labels = ["Code", "Account", "Segment", "Normal Balance", "Balance"]
+        data = [[r["code"], r["name"], r["segment"], r["normal_balance"], r["balance"]] for r in rows]
+        return pdf_response("Trial Balance", column_labels, data, f"TRIAL-BALANCE-{year}.pdf")
+
+    # default: XLSX (existing builder)
+    from apps.reporting.excel_export import build_trial_balance, xlsx_response
     return xlsx_response(build_trial_balance(company, year), f"TRIAL-BALANCE-{year}.xlsx")
 
 
@@ -341,6 +356,139 @@ def statement_export(request, statement_type):
         )
     stem = builders[statement_type][0]
     return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
+
+
+@login_required
+def trial_balance_print(request):
+    """Print‑optimized page for the trial balance (browser print dialog)."""
+    as_of = request.GET.get("as_of") or date.today().isoformat()
+    segment = request.GET.get("segment") or ""
+    from apps.ui.services import TrialBalanceService
+
+    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
+    ctx = {
+        "rows": rows,
+        "debit": debit,
+        "credit": credit,
+        "as_of": as_of,
+        "segment": segment,
+    }
+    return render(request, "ui/reporting/trial_balance_print.html", ctx)
+
+
+@login_required
+def statement_export(request, statement_type):
+    """Download a financial statement (sfp/soce/cos/te) as XLSX / CSV / PDF."""
+    fmt = request.GET.get("format", "xlsx")
+    company = Company.objects.first()
+    period_start = date.fromisoformat(request.GET.get("period_start") or f"{date.today().year - 1}-01-01")
+    period_end = date.fromisoformat(request.GET.get("period_end") or date.today().replace(month=12, day=31))
+
+    builders = {
+        "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
+        "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
+        "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
+        "te": ("STATEMENT-OF-TOTAL-EXPENSES", build_statement_of_total_expenses),
+    }
+    if statement_type not in builders:
+        raise Http404
+
+    if fmt == "csv":
+        stem, builder = builders[statement_type]
+        wb = builder(company, period_start, period_end)
+        from apps.reporting.services import FinancialStatementService
+        StatementTemplateService.seed_defaults()
+        fs = FinancialStatementService.generate(
+            company=company, statement_type=StatementType(statement_type),
+            period_start=period_start, period_end=period_end,
+        )
+        rows = fs.rows_by_key()
+        header = ["Account"]
+        for seg in fs.segments:
+            header.append(seg.code)
+        header.append("GRAND")
+        data = []
+        for key in sorted(rows.keys()):
+            row = [fs.row_title(key)] if fs.row_title(key) else []
+            for seg in fs.segments:
+                row.append(rows[key]["amounts"].get(seg, "0.00"))
+            row.append(rows[key]["amounts"].get("GRAND", "0.00"))
+            data.append(row)
+        return csv_response(data, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.csv", header=header)
+
+    if fmt == "pdf":
+        stem, builder = builders[statement_type]
+        wb = builder(company, period_start, period_end)
+        from apps.reporting.services import FinancialStatementService
+        StatementTemplateService.seed_defaults()
+        fs = FinancialStatementService.generate(
+            company=company, statement_type=StatementType(statement_type),
+            period_start=period_start, period_end=period_end,
+        )
+        rows = fs.rows_by_key()
+        column_labels = ["Account"] + [seg.code for seg in fs.segments] + ["GRAND"]
+        data = []
+        for key in sorted(rows.keys()):
+            row = [fs.row_title(key)] if fs.row_title(key) else []
+            for seg in fs.segments:
+                row.append(rows[key]["amounts"].get(seg, "0.00"))
+            row.append(rows[key]["amounts"].get("GRAND", "0.00"))
+            data.append(row)
+        return pdf_response(stem, column_labels, data, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.pdf")
+
+    # default: XLSX (existing builder with net_profit if needed)
+    stem, builder = builders[statement_type]
+    wb = builder(company, period_start, period_end, request.GET.get("net_profit"))
+    return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
+
+
+@login_required
+def statement_print(request, statement_type):
+    """Print‑optimized page for a financial statement (browser print dialog)."""
+    from apps.foundation.models import Company
+    from apps.reporting.services import FinancialStatementService, StatementTemplateService
+    from apps.foundation.models import Segment
+
+    company = Company.objects.first()
+    StatementTemplateService.seed_defaults()
+    period_start = request.GET.get("period_start") or f"{date.today().year - 1}-01-01"
+    period_end = request.GET.get("period_end") or date.today().replace(month=12, day=31)
+
+    fs = FinancialStatementService.generate(
+        company=company, statement_type=StatementType(statement_type),
+        period_start=period_start, period_end=period_end,
+    )
+    rows = fs.rows_by_key()
+    segments = list(company.segments.order_by("code")) if company else []
+
+    ctx = {
+        "statement_type": statement_type,
+        "label": StatementService.STATEMENT_LABELS.get(statement_type, statement_type),
+        "rows": rows,
+        "segments": segments,
+        "period_start": period_start,
+        "period_end": period_end,
+    }
+    return render(request, "ui/reporting/statement_print.html", ctx)
+
+
+@login_required
+def month_end_close(request):
+    """Print‑optimized page for the trial balance (browser print dialog)."""
+    as_of = request.GET.get("as_of") or date.today().isoformat()
+    segment = request.GET.get("segment") or ""
+    from apps.ui.services import TrialBalanceService
+
+    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
+    ctx = {
+        "rows": rows,
+        "debit": debit,
+        "credit": credit,
+        "as_of": as_of,
+        "segment": segment,
+        "segments": ...,  # placeholder; template only uses rows/debit/credit
+    }
+    return render(request, "ui/reporting/trial_balance_print.html", ctx)
 
 
 @login_required
@@ -1614,10 +1762,68 @@ def cash_flow(request):
     from apps.cash.services import CashFlowService
     from apps.foundation.models import Company
 
+    fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
     latest = CashFlowStatement.objects.order_by("-period_end").first()
     year = int(request.GET.get("year") or date.today().year)
     month = int(request.GET.get("month") or date.today().month)
+
+    if fmt == "csv" and latest:
+        # CSV export of the cash flow snapshot
+        import csv
+        from io import StringIO
+        buffer = StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["Period Start", latest.period_start.isoformat()])
+        writer.writerow(["Period End", latest.period_end.isoformat()])
+        writer.writerow(["Collections", latest.collections])
+        writer.writerow(["Payments to Depot", latest.payments_to_depot])
+        writer.writerow(["Net Operating", nets["operating"] if (nets := {"operating": latest.collections - latest.payments_to_depot}) else "0.00"])
+        writer.writerow(["Investing (CAPEX)", latest.asset_acquisitions])
+        writer.writerow(["Financing (Net)", latest.loan_proceeds - latest.loan_repayments])
+        writer.writerow(["Net Change in Cash", latest.net_change])
+        writer.writerow(["Beginning Cash", latest.beginning_cash])
+        writer.writerow(["Ending Cash (less ADB)", latest.ending_cash])
+        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="CASH_FLOW.csv"'
+        return response
+
+    if fmt == "pdf" and latest:
+        from reportlab.lib.pagesizes import LETTER
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+        from reportlab.lib import colors
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=LETTER, leftMargin=0.6*inch, rightMargin=0.6*inch, topMargin=0.6*inch, bottomMargin=0.6*inch)
+        elements = []
+        data = [
+            ["Period Start", latest.period_start.isoformat()],
+            ["Period End", latest.period_end.isoformat()],
+            ["Collections", latest.collections],
+            ["Payments to Depot", latest.payments_to_depot],
+            ["Net Operating", nets["operating"] if (nets := {"operating": latest.collections - latest.payments_to_depot}) else "0.00"],
+            ["Investing (CAPEX)", latest.asset_acquisitions],
+            ["Financing (Net)", latest.loan_proceeds - latest.loan_repayments],
+            ["Net Change in Cash", latest.net_change],
+            ["Beginning Cash", latest.beginning_cash],
+            ["Ending Cash (less ADB)", latest.ending_cash],
+        ]
+        table = Table(data, colWidths=[2.5*inch, 2.5*inch])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f0f0")]),
+        ]))
+        elements.append(table)
+        doc.build(elements)
+
+        response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="CASH_FLOW.pdf"'
+        return response
+
     if company:
         try:
             if request.GET.get("period_start"):

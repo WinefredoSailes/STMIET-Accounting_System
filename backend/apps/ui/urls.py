@@ -23,6 +23,7 @@ urlpatterns = [
     # Reporting
     path("reports/trial-balance/", views.trial_balance, name="trial_balance"),
     path("reports/trial-balance/export/", views.trial_balance_export, name="trial_balance_export"),
+    path("reports/trial-balance/print/", views.trial_balance_print, name="trial_balance_print"),
     path("reports/month-end-close/", views.month_end_close, name="month_end_close"),
     path("reports/month-end-close/advance/", views.month_end_advance, name="month_end_advance"),
     path("reports/month-end-close/complete/", views.month_end_complete, name="month_end_complete"),
@@ -37,6 +38,7 @@ urlpatterns = [
     path("reports/tax/calendar/", views.tax_calendar, name="tax_calendar"),
     path("reports/<str:statement_type>/", views.statement, name="statement"),
     path("reports/<str:statement_type>/export/", views.statement_export, name="statement_export"),
+    path("reports/<str:statement_type>/print/", views.statement_print, name="statement_print"),
     # AR
     path("ar/customers/", views.customer_list, name="customer_list"),
     path("ar/customers/new/", views.customer_create, name="customer_create"),
