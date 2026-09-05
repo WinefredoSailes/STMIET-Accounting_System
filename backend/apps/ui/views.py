@@ -763,6 +763,41 @@ def supplier_create(request):
 
 
 @login_required
+@require_POST
+def supplier_update(request, pk):
+    """Update an existing supplier (superadmin only)."""
+    if not request.user.is_superuser:
+        raise PermissionDenied("Only a super admin can edit suppliers.")
+    from apps.ap.models import Supplier
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    if request.method == "POST":
+        try:
+            supplier.code = request.POST["code"].strip()
+            supplier.name = request.POST["name"].strip()
+            supplier.supplier_type = request.POST["supplier_type"]
+            supplier.tin = request.POST.get("tin", "")
+            supplier.address = request.POST.get("address", "")
+            supplier.contact_no = request.POST.get("contact_no", "")
+            supplier.owner_name = request.POST.get("owner_name", "")
+            supplier.email = request.POST.get("email", "")
+            supplier.contact_person = request.POST.get("contact_person", "")
+            supplier.position = request.POST.get("position", "")
+            supplier.attachments_required = bool(request.POST.get("attachments_required"))
+            segment = request.POST.get("default_segment")
+            supplier.default_segment = Segment.objects.get(pk=segment) if segment else None
+            supplier.save()
+            messages.success(request, f"Supplier {supplier.code} updated.")
+            return redirect("ui:supplier_list")
+        except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(request, "ui/ap/supplier_form.html", {
+        "supplier": supplier,
+        "segments": Segment.objects.order_by("code"),
+    })
+
+
+@login_required
 def rfp_create(request):
     from apps.ap.models import Supplier
     from apps.ap.services import RFPService
@@ -1047,6 +1082,36 @@ def bank_create(request):
 
 
 @login_required
+@require_POST
+def bank_update(request, pk):
+    """Update an existing bank account (superadmin only)."""
+    if not request.user.is_superuser:
+        raise PermissionDenied("Only a super admin can edit bank accounts.")
+    from apps.cash.models import BankAccount
+
+    bank = get_object_or_404(BankAccount, pk=pk)
+    if request.method == "POST":
+        try:
+            bank.code = request.POST["code"].strip()
+            bank.name = request.POST["name"].strip()
+            bank.account_type = request.POST["account_type"]
+            bank.bank_name = request.POST.get("bank_name", "")
+            bank.bank_code = request.POST.get("bank_code", "")
+            bank.gl_account = Account.objects.get(pk=request.POST["gl_account"])
+            bank.adb_required = money(request.POST.get("adb_required") or 0)
+            bank.save()
+            messages.success(request, f"Bank account {bank.code} updated.")
+            return redirect("ui:bank_list")
+        except (IntegrityError, ValueError, Account.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(request, "ui/cash/bank_form.html", {
+        "bank": bank,
+        "segments": Segment.objects.order_by("code"),
+        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+    })
+
+
+@login_required
 def cycle_generate(request):
     from apps.cash.services import CashCycleService
 
@@ -1276,7 +1341,7 @@ def cv_sign(request, pk):
 @login_required
 @require_POST
 def cv_release(request, pk):
-    """signed -> released (Accounting staff / treasury releases the check)."""
+    """signed -> released (Head / Accounting releases the check per ADR-036)."""
     from apps.ap.models import CheckVoucher
     from apps.core.approvals import require_approval_role
 
@@ -1286,7 +1351,7 @@ def cv_release(request, pk):
     is_htmx = request.headers.get("HX-Request")
     try:
         if cv.status == "signed":
-            require_approval_role(request.user, "staff")
+            require_approval_role(request.user, "head")
             cv.status = "released"
             cv.released_by = request.user
             cv.save(update_fields=["status", "released_by", "updated_at"])
@@ -1749,6 +1814,64 @@ def coa_list(request):
     return render(request, template, ctx)
 
 
+@login_required
+def coa_create(request):
+    """Create a new COA account (superadmin only)."""
+    _require_superuser(request)
+    from apps.foundation.models import Account, Segment
+
+    if request.method == "POST":
+        try:
+            code = request.POST["code"].strip()
+            name = request.POST["name"].strip()
+            account_type = AccountType(request.POST.get("account_type", "asset"))
+            segment_id = request.POST.get("segment")
+            segment = Segment.objects.get(pk=segment_id) if segment_id else None
+            Account.objects.create(
+                code=code,
+                name=name,
+                account_type=account_type,
+                segment=segment,
+                normal_balance=NORMAL_BALANCE.get(account_type, "debit"),
+            )
+            messages.success(request, f"COA account {code} created.")
+            return redirect("ui:coa_list")
+        except (IntegrityError, ValueError, KeyError) as exc:
+            messages.error(request, str(exc))
+    return render(request, "ui/foundation/coa_form.html", {
+        "types": AccountType.choices,
+        "segments": Segment.objects.order_by("code"),
+    })
+
+
+@login_required
+@require_POST
+def coa_update(request, pk):
+    """Update an existing COA account (superadmin only)."""
+    _require_superuser(request)
+    from apps.foundation.models import Account, Segment
+
+    account = get_object_or_404(Account, pk=pk)
+    if request.method == "POST":
+        try:
+            account.name = request.POST.get("name", "").strip()
+            account_type = AccountType(request.POST.get("account_type", account.account_type))
+            account.account_type = account_type
+            segment_id = request.POST.get("segment")
+            account.segment = Segment.objects.get(pk=segment_id) if segment_id else None
+            account.normal_balance = NORMAL_BALANCE.get(account_type, "debit")
+            account.save()
+            messages.success(request, f"COA account {account.code} updated.")
+            return redirect("ui:coa_list")
+        except (IntegrityError, ValueError, Account.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(request, "ui/foundation/coa_form.html", {
+        "account": account,
+        "types": AccountType.choices,
+        "segments": Segment.objects.order_by("code"),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Cash flow statement
 # ---------------------------------------------------------------------------
@@ -1848,6 +1971,24 @@ def cash_flow(request):
         }
     ctx.update({"latest": latest, "nets": nets, "year": year, "month": month})
     return render(request, "ui/cash/cash_flow.html", ctx)
+
+
+@login_required
+def cash_flow_print(request):
+    """Print‑optimized page for the cash flow statement (browser print dialog)."""
+    as_of = request.GET.get("as_of") or date.today().isoformat()
+    segment = request.GET.get("segment") or ""
+    from apps.ui.services import TrialBalanceService
+
+    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
+    ctx = {
+        "rows": rows,
+        "debit": debit,
+        "credit": credit,
+        "as_of": as_of,
+        "segment": segment,
+    }
+    return render(request, "ui/cash/cash_flow_print.html", ctx)
 
 
 # ---------------------------------------------------------------------------
