@@ -10,7 +10,7 @@
 
   <form method="post" class="space-y-4"
     data-hx-post-create="{% url 'ui:coa_create' %}"
-    data-hx-post-update="{% url 'ui:coa_update' account.pk %}"
+    {% if editing %}data-hx-post-update="{% url 'ui:coa_update' account.pk %}"{% endif %}
     hx-target="closest div.p-6" swap="outer">
     {% csrf_token %}
     {% if editing %}
