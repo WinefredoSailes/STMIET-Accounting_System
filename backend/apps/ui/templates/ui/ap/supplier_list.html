@@ -37,7 +37,10 @@
           <td class="px-4 py-2 text-xs text-slate-500">{{ s.contact_no|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{% if s.attachments_required %}Yes{% else %}—{% endif %}</td>
           <td class="px-4 py-2 text-xs">
-            <a href="{% url 'ui:supplier_update' s.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
+            <form hx-post="{% url 'ui:supplier_update' s.pk %}" hx-target="closest div.p-6" swap="outer" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</button>
+            </form>
           </td>
         </tr>
         {% empty %}
