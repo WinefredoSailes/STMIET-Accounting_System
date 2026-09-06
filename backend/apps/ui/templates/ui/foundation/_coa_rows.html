@@ -22,10 +22,7 @@
         <td class="px-4 py-1.5 text-slate-600">{{ a.get_account_type_display }}</td>
         <td class="px-4 py-1.5 uppercase text-xs">{{ a.normal_balance }}</td>
         <td class="px-4 py-1.5 text-right">
-          <form hx-post="{% url 'ui:coa_update' a.pk %}" hx-target="closest div.p-6" swap="outer" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</button>
-          </form>
+          <a href="{% url 'ui:coa_update' a.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
         </td>
       </tr>
       {% empty %}

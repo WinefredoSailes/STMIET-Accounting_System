@@ -842,6 +842,18 @@ class TestCheckVoucherScreen:
         assert "ACCTG-FOR-010" in body
         assert "GROSS AMOUNT" in body
 
+    def test_cv_create_form_populates_from_selected_rfp(
+        self, client, company, segment, accounts, fiscal_period, user, approved_rfp,
+        segment_account_map
+    ):
+        resp = client.get(f"/ap/cv/new/?rfp={approved_rfp.id}")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Shell Fuel Depot" in body
+        assert "20,000.00" in body
+        assert "61100" in body
+        assert "20000" in body
+
 
 class TestPCFReplenishmentScreen:
     @pytest.fixture

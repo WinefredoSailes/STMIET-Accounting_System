@@ -324,41 +324,6 @@ def trial_balance_export(request):
 
 
 @login_required
-def statement_export(request, statement_type):
-    """Download the statement workbook (sfp/soce/cos/te) for a period."""
-    from apps.reporting.excel_export import (
-        build_statement_of_changes_in_equity,
-        build_statement_of_cost_of_sales,
-        build_statement_of_financial_position,
-        build_statement_of_total_expenses,
-        xlsx_response,
-    )
-
-    builders = {
-        "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
-        "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
-        "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
-        "te": ("STATEMENT-OF-TOTAL-EXPENSES", build_statement_of_total_expenses),
-    }
-    if statement_type not in builders:
-        raise Http404
-    company = Company.objects.first()
-    period_start = date.fromisoformat(request.GET.get("period_start"))
-    period_end = date.fromisoformat(request.GET.get("period_end"))
-    from apps.reporting.services import StatementTemplateService
-
-    StatementTemplateService.seed_defaults()
-    if statement_type in ("cos", "te"):
-        wb = builders[statement_type][1](company, period_start, period_end)
-    else:
-        wb = builders[statement_type][1](
-            company, period_start, period_end, request.GET.get("net_profit")
-        )
-    stem = builders[statement_type][0]
-    return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
-
-
-@login_required
 def trial_balance_print(request):
     """Print‑optimized page for the trial balance (browser print dialog)."""
     as_of = request.GET.get("as_of") or date.today().isoformat()
@@ -379,6 +344,18 @@ def trial_balance_print(request):
 @login_required
 def statement_export(request, statement_type):
     """Download a financial statement (sfp/soce/cos/te) as XLSX / CSV / PDF."""
+    from apps.reporting.excel_export import (
+        build_statement_of_changes_in_equity,
+        build_statement_of_cost_of_sales,
+        build_statement_of_financial_position,
+        build_statement_of_total_expenses,
+        xlsx_response,
+    )
+    from apps.reporting.exports import csv_response, pdf_response
+    from apps.reporting.models import StatementType
+    from apps.reporting.services import StatementTemplateService
+
+    StatementTemplateService.seed_defaults()
     fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
     period_start = date.fromisoformat(request.GET.get("period_start") or f"{date.today().year - 1}-01-01")
@@ -438,7 +415,10 @@ def statement_export(request, statement_type):
 
     # default: XLSX (existing builder with net_profit if needed)
     stem, builder = builders[statement_type]
-    wb = builder(company, period_start, period_end, request.GET.get("net_profit"))
+    if statement_type in ("cos", "te"):
+        wb = builder(company, period_start, period_end)
+    else:
+        wb = builder(company, period_start, period_end, request.GET.get("net_profit"))
     return xlsx_response(wb, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx")
 
 
@@ -446,6 +426,7 @@ def statement_export(request, statement_type):
 def statement_print(request, statement_type):
     """Print‑optimized page for a financial statement (browser print dialog)."""
     from apps.foundation.models import Company
+    from apps.reporting.models import StatementType
     from apps.reporting.services import FinancialStatementService, StatementTemplateService
     from apps.foundation.models import Segment
 
@@ -763,7 +744,6 @@ def supplier_create(request):
 
 
 @login_required
-@require_POST
 def supplier_update(request, pk):
     """Update an existing supplier (superadmin only)."""
     if not request.user.is_superuser:
@@ -1082,7 +1062,6 @@ def bank_create(request):
 
 
 @login_required
-@require_POST
 def bank_update(request, pk):
     """Update an existing bank account (superadmin only)."""
     if not request.user.is_superuser:
@@ -1282,6 +1261,22 @@ def cv_create(request):
             return redirect("ui:cv_detail", pk=cv.id)
         except (AccountingError, ValueError, KeyError) as exc:
             messages.error(request, str(exc))
+    selected_rfp = None
+    rfp_id = request.GET.get("rfp")
+    if rfp_id:
+        from django.db.models import Prefetch
+        from apps.ap.models import RFPLine
+
+        try:
+            rfp_qs = RFPDocument.objects.filter(pk=rfp_id).select_related("payee", "segment")
+            selected_rfp = rfp_qs.prefetch_related(
+                Prefetch(
+                    "lines",
+                    queryset=RFPLine.objects.select_related("account", "segment"),
+                )
+            ).get()
+        except (ValueError, RFPDocument.DoesNotExist):
+            messages.error(request, "Selected RFP not found.")
     return render(
         request,
         "ui/ap/cv_form.html",
@@ -1289,6 +1284,7 @@ def cv_create(request):
             "rfps": approved_rfps(),
             "bank_accounts": bank_accounts(),
             "today": date.today(),
+            "selected_rfp": selected_rfp,
         },
     )
 
@@ -1845,7 +1841,6 @@ def coa_create(request):
 
 
 @login_required
-@require_POST
 def coa_update(request, pk):
     """Update an existing COA account (superadmin only)."""
     _require_superuser(request)
