@@ -71,14 +71,15 @@ class Supplier(SoftDeleteMixin, AuditableModel):
         from apps.sequences.models import DocumentSequence
         from datetime import datetime
 
-        # Only generate code on new records (no pk yet)
-        if not self.pk:
+        # Only generate code on new records that don't carry an explicit code
+        # (no pk yet and no code supplied).
+        if not self.pk and not self.code:
             # Get the company from the default_segment's company
             company = self.default_segment.company if self.default_segment else None
 
             if company:
                 # Get current year
-                year = datetime.datetime.now().year
+                year = datetime.now().year
 
                 # Auto-generate code using DocumentSequence with form_code="SU"
                 # Pattern: S{SEQ:03d} -> S001, S002, etc.
