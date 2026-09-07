@@ -223,3 +223,45 @@ def test_import_coa_refine_type(db):
     assert refine_type("40500", "Sales Discount - Hauling", AccountType.REVENUE) == AccountType.CONTRA_REVENUE
     assert refine_type("30500", "E. Bagatua, Drawing", AccountType.EQUITY) == AccountType.DRAWING
     assert refine_type("10010", "Cash in Bank - BPI", AccountType.ASSET) == AccountType.ASSET
+
+
+def test_import_coa_carries_workbook_columns(db, tmp_path):
+    """ADR-038 §5a: import persists the workbook's full column set so the COA
+    listing reproduces the workbook exactly. Behavior / Traceability /
+    Controllability are only present on REV/COS/OPEX sheets; balance-sheet rows
+    import blank for them."""
+    import openpyxl
+    from django.core.management import call_command
+
+    from apps.foundation.models import Account
+
+    wb = openpyxl.Workbook()
+    wb.active.title = "COA REV"
+    ws = wb.active
+    ws.append(
+        ["COA", "ACCOUNT TITLES", "REQUIRED SEGMENT", "CLASSIFICATION", "CATEGORY",
+         "Sub-Accounts", "Major Accounts", "Behavior", "Traceability", "Controllability"]
+    )
+    ws.append(
+        ["41003", "Sales - DMIE", "DMIE", "Trade Income", "Sales",
+         "Revenue", "Equity", "", "", ""]
+    )
+    ws.append(
+        ["50000", "COGS - Fuel Purchase_DHPP", "DHPP", "Trade Expense", "Cost of Sales",
+         "Cost of Sales", "Equity", "Variable", "Direct", "Controllable"]
+    )
+    wb.save(tmp_path / "coa.xlsx")
+
+    call_command("import_coa", file=str(tmp_path / "coa.xlsx"))
+
+    rev = Account.objects.get(code="41003")
+    assert rev.segment == "DMIE"
+    assert (rev.classification, rev.category) == ("Trade Income", "Sales")
+    assert (rev.sub_accounts, rev.major_accounts) == ("Revenue", "Equity")
+    assert (rev.behavior, rev.traceability, rev.controllability) == ("", "", "")
+
+    cos = Account.objects.get(code="50000")
+    assert cos.classification == "Trade Expense"
+    assert (cos.behavior, cos.traceability, cos.controllability) == (
+        "Variable", "Direct", "Controllable",
+    )

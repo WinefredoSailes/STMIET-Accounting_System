@@ -2004,6 +2004,13 @@ def coa_create(request):
                 account_type=account_type,
                 segment=segment_code,
                 normal_balance=NORMAL_BALANCE.get(account_type, "debit"),
+                classification=request.POST.get("classification", "").strip(),
+                category=request.POST.get("category", "").strip(),
+                sub_accounts=request.POST.get("sub_accounts", "").strip(),
+                major_accounts=request.POST.get("major_accounts", "").strip(),
+                behavior=request.POST.get("behavior", "").strip(),
+                traceability=request.POST.get("traceability", "").strip(),
+                controllability=request.POST.get("controllability", "").strip(),
             )
             messages.success(request, f"COA account {code} created.")
             return redirect("ui:coa_list")
@@ -2032,6 +2039,13 @@ def coa_update(request, pk):
             if segment_code:
                 account.segment = segment_code
             account.normal_balance = NORMAL_BALANCE.get(account_type, "debit")
+            account.classification = request.POST.get("classification", "").strip()
+            account.category = request.POST.get("category", "").strip()
+            account.sub_accounts = request.POST.get("sub_accounts", "").strip()
+            account.major_accounts = request.POST.get("major_accounts", "").strip()
+            account.behavior = request.POST.get("behavior", "").strip()
+            account.traceability = request.POST.get("traceability", "").strip()
+            account.controllability = request.POST.get("controllability", "").strip()
             account.save()
             messages.success(request, f"COA account {account.code} updated.")
             return redirect("ui:coa_list")

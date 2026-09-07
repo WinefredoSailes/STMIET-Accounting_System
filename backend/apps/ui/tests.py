@@ -1795,6 +1795,26 @@ class TestCoAScreen:
         # ADR-038 §9b: type-ahead search bar on the COA listing.
         assert 'id="id_q"' in body
         assert "placeholder=\"Code or account name…\"" in body
+        # ADR-038 §5a: list reproduces the workbook's full column set.
+        for header in ("Code", "Account Name", "Segment", "Classification", "Category",
+                       "Sub-Accounts", "Major Accounts", "Behavior", "Traceability",
+                       "Controllability"):
+            assert f">{header}</th>" in body, header
+
+    def test_coa_list_shows_workbook_column_values(self, client, company, accounts):
+        acct = accounts["10010"]
+        acct.classification = "Cash and Cash in Bank"
+        acct.category = "Cash on Hand"
+        acct.sub_accounts = "Current Assets"
+        acct.major_accounts = "Asset"
+        acct.behavior = "Fixed"
+        acct.traceability = "Direct"
+        acct.controllability = "Uncontrollable"
+        acct.save()
+        body = client.get("/foundation/coa/").content.decode()
+        for value in ("Cash and Cash in Bank", "Current Assets", ">Fixed<", ">Direct<",
+                      "Uncontrollable"):
+            assert value in body, value
 
     def test_coa_print_renders(self, client, company, accounts):
         resp = client.get("/foundation/coa/print/")
@@ -1802,6 +1822,10 @@ class TestCoAScreen:
         body = resp.content.decode()
         assert "CHART OF ACCOUNTS" in body
         assert "Cash on Hand" in body
+        # ADR-038 §5a+5f: the printout carries the workbook columns too.
+        for header in ("Classification", "Category", "Sub-Accounts", "Major Accounts",
+                       "Behavior", "Traceability", "Controllability"):
+            assert f">{header} <" in body or f">{header}<" in body, header
 
     def test_coa_print_respects_filters(self, client, company, accounts):
         resp = client.get("/foundation/coa/print/?account_type=contra_asset")

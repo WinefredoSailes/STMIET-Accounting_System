@@ -61,6 +61,47 @@
       </select>
     </div>
 
+    <div class="pt-2 border-t border-slate-200">
+      <p class="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">Workbook Columns</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Classification</label>
+          <input type="text" name="classification" value="{{ account.classification }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Category</label>
+          <input type="text" name="category" value="{{ account.category }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Sub-Accounts</label>
+          <input type="text" name="sub_accounts" value="{{ account.sub_accounts }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Major Accounts</label>
+          <input type="text" name="major_accounts" value="{{ account.major_accounts }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Behavior</label>
+          <input type="text" name="behavior" value="{{ account.behavior }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Traceability</label>
+          <input type="text" name="traceability" value="{{ account.traceability }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Controllability</label>
+          <input type="text" name="controllability" value="{{ account.controllability }}"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+      </div>
+    </div>
+
     <div class="flex justify-end mt-6 gap-3">
       <button type="submit"
         class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">

@@ -17,8 +17,13 @@
           <th class="py-1.5 pr-4">Code</th>
           <th class="py-1.5 pr-4">Account Name</th>
           <th class="py-1.5 pr-4">Segment</th>
-          <th class="py-1.5 pr-4">Sub-accounts</th>
-          <th class="py-1.5">Normal Balance</th>
+          <th class="py-1.5 pr-4">Classification</th>
+          <th class="py-1.5 pr-4">Category</th>
+          <th class="py-1.5 pr-4">Sub-Accounts</th>
+          <th class="py-1.5 pr-4">Major Accounts</th>
+          <th class="py-1.5 pr-4">Behavior</th>
+          <th class="py-1.5 pr-4">Traceability</th>
+          <th class="py-1.5">Controllability</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -27,8 +32,13 @@
           <td class="py-1 font-mono text-xs">{{ a.code }}</td>
           <td class="py-1">{{ a.name }}</td>
           <td class="py-1 text-xs text-slate-500">{{ a.segment }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.classification|default:"—" }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.category|default:"—" }}</td>
           <td class="py-1 text-xs text-slate-500">{{ a.sub_accounts|default:"—" }}</td>
-          <td class="py-1 text-xs uppercase">{{ a.normal_balance|default:"debit" }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.major_accounts|default:"—" }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.behavior|default:"—" }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.traceability|default:"—" }}</td>
+          <td class="py-1 text-xs text-slate-500">{{ a.controllability|default:"—" }}</td>
         </tr>
         {% endfor %}
       </tbody>

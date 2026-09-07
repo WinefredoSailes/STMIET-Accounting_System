@@ -176,6 +176,9 @@ class Command(BaseCommand):
             idx_sub = col_idx("SUB-ACCOUNTS", "SUB ACCOUNTS")
             idx_major = col_idx("MAJOR ACCOUNTS")
             idx_seg = col.get(REQUIRED_SEGMENT_COL)
+            idx_behavior = col_idx("BEHAVIOR")
+            idx_traceability = col_idx("TRACEABILITY")
+            idx_controllability = col_idx("CONTROLLABILITY")
 
             for row in ws.iter_rows(min_row=header_idx + 2, values_only=True):
                 if not row:
@@ -191,10 +194,13 @@ class Command(BaseCommand):
                 prefix = code[0]
                 atype = PREFIX_TYPE.get(prefix, AccountType.ASSET)
                 atype = refine_type(code, name, atype)
-                classification = str(row[idx_class]).strip() if (idx_class is not None and idx_class < len(row)) else ""
-                category = str(row[idx_cat]).strip() if (idx_cat is not None and idx_cat < len(row)) else ""
-                sub_accounts = str(row[idx_sub]).strip() if (idx_sub is not None and idx_sub < len(row)) else ""
-                major_accounts = str(row[idx_major]).strip() if (idx_major is not None and idx_major < len(row)) else ""
+                classification = str(row[idx_class]).strip() if (idx_class is not None and idx_class < len(row) and row[idx_class] is not None) else ""
+                category = str(row[idx_cat]).strip() if (idx_cat is not None and idx_cat < len(row) and row[idx_cat] is not None) else ""
+                sub_accounts = str(row[idx_sub]).strip() if (idx_sub is not None and idx_sub < len(row) and row[idx_sub] is not None) else ""
+                major_accounts = str(row[idx_major]).strip() if (idx_major is not None and idx_major < len(row) and row[idx_major] is not None) else ""
+                behavior = str(row[idx_behavior]).strip() if (idx_behavior is not None and idx_behavior < len(row) and row[idx_behavior] is not None) else ""
+                traceability = str(row[idx_traceability]).strip() if (idx_traceability is not None and idx_traceability < len(row) and row[idx_traceability] is not None) else ""
+                controllability = str(row[idx_controllability]).strip() if (idx_controllability is not None and idx_controllability < len(row) and row[idx_controllability] is not None) else ""
 
                 Account.objects.update_or_create(
                     code=code,
@@ -207,6 +213,9 @@ class Command(BaseCommand):
                         "category": category,
                         "sub_accounts": sub_accounts,
                         "major_accounts": major_accounts,
+                        "behavior": behavior,
+                        "traceability": traceability,
+                        "controllability": controllability,
                         "normal_balance": NORMAL_BALANCE.get(atype, "debit"),
                     },
                 )

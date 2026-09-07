@@ -174,13 +174,19 @@ class Account(SoftDeleteMixin, AuditableModel):
     # - is_cash_equivalent, is_bank (treasury), is_receivable, is_payable
     # are needed for AR/AP bridge; keep minimal here, extend in later phases.
     description = models.TextField(blank=True)
-    # COA workbook (COA-STMIET-2026.xlsx) columns D-G, carried verbatim so the
-    # Trial Balance export reproduces the workbook's CLASSIFICATION / CATEGORY /
-    # Sub-Accounts / Major Accounts columns exactly.
+    # COA workbook (CHART-OF-ACCOUNTS_REVISED-SEPT-2026.xlsx) columns D-J,
+    # carried verbatim so the COA listing / Trial Balance export reproduce the
+    # workbook's CLASSIFICATION / CATEGORY / Sub-Accounts / Major Accounts /
+    # Behavior / Traceability / Controllability columns exactly. The first four
+    # exist on every sheet; the last three only on the REV/COS/OPEX sheets
+    # (balance-sheet rows are blank for those).
     classification = models.CharField(max_length=64, blank=True)
     category = models.CharField(max_length=64, blank=True)
     sub_accounts = models.CharField(max_length=64, blank=True)
     major_accounts = models.CharField(max_length=64, blank=True)
+    behavior = models.CharField(max_length=32, blank=True)
+    traceability = models.CharField(max_length=32, blank=True)
+    controllability = models.CharField(max_length=32, blank=True)
 
     class Meta:
         ordering = ["code"]
