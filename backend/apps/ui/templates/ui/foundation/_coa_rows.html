@@ -13,7 +13,7 @@
         <th class="px-4 py-3">Behavior</th>
         <th class="px-4 py-3">Traceability</th>
         <th class="px-4 py-3">Controllability</th>
-        <th class="px-4 py-3">Actions</th>
+        <th class="px-4 py-3 bg-slate-50" style="position: sticky; right: 0;">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
@@ -31,7 +31,7 @@
         <td class="px-4 py-1.5 text-slate-600">{{ a.behavior|default:"—" }}</td>
         <td class="px-4 py-1.5 text-slate-600">{{ a.traceability|default:"—" }}</td>
         <td class="px-4 py-1.5 text-slate-600">{{ a.controllability|default:"—" }}</td>
-        <td class="px-4 py-1.5 text-right">
+        <td class="px-4 py-1.5 text-right bg-white" style="position: sticky; right: 0; box-shadow: -4px 0 6px -4px rgba(15,23,42,.18);">
           <a href="{% url 'ui:coa_update' a.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
         </td>
       </tr>
