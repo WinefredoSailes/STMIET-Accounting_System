@@ -312,9 +312,19 @@ class RFPService:
         rfp.rejected_at = None
         rfp.rejection_note = ""
         rfp.revision_count += 1
+        # A resubmitted RFP restarts its approval chain: void the approval
+        # records of the rejected pass so the same approvers can re-run the
+        # steps (otherwise advance_step trips 'already recorded this step'
+        # and the RFP is stuck with the approver).
+        rfp.checked_by = None
+        rfp.approved_by_acctg = None
+        rfp.approved_by_fin = None
+        rfp.approved_by_cnr = None
         rfp.save(update_fields=[
             "amount", "particulars", "purpose", "status",
-            "rejected_by", "rejected_at", "rejection_note", "revision_count", "updated_at",
+            "rejected_by", "rejected_at", "rejection_note", "revision_count",
+            "checked_by", "approved_by_acctg", "approved_by_fin", "approved_by_cnr",
+            "updated_at",
         ])
         for i, line in enumerate(lines, start=1):
             RFPLine.objects.create(

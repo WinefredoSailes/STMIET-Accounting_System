@@ -246,6 +246,83 @@ class TestRFPApproval:
         rfp = RFPService.approve_cnr(rfp, user=cnr)
         assert rfp.approved_by_cnr == cnr
 
+    def test_rejected_then_revised_chain_restarts_cleanly(
+        self, company, segment, supplier, alywin, accounts
+    ):
+        """A head who already recorded a step, then rejected the RFP, can
+        re-run the whole chain after the preparer revises. The stale step
+        records (checked_by etc.) must not trip the 'already recorded this
+        step' guard and leave the RFP stuck with the approver."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="head", password="x")
+
+        lines = [
+            {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00",
+             "description": "Fuel delivery"},
+            {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00",
+             "description": "AP - Fuel Depot"},
+        ]
+        rfp = RFPService.create_rfp(
+            ap_number="A0013", rfp_date=date(2026, 1, 18), payee=supplier, segment=segment,
+            lines=lines, user=alywin,
+        )
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+
+        # Head checks the first pass, then rejects at the checked step.
+        rfp = RFPService.advance_step(rfp, role="checked", user=head)
+        assert rfp.status == "checked" and rfp.checked_by_id == head.id
+        rfp = RFPService.reject(rfp, user=head, note="Reclassify the fuel charge.")
+
+        # Preparer revises; the old chain records must be reset.
+        rfp = RFPService.revise(rfp, user=alywin, purpose=rfp.purpose, lines=lines)
+        assert rfp.status == "submitted"
+        assert rfp.checked_by_id is None
+        assert rfp.approved_by_acctg_id is None
+        assert rfp.approved_by_fin_id is None
+        assert rfp.revision_count == 1
+
+        # The same head re-runs the full chain to fin_approved (no stuck state).
+        for role in ("checked", "acctg_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        rfp.finance_notes = "Verify delivery before CV issuance."
+        rfp.save(update_fields=["finance_notes", "updated_at"])
+        rfp = RFPService.advance_step(rfp, role="fin_approved", user=head)
+        assert rfp.status == "fin_approved"
+        assert rfp.approved_by_fin == head
+
+    def test_approve_after_reject_without_step_record(self, company, segment, supplier, alywin, accounts):
+        """Even when the rejection happened before any step was recorded, the
+        re-approval works and the RFP keeps moving (happy reject/revise path)."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="head", password="x")
+
+        lines = [
+            {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00",
+             "description": "Office supplies"},
+            {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00",
+             "description": "AP"},
+        ]
+        rfp = RFPService.create_rfp(
+            ap_number="A0014", rfp_date=date(2026, 1, 19), payee=supplier, segment=segment,
+            lines=lines, user=alywin,
+        )
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        rfp = RFPService.reject(rfp, user=head, note="Add supporting docs.")
+        rfp = RFPService.revise(rfp, user=alywin, purpose=rfp.purpose, lines=lines)
+
+        for role in ("checked", "acctg_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        rfp.finance_notes = "Notes attached."
+        rfp.save(update_fields=["finance_notes", "updated_at"])
+        rfp = RFPService.advance_step(rfp, role="fin_approved", user=head)
+        assert rfp.status == "fin_approved"
+
 
 class TestCONSOPosting:
     def test_batch_posts_all_rfps(self, company, segment, supplier, rfp_lines, alywin, accounts):

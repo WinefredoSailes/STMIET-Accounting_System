@@ -759,6 +759,59 @@ class TestRFPRejectCycle:
         assert rfp.status == "fin_approved"
         assert rfp.rejection_note == ""
 
+    def test_reject_after_check_then_reapprove_reaches_cv_phase(
+        self, client, company, segment, accounts, supplier, role_users, staff,
+        fiscal_period, segment_account_map
+    ):
+        """Regression: an RFP rejected AFTER the head already checked it must
+        move again once the preparer revises — it must not freeze on the head
+        with the 'already recorded this step' guard."""
+        from apps.ap.models import RFPDocument
+
+        rfp = self._make_rfp(segment, supplier, staff, "A2104")
+        client.force_login(staff)
+        client.post(f"/ap/rfps/{rfp.id}/submit/")
+
+        # First pass: head checks, then rejects at the checked step.
+        client.force_login(role_users["head"])
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "checked" and rfp.checked_by == role_users["head"]
+        client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": "Reclassify the fuel charge."})
+        rfp.refresh_from_db()
+        assert rfp.status == "rejected"
+
+        # Preparer revises and resubmits through the edit form.
+        client.force_login(staff)
+        client.post(f"/ap/rfps/{rfp.id}/revise/", {
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_amount": ["30000.00", "30000.00"],
+            "line_side": ["dr", "cr"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
+        })
+        rfp.refresh_from_db()
+        assert rfp.status == "submitted"
+        assert rfp.checked_by is None
+
+        # Same head approves again — must advance (was: stuck at 'checked').
+        client.force_login(role_users["head"])
+        for expected in ("checked", "acctg_approved"):
+            client.post(f"/ap/rfps/{rfp.id}/approve/")
+            rfp.refresh_from_db()
+            assert rfp.status == expected
+        client.post(f"/ap/rfps/{rfp.id}/finance-notes/", {"finance_notes": "Verify delivery before CV issuance."})
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
+
+        # RFP must now reach the check-voucher phase (eligible in the CV form).
+        resp = client.get("/ap/cv/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert rfp.ap_number in body
+
 
 class TestAssetScreen:
     @pytest.fixture
