@@ -985,8 +985,8 @@ class TestAssetScreen:
 class TestCheckVoucherScreen:
     @pytest.fixture
     def approved_rfp(self, db, company, segment, accounts, user):
-        from apps.ap.models import Supplier
-        from apps.ap.services import RFPService
+        from apps.ap.models import CONSOBatch, Supplier
+        from apps.ap.services import CONSOService, RFPService
 
         supplier = Supplier.objects.create(
             code="S001", name="Shell Fuel Depot", supplier_type="equipment", default_segment=segment
@@ -1007,10 +1007,17 @@ class TestCheckVoucherScreen:
         rfp.approved_by_acctg = user
         rfp.approved_by_fin = user
         rfp.save()
+        # CV issuance is gated on the RFP's CONSO batch having posted.
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-01", conso_date=date(2026, 1, 16))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=user)
+        rfp.refresh_from_db()
+        assert rfp.status == "posted"
         return rfp
 
-    def test_cv_create_posts(self, client, company, segment, accounts, fiscal_period,
-                             user, approved_rfp, segment_account_map):
+    def test_cv_create_leaves_draft_je(self, client, company, segment, accounts, fiscal_period,
+                                       user, approved_rfp, segment_account_map):
         resp = client.post("/ap/cv/new/", {
             "rfp": approved_rfp.id,
             "cv_date": "2026-01-16",
@@ -1027,8 +1034,44 @@ class TestCheckVoucherScreen:
         assert cv.net_amount == Decimal("19500.00")
         assert cv.status == "created"
         assert cv.journal_entry_id
-        assert cv.journal_entry.is_posted
+        assert not cv.journal_entry.is_posted  # DRAFT until the head clears it
         assert cv.journal_entry.lines.count() == 3  # Dr AP | Cr Cash | Cr WHT
+
+    def test_cv_create_blocked_for_unposted_rfp(self, client, company, segment, accounts,
+                                                fiscal_period, user, segment_account_map):
+        from apps.ap.models import Supplier
+        from apps.ap.services import RFPService
+
+        supplier = Supplier.objects.create(
+            code="S002", name="Unpostaled Depot", supplier_type="equipment", default_segment=segment
+        )
+        rfp = RFPService.create_rfp(
+            ap_number="A0009",
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "fin_approved"
+        rfp.checked_by = user
+        rfp.approved_by_acctg = user
+        rfp.approved_by_fin = user
+        rfp.save()
+        resp = client.post("/ap/cv/new/", {
+            "rfp": rfp.id,
+            "cv_date": "2026-01-16",
+            "bank_account": accounts["10110"].id,
+            "gross_amount": "20000.00",
+            "withheld_tax": "0.00",
+        })
+        from apps.ap.models import CheckVoucher
+
+        assert CheckVoucher.objects.count() == 0
+        assert "must be posted through a CONSO batch" in resp.content.decode()
 
     def test_cv_lifecycle(self, client, company, segment, accounts, fiscal_period,
                           user, approved_rfp, role_users, segment_account_map):
@@ -1051,12 +1094,17 @@ class TestCheckVoucherScreen:
         cv.refresh_from_db()
         assert cv.status == "created"
 
-        # COO signs, staff release is blocked (head must approve per ADR-036)
-        client.force_login(role_users["coo"])
+        # only the Accounting & Finance Head signs the check
+        client.force_login(role_users["staff"])
+        client.post(f"/ap/cv/{cv.id}/sign/")
+        cv.refresh_from_db()
+        assert cv.status == "created"
+
+        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/sign/")
         cv.refresh_from_db()
         assert cv.status == "signed"
-        assert cv.signed_by == role_users["coo"]
+        assert cv.signed_by == role_users["head"]
 
         client.force_login(role_users["staff"])
         client.post(f"/ap/cv/{cv.id}/release/")
@@ -1071,10 +1119,129 @@ class TestCheckVoucherScreen:
         assert cv.status == "released"
         assert cv.released_by == role_users["head"]
 
+        # Clearing posts the (previously DRAFT) JE to the GL
         client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
+        assert cv.journal_entry.is_posted
+
+    def test_cv_reject_at_created_then_revise(self, client, company, segment, accounts,
+                                              fiscal_period, user, approved_rfp, role_users,
+                                              segment_account_map):
+        from apps.ap.models import CheckVoucher
+        from apps.ap.services import CVPaymentService
+
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0004",
+            cv_date=date(2026, 1, 16),
+            payee=approved_rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount="10000.00",
+            rfp=approved_rfp,
+            user=user,
+        )
+        # A non-head cannot reject at 'created'; the head can, with a note.
+        client.force_login(role_users["staff"])
+        client.post(f"/ap/cv/{cv.id}/reject/", {"note": "nope"})
+        cv.refresh_from_db()
+        assert cv.status == "created"
+
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/reject/", {"note": "Wrong payee — recheck"})
+        cv.refresh_from_db()
+        assert cv.status == "rejected"
+        assert cv.rejected_by == role_users["head"]
+        assert cv.rejection_note == "Wrong payee — recheck"
+        assert cv.journal_entry_id is None  # unposted DRAFT dropped with the pass
+
+        # Only the issuer may revise, and it rebuilds the chain from 'created'.
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/revise/", {
+            "bank_account": accounts["10110"].id,
+            "cv_date": "2026-01-16",
+            "gross_amount": "10000.00",
+            "withheld_tax": "0.00",
+            "check_no": "",
+        })
+        cv.refresh_from_db()
+        assert cv.status == "rejected"  # head is not the issuer
+
+        client.force_login(user)
+        client.post(f"/ap/cv/{cv.id}/revise/", {
+            "bank_account": accounts["10110"].id,
+            "cv_date": "2026-01-16",
+            "gross_amount": "10000.00",
+            "withheld_tax": "100.00",
+            "check_no": "CHK-1004",
+        })
+        cv.refresh_from_db()
+        assert cv.status == "created"
+        assert cv.revision_count == 1
+        assert cv.net_amount == Decimal("9900.00")
+        assert cv.signed_by_id is None
+        assert cv.journal_entry_id
+        assert not cv.journal_entry.is_posted
+
+    def test_cv_reject_after_sign_then_resubmit(self, client, company, segment, accounts,
+                                                fiscal_period, user, approved_rfp, role_users,
+                                                segment_account_map):
+        from apps.ap.models import CheckVoucher
+        from apps.ap.services import CVPaymentService
+
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0005",
+            cv_date=date(2026, 1, 16),
+            payee=approved_rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount="10000.00",
+            rfp=approved_rfp,
+            user=user,
+        )
+        # The head signs and releases the CV...
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/sign/")
+        cv.refresh_from_db()
+        assert cv.status == "signed"
+        client.post(f"/ap/cv/{cv.id}/release/")
+        cv.refresh_from_db()
+        assert cv.status == "released"
+
+        # ...then refuses at 'released' and returns it to the issuer.
+        client.post(f"/ap/cv/{cv.id}/reject/", {"note": "Check amount wrong"})
+        cv.refresh_from_db()
+        assert cv.status == "rejected"
+        assert cv.rejected_by == role_users["head"]
+        assert cv.journal_entry_id is None
+
+        client.force_login(user)
+        client.post(f"/ap/cv/{cv.id}/revise/", {
+            "bank_account": accounts["10110"].id,
+            "cv_date": "2026-01-16",
+            "gross_amount": "9000.00",
+            "withheld_tax": "100.00",
+            "check_no": "CHK-1005",
+        })
+        cv.refresh_from_db()
+        assert cv.status == "created"
+        assert cv.signed_by_id is None  # the head must sign again
+
+        # The corrected check runs the full chain and posts on clear.
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/sign/")
+        cv.refresh_from_db()
+        assert cv.status == "signed"
+        client.post(f"/ap/cv/{cv.id}/release/")
+        cv.refresh_from_db()
+        assert cv.status == "released"
+        client.post(f"/ap/cv/{cv.id}/clear/")
+        cv.refresh_from_db()
+        assert cv.status == "cleared"
+        assert cv.journal_entry.is_posted
+        lines = {l.line_no: l for l in cv.journal_entry.lines.all()}
+        assert lines[1].debit == Decimal("9000.00")
+        assert lines[2].credit == Decimal("8900.00")
+        assert lines[3].credit == Decimal("100.00")
 
     def test_cv_print_renders(self, client, company, segment, accounts, fiscal_period,
                               user, approved_rfp, segment_account_map):
@@ -1658,6 +1825,14 @@ class TestMyApprovals:
 
         rfp = self._create("20000.00", segment, supplier, role_users["staff"], "A2005")
         self._approve_through(rfp, role_users, "fin_approved")
+        from apps.ap.models import CONSOBatch
+        from apps.ap.services import CONSOService
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-01", conso_date=date(2026, 1, 20))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=role_users["head"])
+        rfp.refresh_from_db()
         cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0001", cv_date=date(2026, 1, 20),
             payee=supplier, bank_account=accounts["10110"],
@@ -1675,27 +1850,22 @@ class TestMyApprovals:
             created_by=role_users["staff"],
         )
 
-        client.force_login(role_users["coo"])
+        # The CV lands on the head's approvals page at every step.
+        client.force_login(role_users["head"])
         body = client.get("/approvals/").content
         assert b"CV-2026-0001" in body and b"Sign" in body
         client.post(f"/ap/cv/{cv.id}/sign/")
         cv.refresh_from_db()
         assert cv.status == "signed"
 
-        client.force_login(role_users["staff"])
         body = client.get("/approvals/").content
         assert b"CV-2026-0001" in body and b"Release" in body
-        # Staff release is blocked; head must approve
-        client.post(f"/ap/cv/{cv.id}/release/")
-        cv.refresh_from_db()
-        # Staff cannot release; head must approve
-        assert cv.status == "signed"
-
-        # Head releases the CV and clears it
-        client.force_login(role_users["head"])
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "released"
+        assert cv.released_by == role_users["head"]
+
+        # Head clears the released CV — that posts the JE to the GL
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -2058,12 +2228,20 @@ class TestHTMXPartialUpdates:
         rfp.approved_by_acctg = user
         rfp.approved_by_fin = user
         rfp.save()
+        from apps.ap.models import CONSOBatch
+        from apps.ap.services import CONSOService
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-01", conso_date=date(2026, 1, 16))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=user)
+        rfp.refresh_from_db()
         cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0001", cv_date=date(2026, 1, 16), payee=supplier,
             bank_account=accounts["10110"], gross_amount="10000.00", withheld_tax="0.00",
             rfp=rfp, user=user,
         )
-        client.force_login(role_users["coo"])
+        client.force_login(role_users["head"])
         resp = client.post(f"/ap/cv/{cv.id}/sign/", {}, HTTP_HX_REQUEST="true")
         assert resp.status_code == 200
         assert resp.headers["HX-Trigger"]

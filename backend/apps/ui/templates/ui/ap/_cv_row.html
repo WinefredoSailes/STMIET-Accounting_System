@@ -15,6 +15,7 @@
     <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
       {% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800
       {% elif cv.status == 'created' %}bg-slate-100 text-slate-600
+      {% elif cv.status == 'rejected' %}bg-red-100 text-red-800
       {% else %}bg-amber-100 text-amber-800{% endif %}">
       {{ cv.status }}
     </span>
@@ -28,6 +29,12 @@
       class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Release</button>
     {% elif cv.status == "released" %}
     <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Clear…</a>
+    {% elif cv.status == "rejected" %}
+    {% if request.user.id == cv.created_by_id %}
+    <a href="{% url 'ui:cv_revise' cv.id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Revise</a>
+    {% else %}
+    <span class="text-xs text-slate-400">—</span>
+    {% endif %}
     {% else %}
     <span class="text-xs text-slate-400">—</span>
     {% endif %}

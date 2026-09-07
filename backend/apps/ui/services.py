@@ -294,11 +294,16 @@ def bank_accounts():
 
 
 def approved_rfps():
-    """RFPs ready to be paid by a check voucher (no CV issued yet)."""
+    """RFPs ready to be paid by a check voucher (no CV issued yet).
+
+    Only RFPs whose CONSO batch has already posted (status 'posted') are
+    payable: the RFP's expense/liability entry must be in the GL before a
+    check voucher settles it.
+    """
     from apps.ap.models import RFPDocument
 
     return RFPDocument.objects.filter(
-        status__in=["fin_approved", "cnr_approved"], cv__isnull=True
+        status="posted", cv__isnull=True
     ).select_related("payee", "segment")
 
 

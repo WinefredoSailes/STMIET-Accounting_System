@@ -43,12 +43,13 @@ RFP_STEP_TO_ROLE = {
     "fin_approved": "head",
 }
 
-# CV lifecycle holders: created->signed (COO), signed->released (staff /
-# treasury e.g. Quibs), released->cleared (head approves the release).
-# ACCTG-FOR-010 / 7.4.
+# CV lifecycle holders: for now every CV action lands on the Accounting &
+# Finance Head — created->signed (head), signed->released (head),
+# released->cleared (head books the encashment). The COO is not part of the
+# CV path (per current policy); ACCTG-FOR-010 / 7.4.
 CV_NEXT_ROLE = {
-    "created": "coo",
-    "signed": "staff",
+    "created": "head",
+    "signed": "head",
     "released": "head",
 }
 

@@ -299,9 +299,9 @@ class Command(BaseCommand):
         disb = CheckDisbursement.objects.filter(cv=cv).first()
         if cv.status == "created":
             if not disb or disb.status == "created":
-                CheckDisbursementService.sign_cnr(cv, user=self._user("coo"))
+                CheckDisbursementService.sign_cnr(cv, user=self._user("alywin"))
             cv.status = "signed"
-            cv.signed_by = self._user("coo")
+            cv.signed_by = self._user("alywin")
             cv.save(update_fields=["status", "signed_by", "updated_at"])
         if cv.status == "signed":
             if not disb or disb.status == "signed":
@@ -312,9 +312,8 @@ class Command(BaseCommand):
         if cv.status == "released":
             if not disb or disb.status == "released":
                 CheckDisbursementService.clear(cv, banks["PNB-CHK"], user=self._user("alywin"))
-            cv.status = "cleared"
-            cv.save(update_fields=["status", "updated_at"])
-        self.stdout.write("CV-2026-0001 signed/released/cleared")
+            CVPaymentService.clear(cv, user=self._user("alywin"))
+        self.stdout.write("CV-2026-0001 signed/released/cleared (JE in GL)")
 
     def _transfers(self, banks, segs):
         from apps.cash.services import TransferService

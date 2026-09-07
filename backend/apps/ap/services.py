@@ -430,6 +430,11 @@ class CVPaymentService:
         net = gross - tax
         if net < 0:
             raise ValidationError("Net amount cannot be negative.")
+        if rfp and rfp.status != "posted":
+            raise ValidationError(
+                f"RFP {rfp.ap_number} must be posted through a CONSO batch before a "
+                "check voucher can be issued against it (the RFP's GL entry comes first)."
+            )
 
         cv = CheckVoucher.objects.create(
             cv_number=cv_number,
@@ -477,10 +482,167 @@ class CVPaymentService:
                 credit=tax, description="Withholding tax (expanded)",
             )
         entry.recalc_totals()
-        PostingService.post(entry, user=user)
+        # The CV's JE is only a DRAFT until the Accounting & Finance Head
+        # clears the voucher: it holds no GL rows and cannot leak into the
+        # books, so the reject/revise loop never touches a posted entry.
         cv.journal_entry = entry
         cv.status = "created"
         cv.save(update_fields=["journal_entry", "updated_at"])
+        return cv
+
+    @classmethod
+    def clear(cls, cv: CheckVoucher, *, user) -> CheckVoucher:
+        """released -> cleared (Finance & Accounting Head books it): post the
+        CV's JE to the GL, then mark the encashment cleared."""
+        if cv.status != "released":
+            raise ValidationError(
+                f"CV {cv.cv_number} must be released before it can be cleared "
+                f"(status '{cv.status}')."
+            )
+        if not cv.journal_entry_id:
+            raise ValidationError(f"CV {cv.cv_number} has no journal entry to post.")
+        if cv.journal_entry.is_posted:
+            raise PostingError(f"CV {cv.cv_number} entry is already posted.")
+        # The head's clear is the CV's approval gate (ADR-033): above the
+        # threshold a DRAFT entry is refused by PostingService, so mark it
+        # APPROVED under the same act that clears the voucher.
+        entry = cv.journal_entry
+        if entry.status != PostingStatus.POSTED:
+            entry.status = PostingStatus.APPROVED
+            entry.updated_by = user
+            entry.save(update_fields=["status", "updated_by", "updated_at"])
+        PostingService.post(entry, user=user)
+        cv.status = "cleared"
+        cv.save(update_fields=["status", "updated_at"])
+        return cv
+
+    REJECTABLE_STATUSES = ("created", "signed", "released")
+
+    @classmethod
+    def reject(cls, cv: CheckVoucher, *, user, note: str = "") -> CheckVoucher:
+        """Return the CV to the issuer with a note (reject/revise cycle).
+
+        Only while it awaits an action (head sign, head release, head clear).
+        The CV's JE is still a DRAFT at every one of these points, so it is
+        dropped with the failed pass; the issuer's revise rebuilds it.
+        """
+        from django.utils import timezone
+
+        if cv.status == "cleared":
+            raise PostingError("Cleared CVs cannot be rejected.")
+        if cv.status not in cls.REJECTABLE_STATUSES:
+            raise ValidationError(
+                f"CV '{cv.status}' is not awaiting an action; it cannot be rejected."
+            )
+        if not (note or "").strip():
+            raise ValidationError("Enter a note explaining why the CV is being rejected.")
+        if cv.journal_entry_id and not cv.journal_entry.is_posted:
+            old_entry = cv.journal_entry
+        else:
+            old_entry = None
+        cv.journal_entry = None
+        cv.status = "rejected"
+        cv.rejected_by = user
+        cv.rejected_at = timezone.now()
+        cv.rejection_note = note.strip()
+        cv.save(update_fields=[
+            "journal_entry", "status", "rejected_by", "rejected_at",
+            "rejection_note", "updated_at",
+        ])
+        if old_entry is not None:
+            old_entry.lines.all().delete()
+            old_entry.delete()
+        return cv
+
+    @classmethod
+    @transaction.atomic
+    def revise(
+        cls,
+        cv: CheckVoucher,
+        *,
+        user,
+        bank_account: Account | None = None,
+        gross_amount=None,
+        withheld_tax: Decimal | None = None,
+        check_no: str = "",
+        cv_date: date | None = None,
+    ) -> CheckVoucher:
+        """The issuer corrects a rejected CV and resubmits it for signing.
+
+        Only the issuer may revise, and only while the CV is `rejected`. The
+        corrected check re-enters the chain at "created" (fresh signature); the
+        JE is rebuilt from the corrected figures as a DRAFT.
+        """
+        if cv.status != "rejected":
+            raise ValidationError("Only rejected CVs can be revised and resubmitted.")
+        if user.id != cv.created_by_id:
+            raise ValidationError(
+                f"CV {cv.cv_number} was issued by another user; only the issuer may revise it."
+            )
+
+        gross = money(gross_amount if gross_amount is not None else cv.gross_amount)
+        tax = money(withheld_tax if withheld_tax is not None else cv.withheld_tax)
+        net = gross - tax
+        if net < 0:
+            raise ValidationError("Net amount cannot be negative.")
+        if cv.rfp_id and cv.rfp.status != "posted":
+            raise ValidationError(
+                f"RFP {cv.rfp.ap_number} must be posted through a CONSO batch before "
+                "this check voucher can be reissued."
+            )
+        seg = cv.rfp.segment if cv.rfp_id else cv.payee.default_segment
+        if seg is None:
+            raise ValidationError("CV requires a segment: link an RFP or set the supplier's default segment.")
+        company = seg.company
+
+        cv.gross_amount = gross
+        cv.withheld_tax = tax
+        cv.net_amount = net
+        cv.check_no = check_no
+        cv.cv_date = cv_date or cv.cv_date
+        if bank_account is not None:
+            cv.bank_account = bank_account
+        entry = JournalEntry.objects.create(
+            entry_no=cv.cv_number,
+            company=company,
+            segment=seg,
+            transaction_date=cv.cv_date,
+            status=PostingStatus.DRAFT,
+            description=f"Check voucher {cv.cv_number} {cv.payee.name}",
+            source_doc_type="CV",
+            source_doc_no=cv.cv_number,
+            created_by=user,
+        )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=1,
+            account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP),
+            debit=gross, description=f"AP - {cv.payee.name}",
+        )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=2, account=cv.bank_account, credit=net,
+            description=f"Cash - {cv.bank_account.code}",
+        )
+        if tax > 0:
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=3,
+                account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
+                credit=tax, description="Withholding tax (expanded)",
+            )
+        entry.recalc_totals()
+        cv.journal_entry = entry
+        cv.status = "created"
+        cv.signed_by = None
+        cv.released_by = None
+        cv.rejected_by = None
+        cv.rejected_at = None
+        cv.rejection_note = ""
+        cv.revision_count += 1
+        cv.save(update_fields=[
+            "gross_amount", "withheld_tax", "net_amount", "check_no", "cv_date",
+            "bank_account", "journal_entry", "status", "signed_by", "released_by",
+            "rejected_by", "rejected_at", "rejection_note", "revision_count",
+            "updated_at",
+        ])
         return cv
 
 

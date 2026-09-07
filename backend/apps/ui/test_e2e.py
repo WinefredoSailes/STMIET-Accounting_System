@@ -222,19 +222,19 @@ class TestEndToEndWorkflow:
         from apps.ap.models import CheckVoucher
 
         cv = CheckVoucher.objects.get()
-        assert cv.journal_entry.status == PostingStatus.POSTED
-        client.force_login(roles["coo"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
-        # Staff cannot release; head must release first per ADR-036
+        assert cv.journal_entry.status == PostingStatus.DRAFT  # posts only on clear
         client.force_login(roles["head"])
+        client.post(f"/ap/cv/{cv.id}/sign/")
+        # The head also releases the signed CV per the current CV policy
         client.post(f"/ap/cv/{cv.id}/release/")
         cv.refresh_from_db()
         assert cv.status == "released"
         assert cv.released_by == roles["head"]
-        # Head clears the released CV
+        # Head clears the released CV — that is what posts the entry
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
+        assert cv.journal_entry.status == PostingStatus.POSTED
 
         # 7. Inter-account transfer -------------------------------------------
         bank_from = BankAccount.objects.create(

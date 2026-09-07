@@ -1,0 +1,93 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Revise CV {{ cv.cv_number }} — STMIET Accounting{% endblock %}
+{% block content %}
+<div class="p-6">
+  <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; CV {{ cv.cv_number }}</a>
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+      <div>
+        <div class="text-lg font-bold text-slate-900">CHECK VOUCHER — REVISE</div>
+        <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT · Revision {{ cv.revision_count }}×</div>
+      </div>
+      <div class="text-xs text-slate-500 text-right">
+        <div>Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-010</span></div>
+        <div>Effective Date: 08.18.2022 · Revision No.: 02</div>
+      </div>
+    </div>
+
+    <div class="px-6 py-3 border-b border-red-200 bg-red-50 rounded-none">
+      <div class="text-sm font-semibold text-red-800">Returned for correction</div>
+      <div class="text-xs text-slate-600 mt-1">Rejected by {{ cv.rejected_by.get_full_name|default:cv.rejected_by }} · {{ cv.rejected_at|date:"M d, Y H:i" }}</div>
+      <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ cv.rejection_note }}</div>
+    </div>
+
+    <form method="post" class="p-6 space-y-4">
+      {% csrf_token %}
+      <fieldset class="space-y-3">
+        <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium">Payee Information</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">RFP being paid</label>
+            <input type="text" readonly value="{{ cv.rfp.ap_number }} · {{ cv.rfp.payee.name }} · ₱{{ cv.rfp.amount|money }}"
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">NAME</label>
+            <input type="text" readonly value="{{ cv.payee.name }}"
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">DATE OF REQUEST</label>
+            <input type="date" name="cv_date" id="id_cv_date" required value="{{ cv.cv_date|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_bank_account">BANK ACCOUNT (GL)</label>
+            <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              {% for acc in bank_accounts %}
+              <option value="{{ acc.id }}" {% if acc.id == cv.bank_account_id %}selected{% endif %}>{{ acc.code }} {{ acc.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_check_no">CHECK ISSUED &amp; NO</label>
+            <input type="text" name="check_no" id="id_check_no" maxlength="32" value="{{ cv.check_no }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gross_amount">Gross amount (₱)</label>
+            <input type="number" step="0.01" min="0.01" name="gross_amount" id="id_gross_amount" required
+                   value="{{ cv.gross_amount }}"
+                   oninput="net()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_withheld_tax">Withholding tax (₱)</label>
+            <input type="number" step="0.01" min="0" name="withheld_tax" id="id_withheld_tax" value="{{ cv.withheld_tax }}"
+                   oninput="net()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Net amount</label>
+            <div id="id_net_amount" class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-right tabular-nums">
+              {{ cv.net_amount|money }}
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="flex justify-end">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          Revise & resubmit check voucher
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function net() {
+  var g = parseFloat(document.getElementById('id_gross_amount').value || 0);
+  var t = parseFloat(document.getElementById('id_withheld_tax').value || 0);
+  document.getElementById('id_net_amount').textContent = (g - t).toFixed(2);
+}
+</script>
+{% endblock %}

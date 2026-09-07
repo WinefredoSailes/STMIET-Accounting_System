@@ -21,7 +21,7 @@ from apps.ap.services import (
     CVPaymentService,
     RFPService,
 )
-from apps.core.exceptions import ValidationError
+from apps.core.exceptions import PostingError, ValidationError
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 
 from django.core.management import call_command
@@ -459,6 +459,75 @@ class TestCVPayment:
         )
         assert cv.net_amount == Decimal("5000.00")
         assert cv.journal_entry.lines.count() == 2
+
+    def test_requires_posted_rfp(self, company, segment, accounts, alywin, segment_account_map):
+        from apps.ap.models import Supplier, RFPLine
+
+        payee = Supplier.objects.create(
+            code="S002", name="TBA Depot", supplier_type="depot", default_segment=segment
+        )
+        rfp = RFPDocument.objects.create(
+            ap_number="A0040", last_ap="A0039", rfp_date=date(2026, 1, 27),
+            payee=payee, particulars="restock", segment=segment,
+            amount=Decimal("8000.00"), status="fin_approved", created_by=alywin,
+        )
+        RFPLine.objects.create(rfp=rfp, line_no=1, side="dr", segment=segment,
+                               account=accounts["61100"], amount=Decimal("8000.00"))
+        RFPLine.objects.create(rfp=rfp, line_no=2, side="cr", segment=segment,
+                               account=accounts["20000"], amount=Decimal("8000.00"))
+        with pytest.raises(ValidationError):
+            CVPaymentService.create_cv(
+                cv_number="CV-2026-0100", cv_date=date(2026, 1, 28),
+                payee=payee, bank_account=accounts["10010"],
+                gross_amount="8000.00", rfp=rfp, user=alywin,
+            )
+
+    def test_clear_requires_released_and_posts(self, company, segment, supplier, accounts, alywin, segment_account_map):
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0003", cv_date=date(2026, 1, 27),
+            payee=supplier, bank_account=accounts["10010"],
+            gross_amount="10000.00", withheld_tax="200.00",
+        )
+        assert cv.status == "created"
+        assert not cv.journal_entry.is_posted  # DRAFT at issuance
+        with pytest.raises(ValidationError):
+            CVPaymentService.clear(cv, user=alywin)
+        cv.status = "released"
+        cv.save(update_fields=["status", "updated_at"])
+        CVPaymentService.clear(cv, user=alywin)
+        cv.refresh_from_db()
+        assert cv.status == "cleared"
+        assert cv.journal_entry.is_posted
+
+    def test_reject_then_revise_restarts_chain(self, company, segment, supplier, accounts, alywin, segment_account_map):
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0004", cv_date=date(2026, 1, 27),
+            payee=supplier, bank_account=accounts["10010"],
+            gross_amount="10000.00", check_no="CHK-1", user=alywin,
+        )
+        assert not cv.journal_entry.is_posted
+        # rejection needs a note and an awaiting status
+        with pytest.raises(ValidationError):
+            CVPaymentService.reject(cv, user=alywin, note="")
+        cv = CVPaymentService.reject(cv, user=alywin, note="Wrong check number")
+        assert cv.status == "rejected"
+        assert cv.journal_entry_id is None  # the DRAFT was dropped, not posted
+        # only the issuer can revise (alywin is the issuer here)
+        cv = CVPaymentService.revise(
+            cv, user=alywin, bank_account=accounts["10010"],
+            gross_amount="10000.00", withheld_tax="100.00", check_no="CHK-2",
+        )
+        assert cv.status == "created"
+        assert cv.revision_count == 1
+        assert cv.net_amount == Decimal("9900.00")
+        assert cv.signed_by_id is None
+        assert cv.journal_entry_id and not cv.journal_entry.is_posted
+        # cleared CVs are final
+        cv.status = "released"
+        cv.save(update_fields=["status", "updated_at"])
+        CVPaymentService.clear(cv, user=alywin)
+        with pytest.raises(PostingError):
+            CVPaymentService.reject(cv, user=alywin, note="late")
 
 
 class TestAdvanceLifecycle:

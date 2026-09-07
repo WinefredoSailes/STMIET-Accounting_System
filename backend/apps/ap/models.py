@@ -221,13 +221,17 @@ class CheckVoucher(AuditableModel):
     withheld_tax = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     net_amount = models.DecimalField(max_digits=18, decimal_places=2)
     check_no = models.CharField(max_length=32, blank=True)
-    # lifecycle: created -> signed (CNR) -> released (Quibs) -> cleared
+    # lifecycle: created -> signed (head) -> released (head) -> cleared
     status = models.CharField(max_length=16, default="created")
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="cv"
     )
     signed_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     released_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    revision_count = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["-cv_date", "-cv_number"]

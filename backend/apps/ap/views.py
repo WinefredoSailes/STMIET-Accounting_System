@@ -139,23 +139,26 @@ class CheckVoucherViewSet(viewsets.ModelViewSet):
         data = request.data
         from apps.foundation.models import Account, Supplier
 
-        payee = Supplier.objects.get(pk=data.get("payee"))
-        bank_account = Account.objects.get(pk=data.get("bank_account"))
-        rfp = None
-        if data.get("rfp"):
-            rfp = RFPDocument.objects.get(pk=data.get("rfp"))
+        try:
+            payee = Supplier.objects.get(pk=data.get("payee"))
+            bank_account = Account.objects.get(pk=data.get("bank_account"))
+            rfp = None
+            if data.get("rfp"):
+                rfp = RFPDocument.objects.get(pk=data.get("rfp"))
 
-        cv = CVPaymentService.create_cv(
-            cv_number=data.get("cv_number") or f"CV-{date.today().year}-{CheckVoucher.objects.count()+1:04d}",
-            cv_date=data.get("cv_date"),
-            payee=payee,
-            bank_account=bank_account,
-            gross_amount=data.get("gross_amount"),
-            withheld_tax=data.get("withheld_tax", "0.00"),
-            rfp=rfp,
-            check_no=data.get("check_no", ""),
-            user=request.user,
-        )
+            cv = CVPaymentService.create_cv(
+                cv_number=data.get("cv_number") or f"CV-{date.today().year}-{CheckVoucher.objects.count()+1:04d}",
+                cv_date=data.get("cv_date"),
+                payee=payee,
+                bank_account=bank_account,
+                gross_amount=data.get("gross_amount"),
+                withheld_tax=data.get("withheld_tax", "0.00"),
+                rfp=rfp,
+                check_no=data.get("check_no", ""),
+                user=request.user,
+            )
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         out = self.get_serializer(cv)
         return Response(out.data, status=status.HTTP_201_CREATED)
 

@@ -24,6 +24,14 @@ class JournalEntryViewSet(
     @action(detail=True, methods=["post"])
     def post(self, request, pk=None):
         entry = self.get_object()
+        from apps.ap.models import CheckVoucher
+
+        cv = CheckVoucher.objects.filter(journal_entry_id=entry.id).first()
+        if cv and cv.status != "cleared":
+            return Response(
+                {"detail": f"CV {cv.cv_number} posts only when the voucher is cleared."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = PostEntrySerializer(
             data={"entry": entry.id, **request.data},
             context={"request": request},

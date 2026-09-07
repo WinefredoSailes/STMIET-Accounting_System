@@ -255,6 +255,16 @@ def _create_entry_from_form(request):
 @require_POST
 def je_post(request, pk):
     entry = get_object_or_404(JournalEntry, pk=pk)
+    from apps.ap.models import CheckVoucher
+
+    cv = CheckVoucher.objects.filter(journal_entry_id=entry.id).first()
+    if cv and cv.status != "cleared":
+        messages.error(
+            request,
+            f"CV {cv.cv_number} posts only when the Accounting Head clears the "
+            "voucher — its entry must not be posted manually.",
+        )
+        return redirect("ui:je_detail", pk=pk)
     approve = "approve" in request.POST
     try:
         if approve:
@@ -1474,7 +1484,7 @@ def cv_print(request, pk):
 @login_required
 @require_POST
 def cv_sign(request, pk):
-    """created -> signed (COO signs the check)."""
+    """created -> signed (Accounting & Finance Head signs the check)."""
     from apps.ap.models import CheckVoucher
     from apps.core.approvals import require_approval_role
 
@@ -1484,7 +1494,7 @@ def cv_sign(request, pk):
     is_htmx = request.headers.get("HX-Request")
     try:
         if cv.status == "created":
-            require_approval_role(request.user, "coo")
+            require_approval_role(request.user, "head")
             cv.status = "signed"
             cv.signed_by = request.user
             cv.save(update_fields=["status", "signed_by", "updated_at"])
@@ -1538,22 +1548,89 @@ def cv_release(request, pk):
 @login_required
 @require_POST
 def cv_clear(request, pk):
-    """released -> cleared (Accounting & Finance Head books the encashment)."""
+    """released -> cleared (Accounting & Finance Head books the encashment).
+
+    The CV's journal entry is posted to the GL here — the head's clear is the
+    approval gate that moves the DRAFT entry into the books (ADR-033)."""
     from apps.ap.models import CheckVoucher
+    from apps.ap.services import CVPaymentService
     from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(CheckVoucher, pk=pk)
     try:
-        if cv.status == "released":
-            require_approval_role(request.user, "head")
-            cv.status = "cleared"
-            cv.save(update_fields=["status", "updated_at"])
-            messages.success(request, f"CV {cv.cv_number} cleared.")
-        else:
-            messages.error(request, f"CV cannot be cleared from status '{cv.status}'.")
+        require_approval_role(request.user, "head")
+        cv = CVPaymentService.clear(cv, user=request.user)
+        messages.success(request, f"CV {cv.cv_number} cleared — entry in GL.")
     except AccountingError as exc:
         messages.error(request, str(exc))
     return redirect("ui:cv_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def cv_reject(request, pk):
+    """The current actor returns the CV to its issuer with a note (reject/
+    revise cycle mirroring the RFP path). Role-gated to whoever holds the
+    current action — the Accounting & Finance Head at 'created', 'signed'
+    and 'released'."""
+    from apps.ap.models import CheckVoucher
+    from apps.ap.services import CVPaymentService
+    from apps.core.approvals import require_approval_role
+
+    cv = get_object_or_404(CheckVoucher, pk=pk)
+    role = "head" if cv.status in ("created", "signed", "released") else None
+    note = request.POST.get("note", "")
+    try:
+        if role:
+            require_approval_role(request.user, role)
+        cv = CVPaymentService.reject(cv, user=request.user, note=note)
+        messages.success(request, f"CV {cv.cv_number} rejected and returned to {cv.created_by}.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:cv_detail", pk=pk)
+
+
+@login_required
+def cv_revise(request, pk):
+    """The issuer corrects a rejected CV and resubmits it. GET shows a
+    prefilled correction form; POST runs CVPaymentService.revise (issuer-only)."""
+    from apps.ap.models import CheckVoucher
+    from apps.ap.services import CVPaymentService
+
+    cv = get_object_or_404(
+        CheckVoucher.objects.select_related("payee", "rfp", "bank_account"), pk=pk
+    )
+    if request.user.id != cv.created_by_id:
+        messages.error(request, "Only the issuer may revise this CV.")
+        return redirect("ui:cv_detail", pk=pk)
+
+    if request.method == "POST":
+        try:
+            cv = CVPaymentService.revise(
+                cv,
+                user=request.user,
+                bank_account=Account.objects.get(pk=request.POST["bank_account"]),
+                gross_amount=request.POST["gross_amount"],
+                withheld_tax=request.POST.get("withheld_tax", "0.00"),
+                check_no=request.POST.get("check_no", ""),
+                cv_date=date.fromisoformat(request.POST["cv_date"]),
+            )
+            messages.success(request, f"CV {cv.cv_number} revised and resubmitted.")
+            return redirect("ui:cv_detail", pk=pk)
+        except (AccountingError, ValidationError, ValueError, KeyError) as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/ap/cv_form.html",
+        {
+            "editing": cv,
+            "rfps": approved_rfps(),
+            "bank_accounts": bank_accounts(),
+            "today": date.today(),
+            "selected_rfp": None,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
