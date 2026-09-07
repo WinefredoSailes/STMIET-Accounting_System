@@ -70,6 +70,22 @@ class Segment(SoftDeleteMixin, AuditableModel):
         return f"{self.code} {self.name}"
 
 
+class CostCenter(AuditableModel):
+    """Organizational cost centers (ADR-038 §8): AG-Accounting, OS-Operations,
+    TL-Technical Services, HRAC-HR/Audit/Compliance. Displayed as short codes
+    in the PCF voucher lines."""
+
+    code = models.CharField(max_length=16, unique=True)
+    name = models.CharField(max_length=128)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} {self.name}"
+
+
 class FiscalYear(AuditableModel):
     """One fiscal year for a company."""
 

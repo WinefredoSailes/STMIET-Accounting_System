@@ -208,6 +208,12 @@ class PCFReplenishment(AuditableModel):
     customer_name = models.CharField("Customer Name", max_length=255, blank=True)
     # Expense breakdown from liquidation receipts
     expenses = models.JSONField(default=list)  # [{account_code, amount, description}]
+    # Auto-CONSO integration (ADR-038 §7c): approval batches the replenishment
+    # to a CONSO batch; posting happens when the batch is posted.
+    conso = models.ForeignKey(
+        "ap.CONSOBatch", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
+    )
+    conso_line_no = models.PositiveSmallIntegerField(null=True, blank=True)
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
     )

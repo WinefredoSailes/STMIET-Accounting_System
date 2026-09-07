@@ -9,6 +9,7 @@ re-tests.
 from datetime import date
 from decimal import Decimal
 from calendar import monthrange
+import re
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -124,6 +125,7 @@ class TestScreens:
         "/reports/tax/calendar/",
         "/assets/",
         "/assets/new/",
+        "/foundation/coa/",
     ]
 
     @pytest.mark.parametrize("path", SCREENS)
@@ -293,6 +295,60 @@ class TestMasterScreens:
         assert cust.contact_no == "0999-EDIT-123"
 
 
+class TestEditPagesRender:
+    """Full-page update forms (e18ef41): each edit page GETs with prefilled
+    values for a super admin — no HTMX-swapped partial."""
+
+    def _superuser_client(self):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+
+        sup = get_user_model().objects.create_user(username="sup", password="x", is_superuser=True)
+        c = Client()
+        c.force_login(sup)
+        return c
+
+    def test_coa_update_page(self, company, accounts):
+        from apps.foundation.models import Account
+
+        body = self._superuser_client().get(
+            f"/foundation/coa/{accounts['10010'].pk}/update/"
+        ).content.decode()
+        assert "Edit COA Account" in body
+        assert accounts["10010"].name in body
+        assert 'name="name"' in body
+        assert "hx-post" not in body and "data-hx-post" not in body
+
+    def test_supplier_update_page(self, company, segment, accounts):
+        from apps.ap.models import Supplier
+
+        s = Supplier.objects.create(code="S001", name="Shell Fuel Depot", default_segment=segment)
+        body = self._superuser_client().get(f"/ap/suppliers/{s.pk}/update/").content.decode()
+        assert s.name in body
+        assert 'name="name"' in body and "Save supplier" in body
+
+    def test_customer_update_page(self, company, segment, accounts):
+        from apps.ar.models import Customer
+
+        c = Customer.objects.create(code="C002", name="Client Two", group="fuel", segment=segment)
+        body = self._superuser_client().get(f"/ar/customers/{c.pk}/update/").content.decode()
+        assert c.name in body
+        assert "Save changes" in body
+
+    def test_bank_update_page(self, company, accounts):
+        from apps.cash.models import BankAccount
+
+        bank = BankAccount.objects.create(
+            code="PNB-X", name="PNB Checking", account_type="checking",
+            gl_account=accounts["10010"], company=company, adb_required="125000.00",
+        )
+        body = self._superuser_client().get(f"/cash/banks/{bank.pk}/update/").content.decode()
+        assert bank.name in body
+        assert bank.code in body
+        assert 'value="125000.00"' in body
+        assert "Save changes" in body
+
+
     def test_supplier_create(self, client, company, segment, accounts):
         resp = client.post("/ap/suppliers/new/", {
             "code": "S001",
@@ -300,12 +356,62 @@ class TestMasterScreens:
             "supplier_type": "equipment",
             "tin": "987-654-321",
             "default_segment": segment.id,
+            "contact_name": ["Juan Dela Cruz", "Maria Santos"],
+            "contact_position": ["Manager", "Treasurer"],
+            "contact_phone": ["0917-111-1111", "0917-222-2222"],
+        })
+        assert resp.status_code == 302
+        from apps.ap.models import Supplier, SupplierContact
+
+        s = Supplier.objects.get(code="S001")
+        assert s.default_segment == segment
+        contacts = list(s.contacts.order_by("name"))
+        assert [c.name for c in contacts] == ["Juan Dela Cruz", "Maria Santos"]
+        assert contacts[0].phone == "0917-111-1111"
+        assert contacts[1].position == "Treasurer"
+
+    def test_supplier_auto_code_when_blank(self, client, company, segment, accounts):
+        """ADR-038 §6a: a supplier created without a code gets S001, S002, ..."""
+        resp = client.post("/ap/suppliers/new/", {
+            "code": "",
+            "name": "Auto Coded Depot",
+            "supplier_type": "depot",
+            "default_segment": segment.id,
         })
         assert resp.status_code == 302
         from apps.ap.models import Supplier
 
-        s = Supplier.objects.get(code="S001")
-        assert s.default_segment == segment
+        s = Supplier.objects.get(name="Auto Coded Depot")
+        assert re.match(r"S\d{3}$", s.code)
+
+    def test_supplier_update_contacts_replace(self, client, company, segment, accounts):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+        from apps.ap.models import Supplier, SupplierContact
+
+        sup = get_user_model().objects.create_user(username="sup", password="x", is_superuser=True)
+        c = Client()
+        c.force_login(sup)
+        s = Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment", default_segment=segment
+        )
+        SupplierContact.objects.create(supplier=s, name="Old Contact", phone="0000")
+
+        resp = c.post(f"/ap/suppliers/{s.pk}/update/", {
+            "code": s.code,
+            "name": s.name,
+            "supplier_type": s.supplier_type,
+            "default_segment": segment.id,
+            "contact_name": ["New Contact"],
+            "contact_position": [""],
+            "contact_phone": ["1111"],
+        })
+        assert resp.status_code == 302
+        s.refresh_from_db()
+        contacts = list(s.contacts.all())
+        assert len(contacts) == 1
+        assert contacts[0].name == "New Contact"
+        assert contacts[0].phone == "1111"
 
     def test_bank_create(self, client, company, segment, accounts):
         resp = client.post("/cash/banks/new/", {
@@ -610,13 +716,29 @@ class TestRFPRejectCycle:
         assert rfp.rejection_note == ""
         assert rfp.rejected_by is None
         assert rfp.amount == Decimal("35000.00")
+        assert rfp.revision_count == 1
 
         # Continues through the approval chain again.
         client.force_login(role_users["head"])
-        for expected in ("checked", "acctg_approved", "fin_approved"):
+        for expected in ("checked", "acctg_approved"):
             resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
             rfp.refresh_from_db()
             assert rfp.status == expected
+
+        # ADR-038 §10d: a revised RFP is blocked from finance approval until
+        # Finance Head notes are added.
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "acctg_approved"
+
+        resp = client.post(f"/ap/rfps/{rfp.id}/finance-notes/", {"finance_notes": "Verify stock delivery before CV issuance."})
+        assert resp.status_code == 302
+        rfp.refresh_from_db()
+        assert rfp.finance_notes == "Verify stock delivery before CV issuance."
+
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
 
     def test_cannot_reject_posted(self, client, company, segment, accounts,
                                   supplier, role_users, staff):
@@ -726,6 +848,85 @@ class TestAssetScreen:
         assert "FA-2026-0002" in body
         assert "Net book value" in body
         assert "Dispose asset" in body
+
+    def test_asset_list_filters(self, client, company, segment, accounts, category):
+        from apps.assets.models import Asset, AssetCategory
+
+        veh = AssetCategory.objects.create(
+            code="VEH",
+            name="Vehicles",
+            useful_life_years=5,
+            asset_account=accounts["10010"],
+            depreciation_expense_account=accounts["61100"],
+            accumulated_dep_account=accounts["10010"],
+        )
+        common = dict(
+            segment=segment,
+            acquisition_date=date(2026, 1, 15),
+            cost="80000.00",
+            residual_value="8000.00",
+            asset_account=accounts["10010"],
+            depreciation_expense_account=accounts["61100"],
+            accumulated_dep_account=accounts["10010"],
+        )
+        Asset.objects.create(asset_no="FA-2026-0001", name="Diesel Generator", category=category, **common)
+        Asset.objects.create(asset_no="FA-2026-0002", name="Boom Truck", category=veh, **common)
+        Asset.objects.create(
+            asset_no="FA-2026-0003", name="Old Generator", category=category,
+            status="fully_depreciated", **common
+        )
+
+        body = client.get("/assets/").content.decode()
+        assert "Diesel Generator" in body and "Boom Truck" in body
+
+        body = client.get("/assets/", {"q": "Generator"}).content.decode()
+        assert "Diesel Generator" in body and "Old Generator" in body and "Boom Truck" not in body
+
+        body = client.get("/assets/", {"category": category.id}).content.decode()
+        assert "Diesel Generator" in body and "Old Generator" in body and "Boom Truck" not in body
+
+        body = client.get("/assets/", {"status": "fully_depreciated"}).content.decode()
+        assert "Old Generator" in body and "Diesel Generator" not in body
+
+        resp = client.get("/assets/", HTTP_HX_REQUEST="true")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "FA-2026-0001" in body
+        assert "Filter" not in body  # partial fragment, not the full page
+
+    def test_asset_reverse_screen(self, client, company, segment, accounts,
+                                  fiscal_period, user, category, segment_account_map):
+        from apps.assets.models import Asset
+        from apps.assets.services import AssetService
+
+        Account.objects.create(code="27000", name="Loans Payable - DHPP", account_type="liability")
+        asset = AssetService.acquire(
+            asset_no="FA-2026-0004",
+            name="Generator",
+            category=category,
+            segment=segment,
+            acquisition_date=date(2026, 1, 15),
+            cost="80000.00",
+            residual_value="8000.00",
+            funding_source="cash",
+            user=user,
+        )
+        resp = client.get(f"/assets/{asset.id}/reverse/")
+        assert resp.status_code == 200
+        assert "Reverse Overstated Asset" in resp.content.decode()
+
+        resp = client.post(f"/assets/{asset.id}/reverse/", {
+            "reversal_date": "2026-02-10",
+            "amount": "10000.00",
+            "reason": "Duplicated on booking",
+        })
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.cost == Decimal("70000.00")
+        rev = asset.reversals.get()
+        assert rev.amount == Decimal("10000.00")
+        assert rev.journal_entry.is_posted
+        assert rev.journal_entry.is_balanced
 
 
 class TestCheckVoucherScreen:
@@ -876,6 +1077,7 @@ class TestPCFReplenishmentScreen:
             "payee_name": "ADRIANO SILVA",
             "request_date": "2026-01-15",
             "reference": "OR-1234",
+            "customer_name": "DHPP Fleet",
             "exp_account": [accounts["61100"].id],
             "exp_segment": [segment.code],
             "exp_cost_center": ["OS"],
@@ -890,6 +1092,17 @@ class TestPCFReplenishmentScreen:
         assert replen.payee_name == "ADRIANO SILVA"
         assert replen.status == "requested"
         assert replen.expenses[0]["account_code"] == "61100"
+        assert replen.customer_name == "DHPP Fleet"
+        assert replen.requested_by == user
+
+    def test_replenish_form_shows_account_name(self, client, company, segment, accounts,
+                                               fiscal_period, user, fund):
+        resp = client.get("/cash/pcf/replenish/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "ACCOUNT NAME" in body
+        assert "CUSTOMER / CLIENT" in body
+        assert "REQUESTED BY" in body
 
     def test_replenishment_post(self, client, company, segment, accounts, fiscal_period,
                                 user, fund):
@@ -906,6 +1119,31 @@ class TestPCFReplenishmentScreen:
         assert replen.status == "posted"
         assert replen.journal_entry_id
         assert replen.journal_entry.is_posted
+
+    def test_replenishment_approve_then_conso_posts(self, client, company, segment,
+                                                    accounts, fiscal_period, user, fund):
+        from apps.cash.models import PCFReplenishment
+        from apps.cash.services import PCFService
+
+        replen = PCFService.request_replenishment(
+            fund,
+            [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
+            user=user,
+        )
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+        assert replen.conso_id
+        assert replen.approved_by == user
+
+        # Batch posts the PCF JE through CONSO (no manual re-entry).
+        resp = client.post(f"/ap/conso/{replen.conso_id}/post/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "posted"
+        assert replen.journal_entry.is_posted
+        assert replen.conso.status == "posted"
 
     def test_replenishment_detail_renders(self, client, company, segment, accounts,
                                           fiscal_period, user, fund):
@@ -1546,6 +1784,96 @@ class TestFleetFuelScreen:
         assert "50.00" in body
         body = client.get("/reports/fleet/fuel/?segment=OPS").content.decode()
         assert "50.00" not in body
+
+
+class TestCoAScreen:
+    def test_coa_list_renders(self, client, company, accounts):
+        resp = client.get("/foundation/coa/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "10010" in body
+        # ADR-038 §9b: type-ahead search bar on the COA listing.
+        assert 'id="id_q"' in body
+        assert "placeholder=\"Code or account name…\"" in body
+
+    def test_coa_print_renders(self, client, company, accounts):
+        resp = client.get("/foundation/coa/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "CHART OF ACCOUNTS" in body
+        assert "Cash on Hand" in body
+
+    def test_coa_print_respects_filters(self, client, company, accounts):
+        resp = client.get("/foundation/coa/print/?account_type=contra_asset")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "No accounts match" in body
+        assert "Cash on Hand" not in body
+
+    def _superuser_client(self):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+
+        sup = get_user_model().objects.create_user(username="sup", password="x", is_superuser=True)
+        c = Client()
+        c.force_login(sup)
+        return c
+
+    def test_coa_create_derives_normal_balance(self, company, accounts):
+        c = self._superuser_client()
+        c.post("/foundation/coa/new/", {
+            "code": "18660",
+            "name": "Accumulated Dep'n - Vehicles",
+            "account_type": "contra_asset",
+            "segment": "",
+        })
+        assert Account.objects.get(code="18660").normal_balance == "credit"
+        c.post("/foundation/coa/new/", {
+            "code": "90010",
+            "name": "Sales Discounts",
+            "account_type": "contra_revenue",
+            "segment": "",
+        })
+        assert Account.objects.get(code="90010").normal_balance == "debit"
+        c.post("/foundation/coa/new/", {
+            "code": "90020",
+            "name": "E. Bagatua, Drawing",
+            "account_type": "drawing",
+            "segment": "",
+        })
+        assert Account.objects.get(code="90020").normal_balance == "debit"
+
+    def test_coa_update_renames_account(self, client, company, accounts):
+        c = self._superuser_client()
+        acc = accounts["10010"]
+        resp = c.post(f"/foundation/coa/{acc.pk}/update/", {
+            "name": "Cash on Hand (Renamed)",
+            "account_type": "asset",
+            "segment": "DHPP",
+        })
+        assert resp.status_code == 302
+        acc.refresh_from_db()
+        assert acc.name == "Cash on Hand (Renamed)"
+        assert acc.normal_balance == "debit"
+
+    def test_coa_writes_require_superuser(self, client, company, accounts):
+        assert client.get("/foundation/coa/new/").status_code == 403
+        assert client.get(f"/foundation/coa/{accounts['10010'].pk}/update/").status_code == 403
+
+
+class TestSearchablePickers:
+    """ADR-038 §9a: Supplier and COA pickers are type-ahead comboboxes."""
+
+    def test_rfp_form_supplier_combobox(self, client, company, accounts):
+        body = client.get("/ap/rfps/new/").content.decode()
+        assert 'name="payee"' in body
+        assert "data-searchable" in body
+        assert "Type supplier name or code" in body
+
+    def test_cv_form_bank_account_combobox(self, client, company, accounts):
+        body = client.get("/ap/cv/new/").content.decode()
+        assert 'name="bank_account"' in body
+        assert "data-searchable" in body
 
 
 class TestHTMXPartialUpdates:

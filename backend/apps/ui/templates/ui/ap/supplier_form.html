@@ -12,64 +12,73 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_code">Code</label>
         <input type="text" name="code" id="id_code" maxlength="32"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+               value="{{ supplier.code|default:'' }}" {% if supplier %}disabled title="Code is fixed on an existing supplier"{% endif %}
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm{% if supplier %} bg-slate-50 text-slate-500{% endif %}"
                placeholder="Auto-generated (S001, S002, ...)">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Business Name</label>
         <input type="text" name="name" id="id_name" required maxlength="255"
+               value="{{ supplier.name|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_owner_name">Owner/Representative/President</label>
         <input type="text" name="owner_name" id="id_owner_name" maxlength="255"
+               value="{{ supplier.owner_name|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_supplier_type">Type</label>
         <select name="supplier_type" id="id_supplier_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <option value="depot">Depot</option>
-          <option value="equipment">Equipment</option>
-          <option value="service">Service</option>
-          <option value="govt">Government</option>
-          <option value="other">Other</option>
+          <option value="depot" {% if supplier.supplier_type == 'depot' %}selected{% endif %}>Depot</option>
+          <option value="equipment" {% if supplier.supplier_type == 'equipment' %}selected{% endif %}>Equipment</option>
+          <option value="service" {% if supplier.supplier_type == 'service' %}selected{% endif %}>Service</option>
+          <option value="govt" {% if supplier.supplier_type == 'govt' %}selected{% endif %}>Government</option>
+          <option value="other" {% if supplier.supplier_type == 'other' %}selected{% endif %}>Other</option>
         </select>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_email">Email Address</label>
         <input type="email" name="email" id="id_email"
+               value="{{ supplier.email|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_default_segment">Default segment</label>
         <select name="default_segment" id="id_default_segment" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           <option value="">— none —</option>
-          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+          {% for seg in segments %}<option value="{{ seg.id }}" {% if supplier.default_segment_id == seg.id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
         </select>
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_tin">TIN</label>
         <input type="text" name="tin" id="id_tin" maxlength="32"
+               value="{{ supplier.tin|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_person">Contact Person</label>
         <input type="text" name="contact_person" id="id_contact_person" maxlength="255"
+               value="{{ supplier.contact_person|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_position">Position</label>
         <input type="text" name="position" id="id_position" maxlength="128"
+               value="{{ supplier.position|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_no">Contact Numbers</label>
         <input type="text" name="contact_no" id="id_contact_no" maxlength="255"
+               value="{{ supplier.contact_no|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
       <div class="flex items-end">
         <label class="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" name="attachments_required" id="id_attachments_required" value="1"
+                 {% if supplier.attachments_required %}checked{% endif %}
                  class="rounded border-slate-300 text-indigo-600">
           Attachment needed (BIR-COR, DTI/SEC, Business Permit)
         </label>
@@ -77,14 +86,68 @@
       <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_address">Business Address</label>
         <input type="text" name="address" id="id_address" maxlength="255"
+               value="{{ supplier.address|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
     </div>
+
+    <div class="border-t border-slate-200 pt-4 mt-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Contact Persons</label>
+          <p class="text-xs text-slate-500">Multiple contact people per supplier, each with their own phone (ADR-038 §6).</p>
+        </div>
+        <button type="button" id="add-contact"
+                class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+          + Add contact
+        </button>
+      </div>
+      <div id="contact-rows" class="mt-3 space-y-2">
+        {% if supplier %}
+          {% for c in supplier.contacts.all %}
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
+            <input type="text" name="contact_name" value="{{ c.name }}"
+                   placeholder="Name" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <input type="text" name="contact_position" value="{{ c.position }}"
+                   placeholder="Position" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <input type="text" name="contact_phone" value="{{ c.phone }}"
+                   placeholder="Phone" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <button type="button" class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <template id="contact-row-template">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
+          <input type="text" name="contact_name" placeholder="Name"
+                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <input type="text" name="contact_position" placeholder="Position"
+                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <input type="text" name="contact_phone" placeholder="Phone"
+                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <button type="button" class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+        </div>
+      </template>
+    </div>
+
     <div class="flex justify-end">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        Create supplier
+        {% if supplier %}Save supplier{% else %}Create supplier{% endif %}
       </button>
     </div>
   </form>
 </div>
+<script>
+  (function () {
+    const rows = document.getElementById("contact-rows");
+    const template = document.getElementById("contact-row-template");
+    document.getElementById("add-contact").addEventListener("click", function () {
+      rows.appendChild(template.content.cloneNode(true));
+    });
+    rows.addEventListener("click", function (e) {
+      const btn = e.target.closest(".remove-contact");
+      if (btn) btn.closest(".c-remove").parentElement.remove();
+    });
+  })();
+</script>
 {% endblock %}

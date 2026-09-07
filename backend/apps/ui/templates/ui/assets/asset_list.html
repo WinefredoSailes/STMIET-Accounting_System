@@ -10,45 +10,57 @@
     </div>
     <a href="{% url 'ui:asset_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New asset</a>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <table class="w-full text-sm min-w-[900px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3">Asset No</th>
-          <th class="px-4 py-3">Name</th>
-          <th class="px-4 py-3">Category</th>
-          <th class="px-4 py-3">Segment</th>
-          <th class="px-4 py-3">Acquired</th>
-          <th class="px-4 py-3 text-right">Cost</th>
-          <th class="px-4 py-3">Status</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for a in page_obj %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-mono text-xs">
-            <a href="{% url 'ui:asset_detail' a.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ a.asset_no }}</a>
-          </td>
-          <td class="px-4 py-2">{{ a.name }}</td>
-          <td class="px-4 py-2 text-xs">{{ a.category.name }}</td>
-          <td class="px-4 py-2 text-xs">{{ a.segment.code }}</td>
-          <td class="px-4 py-2">{{ a.acquisition_date|date:"M d, Y" }}</td>
-          <td class="px-4 py-2 text-right font-medium">{{ a.cost|money }}</td>
-          <td class="px-4 py-2">
-            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-              {% if a.status == 'active' %}bg-emerald-100 text-emerald-800
-              {% elif a.status == 'disposed' %}bg-slate-100 text-slate-500
-              {% else %}bg-amber-100 text-amber-800{% endif %}">
-              {{ a.status }}
-            </span>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No assets yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 p-4">
+    <form hx-get="{% url 'ui:asset_list' %}" hx-target="#asset-table" hx-swap="innerHTML" hx-push-url="true"
+          class="grid gap-3 md:grid-cols-5 items-end">
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_q">Search</label>
+        <input type="search" name="q" id="id_q" value="{{ q }}" placeholder="Name or FA-####"
+               hx-get="{% url 'ui:asset_list' %}" hx-target="#asset-table" hx-swap="innerHTML" hx-push-url="true"
+               hx-trigger="input changed delay:300ms, search" hx-include="closest form"
+               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_category">Category</label>
+        <select name="category" id="id_category"
+                hx-get="{% url 'ui:asset_list' %}" hx-target="#asset-table" hx-swap="innerHTML" hx-push-url="true"
+                hx-trigger="change" hx-include="closest form"
+                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All categories</option>
+          {% for c in categories %}<option value="{{ c.id }}" {% if category_sel == c.id|stringformat:"s" %}selected{% endif %}>{{ c.code }} — {{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_segment">Segment</label>
+        <select name="segment" id="id_segment"
+                hx-get="{% url 'ui:asset_list' %}" hx-target="#asset-table" hx-swap="innerHTML" hx-push-url="true"
+                hx-trigger="change" hx-include="closest form"
+                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All segments</option>
+          {% for seg in segments %}<option value="{{ seg.id }}" {% if segment_sel == seg.id|stringformat:"s" %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_status">Status</label>
+        <select name="status" id="id_status"
+                hx-get="{% url 'ui:asset_list' %}" hx-target="#asset-table" hx-swap="innerHTML" hx-push-url="true"
+                hx-trigger="change" hx-include="closest form"
+                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All statuses</option>
+          {% for value, label in statuses %}<option value="{{ value }}" {% if status_sel == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="submit" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900">Filter</button>
+        <a href="{% url 'ui:asset_list' %}" class="text-sm font-medium text-slate-500 hover:text-slate-700">Clear</a>
+      </div>
+    </form>
   </div>
-</div>
+
+  <div id="asset-table">
+    {% include "ui/assets/_asset_rows.html" %}
+  </div>
   {% include "ui/partials/pagination.html" %}
+</div>
 {% endblock %}

@@ -18,7 +18,7 @@ from apps.foundation.models import SegmentAccountMap, resolve_segment_account
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 
-from .models import Asset, AssetDisposal, AssetStatus, DepreciationSchedule
+from .models import Asset, AssetDisposal, AssetReversal, AssetStatus, DepreciationSchedule
 
 
 class AssetService:
@@ -307,6 +307,31 @@ class DepreciationService:
             asset.save(update_fields=["status", "updated_at"])
         return row
 
+    @classmethod
+    @transaction.atomic
+    def post_all(cls, *, period_start: date, user=None) -> dict:
+        """Month-end batch (ADR-038): post the period's depreciation JE for
+        every active asset. Idempotent — months already posted are skipped.
+
+        Returns a summary {"period_start", "posted": [asset_no...],
+        "skipped": [asset_no...]} so callers (UI view / management command /
+        month-end close) can report what actually moved.
+        """
+        period_start = period_start.replace(day=1)
+        already_posted = set(
+            DepreciationSchedule.objects.filter(
+                period_start=period_start, journal_entry__isnull=False
+            ).values_list("asset_id", flat=True)
+        )
+        posted, skipped = [], []
+        for asset in Asset.objects.filter(status=AssetStatus.ACTIVE).order_by("asset_no"):
+            row = cls.post_month(asset, period_start=period_start, user=user)
+            if row.journal_entry_id and asset.id not in already_posted:
+                posted.append(asset.asset_no)
+            else:
+                skipped.append(asset.asset_no)
+        return {"period_start": period_start, "posted": posted, "skipped": skipped}
+
 
 class DisposalService:
     """Asset disposal (POSTING_RULES §9.3).
@@ -398,6 +423,102 @@ class DisposalService:
         asset.status = AssetStatus.DISPOSED
         asset.save(update_fields=["status", "updated_at"])
         return disposal
+
+
+class ReversalService:
+    """Overstated-asset reversal (ADR-038 §2.c).
+
+    Mirrors the acquisition funding source for the overstated amount at the
+    reversal date:
+
+        Dr {funding source} {amount}   |   Cr {asset account} {amount}
+
+    then reduces the asset's booked cost so future depreciation accrues on the
+    corrected base. Prospective only — prior-period depreciation is never
+    restated, and each reversal carries its own JE (audit trail separate from
+    depreciation entries).
+    """
+
+    @classmethod
+    @transaction.atomic
+    def reverse(
+        cls,
+        *,
+        asset: Asset,
+        reversal_date: date,
+        amount: Decimal,
+        reason: str = "",
+        funding_account=None,
+        user=None,
+    ) -> AssetReversal:
+        amount = money(amount)
+        if amount <= 0:
+            raise ValidationError("Reversal amount must be positive.")
+        if amount > asset.cost:
+            raise ValidationError("Reversal amount cannot exceed the asset's booked cost.")
+        if asset.status == AssetStatus.DISPOSED:
+            raise ValidationError("A disposed asset cannot be reversed.")
+
+        fund_role = {
+            "ap": SegmentAccountMap.ROLE_AP,
+            "cash": SegmentAccountMap.ROLE_CASH,
+            "loan": SegmentAccountMap.ROLE_LOANS,
+        }
+        try:
+            debit_account = funding_account or resolve_segment_account(
+                asset.segment, fund_role[asset.funding_source]
+            )
+        except KeyError:
+            raise ValidationError(f"Unknown funding source '{asset.funding_source}'.")
+
+        entry = JournalEntry.objects.create(
+            entry_no=(f"REV-{asset.asset_no}-{reversal_date.strftime('%Y%m')}"
+                      f"-{asset.reversals.count() + 1}"),
+            company=asset.segment.company,
+            segment=asset.segment,
+            transaction_date=reversal_date,
+            status=PostingStatus.DRAFT,
+            description=f"Overstated asset reversal {asset.asset_no} {asset.name}",
+            source_doc_type="ASSET_REVERSAL",
+            source_doc_no=asset.asset_no,
+            created_by=user,
+        )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=1, account=debit_account, debit=amount,
+            description=f"Reverse overstated funding {asset.name}",
+        )
+        JournalEntryLine.objects.create(
+            entry=entry, line_no=2, account=asset.asset_account, credit=amount,
+            description=f"Reduce overstated cost {asset.name}",
+        )
+        entry.recalc_totals()
+        PostingService.post(entry, user=user)
+
+        asset.cost -= amount
+        asset.save(update_fields=["cost", "updated_at"])
+
+        # Prospective: recompute unposted future schedule rows on the corrected
+        # monthly base; posted (past) rows are left untouched.
+        month = reversal_date.replace(day=1)
+        new_monthly = asset.monthly_depreciation
+        pending_ids = list(
+            asset.depreciation_schedule.filter(
+                status="pending", period_start__gte=month
+            ).values_list("id", flat=True)
+        )
+        if pending_ids:
+            DepreciationSchedule.objects.filter(id__in=pending_ids).update(amount=new_monthly)
+
+        reversal = AssetReversal.objects.create(
+            asset=asset,
+            reversal_date=reversal_date,
+            amount=amount,
+            reason=reason,
+            journal_entry=entry,
+            status="posted",
+            created_by=user,
+        )
+        return reversal
 
 
 def _month_end(d: date) -> date:

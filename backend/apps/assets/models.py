@@ -182,3 +182,34 @@ class AssetDisposal(AuditableModel):
 
     def __str__(self):
         return f"Disposal {self.asset.asset_no} {self.disposal_date} proceeds {self.proceeds}"
+
+
+class AssetReversal(AuditableModel):
+    """Overstated-asset correction (ADR-038 §2.c).
+
+    Reverses a portion of the overbooked asset cost with a date-effective JE
+    that posts *from the reversal date forward* (prospective only — prior
+    depreciation is never restated). The JE mirrors the original acquisition
+    funding source:
+
+        Dr {funding source} {amount}   |   Cr {asset account} {amount}
+
+    and the asset's cost is reduced so future depreciation accrues on the
+    corrected base. Each reversal keeps its own JE so the audit trail is
+    independent of depreciation entries.
+    """
+
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name="reversals")
+    reversal_date = models.DateField(db_index=True)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    reason = models.CharField(max_length=255, blank=True)
+    journal_entry = models.ForeignKey(
+        "posting.JournalEntry", on_delete=models.PROTECT, related_name="asset_reversals"
+    )
+    status = models.CharField(max_length=16, default="posted")  # posted
+
+    class Meta:
+        ordering = ["-reversal_date"]
+
+    def __str__(self):
+        return f"Reversal {self.asset.asset_no} {self.reversal_date} {self.amount}"

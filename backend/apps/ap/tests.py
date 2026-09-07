@@ -71,6 +71,18 @@ class TestRFPCreation:
                 user=alywin,
             )
 
+    def test_threshold_is_2000_not_2500(self, company, segment, supplier, alywin, accounts):
+        """ADR-038 §9c: RFP minimum is ₱2,000, so ₱2,200 must be accepted."""
+        rfp = RFPService.create_rfp(
+            ap_number="A0002B", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "2200.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "2200.00"},
+            ],
+            user=alywin,
+        )
+        assert rfp.amount == Decimal("2200.00")
+
     def test_unbalanced_lines_rejected(self, company, segment, supplier, alywin, accounts):
         with pytest.raises(ValidationError, match="do not balance"):
             RFPService.create_rfp(
@@ -291,6 +303,58 @@ class TestCONSOPosting:
         rfp.save(update_fields=["conso", "updated_at"])
         with pytest.raises(ValidationError, match="finance-approved"):
             CONSOService.post_batch(batch, user=alywin)
+
+
+class TestRPFFinanceNotesGate:
+    def test_revised_rfp_needs_finance_notes_for_fin_approval(
+        self, company, segment, supplier, alywin, accounts
+    ):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="head", password="x")
+
+        rfp = RFPService.create_rfp(
+            ap_number="A0030", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00",
+                 "description": "Fuel delivery"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00",
+                 "description": "AP - Shandong Fuel Depot"},
+            ],
+            user=alywin,
+        )
+        rfp.status = "submitted"  # mirrors ui:rfp_submit
+        rfp.save(update_fields=["status", "updated_at"])
+
+        # Rejection → revise bumps revision_count.
+        rfp = RFPService.reject(rfp, user=head, note="Split the fuel charge.")
+        rfp = RFPService.revise(
+            rfp, user=alywin, purpose=rfp.purpose,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00",
+                 "description": "Fuel delivery (revised)"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00",
+                 "description": "AP - Shandong Fuel Depot"},
+            ],
+        )
+        assert rfp.revision_count == 1
+        assert rfp.status == "submitted"
+
+        for role in ("checked", "acctg_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+
+        # No finance notes yet → finance approval is blocked (ADR-038 §10d).
+        with pytest.raises(ValidationError, match="finance approval"):
+            RFPService.advance_step(rfp, role="fin_approved", user=head)
+        assert rfp.status == "acctg_approved"
+
+        # Adding notes unblocks the gate.
+        rfp.finance_notes = "Verify stock delivery before CV issuance."
+        rfp.save(update_fields=["finance_notes", "updated_at"])
+        rfp = RFPService.advance_step(rfp, role="fin_approved", user=head)
+        assert rfp.status == "fin_approved"
+        assert rfp.approved_by_fin == head
 
 
 class TestCVPayment:

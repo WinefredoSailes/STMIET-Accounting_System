@@ -232,13 +232,64 @@ class PCFService:
             amount=total,
             expenses=expenses,
             status="requested",
-            approved_by=user,
+            requested_by=user,
         )
 
     @classmethod
     @transaction.atomic
+    def approve_replenishment(cls, replen: PCFReplenishment, *, user=None) -> PCFReplenishment:
+        """Approve a PCF replenishment and auto-create its CONSO batch entry
+        (ADR-038 §7c): ``approved`` → ``CONSOBatch created`` with the
+        replenishment as its member. Posting is handled when the batch posts."""
+        from apps.ap.models import CONSOBatch
+        from apps.sequences.models import DocumentSequence
+
+        if replen.status != "requested":
+            raise ValidationError("Only requested replenishments can be approved.")
+        if replen.conso_id:
+            raise ValidationError("This replenishment is already batched to CONSO.")
+
+        batch = CONSOBatch.objects.create(
+            batch_no=DocumentSequence.next_number(
+                company=replen.fund.company,
+                form_code="CONSO",
+                year=replen.request_date.year,
+                pattern="CONSO-{YYYY}-{SEQ:02d}",
+            ),
+            conso_date=replen.request_date,
+            total_amount=replen.amount,
+        )
+        replen.conso = batch
+        replen.status = "approved"
+        replen.approved_by = user
+        replen.save(update_fields=["conso", "status", "approved_by", "updated_at"])
+        return replen
+
+    @classmethod
+    @transaction.atomic
     def post_replenishment(cls, replen: PCFReplenishment, user=None, *, segment=None) -> PCFReplenishment:
-        """Post the replenishment JE: Dr Expense lines | Cr Cash."""
+        """Post the replenishment JE directly: Dr Expense lines | Cr Cash.
+
+        Replenishments that are batched to CONSO are posted through the batch
+        instead (single GL entry point), so direct posting refuses them.
+        """
+        if replen.status == "posted":
+            raise ValidationError("Replenishment is already posted.")
+        if replen.conso_id:
+            raise ValidationError("Replenishment is batched to CONSO — post it from the batch.")
+        cls._post_je(replen, user=user, segment=segment)
+        return replen
+
+    @classmethod
+    def post_from_conso(cls, replen: PCFReplenishment, *, user=None, segment=None) -> PCFReplenishment:
+        """Post a CONSO-batched replenishment (called by CONSOService.post_batch)."""
+        cls._post_je(replen, user=user, segment=segment)
+        return replen
+
+    @classmethod
+    @transaction.atomic
+    def _post_je(cls, replen: PCFReplenishment, user=None, *, segment=None) -> None:
+        """Dr Expense lines | Cr Cash, then mark posted (shared JE builder)."""
         from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
         from apps.posting.services import PostingService
 
@@ -278,7 +329,6 @@ class PCFService:
         replen.journal_entry = entry
         replen.status = "posted"
         replen.save(update_fields=["journal_entry", "status", "updated_at"])
-        return replen
 
 
 class TransferService:

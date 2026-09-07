@@ -93,6 +93,27 @@ class Supplier(SoftDeleteMixin, AuditableModel):
         super().save(*args, **kwargs)
 
 
+class SupplierContact(AuditableModel):
+    """A named contact person attached to a supplier (ADR-038 §6).
+
+    Suppliers carry more than one contact person/phone, so contacts live in
+    their own table instead of the legacy scalar contact fields.
+    """
+
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="contacts")
+    name = models.CharField("Contact Person", max_length=255)
+    position = models.CharField("Position", max_length=128, blank=True)
+    phone = models.CharField("Contact Number", max_length=64, blank=True)
+    email = models.EmailField("Email", blank=True)
+    is_primary = models.BooleanField("Primary contact", default=False)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class RFPDocument(AuditableModel):
     """Request for Payment (ACCTG-FOR-012). The JE is embedded in the RFP
     (ADR-018); it is NOT produced by a generic posting rule."""

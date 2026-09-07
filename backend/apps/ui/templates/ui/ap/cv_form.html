@@ -46,7 +46,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_bank_account">BANK ACCOUNT (GL)</label>
-            <select name="bank_account" id="id_bank_account" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
               {% for acc in bank_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
             </select>
           </div>

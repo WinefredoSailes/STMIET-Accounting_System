@@ -1,5 +1,10 @@
 # ADR-022: P2,500 Threshold Rule
 
+> **Amendment (ADR-038 §9c, 2026-09-07):** The RFP minimum was changed from
+> **P2,500 to P2,000** per the accounting-team specifications. The rule,
+> mechanics, and boundary logic in this ADR are unchanged — only the numeric
+> threshold is now **P2,000** (enforced by `RFPService` via `RFP_MIN_AMOUNT`).
+
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Deciders:** Architecture Team  

@@ -24,7 +24,7 @@ from django.views.decorators.http import require_POST
 
 from apps.core.exceptions import AccountingError, ValidationError
 from apps.core.money import approve_threshold, money
-from apps.foundation.models import Account, AccountType, Company, FiscalPeriod, Segment
+from apps.foundation.models import Account, AccountType, Company, CostCenter, FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 from apps.sequences.models import DocumentSequence
@@ -604,7 +604,34 @@ def cycle_list(request):
 
 @login_required
 def asset_list(request):
-    return render(request, "ui/assets/asset_list.html", {"page_obj": _page(request, list_assets(limit=None))})
+    """Fixed Assets register — search + category/segment/status filters (HTMX)."""
+    from apps.assets.models import AssetCategory, AssetStatus
+
+    ctx = {
+        "page_obj": _page(
+            request,
+            list_assets(
+                limit=None,
+                q=request.GET.get("q", "").strip(),
+                category=request.GET.get("category", "").strip(),
+                segment=request.GET.get("segment", "").strip(),
+                status=request.GET.get("status", "").strip(),
+            ),
+        ),
+        "q": request.GET.get("q", "").strip(),
+        "category_sel": request.GET.get("category", "").strip(),
+        "segment_sel": request.GET.get("segment", "").strip(),
+        "status_sel": request.GET.get("status", "").strip(),
+        "categories": AssetCategory.objects.filter(is_active=True).order_by("code"),
+        "segments": Segment.objects.order_by("code"),
+        "statuses": AssetStatus.choices,
+    }
+    template = (
+        "ui/assets/_asset_rows.html"
+        if request.headers.get("HX-Request")
+        else "ui/assets/asset_list.html"
+    )
+    return render(request, template, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -720,9 +747,10 @@ def supplier_create(request):
     if request.method == "POST":
         try:
             from apps.ap.models import Supplier
+            from apps.ap.services import SupplierService
 
             segment = request.POST.get("default_segment")
-            Supplier.objects.create(
+            supplier = Supplier.objects.create(
                 code=request.POST["code"].strip(),
                 name=request.POST["name"].strip(),
                 supplier_type=request.POST["supplier_type"],
@@ -736,6 +764,7 @@ def supplier_create(request):
                 attachments_required=bool(request.POST.get("attachments_required")),
                 default_segment=Segment.objects.get(pk=segment) if segment else None,
             )
+            SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
             messages.success(request, "Supplier created.")
             return redirect("ui:supplier_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
@@ -749,11 +778,12 @@ def supplier_update(request, pk):
     if not request.user.is_superuser:
         raise PermissionDenied("Only a super admin can edit suppliers.")
     from apps.ap.models import Supplier
+    from apps.ap.services import SupplierService
 
     supplier = get_object_or_404(Supplier, pk=pk)
     if request.method == "POST":
         try:
-            supplier.code = request.POST["code"].strip()
+            supplier.code = request.POST.get("code") or supplier.code
             supplier.name = request.POST["name"].strip()
             supplier.supplier_type = request.POST["supplier_type"]
             supplier.tin = request.POST.get("tin", "")
@@ -767,6 +797,7 @@ def supplier_update(request, pk):
             segment = request.POST.get("default_segment")
             supplier.default_segment = Segment.objects.get(pk=segment) if segment else None
             supplier.save()
+            SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
             messages.success(request, f"Supplier {supplier.code} updated.")
             return redirect("ui:supplier_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
@@ -775,6 +806,24 @@ def supplier_update(request, pk):
         "supplier": supplier,
         "segments": Segment.objects.order_by("code"),
     })
+
+
+def _supplier_contacts_from_post(post):
+    """Parse repeated contact rows from the supplier form into row dicts."""
+    names = post.getlist("contact_name")
+    positions = post.getlist("contact_position")
+    phones = post.getlist("contact_phone")
+    rows = []
+    for i, name in enumerate(names):
+        name = (name or "").strip()
+        if not name:
+            continue
+        rows.append({
+            "name": name,
+            "position": (positions[i] if i < len(positions) else "").strip(),
+            "phone": (phones[i] if i < len(phones) else "").strip(),
+        })
+    return rows
 
 
 @login_required
@@ -920,6 +969,30 @@ def rfp_approve(request, pk):
         response = render(request, "ui/ap/_rfp_row.html", {"rfp": rfp})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
+    return redirect("ui:rfp_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def rfp_finance_notes(request, pk):
+    """Finance Head writes issuance notes for Ellen/COO (ADR-038 §10e).
+
+    Revised RFPs cannot complete finance approval until these notes exist.
+    """
+    from apps.ap.models import RFPDocument
+    from apps.core.approvals import require_approval_role
+
+    rfp = get_object_or_404(RFPDocument, pk=pk)
+    try:
+        require_approval_role(request.user, "fin_approved")
+        notes = request.POST.get("finance_notes", "").strip()
+        if not notes:
+            raise ValueError("Notes cannot be blank.")
+        rfp.finance_notes = notes
+        rfp.save(update_fields=["finance_notes", "updated_at"])
+        messages.success(request, "Finance notes saved for issuance.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
     return redirect("ui:rfp_detail", pk=pk)
 
 
@@ -1189,6 +1262,26 @@ def asset_depreciate(request, pk):
 
 
 @login_required
+@require_POST
+def asset_depreciate_all(request):
+    """Month-end batch (ADR-038): post one period's depreciation for every
+    active asset from the month-end close screen (idempotent)."""
+    from apps.assets.services import DepreciationService
+
+    try:
+        period_start = date.fromisoformat(request.POST.get("period_start") or "")
+    except ValueError:
+        period_start = date.today()
+    summary = DepreciationService.post_all(period_start=period_start, user=request.user)
+    messages.success(
+        request,
+        f"Depreciation for {summary['period_start'].strftime('%b %Y')}: "
+        f"{len(summary['posted'])} posted, {len(summary['skipped'])} skipped/already posted.",
+    )
+    return redirect("ui:month_end_close")
+
+
+@login_required
 def asset_dispose(request, pk):
     from apps.assets.models import Asset
     from apps.assets.services import DisposalService
@@ -1218,6 +1311,42 @@ def asset_dispose(request, pk):
             "asset": asset,
             "cash_accounts": cash_accounts(),
         },
+    )
+
+
+@login_required
+def asset_reverse(request, pk):
+    """Overstated-asset reversal form/submit (ADR-038 §2.c): Dr funding |
+    Cr asset for the overstated amount; prospective only."""
+    from apps.assets.models import Asset
+    from apps.assets.services import ReversalService
+
+    asset = get_object_or_404(Asset, pk=pk)
+    if request.method == "POST":
+        try:
+            funding_account = None
+            if request.POST.get("funding_account"):
+                funding_account = Account.objects.get(pk=request.POST["funding_account"])
+            reversal = ReversalService.reverse(
+                asset=asset,
+                reversal_date=date.fromisoformat(request.POST["reversal_date"]),
+                amount=request.POST.get("amount", "0.00"),
+                reason=request.POST.get("reason", ""),
+                funding_account=funding_account,
+                user=request.user,
+            )
+            messages.success(
+                request,
+                f"Overstatement of {reversal.amount} reversed for {asset.asset_no} "
+                f"(prospective from {reversal.reversal_date}).",
+            )
+            return redirect("ui:asset_detail", pk=pk)
+        except (AccountingError, ValueError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/assets/asset_reverse_form.html",
+        {"asset": asset, "funding_accounts": cash_accounts()},
     )
 
 
@@ -1432,9 +1561,10 @@ def pcf_replenish(request):
             )
             replen.payee_name = request.POST.get("payee_name", "")
             replen.reference = request.POST.get("reference", "")
+            replen.customer_name = request.POST.get("customer_name", "")
             if request.POST.get("request_date"):
                 replen.request_date = date.fromisoformat(request.POST["request_date"])
-            replen.save(update_fields=["payee_name", "reference", "request_date", "updated_at"])
+            replen.save(update_fields=["payee_name", "reference", "customer_name", "request_date", "updated_at"])
             messages.success(request, f"PCF replenishment {replen.id} requested (₱{replen.amount}).")
             return redirect("ui:pcf_replenishment_list")
         except (AccountingError, ValueError, KeyError) as exc:
@@ -1446,6 +1576,7 @@ def pcf_replenish(request):
             "funds": list_pcf_funds(),
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
             "today": date.today(),
         },
     )
@@ -1461,7 +1592,7 @@ def pcf_replenishment_detail(request, pk):
     from apps.cash.models import PCFReplenishment
 
     replen = get_object_or_404(
-        PCFReplenishment.objects.select_related("fund__custodian", "fund__company"),
+        PCFReplenishment.objects.select_related("fund__custodian", "fund__company", "conso"),
         pk=pk,
     )
     return render(request, "ui/cash/pcf_replenishment_detail.html", {"replen": replen})
@@ -1477,6 +1608,23 @@ def pcf_replenishment_post(request, pk):
     try:
         PCFService.post_replenishment(replen, user=request.user)
         messages.success(request, f"Replenishment {replen.id} posted to GL.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:pcf_replenishment_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def pcf_replenishment_approve(request, pk):
+    """Approve a PCF replenishment; this auto-creates its CONSO batch entry
+    (ADR-038 §7c). The JE posts when the CONSO batch is posted."""
+    from apps.cash.models import PCFReplenishment
+    from apps.cash.services import PCFService
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    try:
+        PCFService.approve_replenishment(replen, user=request.user)
+        messages.success(request, f"Replenishment {replen.id} approved and batched to {replen.conso.batch_no}.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:pcf_replenishment_detail", pk=pk)
@@ -1811,23 +1959,50 @@ def coa_list(request):
 
 
 @login_required
+def coa_print(request):
+    """Print-optimized Chart of Accounts report (browser print dialog)."""
+    from .services import coa_rows
+
+    rows = coa_rows(
+        q=request.GET.get("q", "").strip(),
+        segment=request.GET.get("segment", "").strip(),
+        account_type=request.GET.get("account_type", "").strip(),
+    )
+    groups = []
+    for value, label in AccountType.choices:
+        accounts = [a for a in rows if a.account_type == value]
+        if accounts:
+            groups.append((label, accounts))
+    return render(
+        request,
+        "ui/foundation/coa_print.html",
+        {
+            "groups": groups,
+            "total": len(rows),
+            "segment_sel": request.GET.get("segment", "").strip(),
+            "account_type_sel": request.GET.get("account_type", "").strip(),
+            "q": request.GET.get("q", "").strip(),
+        },
+    )
+
+
+@login_required
 def coa_create(request):
     """Create a new COA account (superadmin only)."""
     _require_superuser(request)
-    from apps.foundation.models import Account, Segment
+    from apps.foundation.models import NORMAL_BALANCE, Account
 
     if request.method == "POST":
         try:
             code = request.POST["code"].strip()
             name = request.POST["name"].strip()
             account_type = AccountType(request.POST.get("account_type", "asset"))
-            segment_id = request.POST.get("segment")
-            segment = Segment.objects.get(pk=segment_id) if segment_id else None
+            segment_code = request.POST.get("segment", "").strip()
             Account.objects.create(
                 code=code,
                 name=name,
                 account_type=account_type,
-                segment=segment,
+                segment=segment_code,
                 normal_balance=NORMAL_BALANCE.get(account_type, "debit"),
             )
             messages.success(request, f"COA account {code} created.")
@@ -1837,6 +2012,7 @@ def coa_create(request):
     return render(request, "ui/foundation/coa_form.html", {
         "types": AccountType.choices,
         "segments": Segment.objects.order_by("code"),
+        "editing": False,
     })
 
 
@@ -1844,7 +2020,7 @@ def coa_create(request):
 def coa_update(request, pk):
     """Update an existing COA account (superadmin only)."""
     _require_superuser(request)
-    from apps.foundation.models import Account, Segment
+    from apps.foundation.models import NORMAL_BALANCE, Account
 
     account = get_object_or_404(Account, pk=pk)
     if request.method == "POST":
@@ -1852,8 +2028,9 @@ def coa_update(request, pk):
             account.name = request.POST.get("name", "").strip()
             account_type = AccountType(request.POST.get("account_type", account.account_type))
             account.account_type = account_type
-            segment_id = request.POST.get("segment")
-            account.segment = Segment.objects.get(pk=segment_id) if segment_id else None
+            segment_code = request.POST.get("segment", "").strip()
+            if segment_code:
+                account.segment = segment_code
             account.normal_balance = NORMAL_BALANCE.get(account_type, "debit")
             account.save()
             messages.success(request, f"COA account {account.code} updated.")
@@ -1864,6 +2041,7 @@ def coa_update(request, pk):
         "account": account,
         "types": AccountType.choices,
         "segments": Segment.objects.order_by("code"),
+        "editing": True,
     })
 
 

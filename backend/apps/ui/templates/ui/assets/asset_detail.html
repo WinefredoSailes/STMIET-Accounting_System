@@ -95,6 +95,12 @@
        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
       Dispose asset
     </a>
+    {% if asset.status != "disposed" %}
+    <a href="{% url 'ui:asset_reverse' asset.id %}"
+       class="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+      Reverse overstatement
+    </a>
+    {% endif %}
     {% if asset.acquisition_journal_id %}
     <a href="{% url 'ui:je_detail' asset.acquisition_journal_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">
       Acquisition JE →

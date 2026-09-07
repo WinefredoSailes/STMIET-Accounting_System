@@ -21,6 +21,8 @@
           <th class="px-4 py-3">Date</th>
           <th class="px-4 py-3">Fund</th>
           <th class="px-4 py-3">Payee</th>
+          <th class="px-4 py-3">Customer</th>
+          <th class="px-4 py-3">Requested By</th>
           <th class="px-4 py-3">Reference</th>
           <th class="px-4 py-3 text-right">Amount</th>
           <th class="px-4 py-3">Status</th>
@@ -35,6 +37,8 @@
           <td class="px-4 py-2">{{ r.request_date|date:"M d, Y" }}</td>
           <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
           <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs">{{ r.customer_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs">{{ r.requested_by.get_full_name|default:r.requested_by.username|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
           <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|money }}</td>
           <td class="px-4 py-2">

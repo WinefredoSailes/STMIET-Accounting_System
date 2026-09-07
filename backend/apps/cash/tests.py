@@ -173,6 +173,57 @@ class TestPCF:
         assert lines[1].debit == Decimal("10000.00")  # Dr Expense
         assert lines[2].credit == Decimal("10000.00")  # Cr PCF
 
+    def test_approve_creates_conso_batch(self, pcf_fund):
+        """ADR-038 §7c: approval auto-creates a CONSO batch entry."""
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.approve_replenishment(replen)
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+        assert replen.conso is not None
+        assert replen.conso.batch_no.startswith("CONSO-")
+        assert replen.conso.total_amount == Decimal("10000.00")
+        assert list(replen.conso.pcf_replenishments.all()) == [replen]
+
+    def test_approve_then_conso_post_posts_je(self, pcf_fund, user):
+        """The batched PCF posts its JE when the CONSO batch posts."""
+        from apps.ap.services import CONSOService
+        from apps.posting.models import GeneralLedger
+
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.approve_replenishment(replen, user=user)
+        batch = replen.conso
+        CONSOService.post_batch(batch, user=user)
+        replen.refresh_from_db()
+        assert batch.status == "posted"
+        assert replen.status == "posted"
+        assert replen.journal_entry is not None
+        je = replen.journal_entry
+        assert je.is_balanced
+        assert je.is_posted
+        gl = GeneralLedger.objects.filter(entry=je)
+        assert gl.filter(debit=Decimal("10000.00")).count() == 1
+
+    def test_approve_twice_rejected(self, pcf_fund):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.approve_replenishment(replen)
+        with pytest.raises(ValidationError):
+            PCFService.approve_replenishment(replen)  # already approved/batched
+
+    def test_post_rejected_once_batched(self, pcf_fund):
+        """Direct posting is refused once the replenishment is batched."""
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.approve_replenishment(replen)
+        with pytest.raises(ValidationError, match="batched to CONSO"):
+            PCFService.post_replenishment(replen)
+
 
 class TestTransfers:
     def test_transfer_posts_je(self, segment, bank_account, accounts):

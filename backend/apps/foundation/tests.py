@@ -173,3 +173,53 @@ class TestImportOpeningBalances:
                 no_plug=True, stdout=StringIO(),
             )
         assert not JournalEntry.objects.filter(entry_no="OB-NOPLUG-DHPP").exists()
+
+
+def test_seed_cost_centers_idempotent(db):
+    from apps.foundation.models import CostCenter
+
+    call_command("seed_cost_centers", stdout=StringIO())
+    assert CostCenter.objects.filter(code="AG", name="Accounting").exists()
+    assert CostCenter.objects.filter(code="OS").exists()
+    assert CostCenter.objects.filter(code="TL").exists()
+    assert CostCenter.objects.filter(code="HRAC").exists()
+    assert CostCenter.objects.filter(code="OPS").exists()
+    assert CostCenter.objects.filter(code="DHPP").exists()
+    assert CostCenter.objects.filter(code="DMIE").exists()
+    count = CostCenter.objects.count()
+    call_command("seed_cost_centers", stdout=StringIO())
+    assert CostCenter.objects.count() == count
+
+
+def test_normal_balance_spec_values(db):
+    """ADR-038 §5b-d: the Account model must default the correct balances.
+
+    Accumulated Depreciation (contra-asset) is CREDIT; Sales Discount
+    (contra-revenue) and Drawing are DEBIT.
+    """
+    from apps.foundation.models import Account, AccountType, NORMAL_BALANCE
+
+    assert NORMAL_BALANCE[AccountType.CONTRA_ASSET] == "credit"
+    assert NORMAL_BALANCE[AccountType.CONTRA_REVENUE] == "debit"
+    assert NORMAL_BALANCE[AccountType.DRAWING] == "debit"
+
+    for code, name, atype, expected in (
+        ("19990", "Accumulated Depreciation - Hauling", AccountType.CONTRA_ASSET, "credit"),
+        ("40500", "Sales Discount - Hauling", AccountType.CONTRA_REVENUE, "debit"),
+        ("30500", "E. Bagatua, Drawing", AccountType.DRAWING, "debit"),
+    ):
+        acct = Account(code=code, name=name, account_type=atype, segment="DHPP")
+        acct.save()
+        acct.refresh_from_db()
+        assert acct.normal_balance == expected, f"{code} {name}"
+
+
+def test_import_coa_refine_type(db):
+    """The importer reclassifies titled accounts that prefix rules miss."""
+    from apps.foundation.management.commands.import_coa import refine_type
+    from apps.foundation.models import AccountType
+
+    assert refine_type("19990", "Accumulated Depreciation - Hauling", AccountType.ASSET) == AccountType.CONTRA_ASSET
+    assert refine_type("40500", "Sales Discount - Hauling", AccountType.REVENUE) == AccountType.CONTRA_REVENUE
+    assert refine_type("30500", "E. Bagatua, Drawing", AccountType.EQUITY) == AccountType.DRAWING
+    assert refine_type("10010", "Cash in Bank - BPI", AccountType.ASSET) == AccountType.ASSET

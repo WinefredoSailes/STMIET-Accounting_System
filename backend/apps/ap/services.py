@@ -30,6 +30,7 @@ from .models import (
     RFPDocument,
     RFPLine,
     Supplier,
+    SupplierContact,
 )
 
 RFP_MIN_AMOUNT = Decimal("2000.00")
@@ -50,6 +51,30 @@ def _account(code: str) -> Account:
         return Account.objects.get(code=code)
     except Account.DoesNotExist as exc:
         raise ValidationError(f"COA account {code} not found.") from exc
+
+
+class SupplierService:
+    """Supplier master maintenance (ADR-024 / ADR-038 §6)."""
+
+    @classmethod
+    def save_contacts(cls, supplier, contacts):
+        """Replace the supplier's contact list from form rows.
+
+        ``contacts`` is an iterable of dicts with keys ``name``, ``position``,
+        ``phone`` and ``email``; rows with a blank name are ignored.
+        """
+        supplier.contacts.all().delete()
+        for row in contacts:
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+            SupplierContact.objects.create(
+                supplier=supplier,
+                name=name,
+                position=(row.get("position") or "").strip(),
+                phone=(row.get("phone") or "").strip(),
+                email=(row.get("email") or "").strip(),
+            )
 
 
 class RFPService:
@@ -159,9 +184,16 @@ class RFPService:
             idx = RFP_APPROVAL_STEPS.index(current)
         except ValueError:
             raise ValidationError(f"RFP is in unexpected status '{rfp.status}'.")
-        next_role = RFP_APPROVAL_STEPS[idx + 1]
-        if role != next_role:
-            raise ValidationError(f"Expected approval role '{next_role}' but got '{role}'.")
+        role = RFP_APPROVAL_STEPS[idx + 1]
+
+        # ADR-038 §10d: a revised RFP cannot complete finance approval until
+        # the Finance Head writes notes for the COO/Ellen (check-voucher
+        # issuance is blocked until the notes exist).
+        if role == "fin_approved" and rfp.revision_count > 0 and not (rfp.finance_notes or "").strip():
+            raise ValidationError(
+                "This revised RFP is blocked from finance approval until the "
+                "Finance Head adds issuance notes (for Ellen/COO)."
+            )
 
         field = ROLE_TO_FIELD[role]
 
@@ -279,9 +311,10 @@ class RFPService:
         rfp.rejected_by = None
         rfp.rejected_at = None
         rfp.rejection_note = ""
+        rfp.revision_count += 1
         rfp.save(update_fields=[
             "amount", "particulars", "purpose", "status",
-            "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            "rejected_by", "rejected_at", "rejection_note", "revision_count", "updated_at",
         ])
         for i, line in enumerate(lines, start=1):
             RFPLine.objects.create(
@@ -303,15 +336,26 @@ class CONSOService:
     @transaction.atomic
     def post_batch(cls, batch: CONSOBatch, *, user) -> CONSOBatch:
         rfps = list(batch.rfps.select_for_update().filter(status__in=("fin_approved", "cnr_approved")))
-        allowed = [r for r in batch.rfps.all()]
-        if len(rfps) != len(allowed):
+        pcfs = list(batch.pcf_replenishments.select_for_update().filter(status="approved"))
+        if len(rfps) != batch.rfps.count():
             raise ValidationError("All RFPs in the batch must be finance-approved before CONSO posting.")
+        if len(pcfs) != batch.pcf_replenishments.count():
+            raise ValidationError("All PCF replenishments in the batch must be approved before CONSO posting.")
+        if not rfps and not pcfs:
+            raise ValidationError("CONSO batch is empty.")
 
         for rfp in rfps:
             cls._post_one(rfp, user=user)
+        # PCF replenishments batched on approval post their JE here too
+        # (ADR-038 §7c): single CONSO GL entry point, no manual re-entry.
+        for replen in pcfs:
+            from apps.cash.services import PCFService
+
+            PCFService.post_from_conso(replen, user=user)
+        batch.total_amount = sum(m.amount for m in rfps) + sum(r.amount for r in pcfs)
         batch.status = "posted"
         batch.reviewed_by = user
-        batch.save(update_fields=["status", "reviewed_by", "updated_at"])
+        batch.save(update_fields=["total_amount", "status", "reviewed_by", "updated_at"])
         return batch
 
     @classmethod

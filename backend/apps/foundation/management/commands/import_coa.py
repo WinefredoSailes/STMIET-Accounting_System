@@ -25,7 +25,15 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.foundation.models import Account, AccountType, Company, FiscalYear, Segment, SEGMENT_CHOICES
+from apps.foundation.models import (
+    Account,
+    AccountType,
+    Company,
+    FiscalYear,
+    NORMAL_BALANCE,
+    Segment,
+    SEGMENT_CHOICES,
+)
 
 try:
     import openpyxl
@@ -49,6 +57,25 @@ PREFIX_TYPE = {
     "5": AccountType.EXPENSE,
     "6": AccountType.EXPENSE,
 }
+
+
+def refine_type(code, name, atype):
+    """Adjust the prefix-derived account type for ADR-038 §5b-d accounts.
+
+    The workbook expresses these only through account titles, not numeric
+    prefixes:
+      * Accumulated Depreciation   -> contra-asset  (normal balance CREDIT)
+      * Sales Discount             -> contra-revenue (normal balance DEBIT)
+      * Drawing / Dividend         -> drawing       (normal balance DEBIT)
+    """
+    upper = (name or "").upper()
+    if "DRAWING" in upper or "DIVIDEND" in upper:
+        return AccountType.DRAWING
+    if "DISCOUNT" in upper and atype == AccountType.REVENUE:
+        return AccountType.CONTRA_REVENUE
+    if "ACCUMULATED" in upper and atype == AccountType.ASSET:
+        return AccountType.CONTRA_ASSET
+    return atype
 
 
 class Command(BaseCommand):
@@ -163,6 +190,7 @@ class Command(BaseCommand):
                 segment = self._resolve_segment(row, has_segment, idx_seg, code)
                 prefix = code[0]
                 atype = PREFIX_TYPE.get(prefix, AccountType.ASSET)
+                atype = refine_type(code, name, atype)
                 classification = str(row[idx_class]).strip() if (idx_class is not None and idx_class < len(row)) else ""
                 category = str(row[idx_cat]).strip() if (idx_cat is not None and idx_cat < len(row)) else ""
                 sub_accounts = str(row[idx_sub]).strip() if (idx_sub is not None and idx_sub < len(row)) else ""
@@ -179,9 +207,7 @@ class Command(BaseCommand):
                         "category": category,
                         "sub_accounts": sub_accounts,
                         "major_accounts": major_accounts,
-                        "normal_balance": "debit"
-                        if atype in (AccountType.ASSET, AccountType.EXPENSE)
-                        else "credit",
+                        "normal_balance": NORMAL_BALANCE.get(atype, "debit"),
                     },
                 )
                 acct_count = imported

@@ -34,7 +34,11 @@
           <td class="px-4 py-2 text-xs">{{ s.owner_name|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{{ s.tin|default:"—" }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ s.email|default:"—" }}</td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ s.contact_no|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500">
+            {% if s.contacts.all %}
+              {% for c in s.contacts.all %}<div>{{ c.name }}{% if c.phone %} — {{ c.phone }}{% endif %}</div>{% endfor %}
+            {% else %}{{ s.contact_no|default:"—" }}{% endif %}
+          </td>
           <td class="px-4 py-2 text-xs">{% if s.attachments_required %}Yes{% else %}—{% endif %}</td>
           <td class="px-4 py-2 text-xs">
             <a href="{% url 'ui:supplier_update' s.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>

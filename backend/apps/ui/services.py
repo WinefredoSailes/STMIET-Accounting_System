@@ -184,7 +184,7 @@ def list_receipts(*, limit=100):
 def list_suppliers():
     from apps.ap.models import Supplier
 
-    return Supplier.objects.order_by("name")
+    return Supplier.objects.prefetch_related("contacts").order_by("name")
 
 
 def list_rfps(*, limit=100):
@@ -318,10 +318,18 @@ def list_conso(*, limit=50):
 
 
 def conso_context(batch):
-    """Members (with their per-RFP posting state) + running total."""
+    """Members (RFPs + PCF replenishments) with their posting state + total."""
     members = list(batch.rfps.select_related("payee", "segment").order_by("ap_number"))
-    total = sum((m.amount for m in members), Decimal("0.00"))
-    return {"batch": batch, "members": members, "total": total}
+    pcf_members = list(batch.pcf_replenishments.select_related("fund", "fund__custodian").order_by("id"))
+    total = sum((m.amount for m in members), Decimal("0.00")) + sum(
+        (r.amount for r in pcf_members), Decimal("0.00")
+    )
+    return {
+        "batch": batch,
+        "members": members,
+        "pcf_members": pcf_members,
+        "total": total,
+    }
 
 
 def list_recons(*, limit=100):
@@ -506,10 +514,19 @@ def coa_rows(*, q="", segment="", account_type=""):
 # ---------------------------------------------------------------------------
 
 
-def list_assets(*, limit=100):
+def list_assets(*, limit=100, q="", category="", segment="", status=""):
     from apps.assets.models import Asset
 
-    return Asset.objects.select_related("category", "segment").order_by("asset_no")[:limit]
+    rows = Asset.objects.select_related("category", "segment").order_by("asset_no")
+    if q:
+        rows = rows.filter(Q(name__icontains=q) | Q(asset_no__icontains=q))
+    if category:
+        rows = rows.filter(category_id=category)
+    if segment:
+        rows = rows.filter(segment_id=segment)
+    if status:
+        rows = rows.filter(status=status)
+    return rows[:limit]
 
 
 def asset_context(asset):

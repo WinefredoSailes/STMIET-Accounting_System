@@ -26,6 +26,8 @@
       <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ replen.request_date|date:"M d, Y" }}</div></div>
       <div><div class="text-xs text-slate-500">REFERENCE</div><div class="mt-0.5">{{ replen.reference|default:"—" }}</div></div>
       <div><div class="text-xs text-slate-500">FUND</div><div class="mt-0.5 text-xs">{{ replen.fund.get_fund_code_display }} ({{ replen.fund.custodian.username }})</div></div>
+      <div><div class="text-xs text-slate-500">CUSTOMER / CLIENT</div><div class="mt-0.5">{{ replen.customer_name|default:"—" }}</div></div>
+      <div><div class="text-xs text-slate-500">REQUESTED BY</div><div class="mt-0.5">{{ replen.requested_by.get_full_name|default:replen.requested_by.username|default:"—" }}</div></div>
     </div>
 
     <div class="px-6 pb-4">
@@ -65,10 +67,16 @@
 
   <div class="mt-4 flex items-center gap-3">
     {% if replen.status == "requested" %}
+    <form method="post" action="{% url 'ui:pcf_replenishment_approve' replen.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Approve &amp; batch to CONSO</button>
+    </form>
     <form method="post" action="{% url 'ui:pcf_replenishment_post' replen.id %}">
       {% csrf_token %}
       <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post replenishment JE</button>
     </form>
+    {% elif replen.status == "approved" %}
+    <span class="text-sm text-slate-600">Approved — <a href="{% url 'ui:conso_detail' replen.conso_id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ replen.conso.batch_no }} →</a></span>
     {% endif %}
     {% if replen.journal_entry_id %}
     <a href="{% url 'ui:je_detail' replen.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>

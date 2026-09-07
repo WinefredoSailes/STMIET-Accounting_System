@@ -7,15 +7,24 @@ from .models import (
     RFPDocument,
     RFPLine,
     Supplier,
+    SupplierContact,
 )
 
 
+class SupplierContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplierContact
+        fields = ("id", "name", "position", "phone", "email", "is_primary")
+
+
 class SupplierSerializer(serializers.ModelSerializer):
+    contacts = SupplierContactSerializer(many=True, read_only=True)
+
     class Meta:
         model = Supplier
         fields = ("id", "code", "name", "supplier_type", "tin", "address", "contact_no",
                   "owner_name", "email", "contact_person", "position", "attachments_required",
-                  "last_ap", "default_segment")
+                  "last_ap", "default_segment", "contacts")
 
 
 class RFPLineSerializer(serializers.ModelSerializer):

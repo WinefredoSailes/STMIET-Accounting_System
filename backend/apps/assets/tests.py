@@ -20,7 +20,7 @@ from apps.assets.models import (
     AssetStatus,
     DepreciationSchedule,
 )
-from apps.assets.services import AssetService, DepreciationService, DisposalService
+from apps.assets.services import AssetService, DepreciationService, DisposalService, ReversalService
 from apps.core.exceptions import ValidationError
 from apps.foundation.models import Account
 from apps.posting.models import JournalEntry, GeneralLedger
@@ -160,6 +160,44 @@ class TestDepreciation:
         DepreciationService.post_month(asset, period_start=date(2026, 2, 1))
         assert DepreciationSchedule.objects.filter(asset=asset, status="posted").count() == 1
         assert asset.accumulated_depreciation == Decimal("500.00")
+
+    def test_post_all_batches_active_assets(self, asset, company, segment, tanker_category,
+                                            asset_accounts, segment_account_map):
+        second = AssetService.acquire(
+            asset_no="FA-2026-0002",
+            name="Diesel Tanker 002",
+            category=tanker_category,
+            segment=segment,
+            acquisition_date=date(2026, 1, 20),
+            cost="90000.00",
+            residual_value="0.00",
+            funding_source="cash",
+            user=None,
+        )
+        summary = DepreciationService.post_all(period_start=date(2026, 2, 1))
+        assert summary["period_start"].day == 1
+        assert sorted(summary["posted"]) == ["FA-2026-0001", "FA-2026-0002"]
+        assert summary["skipped"] == []
+        for a in (asset, second):
+            a.refresh_from_db()
+            assert a.accumulated_depreciation == a.monthly_depreciation
+            assert DepreciationSchedule.objects.filter(asset=a, status="posted",
+                                                       journal_entry__isnull=False).count() == 1
+
+    def test_post_all_idempotent(self, asset):
+        summary1 = DepreciationService.post_all(period_start=date(2026, 2, 1))
+        assert summary1["posted"] == ["FA-2026-0001"]
+        summary2 = DepreciationService.post_all(period_start=date(2026, 2, 1))
+        assert summary2["posted"] == []
+        assert summary2["skipped"] == ["FA-2026-0001"]
+        assert DepreciationSchedule.objects.filter(asset=asset).count() == 1
+        assert asset.accumulated_depreciation == Decimal("500.00")
+
+    def test_post_all_skips_fully_depreciated(self, asset):
+        DepreciationService.build_schedule(asset)
+        DepreciationService.post_all(period_start=date(2026, 2, 1))
+        asset.refresh_from_db()
+        assert asset.status == AssetStatus.ACTIVE
 
     def test_fully_depreciated_flags_asset(self, asset):
         """After 120 months the asset is fully depreciated but still in use."""
@@ -343,3 +381,57 @@ class TestOpeningBalanceSeed:
             assert asset.acquisition_journal.is_balanced
             assert asset.acquisition_journal.status == "posted"
             assert asset.net_book_value >= 0
+
+
+class TestReversal:
+    """Overstated-asset reversal (ADR-038 §2.c): Dr funding | Cr asset for the
+    overstated amount, prospective only, own JE for the audit trail."""
+
+    def test_reverse_posts_prospective_je(self, asset):
+        from apps.assets.models import AssetReversal
+
+        DepreciationService.post_month(asset, period_start=date(2026, 2, 1))
+        asset.refresh_from_db()
+        before = asset.cost
+        rev = ReversalService.reverse(
+            asset=asset, reversal_date=date(2026, 3, 15), amount="10000.00",
+            reason="Duplicated on booking",
+        )
+        assert rev.status == "posted"
+        je = rev.journal_entry
+        assert je.is_posted and je.is_balanced
+        assert je.source_doc_type == "ASSET_REVERSAL"
+        assert je.transaction_date == date(2026, 3, 15)
+        lines = {l.line_no: l for l in je.lines.all()}
+        assert lines[1].debit == Decimal("10000.00")  # Dr funding (cash)
+        assert lines[2].credit == Decimal("10000.00")  # Cr asset account
+        asset.refresh_from_db()
+        assert asset.cost == before - Decimal("10000.00")
+        assert AssetReversal.objects.filter(asset=asset, journal_entry=je).count() == 1
+
+    def test_reverse_recomputes_future_schedule(self, asset):
+        DepreciationService.build_schedule(asset)
+        # 60,000/120 = 500.00 → after reversing 10,000: 50,000/120 = 416.67.
+        ReversalService.reverse(asset=asset, reversal_date=date(2026, 2, 15), amount="10000.00")
+        future = DepreciationSchedule.objects.filter(
+            asset=asset, status="pending", period_start__gte=date(2026, 2, 1)
+        ).first()
+        assert future.amount == Decimal("416.67")
+        # Posted (past) rows are untouched.
+        assert asset.depreciation_schedule.exclude(journal_entry__isnull=True).count() == 0
+
+    def test_reverse_validation(self, asset):
+        with pytest.raises(ValidationError, match="positive"):
+            ReversalService.reverse(asset=asset, reversal_date=date(2026, 3, 1), amount="0.00")
+        with pytest.raises(ValidationError, match="exceed"):
+            ReversalService.reverse(
+                asset=asset, reversal_date=date(2026, 3, 1), amount="999999.00"
+            )
+
+    def test_reverse_then_monthly_depreciation_runs_on_base(self, asset):
+        ReversalService.reverse(asset=asset, reversal_date=date(2026, 2, 10), amount="30000.00")
+        row = DepreciationService.post_month(asset, period_start=date(2026, 2, 1))
+        assert row.amount == Decimal("250.00")  # 30,000 / 120
+        assert row.journal_entry.is_balanced
+        asset.refresh_from_db()
+        assert asset.accumulated_depreciation == Decimal("250.00")

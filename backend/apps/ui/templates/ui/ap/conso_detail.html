@@ -13,17 +13,17 @@
       {{ batch.status }}
     </span>
   </div>
-  <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · Total ₱{{ total|money }}</p>
+  <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · {{ pcf_members|length }} PCF(s) · Total ₱{{ total|money }}</p>
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[720px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3">AP No</th>
+          <th class="px-4 py-3">Doc No</th>
           <th class="px-4 py-3">Payee</th>
           <th class="px-4 py-3">Particulars</th>
           <th class="px-4 py-3 text-right">Amount</th>
-          <th class="px-4 py-3">RFP status</th>
+          <th class="px-4 py-3">Status</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -40,9 +40,24 @@
             {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ m.status }}</span>{% endif %}
           </td>
         </tr>
-        {% empty %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No RFPs in this batch yet.</td></tr>
         {% endfor %}
+        {% for r in pcf_members %}
+        <tr class="hover:bg-slate-50 bg-slate-50/50">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">PCF-{{ r.id }}</a>
+          </td>
+          <td class="px-4 py-2">{{ r.payee_name|default:r.fund.name }}</td>
+          <td class="px-4 py-2 text-xs text-slate-600 max-w-xs truncate">{{ r.expenses.0.description|default:"PCF replenishment" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ r.amount|money }}</td>
+          <td class="px-4 py-2 text-xs">
+            {% if r.status == 'posted' %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">posted</span>
+            {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ r.status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not members and not pcf_members %}
+        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No members in this batch yet.</td></tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
@@ -66,13 +81,13 @@
     <form method="post" action="{% url 'ui:conso_post' batch.id %}">
       {% csrf_token %}
       <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-              {% if not members %}disabled{% endif %}>
-        Post batch (all RFPs to GL)
+              {% if not members and not pcf_members %}disabled{% endif %}>
+        Post batch (all members to GL)
       </button>
     </form>
   </div>
   {% elif batch.status == "posted" %}
-  <p class="mt-4 text-sm text-emerald-700">Batch posted — every member RFP's JE is in the GL (7.3).</p>
+  <p class="mt-4 text-sm text-emerald-700">Batch posted — every member's JE is in the GL (7.3).</p>
   {% endif %}
 </div>
 {% endblock %}
