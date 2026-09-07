@@ -65,6 +65,39 @@ from .services import (
     unassigned_approved_rfps,
 )
 
+AUDIT_ACTION_LABELS = {
+    "created": "Created",
+    "submitted": "Submitted",
+    "checked": "Checked / Recommending approval",
+    "acctg_approved": "Approved — Accounting",
+    "fin_approved": "Approved — Finance",
+    "cnr_approved": "CNR approval (above ₱100k)",
+    "rejected": "Rejected",
+    "revised": "Revised & resubmitted",
+    "posted": "Posted to GL (CONSO)",
+    "signed": "Signed",
+    "released": "Released",
+    "cleared": "Cleared — JE posted to GL",
+}
+
+
+def _audit_trail(doc_type, doc_id):
+    """Immutable action history for an RFP or Check Voucher, newest first."""
+    from apps.ap.models import ActionLog
+
+    return [
+        {
+            "label": AUDIT_ACTION_LABELS.get(
+                e.action, e.action.replace("_", " ").title()
+            ),
+            "actor": e.actor.get_full_name() if e.actor else "",
+            "at": e.created_at,
+            "note": e.note,
+        }
+        for e in ActionLog.objects.filter(doc_type=doc_type, doc_id=doc_id)
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -932,6 +965,7 @@ def rfp_detail(request, pk):
             "timeline": rfp_timeline(rfp),
             "cr_total": cr_total,
             "awaiting": awaiting,
+            "audit_trail": _audit_trail("rfp", rfp.id),
         },
     )
 
@@ -947,6 +981,9 @@ def rfp_submit(request, pk):
             raise ValueError("Only prepared RFPs can be submitted.")
         rfp.status = "submitted"
         rfp.save(update_fields=["status", "updated_at"])
+        from apps.ap.services import log_action
+
+        log_action(rfp, "submitted", actor=request.user)
         messages.success(request, f"RFP {rfp.ap_number} submitted.")
     except ValueError as exc:
         messages.error(request, str(exc))
@@ -1438,7 +1475,7 @@ def cv_detail(request, pk):
     )
     if cv.rfp_id:
         list(cv.rfp.lines.select_related("account", "segment"))
-    return render(request, "ui/ap/cv_detail.html", {"cv": cv})
+    return render(request, "ui/ap/cv_detail.html", {"cv": cv, "audit_trail": _audit_trail("cv", cv.id)})
 
 
 @login_required
@@ -1498,6 +1535,9 @@ def cv_sign(request, pk):
             cv.status = "signed"
             cv.signed_by = request.user
             cv.save(update_fields=["status", "signed_by", "updated_at"])
+            from apps.ap.services import log_action
+
+            log_action(cv, "signed", actor=request.user)
             msg = f"CV {cv.cv_number} signed."
             messages.success(request, msg)
         else:
@@ -1530,6 +1570,9 @@ def cv_release(request, pk):
             cv.status = "released"
             cv.released_by = request.user
             cv.save(update_fields=["status", "released_by", "updated_at"])
+            from apps.ap.services import log_action
+
+            log_action(cv, "released", actor=request.user)
             msg = f"CV {cv.cv_number} released."
             messages.success(request, msg)
         else:
@@ -1622,13 +1665,12 @@ def cv_revise(request, pk):
 
     return render(
         request,
-        "ui/ap/cv_form.html",
+        "ui/ap/cv_revise_form.html",
         {
-            "editing": cv,
+            "cv": cv,
             "rfps": approved_rfps(),
             "bank_accounts": bank_accounts(),
             "today": date.today(),
-            "selected_rfp": None,
         },
     )
 

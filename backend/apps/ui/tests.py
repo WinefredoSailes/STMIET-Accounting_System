@@ -1243,6 +1243,52 @@ class TestCheckVoucherScreen:
         assert lines[2].credit == Decimal("8900.00")
         assert lines[3].credit == Decimal("100.00")
 
+    def test_cv_revise_form_prefills_and_audit_trail_survives(self, client, company, segment, accounts,
+                                                             fiscal_period, user, approved_rfp, role_users,
+                                                             segment_account_map):
+        from apps.ap.models import CheckVoucher
+        from apps.ap.services import CVPaymentService
+
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0006",
+            cv_date=date(2026, 1, 17),
+            payee=approved_rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount="15000.00",
+            rfp=approved_rfp,
+            check_no="CHK-3001",
+            user=user,
+        )
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/reject/", {"note": "Fix check number"})
+        cv.refresh_from_db()
+        assert cv.status == "rejected"
+
+        # The issuer's Revise page must be the dedicated prefilled form, not a blank create.
+        client.force_login(user)
+        resp = client.get(f"/ap/cv/{cv.id}/revise/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "CHECK VOUCHER — REVISE" in body
+        assert "CHK-3001" in body
+        assert "15000.00" in body
+        assert "Fix check number" in body
+
+        # Audit trail survives rejection and revision on the detail page.
+        client.post(f"/ap/cv/{cv.id}/revise/", {
+            "bank_account": accounts["10110"].id,
+            "cv_date": "2026-01-17",
+            "gross_amount": "15000.00",
+            "withheld_tax": "0.00",
+            "check_no": "CHK-3002",
+        })
+        cv.refresh_from_db()
+        restamped = client.get(f"/ap/cv/{cv.id}/")
+        detail = restamped.content.decode()
+        assert "Audit Trail" in detail
+        for marker in ("Created", "Rejected", "Revised"):
+            assert marker in detail
+
     def test_cv_print_renders(self, client, company, segment, accounts, fiscal_period,
                               user, approved_rfp, segment_account_map):
         from apps.ap.services import CVPaymentService

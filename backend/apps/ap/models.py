@@ -278,3 +278,33 @@ class AdvanceToEmployee(AuditableModel):
 
     def __str__(self):
         return f"{self.employee_name} {self.amount} {self.status}"
+
+
+class ActionLog(models.Model):
+    """Append-only audit trail for AP documents (RFP / Check Voucher).
+
+    Every lifecycle action (create/submit/approve/reject/revise/post/sign/
+    release/clear) is recorded here so history survives reject/revise cycles,
+    which reset the mutable checked_by/approved_by_*/signed_by fields on the
+    document itself (ADR-008: full audit trail).
+    """
+
+    class DocType(models.TextChoices):
+        RFP = "rfp", "RFP"
+        CV = "cv", "Check Voucher"
+
+    doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
+    doc_id = models.PositiveBigIntegerField(db_index=True)
+    action = models.CharField(max_length=32)
+    actor = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["doc_type", "doc_id"])]
+
+    def __str__(self):
+        return f"{self.doc_type}#{self.doc_id} {self.action} by {self.actor}"

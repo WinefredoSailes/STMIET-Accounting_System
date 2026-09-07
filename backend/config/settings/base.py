@@ -111,6 +111,26 @@ DATABASES = {"default": env.db("DATABASE_URL")}
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
 
+# SQLite tuning (dev fallback): ATOMIC_REQUESTS keeps one write transaction
+# open for the whole request, so concurrent writes used to collide and die
+# on SQLite's 5s default busy timeout ("database is locked"). WAL + a long
+# busy_timeout make a conflicting writer wait for the lock instead of erroring.
+if DATABASES["default"]["ENGINE"].endswith("sqlite3"):
+    DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
+
+from django.db.backends.signals import connection_created  # noqa: E402
+from django.dispatch import receiver  # noqa: E402
+
+
+@receiver(connection_created)
+def _tune_sqlite(sender, connection, **kwargs):  # noqa: ARG001
+    if connection.vendor != "sqlite":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA busy_timeout=30000;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+
 # ---------------------------------------------------------------------------
 # Auth / password validation
 # ---------------------------------------------------------------------------

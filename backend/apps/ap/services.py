@@ -24,6 +24,7 @@ from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
 
 from .models import (
+    ActionLog,
     AdvanceToEmployee,
     CheckVoucher,
     CONSOBatch,
@@ -35,6 +36,18 @@ from .models import (
 
 RFP_MIN_AMOUNT = Decimal("2000.00")
 CNR_ESCALATION_THRESHOLD = Decimal("100000.00")
+
+
+def log_action(doc, action, *, actor=None, note=""):
+    """Append an immutable audit-trail entry for an RFP or Check Voucher."""
+    doc_type = ActionLog.DocType.CV if isinstance(doc, CheckVoucher) else ActionLog.DocType.RFP
+    ActionLog.objects.create(
+        doc_type=doc_type,
+        doc_id=doc.id,
+        action=action,
+        actor=actor,
+        note=(note or "").strip(),
+    )
 
 # Approval roles in order (ADR-020 RFP matrix).
 RFP_APPROVAL_STEPS = ["prepared", "checked", "acctg_approved", "fin_approved"]
@@ -149,6 +162,7 @@ class RFPService:
         if payee:
             payee.last_ap = ap_number
             payee.save(update_fields=["last_ap", "updated_at"])
+        log_action(rfp, "created", actor=user)
         return rfp
 
     @classmethod
@@ -200,6 +214,7 @@ class RFPService:
         setattr(rfp, field, user)
         rfp.status = role
         rfp.save(update_fields=[field, "status", "updated_at"])
+        log_action(rfp, role, actor=user)
         return rfp
 
     @classmethod
@@ -223,6 +238,7 @@ class RFPService:
         rfp.approved_by_cnr = user
         rfp.status = "cnr_approved"
         rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
+        log_action(rfp, "cnr_approved", actor=user)
         return rfp
 
     REJECTABLE_STATUSES = ("submitted", "checked", "acctg_approved")
@@ -258,6 +274,7 @@ class RFPService:
         rfp.rejected_at = timezone.now()
         rfp.rejection_note = note.strip()
         rfp.save(update_fields=["status", "rejected_by", "rejected_at", "rejection_note", "updated_at"])
+        log_action(rfp, "rejected", actor=user, note=note)
         return rfp
 
     @classmethod
@@ -336,6 +353,7 @@ class RFPService:
                 amount=money(line["amount"]),
                 description=line.get("description", ""),
             )
+        log_action(rfp, "revised", actor=user)
         return rfp
 
 
@@ -404,6 +422,7 @@ class CONSOService:
             rfp.journal_entry = entry
             rfp.status = "posted"
             rfp.save(update_fields=["journal_entry", "status", "updated_at"])
+            log_action(rfp, "posted", actor=user)
         return entry
 
 
@@ -488,6 +507,7 @@ class CVPaymentService:
         cv.journal_entry = entry
         cv.status = "created"
         cv.save(update_fields=["journal_entry", "updated_at"])
+        log_action(cv, "created", actor=user)
         return cv
 
     @classmethod
@@ -514,6 +534,7 @@ class CVPaymentService:
         PostingService.post(entry, user=user)
         cv.status = "cleared"
         cv.save(update_fields=["status", "updated_at"])
+        log_action(cv, "cleared", actor=user)
         return cv
 
     REJECTABLE_STATUSES = ("created", "signed", "released")
@@ -549,6 +570,7 @@ class CVPaymentService:
             "journal_entry", "status", "rejected_by", "rejected_at",
             "rejection_note", "updated_at",
         ])
+        log_action(cv, "rejected", actor=user, note=note)
         if old_entry is not None:
             old_entry.lines.all().delete()
             old_entry.delete()
@@ -643,6 +665,7 @@ class CVPaymentService:
             "rejected_by", "rejected_at", "rejection_note", "revision_count",
             "updated_at",
         ])
+        log_action(cv, "revised", actor=user)
         return cv
 
 

@@ -40,6 +40,7 @@ FLUSH_LABELS = [
     "reporting:FinancialStatement",
     "reporting:StatementLineDef",
     "reporting:StatementTemplate",
+    "ap:ActionLog",
     "workflow:ApprovalAction",
     "workflow:ApprovalRequest",
     "cash:CheckDisbursement",

@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from apps.ap.models import AdvanceToEmployee, CheckVoucher, CONSOBatch, RFPDocument, Supplier
+from apps.ap.models import ActionLog, AdvanceToEmployee, CheckVoucher, CONSOBatch, RFPDocument, Supplier
 from apps.ap.services import (
     AdvanceService,
     CONSOService,
@@ -323,6 +323,48 @@ class TestRFPApproval:
         rfp = RFPService.advance_step(rfp, role="fin_approved", user=head)
         assert rfp.status == "fin_approved"
 
+    def test_audit_trail_survives_reject_revise_reapprove(self, company, segment, supplier, alywin, accounts):
+        """The durable ActionLog keeps every lifecycle action even though the
+        mutable checked_by/approved_by_* fields are reset on revision — so a
+        re-approved RFP still shows its full history (ADR-008)."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="head", password="x")
+
+        lines = [
+            {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00",
+             "description": "Parts"},
+            {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00",
+             "description": "AP"},
+        ]
+        rfp = RFPService.create_rfp(
+            ap_number="A0015", rfp_date=date(2026, 1, 20), payee=supplier, segment=segment,
+            lines=lines, user=alywin,
+        )
+        actions = lambda: list(ActionLog.objects.filter(
+            doc_type=ActionLog.DocType.RFP, doc_id=rfp.id
+        ).order_by("id").values_list("action", flat=True))
+        assert actions() == ["created"]
+
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        rfp = RFPService.advance_step(rfp, role="checked", user=head)
+        rfp = RFPService.reject(rfp, user=head, note="Reclassify.")
+        assert actions() == ["created", "checked", "rejected"]
+
+        rfp = RFPService.revise(rfp, user=alywin, purpose=rfp.purpose, lines=lines)
+        for role in ("checked", "acctg_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        rfp.finance_notes = "Verify before CV."
+        rfp.save(update_fields=["finance_notes", "updated_at"])
+        rfp = RFPService.advance_step(rfp, role="fin_approved", user=head)
+
+        assert actions() == [
+            "created", "checked", "rejected", "revised",
+            "checked", "acctg_approved", "fin_approved",
+        ]
+
 
 class TestCONSOPosting:
     def test_batch_posts_all_rfps(self, company, segment, supplier, rfp_lines, alywin, accounts):
@@ -528,6 +570,40 @@ class TestCVPayment:
         CVPaymentService.clear(cv, user=alywin)
         with pytest.raises(PostingError):
             CVPaymentService.reject(cv, user=alywin, note="late")
+
+    def test_audit_trail_survives_cv_reject_revise(self, company, segment, supplier, accounts, alywin, segment_account_map):
+        """CV lifecycle actions are recorded append-only; the reject pass and
+        its note survive revision and the second created pass (ADR-008)."""
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0005", cv_date=date(2026, 1, 28),
+            payee=supplier, bank_account=accounts["10010"],
+            gross_amount="12000.00", check_no="CHK-9", user=alywin,
+        )
+        actions = lambda: list(ActionLog.objects.filter(
+            doc_type=ActionLog.DocType.CV, doc_id=cv.id
+        ).order_by("id").values_list("action", flat=True))
+        assert actions() == ["created"]
+
+        cv = CVPaymentService.reject(cv, user=alywin, note="Wrong check number")
+        assert actions() == ["created", "rejected"]
+        rejection = ActionLog.objects.filter(
+            doc_type=ActionLog.DocType.CV, doc_id=cv.id, action="rejected"
+        ).first()
+        assert rejection.note == "Wrong check number"
+        assert rejection.actor == alywin
+
+        cv = CVPaymentService.revise(
+            cv, user=alywin, bank_account=accounts["10010"],
+            gross_amount="12000.00", withheld_tax="0.00", check_no="CHK-10",
+        )
+        assert actions() == ["created", "rejected", "revised"]
+        cv.status = "signed"
+        cv.signed_by = alywin
+        cv.save(update_fields=["status", "signed_by", "updated_at"])
+        cv.status = "released"
+        cv.save(update_fields=["status", "updated_at"])
+        CVPaymentService.clear(cv, user=alywin)
+        assert actions()[-1] == "cleared"
 
 
 class TestAdvanceLifecycle:
