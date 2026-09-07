@@ -1023,6 +1023,35 @@ class TestCheckVoucherScreen:
         cv.refresh_from_db()
         assert cv.status == "cleared"
 
+    def test_cv_print_renders(self, client, company, segment, accounts, fiscal_period,
+                              user, approved_rfp, segment_account_map):
+        from apps.ap.services import CVPaymentService
+
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0099",
+            cv_date=date(2026, 1, 20),
+            payee=approved_rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount="12345.67",
+            rfp=approved_rfp,
+            check_no="CHK-9021",
+            user=user,
+        )
+        resp = client.get(f"/ap/cv/{cv.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "CHECK VOUCHER" in body
+        assert "ACCTG-FOR-010" in body
+        assert "CV-2026-0099" in body          # SN
+        assert "CHK-9021" in body              # CHECK ISSUED & NO
+        assert approved_rfp.payee.name in body  # NAME
+        assert "20,000.00" in body             # distribution total (dr 61100)
+        assert "61100" in body                 # GL ACCOUNT column
+        assert "Approved By:" in body
+        assert "Payment Received By:" in body
+        assert "Finance &amp; Acctg. Head" in body
+        assert user.username in body           # requested-by signatory
+
     def test_cv_detail_renders(self, client, company, segment, accounts, fiscal_period,
                                user, approved_rfp, segment_account_map):
         from apps.ap.services import CVPaymentService
@@ -1161,6 +1190,30 @@ class TestPCFReplenishmentScreen:
         assert "PETTY CASH VOUCHER" in body
         assert "ACCTG-FOR-002" in body
         assert "850.00" in body
+
+    def test_replenishment_print_renders(self, client, company, segment, accounts,
+                                         fiscal_period, user, fund):
+        from apps.cash.services import PCFService
+
+        replen = PCFService.request_replenishment(
+            fund,
+            [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
+            user=user,
+        )
+        replen.payee_name = "Josefina P. Ogabang"
+        replen.reference = "PCV 09-03-2026"
+        replen.save(update_fields=["payee_name", "reference", "updated_at"])
+        resp = client.get(f"/cash/pcf/replenishments/{replen.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "PETTY CASH REPLENISHMENT" in body
+        assert "BUSINESS SEGMENT" in body      # workbook column header
+        assert "Controllability" in body       # workbook column header
+        assert "Josefina P. Ogabang" in body
+        assert "PCV 09-03-2026" in body
+        assert "Cable" in body                 # REMARKS
+        assert "61100" in body                 # COA column
+        assert "850.00" in body                # Dr. column
 
     def test_pcf_fund_create(self, client, company, segment, accounts, user):
         resp = client.post("/cash/pcf/new/", {

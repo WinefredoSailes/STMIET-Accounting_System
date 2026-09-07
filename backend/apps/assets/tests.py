@@ -347,7 +347,9 @@ class TestOpeningBalanceSeed:
         from django.core.management import call_command
 
         repo = Path(__file__).resolve().parents[3]
-        xlsx = repo / "excel-files" / "SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx"
+        xlsx = repo / "excel-files" / "September" / "SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx"
+        if not xlsx.exists():
+            xlsx = repo / "excel-files" / "SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx"
         mapping = repo / "excel-files" / "fixed-assets-mapping.json"
         assert xlsx.exists() and mapping.exists(), "source files must exist"
         # DHPP segment is used by tankers; also need DMIE for boom trucks & OPS.

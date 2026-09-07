@@ -81,6 +81,7 @@
     {% if replen.journal_entry_id %}
     <a href="{% url 'ui:je_detail' replen.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>
     {% endif %}
+    <a href="{% url 'ui:pcf_replenishment_print' replen.id %}" class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print Replenishment</a>
   </div>
 </div>
 {% endblock %}

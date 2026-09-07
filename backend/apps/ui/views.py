@@ -1432,6 +1432,46 @@ def cv_detail(request, pk):
 
 
 @login_required
+def cv_print(request, pk):
+    """Print-optimized Check Voucher (ACCTG-FOR-010) matching the
+    VOUCHER-FORMS-CASH-AND-CHECK-10.xlsx signatory layout."""
+    from apps.ap.models import CheckVoucher
+
+    def _name(user):
+        return user.get_full_name() or user.username if user else ""
+
+    cv = get_object_or_404(
+        CheckVoucher.objects.select_related("payee", "bank_account", "signed_by", "released_by", "rfp"),
+        pk=pk,
+    )
+    rfp = cv.rfp
+    lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
+    total = sum((line.amount for line in lines if line.side == "dr"), Decimal("0.00"))
+    position = cv.payee.position or cv.payee.get_supplier_type_display()
+    date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
+    signatories = {
+        "requested": _name(rfp.created_by) if rfp else "",
+        "noted": _name(rfp.checked_by) if rfp else "",
+        "checked": _name(rfp.approved_by_acctg) or (_name(rfp.approved_by_fin) if rfp else ""),
+        "approved": _name(cv.signed_by) or (_name(rfp.approved_by_cnr) if rfp else ""),
+        "received": _name(cv.released_by),
+    }
+    return render(
+        request,
+        "ui/ap/cv_print.html",
+        {
+            "cv": cv,
+            "rfp": rfp,
+            "lines": lines,
+            "total": total,
+            "position": position,
+            "signatories": signatories,
+            "date_of_request": date_of_request,
+        },
+    )
+
+
+@login_required
 @require_POST
 def cv_sign(request, pk):
     """created -> signed (COO signs the check)."""
@@ -1596,6 +1636,54 @@ def pcf_replenishment_detail(request, pk):
         pk=pk,
     )
     return render(request, "ui/cash/pcf_replenishment_detail.html", {"replen": replen})
+
+
+@login_required
+def pcf_replenishment_print(request, pk):
+    """Print-optimized Petty Cash Replenishment report (landscape) matching the
+    PETTY CASH REPLENISHMENT.xlsx columns. Columns the app does not capture
+    yet (Type, DATE, Vendor/Customer, REF., TIN, Address, VAT, AP NO) print blank."""
+    from apps.cash.models import PCFReplenishment
+    from apps.foundation.models import Account
+
+    replen = get_object_or_404(
+        PCFReplenishment.objects.select_related("fund__custodian", "fund__company", "requested_by"),
+        pk=pk,
+    )
+    rows = []
+    for exp in replen.expenses or []:
+        acct = Account.objects.filter(code=exp.get("account_code", "")).first()
+        rows.append(
+            {
+                "coa": exp.get("account_code", ""),
+                "title": acct.name if acct else exp.get("account_code", ""),
+                "dr": exp.get("amount", 0),
+                "segment": exp.get("segment", ""),
+                "cost_center": exp.get("cost_center", ""),
+                "remarks": exp.get("description", ""),
+                "classification": acct.classification if acct else "",
+                "category": acct.category if acct else "",
+                "sub_accounts": acct.sub_accounts if acct else "",
+                "major_accounts": acct.major_accounts if acct else "",
+                "behavior": acct.behavior if acct else "",
+                "traceability": acct.traceability if acct else "",
+                "controllability": acct.controllability if acct else "",
+            }
+        )
+    total = sum((Decimal(str(row["dr"])) for row in rows), Decimal("0.00"))
+    fund = replen.fund
+    custodian = fund.custodian
+    return render(
+        request,
+        "ui/cash/pcf_replenishment_print.html",
+        {
+            "replen": replen,
+            "rows": rows,
+            "total": total,
+            "fund_label": fund.name or fund.fund_code,
+            "custodian_label": custodian.get_full_name() or custodian.username if custodian else "—",
+        },
+    )
 
 
 @login_required

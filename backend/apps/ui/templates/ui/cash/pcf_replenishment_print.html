@@ -1,0 +1,101 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}PCF Replenishment {{ replen.id }} — Print{% endblock %}
+{% block content %}
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+</style>
+<div class="py-6 px-4 bg-white">
+  <div class="mx-0">
+    <div class="text-center mb-4">
+      <div class="text-xl font-bold tracking-wide">PETTY CASH REPLENISHMENT</div>
+      <div class="text-xs text-slate-600 mt-1">
+        {{ fund_label }} · Custodian: {{ custodian_label }}
+        · {{ replen.request_date|date:"M d, Y" }} · Total ₱{{ total|money }}
+      </div>
+      {% if replen.payee_name or replen.reference or replen.customer_name %}
+      <div class="text-xs text-slate-600">
+        {% if replen.payee_name %}Payee: {{ replen.payee_name }}{% endif %}
+        {% if replen.reference %} · Ref: {{ replen.reference }}{% endif %}
+        {% if replen.customer_name %} · Customer: {{ replen.customer_name }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <table class="w-full border-collapse text-[10px]">
+      <thead>
+        <tr class="text-[9px] uppercase tracking-wide text-slate-800">
+          <th class="border border-slate-500 px-1 py-1 font-bold">Type</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">DATE</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Vendor/Customer</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">REF.</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">TIN</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Address</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">REMARKS</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">ENTITY</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">BUSINESS SEGMENT</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">COST CENTER</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">COA</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Account Titles</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold text-right">Dr.</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold text-right">Cr.</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold text-right">VAT</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Segment</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Classification</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Category</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Sub-Accounts</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Major Accounts</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Behavior</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Traceability</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">Controllability</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">AP NO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.remarks }}</td>
+          <td class="border border-slate-500 px-1 py-1">STMIET</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.segment|default:fund_label }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.cost_center }}</td>
+          <td class="border border-slate-500 px-1 py-1 font-mono">{{ row.coa }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.title }}</td>
+          <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{{ row.dr|money }}</td>
+          <td class="border border-slate-500 px-1 py-1 text-right"></td>
+          <td class="border border-slate-500 px-1 py-1 text-right"></td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.segment }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.classification }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.category }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.sub_accounts }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.major_accounts }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.behavior }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.traceability }}</td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.controllability }}</td>
+          <td class="border border-slate-500 px-1 py-1"></td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="24" class="border border-slate-500 px-2 py-4 text-center text-slate-400">No expense lines.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="font-bold">
+          <td colspan="12" class="border border-slate-500 px-1 py-1 text-right uppercase">Total</td>
+          <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{{ total|money }}</td>
+          <td colspan="11" class="border border-slate-500 px-1 py-1"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+<script>
+  window.onafterprint = () => window.close();
+</script>
+{% endblock %}
