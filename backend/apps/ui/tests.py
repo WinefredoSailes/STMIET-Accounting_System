@@ -543,9 +543,11 @@ class TestRFPScreen:
 
     def test_rfp_full_approval_chain(self, client, company, segment, accounts, fiscal_period,
                                      user, supplier):
-        """prepared -> submitted -> checked -> acctg_approved -> fin_approved
-        -> cnr_approved (amount > P100k). The head (Alywin) checks + approves
-        acctg/fin; only the COO may sign as CNR (ADR-036)."""
+        """prepared -> submitted -> fin_approved in ONE head click (fast-path).
+
+        With COO_REVIEW_ENABLED off (UAT default) the Accounting & Finance
+        Head approves every RFP at any amount: the single Approve action fills
+        checked / acctg_approved / fin_approved at once (ADR-036)."""
         from apps.ap.models import RFPDocument
         from apps.ap.services import RFPService
 
@@ -562,27 +564,90 @@ class TestRFPScreen:
         )
         User = get_user_model()
         head = User.objects.create_user(username="head", password="x")
-        coo = User.objects.create_user(username="coo", password="x")
         from apps.foundation.models import UserProfile
 
-        for u, role in ((head, "head"), (coo, "coo")):
-            UserProfile.objects.create(user=u, approval_role=role)
+        UserProfile.objects.create(user=head, approval_role="head")
 
         resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
         rfp.refresh_from_db()
         assert rfp.status == "submitted"
 
         client.force_login(head)
-        for expected in ("checked", "acctg_approved", "fin_approved"):
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "fin_approved"
+        # one click filled every head step (no CNR step with the gate off)
+        assert rfp.checked_by == head
+        assert rfp.approved_by_acctg == head
+        assert rfp.approved_by_fin == head
+        assert rfp.approved_by_cnr is None
+
+    def test_cnr_gate_on_escalates_above_100k(self, client, company, segment, accounts,
+                                              fiscal_period, user, supplier):
+        """With COO_REVIEW_ENABLED the head's one-click stops at fin_approved
+        above P100k and the COO must sign as CNR (ADR-020 escalation)."""
+        from django.conf import settings
+        from django.test import override_settings
+
+        from apps.foundation.models import UserProfile
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        domain = dict(settings.DOMAIN, COO_REVIEW_ENABLED=True)
+        rfp = RFPService.create_rfp(
+            ap_number="A0002",
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "150000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "150000.00"},
+            ],
+            user=user,
+        )
+        User = get_user_model()
+        head = User.objects.create_user(username="head2", password="x")
+        coo = User.objects.create_user(username="coo2", password="x")
+        for u, role in ((head, "head"), (coo, "coo")):
+            UserProfile.objects.create(user=u, approval_role=role)
+
+        client.force_login(head)
+        with override_settings(DOMAIN=domain):
+            resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
+            rfp.refresh_from_db()
+            assert rfp.status == "submitted"
+            # the head's one-click stops at finance approval (CNR pending)
             resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
             rfp.refresh_from_db()
-            assert rfp.status == expected
+            assert rfp.status == "fin_approved"
+            assert rfp.checked_by == head
+            assert rfp.approved_by_acctg == head
+            assert rfp.approved_by_fin == head
+            assert rfp.approved_by_cnr is None
+            # below the threshold the same click completes with no CNR step
+            small = RFPService.create_rfp(
+                ap_number="A0003",
+                rfp_date=date(2026, 1, 15),
+                payee=supplier,
+                segment=segment,
+                lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00"},
+                ],
+                user=user,
+            )
+            resp = client.post(f"/ap/rfps/{small.id}/submit/")
+            resp = client.post(f"/ap/rfps/{small.id}/approve/")
+            small.refresh_from_db()
+            assert small.status == "fin_approved"
+            assert small.approved_by_cnr is None
 
-        client.force_login(coo)
-        resp = client.post(f"/ap/rfps/{rfp.id}/approve-cnr/")
-        rfp.refresh_from_db()
-        assert rfp.status == "cnr_approved"
-        assert rfp.approved_by_cnr == coo
+            # only the COO is a fresh hand for the CNR signature above P100k
+            client.force_login(coo)
+            resp = client.post(f"/ap/rfps/{rfp.id}/approve-cnr/")
+            rfp.refresh_from_db()
+            assert rfp.status == "cnr_approved"
+            assert rfp.approved_by_cnr == coo
 
     def test_rfp_same_user_cannot_approve(self, client, company, segment, accounts,
                                           fiscal_period, user, supplier):
@@ -632,16 +697,16 @@ class TestRFPScreen:
         assert resp.status_code == 200
         assert resp.headers["HX-Trigger"]
         rfp.refresh_from_db()
-        assert rfp.status == "checked"
+        assert rfp.status == "fin_approved"  # one click cleared every head step
 
         # Row partial reflects the advanced status badge and toast trigger.
         body = resp.content.decode()
         assert "rfp-row-" in body
-        assert "Checked" in body
+        assert "Approved (Fin)" in body
         assert "showToast" in resp.headers["HX-Trigger"]
 
-        # The head acts at every step, so a next inline action is still shown.
-        assert "hx-post" in body
+        # Fully approved below P100k (CNR gate off): no further inline action.
+        assert "hx-post" not in body
 
     def test_rfp_detail_shows_timeline(self, client, company, segment, accounts, supplier, user):
         from apps.ap.models import RFPDocument
@@ -699,16 +764,17 @@ class TestRFPRejectCycle:
     def test_reject_requires_note_and_records_it(self, client, company, segment, accounts,
                                                  supplier, role_users, staff):
         from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
 
         rfp = self._make_rfp(segment, supplier, staff, "A2101")
         client.force_login(staff)
         client.post(f"/ap/rfps/{rfp.id}/submit/")
+        # drive to a single in-flight step so the reject guard is exercised
+        rfp = RFPService.advance_step(rfp, role="checked", user=role_users["head"])
+        assert rfp.status == "checked"
 
         client.force_login(role_users["head"])
         # No note -> rejected.
-        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
-        rfp.refresh_from_db()
-        assert rfp.status == "checked"
         resp = client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": ""})
         rfp.refresh_from_db()
         assert rfp.status == "checked"
@@ -759,12 +825,14 @@ class TestRFPRejectCycle:
         assert rfp.amount == Decimal("35000.00")
         assert rfp.revision_count == 1
 
-        # Continues through the approval chain again.
+        # Continues through the approval chain again. One click clears checked +
+        # acctg, but the revision gate stops finance approval (ADR-038 §10d).
         client.force_login(role_users["head"])
-        for expected in ("checked", "acctg_approved"):
-            resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
-            rfp.refresh_from_db()
-            assert rfp.status == expected
+        resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "acctg_approved"
+        assert rfp.checked_by == role_users["head"]
+        assert rfp.approved_by_acctg == role_users["head"]
 
         # ADR-038 §10d: a revised RFP is blocked from finance approval until
         # Finance Head notes are added.
@@ -814,9 +882,10 @@ class TestRFPRejectCycle:
         client.post(f"/ap/rfps/{rfp.id}/submit/")
 
         # First pass: head checks, then rejects at the checked step.
+        from apps.ap.services import RFPService
+
         client.force_login(role_users["head"])
-        client.post(f"/ap/rfps/{rfp.id}/approve/")
-        rfp.refresh_from_db()
+        rfp = RFPService.advance_step(rfp, role="checked", user=role_users["head"])
         assert rfp.status == "checked" and rfp.checked_by == role_users["head"]
         client.post(f"/ap/rfps/{rfp.id}/reject/", {"note": "Reclassify the fuel charge."})
         rfp.refresh_from_db()
@@ -837,11 +906,13 @@ class TestRFPRejectCycle:
         assert rfp.checked_by is None
 
         # Same head approves again — must advance (was: stuck at 'checked').
+        # One click clears checked + acctg, the revision notes gate stops fin.
         client.force_login(role_users["head"])
-        for expected in ("checked", "acctg_approved"):
-            client.post(f"/ap/rfps/{rfp.id}/approve/")
-            rfp.refresh_from_db()
-            assert rfp.status == expected
+        client.post(f"/ap/rfps/{rfp.id}/approve/")
+        rfp.refresh_from_db()
+        assert rfp.status == "acctg_approved"
+        assert rfp.checked_by == role_users["head"]
+        assert rfp.approved_by_acctg == role_users["head"]
         client.post(f"/ap/rfps/{rfp.id}/finance-notes/", {"finance_notes": "Verify delivery before CV issuance."})
         client.post(f"/ap/rfps/{rfp.id}/approve/")
         rfp.refresh_from_db()
@@ -1129,36 +1200,36 @@ class TestCheckVoucherScreen:
             check_no="CHK-1002",
             user=user,
         )
-        # release before sign is blocked
+        # clear before approve is blocked
         client.force_login(role_users["staff"])
-        client.post(f"/ap/cv/{cv.id}/release/")
+        client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "created"
 
-        # only the Accounting & Finance Head signs the check
+        # only the Accounting & Finance Head approves the check
         client.force_login(role_users["staff"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
         assert cv.status == "created"
 
         client.force_login(role_users["head"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
-        assert cv.status == "signed"
-        assert cv.signed_by == role_users["head"]
+        assert cv.status == "approved"
+        assert cv.approved_by == role_users["head"]
 
         client.force_login(role_users["staff"])
-        client.post(f"/ap/cv/{cv.id}/release/")
+        client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
-        # Staff cannot release; head must approve release
-        assert cv.status == "signed"
+        # Staff cannot clear; head must approve clear
+        assert cv.status == "approved"
 
-        # Head releases the CV
+        # Head clears the CV
         client.force_login(role_users["head"])
-        client.post(f"/ap/cv/{cv.id}/release/")
+        client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
-        assert cv.status == "released"
-        assert cv.released_by == role_users["head"]
+        assert cv.status == "cleared"
+        assert cv.approved_by == role_users["head"]
 
         # Clearing posts the (previously DRAFT) JE to the GL
         client.force_login(role_users["head"])
@@ -1220,13 +1291,13 @@ class TestCheckVoucherScreen:
         assert cv.status == "created"
         assert cv.revision_count == 1
         assert cv.net_amount == Decimal("9900.00")
-        assert cv.signed_by_id is None
+        assert cv.approved_by_id is None
         assert cv.journal_entry_id
         assert not cv.journal_entry.is_posted
 
-    def test_cv_reject_after_sign_then_resubmit(self, client, company, segment, accounts,
-                                                fiscal_period, user, approved_rfp, role_users,
-                                                segment_account_map):
+    def test_cv_reject_after_approve_then_resubmit(self, client, company, segment, accounts,
+                                                   fiscal_period, user, approved_rfp, role_users,
+                                                   segment_account_map):
         from apps.ap.models import CheckVoucher
         from apps.ap.services import CVPaymentService
 
@@ -1239,16 +1310,13 @@ class TestCheckVoucherScreen:
             rfp=approved_rfp,
             user=user,
         )
-        # The head signs and releases the CV...
+        # The head approves the CV...
         client.force_login(role_users["head"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
-        assert cv.status == "signed"
-        client.post(f"/ap/cv/{cv.id}/release/")
-        cv.refresh_from_db()
-        assert cv.status == "released"
+        assert cv.status == "approved"
 
-        # ...then refuses at 'released' and returns it to the issuer.
+        # ...then refuses at 'approved' and returns it to the issuer.
         client.post(f"/ap/cv/{cv.id}/reject/", {"note": "Check amount wrong"})
         cv.refresh_from_db()
         assert cv.status == "rejected"
@@ -1265,16 +1333,13 @@ class TestCheckVoucherScreen:
         })
         cv.refresh_from_db()
         assert cv.status == "created"
-        assert cv.signed_by_id is None  # the head must sign again
+        assert cv.approved_by_id is None  # the head must approve again
 
         # The corrected check runs the full chain and posts on clear.
         client.force_login(role_users["head"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
-        assert cv.status == "signed"
-        client.post(f"/ap/cv/{cv.id}/release/")
-        cv.refresh_from_db()
-        assert cv.status == "released"
+        assert cv.status == "approved"
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -1872,8 +1937,8 @@ class TestMyApprovals:
         rfp.refresh_from_db()
         assert rfp.status == "submitted"
 
-        # The head's inbox shows the submitted RFP and approves it inline
-        # three times (check -> acctg -> fin, same person, two clicks each).
+        # The head's inbox shows the submitted RFP and one click approves it
+        # straight through checked + acctg + fin (ADR-036 fast-path).
         client.force_login(role_users["head"])
         resp = client.get("/approvals/")
         assert b"A2001" in resp.content
@@ -1881,17 +1946,11 @@ class TestMyApprovals:
         resp = client.post(f"/ap/rfps/{rfp.id}/approve/")
         assert resp.status_code == 302
         rfp.refresh_from_db()
-        assert rfp.status == "checked"
-        assert rfp.checked_by == role_users["head"]
-
-        resp = client.get("/approvals/")
-        assert b"A2001" in resp.content
-        client.post(f"/ap/rfps/{rfp.id}/approve/")
-        rfp.refresh_from_db()
-        assert rfp.status == "acctg_approved"
-        client.post(f"/ap/rfps/{rfp.id}/approve/")
-        rfp.refresh_from_db()
         assert rfp.status == "fin_approved"
+        assert rfp.checked_by == role_users["head"]
+        assert rfp.approved_by_acctg == role_users["head"]
+        assert rfp.approved_by_fin == role_users["head"]
+
         # Fully approved below P100k: out of every inbox (the bare number
         # can linger in a success message, so assert on the chip).
         resp = client.get("/approvals/")
@@ -1900,22 +1959,29 @@ class TestMyApprovals:
 
     def test_cnr_queue_only_above_100k(self, client, company, segment, accounts,
                                        supplier, role_users):
+        """CNR routing is tested with the COO gate ENABLED (go-live behavior);
+        with the gate off the head's approval already finishes these."""
+        from django.conf import settings as dj_settings
+        from django.test import override_settings
+
+        domain = dict(dj_settings.DOMAIN, COO_REVIEW_ENABLED=True)
         big = self._create("150000.00", segment, supplier, role_users["staff"], "A2002")
         small = self._create("50000.00", segment, supplier, role_users["staff"], "A2003")
-        for rfp in (big, small):
-            self._approve_through(rfp, role_users, "fin_approved")
-        assert big.status == "fin_approved" and small.status == "fin_approved"
+        with override_settings(DOMAIN=domain):
+            for rfp in (big, small):
+                self._approve_through(rfp, role_users, "fin_approved")
+            assert big.status == "fin_approved" and small.status == "fin_approved"
 
-        # Small RFP needs no CNR; the big one lands in the COO's inbox.
-        client.force_login(role_users["coo"])
-        body = client.get("/approvals/").content
-        assert b"A2002" in body
-        assert b"A2003" not in body
+            # Small RFP needs no CNR; the big one lands in the COO's inbox.
+            client.force_login(role_users["coo"])
+            body = client.get("/approvals/").content
+            assert b"A2002" in body
+            assert b"A2003" not in body
 
-        client.post(f"/ap/rfps/{big.id}/approve-cnr/")
-        big.refresh_from_db()
-        assert big.status == "cnr_approved"
-        assert big.approved_by_cnr == role_users["coo"]
+            client.post(f"/ap/rfps/{big.id}/approve-cnr/")
+            big.refresh_from_db()
+            assert big.status == "cnr_approved"
+            assert big.approved_by_cnr == role_users["coo"]
 
     def test_wrong_role_approve_is_loud(self, client, company, segment, accounts,
                                         supplier, role_users):
@@ -1963,19 +2029,16 @@ class TestMyApprovals:
         # The CV lands on the head's approvals page at every step.
         client.force_login(role_users["head"])
         body = client.get("/approvals/").content
-        assert b"CV-2026-0001" in body and b"Sign" in body
-        client.post(f"/ap/cv/{cv.id}/sign/")
+        assert b"CV-2026-0001" in body and b"Approve" in body
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
-        assert cv.status == "signed"
+        assert cv.status == "approved"
+        assert cv.approved_by == role_users["head"]
 
         body = client.get("/approvals/").content
-        assert b"CV-2026-0001" in body and b"Release" in body
-        client.post(f"/ap/cv/{cv.id}/release/")
-        cv.refresh_from_db()
-        assert cv.status == "released"
-        assert cv.released_by == role_users["head"]
+        assert b"CV-2026-0001" in body and b"Clear" in body
 
-        # Head clears the released CV — that posts the JE to the GL
+        # Head clears the approved CV — that posts the JE to the GL
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -2334,7 +2397,7 @@ class TestHTMXPartialUpdates:
         assert ws.status == "approved"
         assert "approved" in resp.content.decode()
 
-    def test_cv_sign_swaps_row(self, client, company, segment, accounts, fiscal_period,
+    def test_cv_approve_swaps_row(self, client, company, segment, accounts, fiscal_period,
                                user, role_users, segment_account_map):
         from apps.ap.models import Supplier
         from apps.ap.services import CVPaymentService, RFPService
@@ -2369,9 +2432,9 @@ class TestHTMXPartialUpdates:
             rfp=rfp, user=user,
         )
         client.force_login(role_users["head"])
-        resp = client.post(f"/ap/cv/{cv.id}/sign/", {}, HTTP_HX_REQUEST="true")
+        resp = client.post(f"/ap/cv/{cv.id}/approve/", {}, HTTP_HX_REQUEST="true")
         assert resp.status_code == 200
         assert resp.headers["HX-Trigger"]
         cv.refresh_from_db()
-        assert cv.status == "signed"
-        assert "signed" in resp.content.decode()
+        assert cv.status == "approved"
+        assert "approved" in resp.content.decode()

@@ -423,6 +423,91 @@ class TestCONSOPosting:
         with pytest.raises(ValidationError, match="finance-approved"):
             CONSOService.post_batch(batch, user=alywin)
 
+    def _square_rfp(self, segment, supplier, alywin, ap_number, amount="30000.00"):
+        return RFPService.create_rfp(
+            ap_number=ap_number, rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": amount},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": amount},
+            ],
+            user=alywin,
+        )
+
+    def test_auto_assign_off_by_default(self, company, segment, supplier, alywin, accounts):
+        """Manual batching stays the default: approval does not touch a batch."""
+        from django.contrib.auth import get_user_model
+
+        head = get_user_model().objects.create_user(username="headA0", password="x")
+        rfp = self._square_rfp(segment, supplier, alywin, "A777AA")
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        rfp = RFPService.approve_head(rfp, user=head)
+        assert rfp.status == "fin_approved"
+        assert rfp.conso_id is None
+        assert CONSOBatch.objects.count() == 0
+
+    def test_auto_assign_batches_on_final_approval(self, company, segment, supplier, alywin, accounts):
+        """CONSO_AUTO_ASSIGN on: the head's one-click approval drops the RFP
+        into a numbered CONSO batch and updates its total (ADR-018, reversible)."""
+        from django.conf import settings as dj_settings
+        from django.contrib.auth import get_user_model
+        from django.test import override_settings
+
+        head = get_user_model().objects.create_user(username="headA1", password="x")
+        rfp = self._square_rfp(segment, supplier, alywin, "A777AB", amount="40000.00")
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        with override_settings(DOMAIN=dict(dj_settings.DOMAIN, CONSO_AUTO_ASSIGN=True)):
+            rfp = RFPService.approve_head(rfp, user=head)
+        assert rfp.status == "fin_approved"
+        assert rfp.conso_id
+        batch = CONSOBatch.objects.get(pk=rfp.conso_id)
+        assert batch.batch_no.startswith("CONSO-")
+        assert batch.rfps.count() == 1
+        batch.refresh_from_db()
+        assert batch.total_amount == rfp.amount
+
+    def test_auto_assign_reuses_newest_open_batch(self, company, segment, supplier, alywin, accounts):
+        """Multiple approvals share the current open batch and sum correctly."""
+        from django.conf import settings as dj_settings
+        from django.contrib.auth import get_user_model
+        from django.test import override_settings
+
+        head = get_user_model().objects.create_user(username="headA2", password="x")
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-77", conso_date=date(2026, 1, 20))
+        rfp1 = self._square_rfp(segment, supplier, alywin, "A777AC", amount="20000.00")
+        rfp2 = self._square_rfp(segment, supplier, alywin, "A777AD", amount="25000.00")
+        for r in (rfp1, rfp2):
+            r.status = "submitted"
+            r.save(update_fields=["status", "updated_at"])
+        with override_settings(DOMAIN=dict(dj_settings.DOMAIN, CONSO_AUTO_ASSIGN=True)):
+            rfp1 = RFPService.approve_head(rfp1, user=head)
+            rfp2 = RFPService.approve_head(rfp2, user=head)
+        assert rfp1.conso_id == batch.id == rfp2.conso_id
+        batch.refresh_from_db()
+        assert batch.total_amount == Decimal("45000.00")
+        assert batch.rfps.count() == 2
+
+    def test_auto_assign_restores_manual_when_flag_flipped(self, company, segment, supplier, alywin, accounts):
+        """Flipping CONSO_AUTO_ASSIGN off returns to manual batches: a later
+        approval does not join the open batch and conso_add_rfp still works."""
+        from django.conf import settings as dj_settings
+        from django.contrib.auth import get_user_model
+        from django.test import override_settings
+
+        head = get_user_model().objects.create_user(username="headA3", password="x")
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-78", conso_date=date(2026, 1, 21))
+        rfp = self._square_rfp(segment, supplier, alywin, "A777AE")
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        with override_settings(DOMAIN=dict(dj_settings.DOMAIN, CONSO_AUTO_ASSIGN=False)):
+            rfp = RFPService.approve_head(rfp, user=head)
+        assert rfp.status == "fin_approved"
+        assert rfp.conso_id is None
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        assert list(batch.rfps.all()) == [rfp]
+
 
 class TestRPFFinanceNotesGate:
     def test_revised_rfp_needs_finance_notes_for_fin_approval(
@@ -524,7 +609,7 @@ class TestCVPayment:
                 gross_amount="8000.00", rfp=rfp, user=alywin,
             )
 
-    def test_clear_requires_released_and_posts(self, company, segment, supplier, accounts, alywin, segment_account_map):
+    def test_clear_requires_approved_and_posts(self, company, segment, supplier, accounts, alywin, segment_account_map):
         cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0003", cv_date=date(2026, 1, 27),
             payee=supplier, bank_account=accounts["10010"],
@@ -534,8 +619,7 @@ class TestCVPayment:
         assert not cv.journal_entry.is_posted  # DRAFT at issuance
         with pytest.raises(ValidationError):
             CVPaymentService.clear(cv, user=alywin)
-        cv.status = "released"
-        cv.save(update_fields=["status", "updated_at"])
+        CVPaymentService.approve(cv, user=alywin)
         CVPaymentService.clear(cv, user=alywin)
         cv.refresh_from_db()
         assert cv.status == "cleared"
@@ -562,11 +646,10 @@ class TestCVPayment:
         assert cv.status == "created"
         assert cv.revision_count == 1
         assert cv.net_amount == Decimal("9900.00")
-        assert cv.signed_by_id is None
+        assert cv.approved_by_id is None
         assert cv.journal_entry_id and not cv.journal_entry.is_posted
         # cleared CVs are final
-        cv.status = "released"
-        cv.save(update_fields=["status", "updated_at"])
+        cv = CVPaymentService.approve(cv, user=alywin)
         CVPaymentService.clear(cv, user=alywin)
         with pytest.raises(PostingError):
             CVPaymentService.reject(cv, user=alywin, note="late")
@@ -597,11 +680,8 @@ class TestCVPayment:
             gross_amount="12000.00", withheld_tax="0.00", check_no="CHK-10",
         )
         assert actions() == ["created", "rejected", "revised"]
-        cv.status = "signed"
-        cv.signed_by = alywin
-        cv.save(update_fields=["status", "signed_by", "updated_at"])
-        cv.status = "released"
-        cv.save(update_fields=["status", "updated_at"])
+        cv = CVPaymentService.approve(cv, user=alywin)
+        assert actions()[-1] == "approved"
         CVPaymentService.clear(cv, user=alywin)
         assert actions()[-1] == "cleared"
 

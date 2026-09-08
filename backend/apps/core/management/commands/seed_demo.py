@@ -13,6 +13,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 CASH_COH = "10010"
 
@@ -47,9 +48,9 @@ SUPPLIERS = [
 ]
 
 ROLES = [
-    ("staff", "Accounting Assistant", "staff"),
+    ("staff", "Che Abellanosa", "staff"),
     ("alywin", "Alywin Aidan D. Baje", "head"),
-    ("coo", "Chief Operating Officer (CNR)", "coo"),
+    ("coo", "Clyde N. Rebollos", "coo"),
 ]
 
 
@@ -78,11 +79,12 @@ class Command(BaseCommand):
         from apps.foundation.models import UserProfile
 
         for username, first, role in ROLES:
-            user, created = U.objects.get_or_create(username=username, defaults={"first_name": first})
+            user, created = U.objects.get_or_create(username=username)
             if created:
                 user.set_password("Demo@2026")
                 user.is_staff = True
-                user.save()
+            user.first_name = first
+            user.save()
             UserProfile.objects.update_or_create(
                 user=user, defaults={"approval_role": role}
             )
@@ -246,9 +248,9 @@ class Command(BaseCommand):
         return created
 
     def _approve_chain(self, rfp):
-        """ADR-036: Alywin (head) checks + approves acctg + fin; the COO
-        signs as CNR only above P100k."""
-        from apps.ap.services import RFPService
+        """ADR-036: the head (Alywin) approves every RFP; the COO signs as CNR
+        only above P100k when the COO review gate is enabled (go-live)."""
+        from apps.ap.services import RFPService, coo_required
 
         if rfp.status == "prepared":
             RFPService.advance_step(rfp, role="checked", user=self._user("alywin"))
@@ -256,7 +258,7 @@ class Command(BaseCommand):
             RFPService.advance_step(rfp, role="acctg_approved", user=self._user("alywin"))
         if rfp.status == "acctg_approved":
             RFPService.advance_step(rfp, role="fin_approved", user=self._user("alywin"))
-        if rfp.status == "fin_approved" and rfp.amount > 100000:
+        if rfp.status == "fin_approved" and coo_required(rfp):
             RFPService.approve_cnr(rfp, user=self._user("coo"))
         return rfp
 
@@ -300,20 +302,17 @@ class Command(BaseCommand):
         if cv.status == "created":
             if not disb or disb.status == "created":
                 CheckDisbursementService.sign_cnr(cv, user=self._user("alywin"))
-            cv.status = "signed"
-            cv.signed_by = self._user("alywin")
-            cv.save(update_fields=["status", "signed_by", "updated_at"])
-        if cv.status == "signed":
-            if not disb or disb.status == "signed":
+            cv.status = "approved"
+            cv.approved_by = self._user("alywin")
+            cv.approved_at = timezone.now()
+            cv.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        if cv.status == "approved":
+            if disb and disb.status == "signed":
                 CheckDisbursementService.release_quibs(cv, user=self._user("alywin"))
-            cv.status = "released"
-            cv.released_by = self._user("alywin")
-            cv.save(update_fields=["status", "released_by", "updated_at"])
-        if cv.status == "released":
-            if not disb or disb.status == "released":
+            if disb and disb.status == "released":
                 CheckDisbursementService.clear(cv, banks["PNB-CHK"], user=self._user("alywin"))
             CVPaymentService.clear(cv, user=self._user("alywin"))
-        self.stdout.write("CV-2026-0001 signed/released/cleared (JE in GL)")
+        self.stdout.write("CV-2026-0001 approved/cleared (JE in GL)")
 
     def _transfers(self, banks, segs):
         from apps.cash.services import TransferService

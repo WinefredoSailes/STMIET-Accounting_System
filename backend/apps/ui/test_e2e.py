@@ -180,11 +180,10 @@ class TestEndToEndWorkflow:
         client.post(f"/ap/rfps/{rfp.id}/approve/")
         rfp.refresh_from_db()
         assert rfp.status == "prepared"
-        # head (Alywin) checks then approves acctg + fin — two clicks,
-        # two statuses, same person (ADR-036 relaxed same-user rule)
+        # head (Alywin) approves with one click — the fast-path clears
+        # checked + acctg + fin in a single action (ADR-036 relaxed
+        # same-user rule); with the CNR gate off there is no COO step.
         client.force_login(roles["head"])
-        client.post(f"/ap/rfps/{rfp.id}/approve/")
-        client.post(f"/ap/rfps/{rfp.id}/approve/")
         client.post(f"/ap/rfps/{rfp.id}/approve/")
         rfp.refresh_from_db()
         assert rfp.status == "fin_approved"
@@ -224,13 +223,11 @@ class TestEndToEndWorkflow:
         cv = CheckVoucher.objects.get()
         assert cv.journal_entry.status == PostingStatus.DRAFT  # posts only on clear
         client.force_login(roles["head"])
-        client.post(f"/ap/cv/{cv.id}/sign/")
-        # The head also releases the signed CV per the current CV policy
-        client.post(f"/ap/cv/{cv.id}/release/")
+        client.post(f"/ap/cv/{cv.id}/approve/")
         cv.refresh_from_db()
-        assert cv.status == "released"
-        assert cv.released_by == roles["head"]
-        # Head clears the released CV — that is what posts the entry
+        assert cv.status == "approved"
+        assert cv.approved_by == roles["head"]
+        # Head clears the approved CV — that is what posts the entry
         client.post(f"/ap/cv/{cv.id}/clear/")
         cv.refresh_from_db()
         assert cv.status == "cleared"
