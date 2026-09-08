@@ -1423,6 +1423,24 @@ class TestCheckVoucherScreen:
         assert "Payment Received By:" in body
         assert "Finance &amp; Acctg. Head" in body
         assert user.username in body           # requested-by signatory
+        assert "Prepared By:" in body          # 5-column signature row
+        assert "stmiet-trans-logo.png" in body
+
+    def test_rfp_print_renders(self, client, company, segment, accounts, fiscal_period,
+                               user, approved_rfp, segment_account_map):
+        resp = client.get(f"/ap/rfps/{approved_rfp.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "REQUEST FOR PAYMENT" in body
+        assert "ACCTG-FOR-012" in body
+        assert "ACCOUNTING DEPARTMENT" in body
+        assert approved_rfp.payee.name in body  # NAME
+        assert approved_rfp.ap_number in body   # AP NO
+        assert "20,000.00" in body              # distribution + chart totals
+        assert "Cost of Sales" in body          # chart-of-accounts account name
+        assert "Requested By:" in body
+        assert "Recommending Approver / or Checker" in body
+        assert "stmiet-trans-logo.png" in body
 
     def test_cv_detail_renders(self, client, company, segment, accounts, fiscal_period,
                                user, approved_rfp, segment_account_map):

@@ -61,6 +61,7 @@ urlpatterns = [
     path("ap/rfps/", views.rfp_list, name="rfp_list"),
     path("ap/rfps/new/", views.rfp_create, name="rfp_create"),
     path("ap/rfps/<int:pk>/", views.rfp_detail, name="rfp_detail"),
+    path("ap/rfps/<int:pk>/print/", views.rfp_print, name="rfp_print"),
     path("ap/rfps/<int:pk>/submit/", views.rfp_submit, name="rfp_submit"),
     path("ap/rfps/<int:pk>/approve/", views.rfp_approve, name="rfp_approve"),
     path("ap/rfps/<int:pk>/finance-notes/", views.rfp_finance_notes, name="rfp_finance_notes"),

@@ -1,123 +1,156 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}Check Voucher {{ cv.cv_number }} — Print{% endblock %}
 {% block content %}
 <style>
-  @page { size: A4; margin: 10mm; }
+  @page { size: A4 portrait; margin: 10mm; }
+  @media print {
+    #sidebar, header, .p-4 { display: none !important; }
+    body { background: #fff !important; }
+  }
 </style>
-<div class="py-8 px-4 bg-white">
-  <div class="mx-auto max-w-[900px] font-serif text-sm text-black">
+<div class="py-6 px-4 bg-white">
+  <div class="mx-auto max-w-[190mm] font-serif text-sm text-black">
     <table class="cv-grid w-full border-collapse">
       <tbody>
+        <!-- HEADER -->
         <tr>
-          <td colspan="8" class="border border-slate-500 text-center text-3xl font-black tracking-[0.2em] py-4">
+          <td colspan="2" class="border border-black px-2 py-1 align-middle">
+            <img src="{% static 'stmiet-trans-logo.png' %}" alt="Seven Trent logo" class="h-14 w-auto">
+          </td>
+          <td colspan="6" class="border border-black text-center text-[32px] font-black tracking-[0.2em] py-3 align-middle">
             CHECK VOUCHER
           </td>
-          <td colspan="4" class="border border-slate-500 px-2 py-1 text-right text-[11px] uppercase tracking-wider">
+          <td colspan="4" class="border border-black px-3 py-1 text-right text-[10px] uppercase tracking-wider font-bold align-top">
             ACCOUNTING DEPARTMENT
           </td>
         </tr>
         <tr class="text-xs">
-          <td colspan="8" class="border border-slate-500"></td>
-          <td class="border border-slate-500 px-2 py-1">Document No.:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">ACCTG-FOR-010</td>
+          <td colspan="8" class="border border-black"></td>
+          <td class="border border-black px-2 py-1">Document No.:</td>
+          <td colspan="3" class="border border-black px-2 py-1">ACCTG-FOR-010</td>
         </tr>
         <tr class="text-xs">
-          <td colspan="8" class="border border-slate-500"></td>
-          <td class="border border-slate-500 px-2 py-1">Effective Date:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">08.18.2022</td>
+          <td colspan="8" class="border border-black"></td>
+          <td class="border border-black px-2 py-1">Effective Date:</td>
+          <td colspan="3" class="border border-black px-2 py-1">08.18.2022</td>
         </tr>
         <tr class="text-xs">
-          <td colspan="8" class="border border-slate-500"></td>
-          <td class="border border-slate-500 px-2 py-1">Revision No.:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">02</td>
+          <td colspan="8" class="border border-black"></td>
+          <td class="border border-black px-2 py-1">Revision No.:</td>
+          <td colspan="3" class="border border-black px-2 py-1">02</td>
         </tr>
         <tr class="text-xs">
-          <td colspan="8" class="border border-slate-500"></td>
-          <td class="border border-slate-500 px-2 py-1">SN:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1 font-bold">{{ cv.cv_number }}</td>
+          <td colspan="8" class="border border-black"></td>
+          <td class="border border-black px-2 py-1">SN:</td>
+          <td colspan="3" class="border border-black px-2 py-1 font-bold">{{ cv.cv_number }}</td>
         </tr>
+
+        <!-- PAYEE INFORMATION -->
         <tr>
-          <td colspan="12" class="border border-slate-500 bg-slate-100 px-2 py-1 font-bold uppercase tracking-wider">
+          <td colspan="12" class="border border-black bg-[#e2efda] px-2 py-0.5 font-bold uppercase tracking-wider">
             Payee Information
           </td>
         </tr>
         <tr>
-          <td class="border border-slate-500 px-2 py-1 font-semibold">NAME:</td>
-          <td colspan="7" class="border border-slate-500 px-2 py-1 font-bold">{{ cv.payee.name }}</td>
-          <td class="border border-slate-500 px-2 py-1 text-xs font-semibold">DATE OF REQUEST:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">{{ date_of_request|date:"m.d.Y" }}</td>
+          <td class="border border-black px-2 py-1 font-semibold">NAME:</td>
+          <td colspan="6" class="border border-black px-2 py-1 font-bold uppercase">{{ cv.payee.name }}</td>
+          <td class="border border-black px-2 py-1 text-xs font-semibold">DATE OF REQUEST:</td>
+          <td colspan="3" class="border border-black px-2 py-1">{{ date_of_request|date:"m/d/Y" }}</td>
         </tr>
         <tr>
-          <td class="border border-slate-500 px-2 py-1 font-semibold">POSITION:</td>
-          <td colspan="7" class="border border-slate-500 px-2 py-1">{{ position|default:"—" }}</td>
-          <td class="border border-slate-500 px-2 py-1 text-xs font-semibold">CHECK ISSUED &amp; NO.:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">{{ cv.check_no|default:"" }}</td>
+          <td class="border border-black px-2 py-1 font-semibold">POSITION:</td>
+          <td colspan="6" class="border border-black px-2 py-1">{{ position|default:"—" }}</td>
+          <td class="border border-black px-2 py-1 text-xs font-semibold">CHECK ISSUED &amp; NO.:</td>
+          <td colspan="3" class="border border-black px-2 py-1">{{ cv.check_no|default:"" }}</td>
         </tr>
+
+        <!-- DISTRIBUTION CHARGES -->
         <tr>
-          <td colspan="12" class="border border-slate-500 bg-slate-100 px-2 py-1 font-bold uppercase tracking-wider">
+          <td colspan="12" class="border border-black bg-[#e2efda] px-2 py-0.5 font-bold uppercase tracking-wider">
             Distribution Charges
           </td>
         </tr>
         <tr class="text-[11px] uppercase tracking-wider">
-          <td colspan="6" class="border border-slate-500 px-2 py-1 font-bold">Purpose of Payment</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold">Entity</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold">Segment</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold">Cost Center</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold">GL Account</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold text-right">Debit</td>
-          <td class="border border-slate-500 px-2 py-1 font-bold text-right">Credit</td>
+          <td colspan="4" class="border border-black px-2 py-1 font-bold">Purpose of Payment</td>
+          <td class="border border-black px-2 py-1 font-bold">Entity</td>
+          <td class="border border-black px-2 py-1 font-bold">Segment</td>
+          <td colspan="2" class="border border-black px-2 py-1 font-bold">Cost Center</td>
+          <td colspan="2" class="border border-black px-2 py-1 font-bold">GL Account</td>
+          <td colspan="2" class="border border-black px-2 py-1 font-bold text-right">Amount</td>
         </tr>
-        {% for line in lines %}
+        {% for line in dr_lines %}
         <tr>
-          <td colspan="6" class="border border-slate-500 px-2 py-1.5">{{ line.description|default:rfp.particulars }}</td>
-          <td class="border border-slate-500 px-2 py-1.5">STMIET</td>
-          <td class="border border-slate-500 px-2 py-1.5">{{ line.segment.code }}</td>
-          <td class="border border-slate-500 px-2 py-1.5">{{ rfp.purpose|default:"—" }}</td>
-          <td class="border border-slate-500 px-2 py-1.5 font-mono text-xs">{{ line.account.code }}</td>
-          <td class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{% if line.side == 'dr' %}{{ line.amount|money }}{% endif %}</td>
-          <td class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{% if line.side == 'cr' %}{{ line.amount|money }}{% endif %}</td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="12" class="border border-slate-500 px-2 py-1.5 text-slate-400">No distribution lines.</td>
+          <td colspan="4" class="border border-black px-2 py-1">{{ line.description|default:rfp.particulars }}</td>
+          <td class="border border-black px-2 py-1">STMIET</td>
+          <td class="border border-black px-2 py-1">{{ line.segment.code }}</td>
+          <td colspan="2" class="border border-black px-2 py-1">{{ rfp.purpose|default:"—" }}</td>
+          <td colspan="2" class="border border-black px-2 py-1 font-mono text-xs">{{ line.account.code }}</td>
+          <td colspan="2" class="border border-black px-2 py-1 text-right tabular-nums">{{ line.amount|money }}</td>
         </tr>
         {% endfor %}
+        {% if not dr_lines %}
+        <tr>
+          <td colspan="12" class="border border-black px-2 py-1.5 text-slate-400">No distribution lines.</td>
+        </tr>
+        {% endif %}
+        {% for i in "12345" %}
+        {% if dr_lines and forloop.counter > dr_lines|length %}
+        <tr>
+          <td colspan="4" class="border border-black px-2 py-1">&nbsp;</td>
+          <td class="border border-black px-2 py-1">&nbsp;</td>
+          <td class="border border-black px-2 py-1">&nbsp;</td>
+          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
+          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
+          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+
+        <!-- TOTAL / REMARKS -->
         <tr class="font-semibold">
-          <td colspan="8" class="border border-slate-500 px-2 py-1.5">OTHER REMARKS:</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1.5 text-center uppercase">Total Amount</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{{ total|money }}</td>
+          <td colspan="5" class="border border-black px-2 py-1.5">OTHER REMARKS:{% if rfp %} <span class="font-normal">See attached RFP {{ rfp.ap_number }}</span>{% endif %}</td>
+          <td colspan="3" class="border border-black px-2 py-1.5 text-center uppercase">Total Amount</td>
+          <td colspan="4" class="border border-black px-2 py-1.5 text-right tabular-nums">{{ total|money }}</td>
         </tr>
         <tr>
-          <td colspan="12" class="border border-slate-500 px-2 py-1 text-[11px] italic">
-            No payment voucher/check shall be issued unless the distribution charges, the
-            accounting entries and the existence of funds available are authenticated by the
-            authorized signatories below.
+          <td colspan="12" class="border border-black px-2 py-1 text-[9px] italic leading-snug">
+            Each check issued shall be supported with sufficient documentation. Failure to do so shall constitute&nbsp;&nbsp;neglect&nbsp;&nbsp;to the requester and/or the department.
           </td>
         </tr>
-        <tr class="text-[11px] font-semibold uppercase tracking-wide">
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Requested By:</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Prepared By:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">Checked By:</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">Approved By:</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Payment Received By:</td>
+
+        <!-- SIGNATURE BLOCK (5 columns) -->
+        <tr class="text-[11px] font-bold uppercase tracking-wide">
+          <td colspan="2" class="border border-black px-2 py-1">Prepared By:</td>
+          <td colspan="2" class="border border-black px-2 py-1">Requested By:</td>
+          <td colspan="3" class="border border-black px-2 py-1">Checked By:</td>
+          <td colspan="2" class="border border-black px-2 py-1">Approved By:</td>
+          <td colspan="3" class="border border-black px-2 py-1">Payment Received By:</td>
         </tr>
-        <tr class="h-12 align-bottom">
-          <td colspan="2" class="border border-slate-500 px-2 py-1 text-center text-xs">{{ signatories.requested }}</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1 text-center text-xs">{{ signatories.noted }}</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1 text-center text-xs">{{ signatories.checked }}</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1 text-center text-xs">{{ signatories.approved }}</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1 text-center text-xs">{{ signatories.received }}</td>
+        <tr class="h-14 align-bottom">
+          <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.prepared }}</td>
+          <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.requested }}</td>
+          <td colspan="3" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.checked }}</td>
+          <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.approved }}</td>
+          <td colspan="3" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.received }}</td>
         </tr>
-        <tr class="text-[10px] uppercase tracking-wide text-slate-600">
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Print Name / Sign / Date</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Department Head</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">Finance &amp; Acctg. Head</td>
-          <td colspan="3" class="border border-slate-500 px-2 py-1">COO</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1">Signature Over Printed Name</td>
+        <tr class="text-[9px] uppercase tracking-wide text-slate-600">
+          <td colspan="2" class="border border-black px-2 py-1 text-center">Print Name/Sign/Date</td>
+          <td colspan="2" class="border border-black px-2 py-1 text-center">Print Name/Sign/Date</td>
+          <td colspan="3" class="border border-black px-2 py-1 text-center">Finance &amp; Acctg. Head / Sign and Date</td>
+          <td colspan="2" class="border border-black px-2 py-1 text-center">COO</td>
+          <td colspan="3" class="border border-black px-2 py-1 text-center">Signature Over Printed Name/Date</td>
         </tr>
       </tbody>
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>
 {% endblock %}

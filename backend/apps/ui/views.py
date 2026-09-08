@@ -1005,6 +1005,47 @@ def rfp_detail(request, pk):
 
 
 @login_required
+def rfp_print(request, pk):
+    """Print-optimized Request for Payment matching the RFP-TEMPLATES.xlsx
+    layout (ACCTG-FOR-012): logo header, payee info, distribution charges and
+    the Dr./Cr. chart with the three-column signature section."""
+    from apps.ap.models import RFPDocument
+
+    def _name(user):
+        return user.get_full_name() or user.username if user else ""
+
+    rfp = get_object_or_404(
+        RFPDocument.objects.select_related(
+            "payee", "segment", "created_by", "checked_by",
+            "approved_by_acctg", "approved_by_fin",
+        ),
+        pk=pk,
+    )
+    lines = list(rfp.lines.select_related("account", "segment").order_by("line_no"))
+    dr_lines = [line for line in lines if line.side == "dr"]
+    cr_lines = [line for line in lines if line.side == "cr"]
+    total = sum((line.amount for line in dr_lines), Decimal("0.00")) or rfp.amount
+    return render(
+        request,
+        "ui/ap/rfp_print.html",
+        {
+            "rfp": rfp,
+            "lines": lines,
+            "dr_lines": dr_lines,
+            "cr_lines": cr_lines,
+            "total": total,
+            "position": rfp.payee.position or "",
+            "contact_no": rfp.payee.contact_no or "",
+            "address": rfp.payee.address or f"{rfp.segment.name} ({rfp.segment.code})",
+            "requested_by": _name(rfp.created_by),
+            "checked_by": _name(rfp.checked_by),
+            "approved_acctg": _name(rfp.approved_by_acctg),
+            "approved_fin": _name(rfp.approved_by_fin),
+        },
+    )
+
+
+@login_required
 @require_POST
 def rfp_submit(request, pk):
     from apps.ap.models import RFPDocument
@@ -1493,13 +1534,14 @@ def cv_detail(request, pk):
     if cv.rfp_id:
         list(cv.rfp.lines.select_related("account", "segment"))
     rfp = cv.rfp
-    # Same 5 signatory cells as the print layout (ACCTG-FOR-010 NR): the
-    # requester is the RFP creator, the preparer is whoever issued the CV,
-    # approved-by is the COO role holder, and the payee signs as receiver.
+    # Same 5 signatory cells as the print layout (ACCTG-FOR-010): prepared by
+    # is whoever issued the CV, requested by is the RFP creator, checked by is
+    # the RFP checker, approved by is the COO role holder, and the payee signs
+    # as receiver.
     signatories = {
+        "prepared": _name(cv.created_by),
         "requested": _name(rfp.created_by) if rfp else "",
-        "noted": _name(cv.created_by),
-        "checked": _name(rfp.approved_by_acctg) or (_name(rfp.approved_by_fin) if rfp else ""),
+        "checked": _name(rfp.checked_by) if rfp else _name(cv.approved_by),
         "approved": _coo_name(),
         "received": cv.payee.name if cv.payee else "",
     }
@@ -1525,13 +1567,14 @@ def cv_print(request, pk):
     )
     rfp = cv.rfp
     lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
-    total = sum((line.amount for line in lines if line.side == "dr"), Decimal("0.00"))
+    dr_lines = [line for line in lines if line.side == "dr"]
+    total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     position = cv.payee.position or cv.payee.get_supplier_type_display()
     date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
     signatories = {
+        "prepared": _name(cv.created_by),
         "requested": _name(rfp.created_by) if rfp else "",
-        "noted": _name(cv.created_by),
-        "checked": _name(rfp.approved_by_acctg) or (_name(rfp.approved_by_fin) if rfp else ""),
+        "checked": _name(rfp.checked_by) if rfp else _name(cv.approved_by),
         "approved": _coo_name(),
         "received": cv.payee.name if cv.payee else "",
     }
@@ -1542,6 +1585,7 @@ def cv_print(request, pk):
             "cv": cv,
             "rfp": rfp,
             "lines": lines,
+            "dr_lines": dr_lines,
             "total": total,
             "position": position,
             "signatories": signatories,
