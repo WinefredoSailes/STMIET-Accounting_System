@@ -212,6 +212,13 @@ DOMAIN = {
     "CYCLE_END_DAY": env.int("CYCLE_END_DAY", default=0),      # 0=Mon
     # ADR-032: petty cash replenishment trigger (85% of fund consumed).
     "PCF_REPLENISH_TRIGGER": env.float("PCF_REPLENISH_TRIGGER", default=0.85),
+    # ADR-020/033: COO (CNR) review gate. Off during UAT — the Accounting &
+    # Finance Head approves every amount; flip on at go-live to require the
+    # COO above CNR_ESCALATION_THRESHOLD again.
+    "COO_REVIEW_ENABLED": env.bool("COO_REVIEW_ENABLED", default=False),
+    # ADR-018: auto-place fully-approved RFPs into an open CONSO batch when
+    # they complete approval (reversible — flip off for manual batching).
+    "CONSO_AUTO_ASSIGN": env.bool("CONSO_AUTO_ASSIGN", default=False),
 }
 
 # ---------------------------------------------------------------------------

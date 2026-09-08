@@ -18,6 +18,7 @@ import time
 
 from django.conf import settings
 from django.db import OperationalError, transaction
+from django.utils import timezone
 
 from apps.core.exceptions import PostingError, ValidationError
 from apps.core.money import money
@@ -38,6 +39,27 @@ from .models import (
 
 RFP_MIN_AMOUNT = Decimal("2000.00")
 CNR_ESCALATION_THRESHOLD = Decimal("100000.00")
+
+
+def coo_required(rfp) -> bool:
+    """CNR (COO) review is due only when the escalation gate is enabled AND
+    the RFP is above the threshold (ADR-020). While COO_REVIEW_ENABLED is off
+    the head approves every amount so UAT can run without the COO step."""
+    if not settings.DOMAIN.get("COO_REVIEW_ENABLED", False):
+        return False
+    return rfp.amount > CNR_ESCALATION_THRESHOLD
+
+
+def pending_final_check(rfp) -> bool:
+    """A finance-approved RFP still waiting on its last reviewer (the COO)."""
+    return rfp.status == "fin_approved" and coo_required(rfp)
+
+
+def finally_approved(rfp) -> bool:
+    """No approval step remains — the RFP is CONSO-ready."""
+    if rfp.status == "cnr_approved":
+        return True
+    return rfp.status == "fin_approved" and not coo_required(rfp)
 
 
 def log_action(doc, action, *, actor=None, note=""):
@@ -254,6 +276,44 @@ class RFPService:
     @classmethod
     @retry_on_lock()
     @transaction.atomic
+    def approve_head(cls, rfp: RFPDocument, *, user) -> RFPDocument:
+        """One-click head approval: advance through every remaining head step
+        (checked -> acctg_approved -> fin_approved) in a single action.
+
+        Alywin approves every RFP at any amount. When the CNR gate is enabled
+        (COO_REVIEW_ENABLED) and the amount is above the escalation threshold,
+        the RFP stops at `fin_approved` so the COO signs next. All invariants
+        run through advance_step (same-person guard, revision finance-notes
+        gate, posted guard), so this is only a click-count reduction.
+        """
+        if rfp.status == "posted":
+            raise PostingError(f"RFP {rfp.ap_number} is already posted.")
+        current = "prepared" if rfp.status == "submitted" else rfp.status
+        try:
+            idx = RFP_APPROVAL_STEPS.index(current)
+        except ValueError:
+            raise ValidationError(f"RFP is in unexpected status '{rfp.status}'.")
+        out = rfp
+        moved = 0
+        for role in RFP_APPROVAL_STEPS[idx + 1 :]:
+            # ADR-038 §10d: a revised RFP stops at the accounting step until
+            # Finance Head notes exist — the head adds them from the action
+            # bar before one more click finishes finance approval.
+            if role == "fin_approved" and out.revision_count > 0 and not (out.finance_notes or "").strip():
+                break
+            out = cls.advance_step(out, role=role, user=user)
+            moved += 1
+            if role == "fin_approved" and pending_final_check(out):
+                break
+        if not moved:
+            raise ValidationError(f"No head approval step available from status '{rfp.status}'.")
+        if finally_approved(out):
+            CONSOService.auto_assign(out)
+        return out
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def approve_cnr(cls, rfp: RFPDocument, *, user) -> RFPDocument:
         if rfp.amount <= CNR_ESCALATION_THRESHOLD:
             raise ValidationError("CNR approval is only required above P100,000.")
@@ -275,6 +335,7 @@ class RFPService:
         rfp.status = "cnr_approved"
         rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
         log_action(rfp, "cnr_approved", actor=user)
+        CONSOService.auto_assign(rfp)
         return rfp
 
     REJECTABLE_STATUSES = ("submitted", "checked", "acctg_approved")
@@ -285,7 +346,7 @@ class RFPService:
         approval step — including the CNR step on an amount above P100k."""
         if rfp.status in ("submitted", "checked", "acctg_approved"):
             return True
-        return rfp.status == "fin_approved" and rfp.amount > CNR_ESCALATION_THRESHOLD
+        return pending_final_check(rfp)
 
     @classmethod
     @retry_on_lock()
@@ -297,8 +358,6 @@ class RFPService:
         drafted). A note explaining the change is mandatory — the preparer
         reads it when they reopen the RFP to edit and resubmit.
         """
-        from django.utils import timezone
-
         if rfp.status == "posted":
             raise PostingError("Posted RFPs cannot be rejected.")
         if not cls._rejectable(rfp):
@@ -400,6 +459,37 @@ class CONSOService:
     """Grades a CONSO batch and posts all member RFPs atomically (7.3)."""
 
     @classmethod
+    def auto_assign(cls, rfp: RFPDocument):
+        """Reversible CONSO automation (CONSO_AUTO_ASSIGN flag): when enabled,
+        a fully-approved RFP drops into the newest open CONSO batch (creating
+        one if none is open). Flipping the flag off returns to manual batch
+        management — conso_add_rfp still works either way."""
+        if not settings.DOMAIN.get("CONSO_AUTO_ASSIGN", False):
+            return None
+        if not finally_approved(rfp) or rfp.conso_id:
+            return rfp.conso_id
+        from apps.sequences.models import DocumentSequence
+
+        batch = CONSOBatch.objects.filter(status="open").order_by(
+            "-conso_date", "-batch_no"
+        ).first()
+        if batch is None:
+            batch = CONSOBatch.objects.create(
+                batch_no=DocumentSequence.next_number(
+                    company=rfp.segment.company, form_code="CONSO",
+                    year=rfp.rfp_date.year, pattern="CONSO-{YYYY}-{SEQ:02d}",
+                ),
+                conso_date=rfp.rfp_date,
+            )
+        prior = sum(m.amount for m in batch.rfps.all())
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        batch.total_amount = prior + rfp.amount
+        batch.save(update_fields=["total_amount", "updated_at"])
+        log_action(rfp, "batched", actor=None, note=batch.batch_no)
+        return batch
+
+    @classmethod
     @retry_on_lock()
     @transaction.atomic
     def post_batch(cls, batch: CONSOBatch, *, user) -> CONSOBatch:
@@ -453,9 +543,11 @@ class CONSOService:
                     description=line.description or rfp.particulars, **kwargs,
                 )
             entry.recalc_totals()
-            # ADR-033: CNR approval (the last RFP gate) is the JE approval gate
-            # for entries above the threshold; PostingService refuses them as DRAFT.
-            if rfp.status == "cnr_approved":
+            # ADR-033: the last RFP approval is the JE approval gate for
+            # entries above the threshold; PostingService refuses them as
+            # DRAFT. With CNR review enabled that final gate is the CNR;
+            # otherwise the head's finance approval covers it.
+            if finally_approved(rfp):
                 entry.status = PostingStatus.APPROVED
                 entry.save(update_fields=["status", "updated_at"])
             PostingService.post(entry, user=user)
@@ -467,7 +559,28 @@ class CONSOService:
 
 
 class CVPaymentService:
-    """Check Voucher: clears AP with optional WHT split (7.4)."""
+    """Check Voucher lifecycle: created -> approved (head) -> cleared (7.4)."""
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def approve(cls, cv: CheckVoucher, *, user) -> CheckVoucher:
+        """created -> approved (Accounting & Finance Head signs off the check).
+
+        The head's approval is recorded on `approved_by`/`approved_at`; the
+        voucher's JE stays a DRAFT until clear books it (ADR-033 — the clear
+        act moves the DRAFT into the GL)."""
+        if cv.status != "created":
+            raise ValidationError(
+                f"CV {cv.cv_number} can only be approved from 'created' "
+                f"(status '{cv.status}')."
+            )
+        cv.status = "approved"
+        cv.approved_by = user
+        cv.approved_at = timezone.now()
+        cv.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        log_action(cv, "approved", actor=user)
+        return cv
 
     @classmethod
     @retry_on_lock()
@@ -555,11 +668,11 @@ class CVPaymentService:
     @retry_on_lock()
     @transaction.atomic
     def clear(cls, cv: CheckVoucher, *, user) -> CheckVoucher:
-        """released -> cleared (Finance & Accounting Head books it): post the
+        """approved -> cleared (Finance & Accounting Head books it): post the
         CV's JE to the GL, then mark the encashment cleared."""
-        if cv.status != "released":
+        if cv.status != "approved":
             raise ValidationError(
-                f"CV {cv.cv_number} must be released before it can be cleared "
+                f"CV {cv.cv_number} must be approved before it can be cleared "
                 f"(status '{cv.status}')."
             )
         if not cv.journal_entry_id:
@@ -580,7 +693,7 @@ class CVPaymentService:
         log_action(cv, "cleared", actor=user)
         return cv
 
-    REJECTABLE_STATUSES = ("created", "signed", "released")
+    REJECTABLE_STATUSES = ("created", "approved")
 
     @classmethod
     @retry_on_lock()
@@ -588,12 +701,10 @@ class CVPaymentService:
     def reject(cls, cv: CheckVoucher, *, user, note: str = "") -> CheckVoucher:
         """Return the CV to the issuer with a note (reject/revise cycle).
 
-        Only while it awaits an action (head sign, head release, head clear).
+        Only while it awaits an action (head approve, head clear).
         The CV's JE is still a DRAFT at every one of these points, so it is
         dropped with the failed pass; the issuer's revise rebuilds it.
         """
-        from django.utils import timezone
-
         if cv.status == "cleared":
             raise PostingError("Cleared CVs cannot be rejected.")
         if cv.status not in cls.REJECTABLE_STATUSES:
@@ -635,10 +746,10 @@ class CVPaymentService:
         check_no: str = "",
         cv_date: date | None = None,
     ) -> CheckVoucher:
-        """The issuer corrects a rejected CV and resubmits it for signing.
+        """The issuer corrects a rejected CV and resubmits it for approval.
 
         Only the issuer may revise, and only while the CV is `rejected`. The
-        corrected check re-enters the chain at "created" (fresh signature); the
+        corrected check re-enters the chain at "created" (fresh approval); the
         JE is rebuilt from the corrected figures as a DRAFT.
         """
         if cv.status != "rejected":
@@ -699,15 +810,15 @@ class CVPaymentService:
         entry.recalc_totals()
         cv.journal_entry = entry
         cv.status = "created"
-        cv.signed_by = None
-        cv.released_by = None
+        cv.approved_by = None
+        cv.approved_at = None
         cv.rejected_by = None
         cv.rejected_at = None
         cv.rejection_note = ""
         cv.revision_count += 1
         cv.save(update_fields=[
             "gross_amount", "withheld_tax", "net_amount", "check_no", "cv_date",
-            "bank_account", "journal_entry", "status", "signed_by", "released_by",
+            "bank_account", "journal_entry", "status", "approved_by", "approved_at",
             "rejected_by", "rejected_at", "rejection_note", "revision_count",
             "updated_at",
         ])

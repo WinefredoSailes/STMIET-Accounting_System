@@ -43,14 +43,13 @@ RFP_STEP_TO_ROLE = {
     "fin_approved": "head",
 }
 
-# CV lifecycle holders: for now every CV action lands on the Accounting &
-# Finance Head — created->signed (head), signed->released (head),
-# released->cleared (head books the encashment). The COO is not part of the
-# CV path (per current policy); ACCTG-FOR-010 / 7.4.
+# CV lifecycle holders: every CV action lands on the Accounting & Finance
+# Head — created->approved (head signs off), approved->cleared (head books
+# the encashment). The COO is not part of the CV path (per current policy);
+# ACCTG-FOR-010 / 7.4.
 CV_NEXT_ROLE = {
     "created": "head",
-    "signed": "head",
-    "released": "head",
+    "approved": "head",
 }
 
 
@@ -135,7 +134,9 @@ def rfp_queue(user_roles):
             continue  # awaits the preparer's submit, not an approval
         role = RFP_NEXT_ROLE.get(rfp.status)
         if rfp.status == "fin_approved":
-            if rfp.amount > 100000:
+            from apps.ap.services import coo_required
+
+            if coo_required(rfp):
                 role = "coo"
             else:
                 continue  # fully approved, waits for CONSO
@@ -182,13 +183,13 @@ def cv_queue(user_roles):
                     "amount": cv.gross_amount,
                     "detail": ("ui:cv_detail", cv.id),
                     "action": (
-                        ("ui:cv_sign", cv.id)
+                        ("ui:cv_approve", cv.id)
                         if cv.status == "created"
-                        else ("ui:cv_release", cv.id)
-                        if cv.status == "signed"
+                        else ("ui:cv_clear", cv.id)
+                        if cv.status == "approved"
                         else ("ui:cv_clear", cv.id)
                     ),
-                    "action_label": {"created": "Sign", "signed": "Release", "released": "Clear"}[
+                    "action_label": {"created": "Approve", "approved": "Clear"}[
                         cv.status
                     ],
                 }

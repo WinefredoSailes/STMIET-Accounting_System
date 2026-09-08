@@ -223,7 +223,9 @@ def rfp_timeline(rfp):
         "cnr_approved": rfp.approved_by_cnr,
     }
     order = ["prepared", "submitted", "checked", "acctg_approved", "fin_approved"]
-    if rfp.amount > Decimal("100000.00"):
+    from apps.ap.services import coo_required
+
+    if coo_required(rfp):
         order.append("cnr_approved")
     labels = {
         "prepared": "Requested by",
