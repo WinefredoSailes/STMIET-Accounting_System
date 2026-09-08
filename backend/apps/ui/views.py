@@ -71,12 +71,11 @@ AUDIT_ACTION_LABELS = {
     "checked": "Checked / Recommending approval",
     "acctg_approved": "Approved — Accounting",
     "fin_approved": "Approved — Finance",
-    "cnr_approved": "CNR approval (above ₱100k)",
+    "cnr_approved": "Approved — COO (CNR)",
     "rejected": "Rejected",
     "revised": "Revised & resubmitted",
     "posted": "Posted to GL (CONSO)",
-    "signed": "Signed",
-    "released": "Released",
+    "approved": "Approved",
     "cleared": "Cleared — JE posted to GL",
 }
 
@@ -96,6 +95,17 @@ def _audit_trail(doc_type, doc_id):
         }
         for e in ActionLog.objects.filter(doc_type=doc_type, doc_id=doc_id)
     ]
+
+
+def _coo_name() -> str:
+    """Display name of the current COO role holder for the CV approval line.
+
+    Pulled from the approval-role mapping (never hard-coded): the "Approved
+    By" signature on the Check Voucher is the COO, not the Finance & Accounts
+    Head (ACCTG-FOR-010 signatory layout)."""
+    from apps.core.approvals import role_assignee
+
+    return role_assignee("coo")
 
 
 # ---------------------------------------------------------------------------
@@ -646,8 +656,11 @@ def _rfp_approval_info(rfp, role):
     only when the caller holds the role the RFP is waiting on.
     """
     from apps.core.approvals import RFP_NEXT_ROLE
+    from apps.ap.services import coo_required
 
     next_role = RFP_NEXT_ROLE.get(rfp.status)
+    if rfp.status == "fin_approved" and coo_required(rfp):
+        next_role = "coo"
     can_act = bool(next_role) and role == next_role
     label = "Check" if rfp.status in ("prepared", "submitted") else "Approve"
     return {
@@ -967,8 +980,9 @@ def rfp_detail(request, pk):
     cr_total = sum((l.amount for l in rfp.lines.all() if l.side == "cr"), Decimal("0.00"))
 
     awaiting = None
+    from apps.ap.services import pending_final_check
     role = RFP_NEXT_ROLE.get(rfp.status)
-    if rfp.status == "fin_approved" and rfp.amount > 100000:
+    if pending_final_check(rfp):
         role = "coo"
     if role:
         awaiting = {
@@ -1018,15 +1032,11 @@ def rfp_approve(request, pk):
     from apps.core.approvals import approval_role_of, require_approval_role
 
     rfp = get_object_or_404(RFPDocument, pk=pk)
-    next_roles = {"prepared": "checked", "submitted": "checked", "checked": "acctg_approved", "acctg_approved": "fin_approved"}
-    role = next_roles.get(rfp.status)
     is_hx = bool(request.headers.get("HX-Request"))
     try:
-        if not role:
-            raise ValueError(f"No approval step available from status '{rfp.status}'.")
-        require_approval_role(request.user, role)
-        rfp = RFPService.advance_step(rfp, role=role, user=request.user)
-        msg = f"RFP {rfp.ap_number} approved at '{role}'."
+        require_approval_role(request.user, "head")
+        rfp = RFPService.approve_head(rfp, user=request.user)
+        msg = f"RFP {rfp.ap_number} approved."
         messages.success(request, msg)
     except (AccountingError, ValueError) as exc:
         msg = str(exc)
@@ -1090,8 +1100,9 @@ def rfp_reject(request, pk):
     from apps.core.approvals import ROLE_LABELS, RFP_NEXT_ROLE, role_assignee, require_approval_role
 
     rfp = get_object_or_404(RFPDocument, pk=pk)
+    from apps.ap.services import pending_final_check
     role = RFP_NEXT_ROLE.get(rfp.status)
-    if rfp.status == "fin_approved" and rfp.amount > 100000:
+    if pending_final_check(rfp):
         role = "coo"
     note = request.POST.get("note", "")
     try:
@@ -1472,13 +1483,31 @@ def cv_create(request):
 def cv_detail(request, pk):
     from apps.ap.models import CheckVoucher
 
+    def _name(user):
+        return user.get_full_name() or user.username if user else ""
+
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "bank_account", "rfp"),
         pk=pk,
     )
     if cv.rfp_id:
         list(cv.rfp.lines.select_related("account", "segment"))
-    return render(request, "ui/ap/cv_detail.html", {"cv": cv, "audit_trail": _audit_trail("cv", cv.id)})
+    rfp = cv.rfp
+    # Same 5 signatory cells as the print layout (ACCTG-FOR-010 NR): the
+    # requester is the RFP creator, the preparer is whoever issued the CV,
+    # approved-by is the COO role holder, and the payee signs as receiver.
+    signatories = {
+        "requested": _name(rfp.created_by) if rfp else "",
+        "noted": _name(cv.created_by),
+        "checked": _name(rfp.approved_by_acctg) or (_name(rfp.approved_by_fin) if rfp else ""),
+        "approved": _coo_name(),
+        "received": cv.payee.name if cv.payee else "",
+    }
+    return render(request, "ui/ap/cv_detail.html", {
+        "cv": cv,
+        "signatories": signatories,
+        "audit_trail": _audit_trail("cv", cv.id),
+    })
 
 
 @login_required
@@ -1491,7 +1520,7 @@ def cv_print(request, pk):
         return user.get_full_name() or user.username if user else ""
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "signed_by", "released_by", "rfp"),
+        CheckVoucher.objects.select_related("payee", "bank_account", "approved_by", "rfp"),
         pk=pk,
     )
     rfp = cv.rfp
@@ -1501,10 +1530,10 @@ def cv_print(request, pk):
     date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
     signatories = {
         "requested": _name(rfp.created_by) if rfp else "",
-        "noted": _name(rfp.checked_by) if rfp else "",
+        "noted": _name(cv.created_by),
         "checked": _name(rfp.approved_by_acctg) or (_name(rfp.approved_by_fin) if rfp else ""),
-        "approved": _name(cv.signed_by) or (_name(rfp.approved_by_cnr) if rfp else ""),
-        "received": _name(cv.released_by),
+        "approved": _coo_name(),
+        "received": cv.payee.name if cv.payee else "",
     }
     return render(
         request,
@@ -1523,9 +1552,11 @@ def cv_print(request, pk):
 
 @login_required
 @require_POST
-def cv_sign(request, pk):
-    """created -> signed (Accounting & Finance Head signs the check)."""
+def cv_approve(request, pk):
+    """created -> approved (Accounting & Finance Head signs off the check).
+    The head's approval clears the way for clear (which books the JE)."""
     from apps.ap.models import CheckVoucher
+    from apps.ap.services import CVPaymentService
     from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(
@@ -1533,54 +1564,10 @@ def cv_sign(request, pk):
     )
     is_htmx = request.headers.get("HX-Request")
     try:
-        if cv.status == "created":
-            require_approval_role(request.user, "head")
-            cv.status = "signed"
-            cv.signed_by = request.user
-            cv.save(update_fields=["status", "signed_by", "updated_at"])
-            from apps.ap.services import log_action
-
-            log_action(cv, "signed", actor=request.user)
-            msg = f"CV {cv.cv_number} signed."
-            messages.success(request, msg)
-        else:
-            msg = f"CV cannot be signed from status '{cv.status}'."
-            messages.error(request, msg)
-    except AccountingError as exc:
-        msg = str(exc)
-        messages.error(request, msg)
-    if is_htmx:
-        response = render(request, "ui/ap/_cv_row.html", {"cv": cv})
-        response["HX-Trigger"] = json.dumps({"showToast": msg})
-        return response
-    return redirect("ui:cv_detail", pk=pk)
-
-
-@login_required
-@require_POST
-def cv_release(request, pk):
-    """signed -> released (Head / Accounting releases the check per ADR-036)."""
-    from apps.ap.models import CheckVoucher
-    from apps.core.approvals import require_approval_role
-
-    cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"), pk=pk
-    )
-    is_htmx = request.headers.get("HX-Request")
-    try:
-        if cv.status == "signed":
-            require_approval_role(request.user, "head")
-            cv.status = "released"
-            cv.released_by = request.user
-            cv.save(update_fields=["status", "released_by", "updated_at"])
-            from apps.ap.services import log_action
-
-            log_action(cv, "released", actor=request.user)
-            msg = f"CV {cv.cv_number} released."
-            messages.success(request, msg)
-        else:
-            msg = f"CV cannot be released from status '{cv.status}'."
-            messages.error(request, msg)
+        require_approval_role(request.user, "head")
+        cv = CVPaymentService.approve(cv, user=request.user)
+        msg = f"CV {cv.cv_number} approved."
+        messages.success(request, msg)
     except AccountingError as exc:
         msg = str(exc)
         messages.error(request, msg)
@@ -1594,7 +1581,7 @@ def cv_release(request, pk):
 @login_required
 @require_POST
 def cv_clear(request, pk):
-    """released -> cleared (Accounting & Finance Head books the encashment).
+    """approved -> cleared (Accounting & Finance Head books the encashment).
 
     The CV's journal entry is posted to the GL here — the head's clear is the
     approval gate that moves the DRAFT entry into the books (ADR-033)."""
@@ -1617,14 +1604,14 @@ def cv_clear(request, pk):
 def cv_reject(request, pk):
     """The current actor returns the CV to its issuer with a note (reject/
     revise cycle mirroring the RFP path). Role-gated to whoever holds the
-    current action — the Accounting & Finance Head at 'created', 'signed'
-    and 'released'."""
+    current action — the Accounting & Finance Head at 'created' and
+    'approved'."""
     from apps.ap.models import CheckVoucher
     from apps.ap.services import CVPaymentService
     from apps.core.approvals import require_approval_role
 
     cv = get_object_or_404(CheckVoucher, pk=pk)
-    role = "head" if cv.status in ("created", "signed", "released") else None
+    role = "head" if cv.status in ("created", "approved") else None
     note = request.POST.get("note", "")
     try:
         if role:

@@ -207,7 +207,7 @@ class CONSOBatch(AuditableModel):
 
 class CheckVoucher(AuditableModel):
     """Check Voucher (ACCTG-FOR-010). Clears AP with optional WHT split
-    (POSTING_RULES 7.4). Created before the check is signed/released."""
+    (POSTING_RULES 7.4). Created before the check is approved/cleared."""
 
     cv_number = models.CharField(max_length=16, unique=True)  # CV-YYYY-####
     cv_date = models.DateField(db_index=True)
@@ -221,13 +221,13 @@ class CheckVoucher(AuditableModel):
     withheld_tax = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     net_amount = models.DecimalField(max_digits=18, decimal_places=2)
     check_no = models.CharField(max_length=32, blank=True)
-    # lifecycle: created -> signed (head) -> released (head) -> cleared
+    # lifecycle: created -> approved (head) -> cleared
     status = models.CharField(max_length=16, default="created")
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="cv"
     )
-    signed_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
-    released_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_at = models.DateTimeField(null=True, blank=True)
     rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     rejected_at = models.DateTimeField(null=True, blank=True)
     rejection_note = models.TextField(blank=True)
@@ -283,10 +283,10 @@ class AdvanceToEmployee(AuditableModel):
 class ActionLog(models.Model):
     """Append-only audit trail for AP documents (RFP / Check Voucher).
 
-    Every lifecycle action (create/submit/approve/reject/revise/post/sign/
-    release/clear) is recorded here so history survives reject/revise cycles,
-    which reset the mutable checked_by/approved_by_*/signed_by fields on the
-    document itself (ADR-008: full audit trail).
+    Every lifecycle action (create/submit/approve/reject/revise/post/clear)
+    is recorded here so history survives reject/revise cycles, which reset the
+    mutable checked_by/approved_by_*/approved_by fields on the document itself
+    (ADR-008: full audit trail).
     """
 
     class DocType(models.TextChoices):

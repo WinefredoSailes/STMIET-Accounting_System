@@ -59,7 +59,7 @@ class CheckVoucherSerializer(serializers.ModelSerializer):
         fields = (
             "id", "cv_number", "cv_date", "rfp", "payee", "bank_account",
             "gross_amount", "withheld_tax", "net_amount", "check_no", "status",
-            "journal_entry", "signed_by", "released_by",
+            "journal_entry", "approved_by", "approved_at",
         )
 
 
