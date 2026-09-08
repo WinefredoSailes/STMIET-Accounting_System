@@ -124,6 +124,7 @@ function searchableItem(wrap, value, text) {
   var item = document.createElement('div');
   item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
   item.dataset.value = value;
+  item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
   var code = document.createElement('span');
   code.className = 'font-mono text-xs text-slate-500';
@@ -204,6 +205,10 @@ function positionPanel(wrap, panel) {
   panel.style.top = (rect.bottom + 4) + 'px';
   panel.style.left = rect.left + 'px';
   panel.style.width = rect.width + 'px';
+  // Cap very wide triggers (e.g. account pickers spanning a wide cell) so the
+  // dropdown never runs off-screen; long option titles truncate + hover shows
+  // the full text via the item tooltip.
+  panel.style.maxWidth = Math.max(320, Math.min(window.innerWidth - 24, 480)) + 'px';
 }
 
 function positionOpenPanels() {
