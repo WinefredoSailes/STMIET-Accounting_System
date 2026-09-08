@@ -17,6 +17,7 @@ urlpatterns = [
     path("journal/general/", views.general_journal, name="general_journal"),
     path("journal/new/", views.je_create, name="je_create"),
     path("foundation/coa/", views.coa_list, name="coa_list"),
+    path("foundation/coa/account-options/", views.account_options, name="account_options"),
     path("foundation/coa/print/", views.coa_print, name="coa_print"),
     path("foundation/coa/new/", views.coa_create, name="coa_create"),
     path("foundation/coa/<int:pk>/update/", views.coa_update, name="coa_update"),

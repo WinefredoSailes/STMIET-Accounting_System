@@ -59,7 +59,11 @@ function openSearchable(wrap) {
   panel.classList.remove('hidden');
   var query = panel.querySelector('.searchable-query');
   query.value = '';
-  applyFilter(panel);
+  if (searchableMode(panel) === 'async') {
+    applyAsyncFilter(wrap, panel, '');
+  } else {
+    applyFilter(panel);
+  }
   query.focus();
   wrap.querySelector('.searchable-trigger').classList.add('border-indigo-500');
 }
@@ -92,26 +96,107 @@ function buildPanel(wrap) {
 
   var list = document.createElement('div');
   list.className = 'searchable-list max-h-56 overflow-y-auto py-1';
-  var select = wrap.querySelector('select');
-  for (var i = 0; i < select.options.length; i++) {
-    var opt = select.options[i];
-    var item = document.createElement('div');
-    item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
-    item.dataset.value = opt.value;
-    item.sbWrap = wrap;
-    var code = document.createElement('span');
-    code.className = 'font-mono text-xs text-slate-500';
-    code.textContent = opt.value;
-    var title = document.createElement('span');
-    title.className = 'text-slate-700';
-    title.textContent = opt.textContent;
-    item.appendChild(code);
-    item.appendChild(title);
-    list.appendChild(item);
-  }
+  list.dataset.mode = wrap.querySelector('select').dataset.searchUrl ? 'async' : 'local';
   panel.appendChild(list);
   document.body.appendChild(panel);
+  renderLocalItems(panel);
   return panel;
+}
+
+// ---- Local mode (default): all options are already in the <select>. ----
+function renderLocalItems(panel) {
+  var list = panel.querySelector('.searchable-list');
+  list.innerHTML = '';
+  var select = panel.sbWrap.querySelector('select');
+  for (var i = 0; i < select.options.length; i++) {
+    var opt = select.options[i];
+    if (opt.value === '' && !opt.selected) continue; // hide the placeholder when empty
+    var item = searchableItem(panel.sbWrap, opt.value, opt.textContent);
+    list.appendChild(item);
+  }
+}
+
+// ---- Async mode: options are fetched from data-search-url as the user
+// types, matching the current query against both code and name. Selected
+// values are merged into the native <select> so form submission keeps
+// working while the picker exposes a fresh server-side result set. ----
+function searchableItem(wrap, value, text) {
+  var item = document.createElement('div');
+  item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
+  item.dataset.value = value;
+  item.sbWrap = wrap;
+  var code = document.createElement('span');
+  code.className = 'font-mono text-xs text-slate-500';
+  code.textContent = value;
+  var title = document.createElement('span');
+  title.className = 'text-slate-700 truncate';
+  // Async results carry text like "61100 — Cost of Sales"; strip the code
+  // prefix (value) when it is duplicated so the title reads as the name only.
+  title.textContent = (text.indexOf(value + ' — ') === 0) ? text.slice(value.length + 3) : text;
+  item.appendChild(code);
+  item.appendChild(title);
+  return item;
+}
+
+function renderAsyncItems(panel, results, selectedValue, selectedText) {
+  var list = panel.querySelector('.searchable-list');
+  panel.sbWrap._abort = null;
+  list.innerHTML = '';
+  var select = panel.sbWrap.querySelector('select');
+  select.innerHTML = '';
+  if (selectedValue) {
+    var keep = document.createElement('option');
+    keep.value = selectedValue;
+    keep.textContent = selectedText;
+    select.appendChild(keep);
+  }
+  results.forEach(function (r) {
+    var opt = document.createElement('option');
+    opt.value = r.value;
+    opt.textContent = r.text;
+    select.appendChild(opt);
+    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text));
+  });
+  if (!results.length) {
+    var empty = document.createElement('div');
+    empty.className = 'px-3 py-4 text-center text-xs text-slate-400';
+    empty.textContent = 'No matches';
+    list.appendChild(empty);
+  }
+}
+
+function applyAsyncFilter(wrap, panel, query) {
+  var url = new URL(wrap.querySelector('select').dataset.searchUrl, window.location.origin);
+  url.searchParams.set('q', query);
+  var selected = wrap.querySelector('select').value;
+  if (selected) url.searchParams.set('selected', selected);
+  var selectedText = wrap.querySelector('.searchable-label').textContent;
+
+  if (wrap._abort) wrap._abort.abort();
+  var ctrl = new AbortController();
+  wrap._abort = ctrl;
+  var listEl = panel.querySelector('.searchable-list');
+  listEl.innerHTML = '';
+  var loading = document.createElement('div');
+  loading.className = 'px-3 py-4 text-center text-xs text-slate-400';
+  loading.textContent = 'Searching…';
+  listEl.appendChild(loading);
+
+  var req = fetch(url, { signal: ctrl.signal, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+  req.then(function (resp) { return resp.json(); })
+     .then(function (results) {
+       if (wrap._abort !== ctrl) return; // stale response
+       var normalized = (results || []).map(function (r) {
+         return { value: String(r.code), text: String(r.text || r.code) };
+       });
+       renderAsyncItems(panel, normalized, selected, selectedText);
+     })
+     .catch(function () { /* aborted or network error — keep prior state */ });
+}
+
+function searchableMode(panel) {
+  var list = panel ? panel.querySelector('.searchable-list') : null;
+  return list ? list.dataset.mode : 'local';
 }
 
 function positionPanel(wrap, panel) {
@@ -242,7 +327,9 @@ document.addEventListener('click', function (e) {
 
 document.addEventListener('input', function (e) {
   if (e.target.classList && e.target.classList.contains('searchable-query')) {
-    applyFilter(e.target.closest('.searchable-panel'));
+    var panel = e.target.closest('.searchable-panel');
+    if (searchableMode(panel) === 'async') applyAsyncFilter(panel.sbWrap, panel, e.target.value.trim());
+    else applyFilter(panel);
   }
 });
 

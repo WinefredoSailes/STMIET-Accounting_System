@@ -67,7 +67,6 @@
               <th class="px-3 py-2">SEGMENT</th>
               <th class="px-3 py-2">COST CENTER</th>
               <th class="px-3 py-2">GL ACCOUNT</th>
-              <th class="px-3 py-2">ACCOUNT NAME</th>
               <th class="px-3 py-2 text-right">AMOUNT</th>
               <th class="px-3 py-2"></th>
             </tr>
@@ -87,18 +86,17 @@
                 </select>
               </td>
               <td class="px-1 py-2">
-                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search…" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                  {% for acc in accounts %}<option value="{{ acc.id }}" data-name="{{ acc.name }}">{{ acc.code }} — {{ acc.name }}</option>{% endfor %}
+                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="" selected>— select —</option>
                 </select>
               </td>
-              <td class="px-1 py-2"><span class="gl-name text-xs text-slate-500"></span></td>
               <td class="px-1 py-2"><input type="number" step="0.01" min="0.01" name="exp_amount" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
               <td class="px-1 py-2"><button type="button" data-remove-row class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
             </tr>
           </tbody>
           <tfoot class="bg-slate-50">
             <tr>
-              <td colspan="8" class="px-3 py-2">
+              <td colspan="7" class="px-3 py-2">
                 <button type="button" data-add-row class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ Add line</button>
               </td>
             </tr>

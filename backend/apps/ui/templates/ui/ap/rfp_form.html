@@ -66,9 +66,8 @@
           <tr>
             <td class="py-2 text-slate-400 line-no">{{ forloop.counter }}</td>
             <td class="py-2">
-              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                <option value="">— select —</option>
-                {% for acc in accounts %}<option value="{{ acc.code }}" {% if line.account_id == acc.id %}selected{% endif %}>{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?selected={{ line.account.code }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="{{ line.account.code }}" selected>{{ line.account.code }} — {{ line.account.name }}</option>
               </select>
             </td>
             <td class="py-2">
@@ -90,9 +89,8 @@
           <tr>
             <td class="py-2 text-slate-400 line-no">1</td>
             <td class="py-2">
-              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                <option value="">— select —</option>
-                {% for acc in accounts %}<option value="{{ acc.code }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="" selected>— select —</option>
               </select>
             </td>
             <td class="py-2">

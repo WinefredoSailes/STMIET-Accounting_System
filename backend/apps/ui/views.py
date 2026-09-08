@@ -17,7 +17,7 @@ from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponseRedirect, Http404
+from django.http import HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -1704,7 +1704,7 @@ def pcf_replenish(request):
                     continue
                 expenses.append(
                     {
-                        "account_code": Account.objects.get(pk=acc_id).code,
+                        "account_code": Account.objects.get(code=acc_id).code,
                         "amount": amounts[i] or 0,
                         "description": descs[i] if i < len(descs) else "",
                         "segment": segments[i] if i < len(segments) else "",
@@ -2134,6 +2134,33 @@ def general_journal(request):
 # ---------------------------------------------------------------------------
 # Foundation — Chart of Accounts (read-only)
 # ---------------------------------------------------------------------------
+
+
+@login_required
+def account_options(request):
+    """Type-ahead source for searchable account pickers (server-side).
+
+    Returns the first ~30 postable accounts matching the query by code or
+    name (existing ``coa_rows`` filter), plus the currently-selected account
+    (when editing) so the picker can keep a stable selection. Used by the
+    RFP/PCF line-grid and COA pickers via ``data-search-url``.
+    """
+    from .services import coa_rows
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    rows = coa_rows(q=q)[:30]
+    if selected and selected not in {a.code for a in rows}:
+        keep = Account.objects.filter(code=selected, is_postable=True).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {"id": a.id, "code": a.code, "text": f"{a.code} — {a.name}"}
+            for a in rows
+        ],
+        safe=False,
+    )
 
 
 @login_required

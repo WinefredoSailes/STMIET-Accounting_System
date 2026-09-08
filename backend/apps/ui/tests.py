@@ -1373,7 +1373,7 @@ class TestPCFReplenishmentScreen:
             "request_date": "2026-01-15",
             "reference": "OR-1234",
             "customer_name": "DHPP Fleet",
-            "exp_account": [accounts["61100"].id],
+            "exp_account": [accounts["61100"].code],
             "exp_segment": [segment.code],
             "exp_cost_center": ["OS"],
             "exp_amount": ["850.00"],
@@ -1395,7 +1395,8 @@ class TestPCFReplenishmentScreen:
         resp = client.get("/cash/pcf/replenish/")
         assert resp.status_code == 200
         body = resp.content.decode()
-        assert "ACCOUNT NAME" in body
+        assert 'name="exp_account"' in body
+        assert 'data-search-url' in body          # server-driven COA picker
         assert "CUSTOMER / CLIENT" in body
         assert "REQUESTED BY" in body
 
@@ -2220,6 +2221,23 @@ class TestSearchablePickers:
         body = client.get("/ap/cv/new/").content.decode()
         assert 'name="bank_account"' in body
         assert "data-searchable" in body
+
+    def test_rfp_form_account_picker_is_server_driven(self, client, company, accounts):
+        body = client.get("/ap/rfps/new/").content.decode()
+        # The line-grid account picker fetches from the server as you type.
+        assert 'data-search-url' in body
+        assert 'data-search-placeholder="Search code or name' in body
+
+    def test_account_options_search_by_code_and_name(self, client, company, accounts):
+        resp = client.get("/foundation/coa/account-options/", {"q": "61100"})
+        assert resp.status_code == 200
+        codes = [row["code"] for row in resp.json()]
+        assert "61100" in codes
+
+        resp = client.get("/foundation/coa/account-options/", {"q": "hand"})
+        assert resp.status_code == 200
+        # case-insensitive name match ("Cash on Hand")
+        assert any("hand" in row["text"].lower() for row in resp.json())
 
 
 class TestHTMXPartialUpdates:

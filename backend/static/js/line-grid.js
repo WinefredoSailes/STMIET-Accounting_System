@@ -117,15 +117,7 @@
     });
 
     grid.addEventListener('input', function () { recalc(grid); });
-    grid.addEventListener('change', function (e) {
-      recalc(grid);
-      if (e.target.matches && e.target.matches('select[name="exp_account"]')) {
-        var opt = e.target.selectedOptions[0];
-        var name = opt ? (opt.dataset.name || '') : '';
-        var cell = e.target.closest('tr').querySelector('.gl-name');
-        if (cell) cell.textContent = name;
-      }
-    });
+    grid.addEventListener('change', function (e) { recalc(grid); });
     grid.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('[data-remove-row]') : null;
       if (btn) {
