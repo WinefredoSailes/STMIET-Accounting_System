@@ -93,19 +93,7 @@
           <td colspan="12" class="border border-black px-2 py-1.5 text-slate-400">No distribution lines.</td>
         </tr>
         {% endif %}
-        {% for i in "123456" %}
-        {% if dr_lines and forloop.counter > dr_lines|length %}
-        <tr>
-          <td colspan="5" class="border border-black px-2 py-1">&nbsp;</td>
-          <td class="border border-black px-2 py-1">&nbsp;</td>
-          <td class="border border-black px-2 py-1">&nbsp;</td>
-          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
-          <td colspan="3" class="border border-black px-2 py-1">&nbsp;</td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-
-        <!-- CHART OF ACCOUNTS / TOTAL -->
+        
         <tr>
           <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-0.5 font-bold uppercase tracking-wider">
             Chart of Accounts
@@ -142,7 +130,7 @@
           <td colspan="5" class="border border-black px-2 py-1">Recommending Approver / or Checker</td>
           <td colspan="5" class="border border-black px-2 py-1">Approval:</td>
         </tr>
-        <tr class="h-14 align-bottom">
+        <tr class="h-12 align-bottom">
           <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ requested_by }}</td>
           <td colspan="5" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ checked_by }}</td>
           <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ approved_acctg }}</td>

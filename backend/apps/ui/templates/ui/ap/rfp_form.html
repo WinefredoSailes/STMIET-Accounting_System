@@ -16,24 +16,18 @@
       <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT</div>
     </div>
 
-    <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="md:col-span-2">
+    <div class="p-6 grid grid-cols-1 md:grid-cols-12 gap-4">
+      <div class="md:col-span-8">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee">Payee (NAME)</label>
         <select name="payee" id="id_payee" required data-searchable data-search-placeholder="Type supplier name or code…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% for s in suppliers %}<option value="{{ s.id }}" {% if editing and editing.payee_id == s.id %}selected{% endif %}>{{ s.code }} — {{ s.name }}{% if s.last_ap %} (last AP {{ s.last_ap }}){% endif %}</option>{% endfor %}
         </select>
       </div>
-      <div>
+      <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_rfp_date">Date of request</label>
         <input type="date" name="rfp_date" id="id_rfp_date" required
                value="{% if editing %}{{ editing.rfp_date|date:"Y-m-d" }}{% endif %}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
-        <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          {% for seg in segments %}<option value="{{ seg.id }}" {% if editing and editing.segment_id == seg.id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
-        </select>
       </div>
       <div class="md:col-span-2">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_purpose">Cost center / ref.</label>
@@ -42,6 +36,7 @@
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
     </div>
+    <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
 
     <div class="px-6 py-3 border-t border-slate-200 text-xs uppercase tracking-wider text-slate-500">
       Distribution charges — chart of accounts (Dr/Cr)
@@ -130,4 +125,17 @@
 
 {% block extra_js %}
 <script src="{% static 'js/line-grid.js' %}"></script>
+<script>
+  (function () {
+    var hidden = document.getElementById("id_segment");
+    function syncSegment() {
+      var first = document.querySelector('#lines-body select[name="line_segment"]');
+      if (hidden && first && first.value) hidden.value = first.value;
+    }
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('select[name="line_segment"]')) syncSegment();
+    });
+    syncSegment();
+  })();
+</script>
 {% endblock %}

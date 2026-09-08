@@ -94,18 +94,6 @@
           <td colspan="12" class="border border-black px-2 py-1.5 text-slate-400">No distribution lines.</td>
         </tr>
         {% endif %}
-        {% for i in "12345" %}
-        {% if dr_lines and forloop.counter > dr_lines|length %}
-        <tr>
-          <td colspan="4" class="border border-black px-2 py-1">&nbsp;</td>
-          <td class="border border-black px-2 py-1">&nbsp;</td>
-          <td class="border border-black px-2 py-1">&nbsp;</td>
-          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
-          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
-          <td colspan="2" class="border border-black px-2 py-1">&nbsp;</td>
-        </tr>
-        {% endif %}
-        {% endfor %}
 
         <!-- TOTAL / REMARKS -->
         <tr class="font-semibold">
@@ -127,7 +115,7 @@
           <td colspan="2" class="border border-black px-2 py-1">Approved By:</td>
           <td colspan="3" class="border border-black px-2 py-1">Payment Received By:</td>
         </tr>
-        <tr class="h-14 align-bottom">
+        <tr class="h-12 align-bottom">
           <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.prepared }}</td>
           <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.requested }}</td>
           <td colspan="3" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ signatories.checked }}</td>
