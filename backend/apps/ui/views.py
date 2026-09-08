@@ -1699,16 +1699,26 @@ def pcf_replenish(request):
             expenses = []
             accounts = request.POST.getlist("exp_account")
             segments = request.POST.getlist("exp_segment")
-            amounts = request.POST.getlist("exp_amount")
+            debits = request.POST.getlist("exp_debit")
+            credits = request.POST.getlist("exp_credit")
             descs = request.POST.getlist("exp_description")
             cost_centers = request.POST.getlist("exp_cost_center")
             for i, acc_id in enumerate(accounts):
                 if not acc_id:
                     continue
+                debit = money((debits[i] if i < len(debits) else 0) or 0)
+                credit = money((credits[i] if i < len(credits) else 0) or 0)
+                if not debit and not credit:
+                    continue
+                if debit and credit:
+                    raise ValidationError(
+                        f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+                    )
                 expenses.append(
                     {
                         "account_code": Account.objects.get(code=acc_id).code,
-                        "amount": amounts[i] or 0,
+                        "side": "dr" if debit else "cr",
+                        "amount": str(debit or credit),
                         "description": descs[i] if i < len(descs) else "",
                         "segment": segments[i] if i < len(segments) else "",
                         "cost_center": cost_centers[i] if i < len(cost_centers) else "",
@@ -1780,6 +1790,8 @@ def pcf_replenishment_print(request, pk):
                 "coa": exp.get("account_code", ""),
                 "title": acct.name if acct else exp.get("account_code", ""),
                 "dr": exp.get("amount", 0),
+                "cr": exp.get("amount", 0),
+                "side": str(exp.get("side", "dr")).lower(),
                 "segment": exp.get("segment", ""),
                 "cost_center": exp.get("cost_center", ""),
                 "remarks": exp.get("description", ""),

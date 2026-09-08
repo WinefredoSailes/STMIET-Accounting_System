@@ -1417,7 +1417,8 @@ class TestPCFReplenishmentScreen:
             "exp_account": [accounts["61100"].code],
             "exp_segment": [segment.code],
             "exp_cost_center": ["OS"],
-            "exp_amount": ["850.00"],
+            "exp_debit": ["850.00"],
+            "exp_credit": [""],
             "exp_description": ["PTO cable for MAW7645"],
         })
         assert resp.status_code == 302
@@ -1428,8 +1429,29 @@ class TestPCFReplenishmentScreen:
         assert replen.payee_name == "ADRIANO SILVA"
         assert replen.status == "requested"
         assert replen.expenses[0]["account_code"] == "61100"
+        assert replen.expenses[0]["side"] == "dr"
         assert replen.customer_name == "DHPP Fleet"
         assert replen.requested_by == user
+
+    def test_replenish_rejects_mixed_dr_cr_row(self, client, company, segment, accounts,
+                                               fiscal_period, user, fund):
+        resp = client.post("/cash/pcf/replenish/", {
+            "fund": fund.id,
+            "payee_name": "ADRIANO SILVA",
+            "request_date": "2026-01-15",
+            "exp_account": [accounts["61100"].code],
+            "exp_segment": [segment.code],
+            "exp_cost_center": ["OS"],
+            "exp_debit": ["850.00"],
+            "exp_credit": ["850.00"],
+            "exp_description": ["PTO cable for MAW7645"],
+        })
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "only one of Debit or Credit" in body
+        from apps.cash.models import PCFReplenishment
+
+        assert PCFReplenishment.objects.count() == 0
 
     def test_replenish_form_shows_account_name(self, client, company, segment, accounts,
                                                fiscal_period, user, fund):

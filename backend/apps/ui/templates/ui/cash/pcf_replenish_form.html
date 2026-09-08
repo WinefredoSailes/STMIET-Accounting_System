@@ -67,7 +67,8 @@
               <th class="px-3 py-2">SEGMENT</th>
               <th class="px-3 py-2">COST CENTER</th>
               <th class="px-3 py-2">GL ACCOUNT</th>
-              <th class="px-3 py-2 text-right">AMOUNT</th>
+              <th class="px-3 py-2 text-right">DEBIT</th>
+              <th class="px-3 py-2 text-right">CREDIT</th>
               <th class="px-3 py-2"></th>
             </tr>
           </thead>
@@ -86,11 +87,12 @@
                 </select>
               </td>
               <td class="px-1 py-2">
-                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   <option value="" selected>— select —</option>
                 </select>
               </td>
-              <td class="px-1 py-2"><input type="number" step="0.01" min="0.01" name="exp_amount" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
+              <td class="px-1 py-2"><input type="number" step="0.01" min="0" name="exp_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+              <td class="px-1 py-2"><input type="number" step="0.01" min="0" name="exp_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
               <td class="px-1 py-2"><button type="button" data-remove-row class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
             </tr>
           </tbody>
@@ -101,15 +103,18 @@
               </td>
             </tr>
             <tr class="font-semibold">
-              <td colspan="6" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
               <td class="px-3 py-2 text-right tabular-nums" id="pcv-total">0.00</td>
+              <td></td>
               <td></td>
             </tr>
           </tfoot>
         </table>
       </fieldset>
 
-      <p class="text-xs text-slate-500">Petty cash voucher shall be submitted with sufficient supporting documents. Failure to do so shall constitute neglect by the requester and/or the department.</p>
+      <p class="text-xs text-slate-500">Enter each line's amount in either the Debit or the Credit column — not both.</p>
+
+      <p class="text-xs text-slate-500 mt-1">Petty cash voucher shall be submitted with sufficient supporting documents. Failure to do so shall constitute neglect by the requester and/or the department.</p>
 
       <div class="grid grid-cols-5 gap-2 text-center text-xs">
         <div class="border-t border-slate-300 pt-2"><div class="font-medium">Print Name/Sign/Date</div><div class="text-slate-500">REQUESTED BY</div></div>

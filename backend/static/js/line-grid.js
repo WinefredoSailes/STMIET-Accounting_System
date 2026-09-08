@@ -96,7 +96,9 @@
 
   function recalcPcv(grid) {
     var t = 0;
-    grid.querySelectorAll('input[name="exp_amount"]').forEach(function (i) { t += num(i); });
+    grid.querySelectorAll('tr').forEach(function (tr) {
+      t += num(tr.querySelector('.amount-dr')) + num(tr.querySelector('.amount-cr'));
+    });
     var total = docSel(grid.dataset.total);
     if (total) total.textContent = t.toFixed(2);
   }

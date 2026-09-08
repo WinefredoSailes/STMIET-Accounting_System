@@ -224,7 +224,13 @@ class PCFService:
 
     @classmethod
     def request_replenishment(cls, fund: PettyCashFund, expenses: list[dict], user=None) -> PCFReplenishment:
-        """Create replenishment request from liquidation expenses."""
+        """Create replenishment request from liquidation expenses.
+
+        Each expense may carry an optional ``side`` ("dr"/"cr", default "dr")
+        so the posting JE places the amount on the right side — the JSON API
+        stays backward-compatible without it.
+        """
+        expenses = [dict(e, side=str(e.get("side", "dr")).lower()) for e in expenses]
         total = sum(money(e["amount"]) for e in expenses)
         return PCFReplenishment.objects.create(
             fund=fund,
@@ -306,22 +312,42 @@ class PCFService:
             created_by=user,
         )
         line_no = 1
+        dr_total = Decimal("0.00")
+        cr_total = Decimal("0.00")
         for exp in replen.expenses:
             from apps.foundation.models import Account
             acc = Account.objects.get(code=exp["account_code"])
-            JournalEntryLine.objects.create(
-                entry=entry,
-                line_no=line_no,
-                account=acc,
-                debit=money(exp["amount"]),
-                description=exp.get("description", ""),
-            )
+            side = str(exp.get("side", "dr")).lower()
+            amount = money(exp["amount"])
+            if side == "cr":
+                cr_total += amount
+                JournalEntryLine.objects.create(
+                    entry=entry,
+                    line_no=line_no,
+                    account=acc,
+                    credit=amount,
+                    description=exp.get("description", ""),
+                )
+            else:
+                dr_total += amount
+                JournalEntryLine.objects.create(
+                    entry=entry,
+                    line_no=line_no,
+                    account=acc,
+                    debit=amount,
+                    description=exp.get("description", ""),
+                )
             line_no += 1
+        cash_credit = dr_total - cr_total
+        if cash_credit <= 0:
+            raise ValidationError(
+                "A petty cash replenishment must net-debit at least the cash out."
+            )
         JournalEntryLine.objects.create(
             entry=entry,
             line_no=line_no,
             account=replen.fund.gl_account,
-            credit=replen.amount,
+            credit=cash_credit,
             description=f"PCF {replen.fund.fund_code} replenishment",
         )
         entry.recalc_totals()

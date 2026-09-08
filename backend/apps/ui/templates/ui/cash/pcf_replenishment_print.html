@@ -66,8 +66,8 @@
           <td class="border border-slate-500 px-1 py-1">{{ row.cost_center }}</td>
           <td class="border border-slate-500 px-1 py-1 font-mono">{{ row.coa }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.title }}</td>
-          <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{{ row.dr|money }}</td>
-          <td class="border border-slate-500 px-1 py-1 text-right"></td>
+          <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{% if row.side != 'cr' %}{{ row.dr|money }}{% endif %}</td>
+          <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{% if row.side == 'cr' %}{{ row.cr|money }}{% endif %}</td>
           <td class="border border-slate-500 px-1 py-1 text-right"></td>
           <td class="border border-slate-500 px-1 py-1">{{ row.segment }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.classification }}</td>
