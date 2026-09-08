@@ -1,0 +1,15 @@
+{% comment %}Standard ACCTG-FOR document shell: populates the bordered card with
+the document title strip on top and any body content (meta grid, line table).
+Params: doc_title, doc_form_id, doc_meta_html (raw, right-aligned header
+block), doc_body_html (raw), doc_title_class. Caller captures the two html
+params with {% capture %}.{% endcomment %}
+<div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+    <div>
+      <div class="{% if doc_title_class %}{{ doc_title_class }}{% else %}text-sm font-semibold text-slate-900{% endif %}">{{ doc_title }}</div>
+      <div class="text-xs text-slate-500">{{ doc_form_id }}</div>
+    </div>
+    {% if doc_meta_html %}<div class="text-right text-xs text-slate-500">{{ doc_meta_html|safe }}</div>{% endif %}
+  </div>
+  {{ doc_body_html|safe }}
+</div>

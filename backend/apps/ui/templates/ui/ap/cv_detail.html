@@ -1,185 +1,98 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}CV {{ cv.cv_number }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:cv_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Check vouchers</a>
 
-  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-      <div>
-        <div class="text-lg font-bold text-slate-900">CHECK VOUCHER</div>
-        <div class="text-xs text-slate-500">ACCOUNTING DEPARTMENT</div>
-      </div>
-      <div class="text-right">
-        <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
-          {% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800
-          {% elif cv.status == 'created' %}bg-slate-100 text-slate-700
-          {% else %}bg-amber-100 text-amber-800{% endif %}">
-          {{ cv.status }}
-        </span>
-        <div class="text-xs text-slate-500 mt-1">Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-010</span></div>
-      </div>
-    </div>
-
-    <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-      <div><div class="text-xs text-slate-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
-      <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
-      <div><div class="text-xs text-slate-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
-      <div><div class="text-xs text-slate-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
-    </div>
-
-    <div class="px-6 pb-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
-      {% if cv.rfp_id %}
-      <table class="w-full text-sm min-w-[760px]">
-        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
-            <th class="px-3 py-2">ENTITY</th>
-            <th class="px-3 py-2">SEGMENT</th>
-            <th class="px-3 py-2">COST CENTER</th>
-            <th class="px-3 py-2">GL ACCOUNT</th>
-            <th class="px-3 py-2 text-right">AMOUNT</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% for line in cv.rfp.lines.all %}
-          <tr>
-            <td class="px-3 py-2">{{ line.description|default:cv.rfp.particulars }}</td>
-            <td class="px-3 py-2">STMIET</td>
-            <td class="px-3 py-2">{{ line.segment.code }}</td>
-            <td class="px-3 py-2">{{ cv.rfp.purpose|default:"OS" }}</td>
-            <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }}</td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-        <tfoot class="bg-slate-50">
-          <tr><td colspan="6" class="px-3 py-2 text-xs text-slate-500">RFP {{ cv.rfp.ap_number }} — {{ cv.rfp.particulars }}</td></tr>
-        </tfoot>
-      </table>
-      {% else %}
-      <p class="text-sm text-slate-400">Standalone voucher — no linked RFP.</p>
-      {% endif %}
-
-      <table class="mt-4 ml-auto w-72 text-sm">
-        <tbody class="divide-y divide-slate-100">
-          <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td></tr>
-          <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td></tr>
-          <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|money }}</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="px-6 pb-4">
-      <div class="grid grid-cols-5 gap-2 text-center text-xs">
-        <div class="border-t border-slate-300 pt-2">
-          <div class="font-medium">{{ cv.payee.name|default:"—" }}</div>
-          <div class="text-slate-500">REQUESTED BY · Print Name/Sign/Date</div>
-        </div>
-        <div class="border-t border-slate-300 pt-2">
-          <div class="font-medium">—</div>
-          <div class="text-slate-500">NOTED BY · DEPARTMENT HEAD</div>
-        </div>
-        <div class="border-t border-slate-300 pt-2">
-          <div class="font-medium">{% if cv.signed_by %}{{ cv.signed_by.get_full_name|default:cv.signed_by.username }}{% else %}—{% endif %}</div>
-          <div class="text-slate-500">CHECKED BY / RECOMMENDING APPROVAL · FINANCE &amp; ACCTG HEAD</div>
-        </div>
-        <div class="border-t border-slate-300 pt-2">
-          <div class="font-medium">—</div>
-          <div class="text-slate-500">APPROVED BY</div>
-        </div>
-        <div class="border-t border-slate-300 pt-2">
-          <div class="font-medium">{% if cv.released_by %}{{ cv.released_by.get_full_name|default:cv.released_by.username }}{% else %}—{% endif %}</div>
-          <div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div>
-        </div>
-      </div>
-    </div>
+  {% capture as shell_meta %}
+  {% capture as badge_color %}{% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800{% elif cv.status == 'created' %}bg-slate-100 text-slate-700{% else %}bg-amber-100 text-amber-800{% endif %}{% endcapture %}
+  {% include "ui/partials/status_badge.html" with status=cv.status color=badge_color %}
+  <div class="text-xs text-slate-500 mt-1">Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-010</span></div>
+  {% endcapture %}
+  {% capture as shell_body %}
+  <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-slate-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
+    <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
+    <div><div class="text-xs text-slate-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
   </div>
 
-  <div class="mt-4 flex items-center gap-3">
-    {% if cv.status == "created" %}
-    <form method="post" action="{% url 'ui:cv_sign' cv.id %}">
-      {% csrf_token %}
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Sign check</button>
-    </form>
-    <button type="button" id="reject-toggle" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
-    <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
-      {% csrf_token %}
-      <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
-      <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
-    </form>
-    {% elif cv.status == "signed" %}
-    <form method="post" action="{% url 'ui:cv_release' cv.id %}">
-      {% csrf_token %}
-      <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Release check (Finance &amp; Acctg Head)</button>
-    </form>
-    <button type="button" id="reject-toggle" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
-    <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
-      {% csrf_token %}
-      <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
-      <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
-    </form>
-    {% elif cv.status == "released" %}
-    <form method="post" action="{% url 'ui:cv_clear' cv.id %}">
-      {% csrf_token %}
-      <button type="submit" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Mark cleared &amp; post to GL</button>
-    </form>
-    <button type="button" id="reject-toggle" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
-    <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
-      {% csrf_token %}
-      <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
-      <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
-    </form>
-    {% elif cv.status == "rejected" %}
-    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 w-full">
-      <div class="text-sm font-semibold text-red-800">Rejected — returned for correction</div>
-      <div class="text-xs text-slate-500 mt-1">Returned by {{ cv.rejected_by.get_full_name|default:cv.rejected_by }} · {{ cv.rejected_at|date:"M d, Y H:i" }}</div>
-      <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ cv.rejection_note }}</div>
-      {% if request.user.id == cv.created_by_id %}
-      <a href="{% url 'ui:cv_revise' cv.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise & resubmit</a>
-      {% else %}
-      <p class="mt-2 text-xs text-slate-500">Only the issuer ({{ cv.created_by.get_full_name|default:cv.created_by }}) can revise this CV.</p>
-      {% endif %}
-    </div>
+  <div class="px-6 pb-4">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
+    {% if cv.rfp_id %}
+    <table class="w-full text-sm min-w-[760px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+          <th class="px-3 py-2">ENTITY</th>
+          <th class="px-3 py-2">SEGMENT</th>
+          <th class="px-3 py-2">COST CENTER</th>
+          <th class="px-3 py-2">GL ACCOUNT</th>
+          <th class="px-3 py-2 text-right">AMOUNT</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for line in cv.rfp.lines.all %}
+        <tr>
+          <td class="px-3 py-2">{{ line.description|default:cv.rfp.particulars }}</td>
+          <td class="px-3 py-2">STMIET</td>
+          <td class="px-3 py-2">{{ line.segment.code }}</td>
+          <td class="px-3 py-2">{{ cv.rfp.purpose|default:"OS" }}</td>
+          <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50">
+        <tr><td colspan="6" class="px-3 py-2 text-xs text-slate-500">RFP {{ cv.rfp.ap_number }} — {{ cv.rfp.particulars }}</td></tr>
+      </tfoot>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400">Standalone voucher — no linked RFP.</p>
     {% endif %}
-    {% if cv.journal_entry_id %}
-    <a href="{% url 'ui:je_detail' cv.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">CV JE →</a>
-    {% endif %}
-    <a href="{% url 'ui:cv_print' cv.id %}" class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>
+
+    <table class="mt-4 ml-auto w-72 text-sm">
+      <tbody class="divide-y divide-slate-100">
+        <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td></tr>
+        <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td></tr>
+        <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|money }}</td></tr>
+      </tbody>
+    </table>
   </div>
 
-  {% if audit_trail %}
-  <div class="mt-6 border-t border-slate-200 pt-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500 font-medium mb-3">Audit Trail</div>
-    <ol class="space-y-3">
-      {% for entry in audit_trail %}
-      <li class="flex gap-3 text-sm">
-        <span class="mt-1.5 w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
-        <div class="min-w-0">
-          <div class="font-medium text-slate-800">{{ entry.label }}</div>
-          <div class="text-xs text-slate-500">by {{ entry.actor|default:"—" }} · {{ entry.at|date:"M d, Y H:i" }}</div>
-          {% if entry.note %}<div class="text-xs text-slate-600 whitespace-pre-wrap mt-0.5">{{ entry.note }}</div>{% endif %}
-        </div>
-      </li>
-      {% endfor %}
-    </ol>
+  <div class="px-6 pb-4">
+    <div class="grid grid-cols-5 gap-2 text-center text-xs">
+      <div class="border-t border-slate-300 pt-2">
+        <div class="font-medium">{{ cv.payee.name|default:"—" }}</div>
+        <div class="text-slate-500">REQUESTED BY · Print Name/Sign/Date</div>
+      </div>
+      <div class="border-t border-slate-300 pt-2">
+        <div class="font-medium">—</div>
+        <div class="text-slate-500">NOTED BY · DEPARTMENT HEAD</div>
+      </div>
+      <div class="border-t border-slate-300 pt-2">
+        <div class="font-medium">{% if cv.signed_by %}{{ cv.signed_by.get_full_name|default:cv.signed_by.username }}{% else %}—{% endif %}</div>
+        <div class="text-slate-500">CHECKED BY / RECOMMENDING APPROVAL · FINANCE &amp; ACCTG HEAD</div>
+      </div>
+      <div class="border-t border-slate-300 pt-2">
+        <div class="font-medium">—</div>
+        <div class="text-slate-500">APPROVED BY</div>
+      </div>
+      <div class="border-t border-slate-300 pt-2">
+        <div class="font-medium">{% if cv.released_by %}{{ cv.released_by.get_full_name|default:cv.released_by.username }}{% else %}—{% endif %}</div>
+        <div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div>
+      </div>
+    </div>
   </div>
-  {% endif %}
+  {% endcapture %}
+  {% include "ui/partials/document_shell.html" with doc_title="CHECK VOUCHER" doc_form_id="ACCOUNTING DEPARTMENT" doc_meta_html=shell_meta doc_body_html=shell_body %}
+
+  {% include "ui/partials/workflow_actions.html" with doc=cv workflow_type="cv" %}
+  {% include "ui/partials/audit_trail.html" %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script>
-(function () {
-  var toggle = document.getElementById('reject-toggle');
-  var form = document.getElementById('reject-form');
-  if (toggle && form) {
-    toggle.addEventListener('click', function () {
-      form.classList.toggle('hidden');
-    });
-  }
-})();
-</script>
+<script src="{% static 'js/toggle-block.js' %}"></script>
 {% endblock %}

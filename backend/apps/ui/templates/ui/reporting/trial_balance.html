@@ -3,30 +3,19 @@
 {% block title %}Trial Balance — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-slate-900">Trial Balance</h1>
-      <p class="text-sm text-slate-500 mt-1">Signed balances from posted GL (ADR-005) as of {{ as_of }}.</p>
-    </div>
-    <form method="get" class="flex items-center gap-2">
-      <input type="date" name="as_of" value="{{ as_of }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-      <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-        <option value="">All segments</option>
-        {% for seg in segments %}<option value="{{ seg.code }}" {% if segment == seg.code %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
-      </select>
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Run</button>
-    </form>
-  </div>
-
-  <div class="flex items-center gap-2 mt-2">
-    <select name="format" id="id_format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-      <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
-      <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
-      <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
+  {% capture as tb_subtitle %}Signed balances from posted GL (ADR-005) as of {{ as_of }}.{% endcapture %}
+  {% capture as run_controls %}
+  <form method="get" class="flex items-center gap-2">
+    <input type="date" name="as_of" value="{{ as_of }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+    <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+      <option value="">All segments</option>
+      {% for seg in segments %}<option value="{{ seg.code }}" {% if segment == seg.code %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
     </select>
-    <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
-    <a href="{% url 'ui:trial_balance_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
-  </div>
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Run</button>
+  </form>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="Trial Balance" subtitle=tb_subtitle actions=run_controls %}
+  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True print_url_name="ui:trial_balance_print" %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[1300px]">
@@ -62,14 +51,4 @@
     </table>
   </div>
 </div>
-
-<script>
-  const formatSelect = document.getElementById('id_format');
-  const form = formatSelect.closest('form');
-  form.addEventListener('change', () => {
-    const params = new URLSearchParams(form.querySelector('input[name="as_of"]').value ? new URLSearchParams(form) : {});
-    const newHref = form.action + '?format=' + formatSelect.value;
-    window.location.href = newHref;
-  });
-</script>
 {% endblock %}

@@ -19,7 +19,7 @@
         <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
         {% endfor %}
       </select>
-      <select name="format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+      <select name="format" data-format-redirect class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
         <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
         <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
         <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
@@ -60,15 +60,4 @@
   <div class="mt-8 text-center text-slate-400">No statement yet. Pick a month + year and click Generate (requires generated weekly cycles).</div>
   {% endif %}
 </div>
-
-<script>
-  const formatSelect = document.querySelector('select[name="format"]');
-  if (formatSelect) {
-    formatSelect.addEventListener('change', () => {
-      const form = formatSelect.closest('form');
-      const newHref = form.action + '?format=' + formatSelect.value;
-      window.location.href = newHref;
-    });
-  }
-</script>
 {% endblock %}

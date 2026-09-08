@@ -3,16 +3,16 @@
 {% block title %}{{ asset.asset_no }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:asset_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Assets</a>
-  <div class="mt-1 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-slate-900">{{ asset.asset_no }} · {{ asset.name }}</h1>
-    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
-      {% if asset.status == 'active' %}bg-emerald-100 text-emerald-800
-      {% elif asset.status == 'disposed' %}bg-slate-100 text-slate-500
-      {% else %}bg-amber-100 text-amber-800{% endif %}">
-      {{ asset.status }}
-    </span>
-  </div>
+  {% capture as asset_badge_color %}
+  {% if asset.status == 'active' %}bg-emerald-100 text-emerald-800
+  {% elif asset.status == 'disposed' %}bg-slate-100 text-slate-500
+  {% else %}bg-amber-100 text-amber-800{% endif %}
+  {% endcapture %}
+  {% capture as asset_title %}{{ asset.asset_no }} · {{ asset.name }}{% endcapture %}
+  {% capture as asset_actions %}
+  {% include "ui/partials/status_badge.html" with status=asset.status color=asset_badge_color %}
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=asset_title back_url_name="ui:asset_list" back_label="Assets" actions=asset_actions %}
 
   <dl class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">

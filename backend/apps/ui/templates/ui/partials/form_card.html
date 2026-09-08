@@ -1,0 +1,26 @@
+{% comment %}Standard create/edit form card. Caller captures the field grid into
+fields_html (everything between <form> and the submit row) and optionally a
+top_html block (banner/alerts rendered after csrf) and footer_html block
+(hints/notes rendered after the grid).
+Params: action_url (optional), top_html, fields_html, footer_html,
+grid_class (default 2-col responsive), submit_label, submit_href,
+cancel_url_name (optional), extra_class.{% endcomment %}
+<form method="post"{% if action_url %} action="{% url action_url %}"{% elif action_href %} action="{{ action_href }}"{% endif %}
+      class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4{% if extra_class %} {{ extra_class }}{% endif %}">
+  {% csrf_token %}
+  {% if top_html %}{{ top_html|safe }}{% endif %}
+  <div class="{% if grid_class %}{{ grid_class }}{% else %}grid-cols-1 md:grid-cols-2 gap-4{% endif %} grid">
+    {{ fields_html|safe }}
+  </div>
+  {% if footer_html %}<div>{{ footer_html|safe }}</div>{% endif %}
+  <div class="mt-6 flex justify-end gap-3">
+    {% if cancel_url_name %}
+    <a href="{% url cancel_url_name %}" class="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</a>
+    {% endif %}
+    {% if submit_href %}
+    <a href="{{ submit_href }}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ submit_label }}</a>
+    {% else %}
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ submit_label }}</button>
+    {% endif %}
+  </div>
+</form>

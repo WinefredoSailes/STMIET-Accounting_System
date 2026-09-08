@@ -1,117 +1,96 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}{% if editing %}Edit{% else %}Create{% endif %} COA Account — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6 sm:p-8 max-w-2xl">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-xl font-semibold text-slate-900{% if editing %} text-slate-600{% endif %}">
-      {% if editing %}Edit{% else %}Create{% endif %} COA Account
-    </h2>
+  {% capture as coa_title %}{% if editing %}Edit{% else %}Create{% endif %} COA Account{% endcapture %}
+  {% capture as submit_label %}{% if editing %}Update{% else %}Save{% endif %}{% endcapture %}
+  {% capture as coa_action_href %}{% if editing %}{% url 'ui:coa_update' account.pk %}{% else %}{% url 'ui:coa_create' %}{% endif %}{% endcapture %}
+  {% include "ui/partials/page_header.html" with title=coa_title back_url_name="ui:coa_list" back_label="COA accounts" %}
+
+  {% capture as form_fields %}
+  {% if editing %}<input type="hidden" name="pk" value="{{ account.pk }}">{% endif %}
+  <div>
+    <label class="block text-sm font-medium text-slate-600 mb-1">Code</label>
+    <input type="text" name="code" value="{{ account.code }}" required {% if editing %}disabled title="Code is fixed on an existing account"{% endif %}
+      class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none{% if editing %} bg-slate-50 text-slate-500{% endif %}"
+      placeholder="Enter account code (e.g. 10000)">
   </div>
-
-  <form method="post"{% if editing %} action="{% url 'ui:coa_update' account.pk %}"{% else %} action="{% url 'ui:coa_create' %}"{% endif %} class="space-y-4">
-    {% csrf_token %}
-    {% if editing %}
-      <input type="hidden" name="pk" value="{{ account.pk }}">
-    {% endif %}
-
+  <div>
+    <label class="block text-sm font-medium text-slate-600 mb-1">Name</label>
+    <input type="text" name="name" value="{{ account.name }}" required
+      class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+      placeholder="Account name">
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-slate-600 mb-1">Account Type</label>
+    <select name="account_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      {% for value, label in types %}
+        <option value="{{ value }}" {% if account.account_type == value %}selected{% endif %}>
+          {{ label }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-slate-600 mb-1">Normal Balance</label>
+    <select name="normal_balance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <option value="debit" {% if account.normal_balance == "debit" %}selected{% endif %}>Debit</option>
+      <option value="credit" {% if account.normal_balance == "credit" %}selected{% endif %}>Credit</option>
+    </select>
+  </div>
+  <div class="sm:col-span-2">
+    <label class="block text-sm font-medium text-slate-600 mb-1">Segment</label>
+    <select name="segment" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <option value="">—</option>
+      {% for seg in segments %}
+        <option value="{{ seg.code }}" {% if account.segment == seg.code %}selected{% endif %}>
+          {{ seg.code }} - {{ seg.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="sm:col-span-2 pt-2 border-t border-slate-200">
+    <p class="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">Workbook Columns</p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-<label class="block text-sm font-medium text-slate-600 mb-1">Code</label>
-        <input type="text" name="code" value="{{ account.code }}" required {% if editing %}disabled title="Code is fixed on an existing account"{% endif %}
-          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none{% if editing %} bg-slate-50 text-slate-500{% endif %}"
-          placeholder="Enter account code (e.g. 10000)">
-</div>
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1">Name</label>
-        <input type="text" name="name" value="{{ account.name }}" required
-          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-          placeholder="Account name">
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1">Account Type</label>
-        <select name="account_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-          {% for value, label in types %}
-            <option value="{{ value }}" {% if account.account_type == value %}selected{% endif %}>
-              {{ label }}
-            </option>
-          {% endfor %}
-        </select>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Classification</label>
+        <input type="text" name="classification" value="{{ account.classification }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-600 mb-1">Normal Balance</label>
-        <select name="normal_balance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-          <option value="debit" {% if account.normal_balance == "debit" %}selected{% endif %}>Debit</option>
-          <option value="credit" {% if account.normal_balance == "credit" %}selected{% endif %}>Credit</option>
-        </select>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Category</label>
+        <input type="text" name="category" value="{{ account.category }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Sub-Accounts</label>
+        <input type="text" name="sub_accounts" value="{{ account.sub_accounts }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Major Accounts</label>
+        <input type="text" name="major_accounts" value="{{ account.major_accounts }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Behavior</label>
+        <input type="text" name="behavior" value="{{ account.behavior }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Traceability</label>
+        <input type="text" name="traceability" value="{{ account.traceability }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-600 mb-1">Controllability</label>
+        <input type="text" name="controllability" value="{{ account.controllability }}"
+          class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       </div>
     </div>
-
-    <div>
-      <label class="block text-sm font-medium text-slate-600 mb-1">Segment</label>
-      <select name="segment" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        <option value="">—</option>
-        {% for seg in segments %}
-          <option value="{{ seg.code }}" {% if account.segment == seg.code %}selected{% endif %}>
-            {{ seg.code }} - {{ seg.name }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="pt-2 border-t border-slate-200">
-      <p class="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">Workbook Columns</p>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Classification</label>
-          <input type="text" name="classification" value="{{ account.classification }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Category</label>
-          <input type="text" name="category" value="{{ account.category }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Sub-Accounts</label>
-          <input type="text" name="sub_accounts" value="{{ account.sub_accounts }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Major Accounts</label>
-          <input type="text" name="major_accounts" value="{{ account.major_accounts }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Behavior</label>
-          <input type="text" name="behavior" value="{{ account.behavior }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Traceability</label>
-          <input type="text" name="traceability" value="{{ account.traceability }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-600 mb-1">Controllability</label>
-          <input type="text" name="controllability" value="{{ account.controllability }}"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-      </div>
-    </div>
-
-    <div class="flex justify-end mt-6 gap-3">
-      <button type="submit"
-        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
-        {% if editing %}Update{% else %}Save{% endif %}
-      </button>
-      <a href="{% url 'ui:coa_list' %}"
-        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300/40">
-        Cancel
-      </a>
-    </div>
-  </form>
+  </div>
+  {% endcapture %}
+  {% include "ui/partials/form_card.html" with action_href=coa_action_href fields_html=form_fields grid_class="grid-cols-1 sm:grid-cols-2 gap-4" submit_label=submit_label cancel_url_name="ui:coa_list" %}
 </div>
 {% endblock %}

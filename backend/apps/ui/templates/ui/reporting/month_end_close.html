@@ -2,8 +2,7 @@
 {% block title %}Month-End Close — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <h1 class="text-xl font-semibold text-slate-900">Month-End Close</h1>
-  <p class="text-sm text-slate-500 mt-1">accruals → recon → close → appropriations. Closing locks the fiscal period (no back-posting).</p>
+  {% include "ui/partials/page_header.html" with title="Month-End Close" subtitle="accruals → recon → close → appropriations. Closing locks the fiscal period (no back-posting)." %}
 
   {% if close %}
   <div class="mt-6 bg-white rounded-xl border border-slate-200 p-6">

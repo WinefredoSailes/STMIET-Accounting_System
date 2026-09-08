@@ -3,16 +3,14 @@
 {% block title %}AR Aging — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6">
-  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-slate-900">AR AGING &amp; REGISTER</h1>
-      <p class="text-sm text-slate-500 mt-1">Open invoice balances as of {{ as_of|date:"M d, Y" }}, bucketed 30/60/90/120+.</p>
-    </div>
-    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-      <input type="date" name="as_of" value="{{ as_of|date:"Y-m-d" }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Refresh</button>
-    </form>
-  </div>
+  {% capture as aging_filters %}
+  <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+    <input type="date" name="as_of" value="{{ as_of|date:"Y-m-d" }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Refresh</button>
+  </form>
+  {% endcapture %}
+  {% capture as aging_subtitle %}Open invoice balances as of {{ as_of|date:"M d, Y" }}, bucketed 30/60/90/120+.{% endcapture %}
+  {% include "ui/partials/page_header.html" with title="AR AGING &amp; REGISTER" subtitle=aging_subtitle actions=aging_filters %}
 
   <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
     {% for b in buckets %}

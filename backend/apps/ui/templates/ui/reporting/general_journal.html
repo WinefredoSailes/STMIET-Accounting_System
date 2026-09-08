@@ -3,24 +3,21 @@
 {% block title %}General Journal — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6 max-w-7xl">
-  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-slate-900">GENERAL JOURNAL</h1>
-      <p class="text-sm text-slate-500 mt-1">Register of posted entries — workbook layout: Date | Cycle | Ref | Party | PO | Description | CoA | Account Name | Debit | Credit.</p>
-    </div>
-    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-      <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <span class="text-slate-400">to</span>
-      <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        <option value="">All segments</option>
-        {% for seg in segments %}
-        <option value="{{ seg.id }}" {% if segment_sel == seg.id|stringformat:"s" %}selected{% endif %}>{{ seg.code }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
-    </form>
-  </div>
+  {% capture as gj_filters %}
+  <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+    <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+    <span class="text-slate-400">to</span>
+    <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+    <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <option value="">All segments</option>
+      {% for seg in segments %}
+      <option value="{{ seg.id }}" {% if segment_sel == seg.id|stringformat:"s" %}selected{% endif %}>{{ seg.code }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
+  </form>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="GENERAL JOURNAL" subtitle="Register of posted entries — workbook layout: Date | Cycle | Ref | Party | PO | Description | CoA | Account Name | Debit | Credit." actions=gj_filters %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm min-w-[1100px]">

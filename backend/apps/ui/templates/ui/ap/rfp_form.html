@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load static %}
 {% block title %}{% if editing %}Revise RFP {{ editing.ap_number }}{% else %}New RFP{% endif %} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -57,7 +58,9 @@
             <th class="py-2 text-right w-40">Amount</th>
           </tr>
         </thead>
-        <tbody id="lines-body" class="divide-y divide-slate-100">
+        <tbody id="lines-body" data-line-grid="rfp"
+               data-total-dr="#total-dr" data-total-cr="#total-cr" data-hint="#balance-hint"
+               class="divide-y divide-slate-100">
           {% if editing %}
           {% for line in editing.lines.all %}
           <tr>
@@ -119,7 +122,7 @@
           </tr>
           <tr>
             <td colspan="6" class="py-2">
-              <button type="button" id="add-line"
+              <button type="button" id="add-line" data-add-row
                       class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
                 + Add line
               </button>
@@ -141,49 +144,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-(function () {
-  const body = document.getElementById('lines-body');
-  const tpl = body.querySelector('tr');
-  const addBtn = document.getElementById('add-line');
-  const drTotal = document.getElementById('total-dr');
-  const crTotal = document.getElementById('total-cr');
-  const hint = document.getElementById('balance-hint');
-
-  function recalc() {
-    let dr = 0, cr = 0;
-    body.querySelectorAll('tr').forEach(function (row) {
-      const amt = parseFloat(row.querySelector('.line-amount').value) || 0;
-      const side = row.querySelector('.line-side').value;
-      if (side === 'cr') cr += amt; else dr += amt;
-    });
-    drTotal.textContent = dr.toFixed(2);
-    crTotal.textContent = cr.toFixed(2);
-    if (dr !== cr) {
-      hint.textContent = 'Debits and credits do not balance (Dr ' + dr.toFixed(2) + ' vs Cr ' + cr.toFixed(2) + ').';
-      hint.className = 'mt-2 text-xs text-red-700 font-medium';
-    } else {
-      hint.textContent = 'Debits and credits balance.';
-      hint.className = 'mt-2 text-xs text-emerald-700';
-    }
-  }
-  addBtn.addEventListener('click', function () {
-    const row = tpl.cloneNode(true);
-    row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
-    row.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
-    const accSel = row.querySelector('select[data-searchable]');
-    if (accSel) {
-      accSel.removeAttribute('data-search-enhanced');
-      const wrap = accSel.closest('.searchable-wrap');
-      if (wrap) wrap.replaceWith(accSel);
-      accSel.classList.add('hidden');
-    }
-    row.querySelector('.line-no').textContent = body.querySelectorAll('tr').length + 1;
-    body.appendChild(row);
-    row.querySelectorAll('.line-amount, .line-side').forEach(function (i) { i.addEventListener('input', recalc); });
-  });
-  body.addEventListener('input', recalc);
-  recalc();
-})();
-</script>
+<script src="{% static 'js/line-grid.js' %}"></script>
 {% endblock %}

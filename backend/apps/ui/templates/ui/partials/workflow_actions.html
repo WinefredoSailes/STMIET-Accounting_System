@@ -1,0 +1,11 @@
+{% comment %}Dispatch point for workflow action bars. Usage:
+{% include "ui/partials/workflow_actions.html" with doc=<obj> workflow_type="rfp" %}
+The per-workflow logic lives in ui/partials/workflow/<type>.html and is the
+only place a status -> action-button branch is defined.{% endcomment %}
+{% if workflow_type == "rfp" %}
+{% include "ui/partials/workflow/rfp_actions.html" with rfp=doc %}
+{% elif workflow_type == "cv" %}
+{% include "ui/partials/workflow/cv_actions.html" with cv=doc %}
+{% elif workflow_type == "je" %}
+{% include "ui/partials/workflow/je_actions.html" with entry=doc %}
+{% endif %}

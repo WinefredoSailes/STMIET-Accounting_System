@@ -1,14 +1,12 @@
 {% extends "ui/base.html" %}
+{% load static ui_filters %}
 {% block title %}New Supplier — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:supplier_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Suppliers</a>
-  <h1 class="text-xl font-semibold text-slate-900 mt-1">New Supplier</h1>
-  <p class="text-sm text-slate-500 mt-1">Vendor master (ADR-024) — LAST AP is auto-tracked per vendor.</p>
+  {% capture as submit_label %}{% if supplier %}Save supplier{% else %}Create supplier{% endif %}{% endcapture %}
+  {% include "ui/partials/page_header.html" with title="New Supplier" subtitle="Vendor master (ADR-024) — LAST AP is auto-tracked per vendor." back_url_name="ui:supplier_list" back_label="Suppliers" %}
 
-  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-    {% csrf_token %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {% capture as form_fields %}
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_code">Code</label>
         <input type="text" name="code" id="id_code" maxlength="32"
@@ -89,7 +87,8 @@
                value="{{ supplier.address|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
-    </div>
+  {% endcapture %}
+  {% capture as footer_html %}
 
     <div class="border-t border-slate-200 pt-4 mt-4">
       <div class="flex items-center justify-between">
@@ -97,57 +96,42 @@
           <label class="block text-sm font-medium text-slate-700">Contact Persons</label>
           <p class="text-xs text-slate-500">Multiple contact people per supplier, each with their own phone (ADR-038 §6).</p>
         </div>
-        <button type="button" id="add-contact"
+        <button type="button" id="add-contact" data-add-template-row
                 class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
           + Add contact
         </button>
       </div>
-      <div id="contact-rows" class="mt-3 space-y-2">
+      <div id="contact-rows" data-template-rows="contact-row-template" class="mt-3 space-y-2">
         {% if supplier %}
           {% for c in supplier.contacts.all %}
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
+          <div data-template-row class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
             <input type="text" name="contact_name" value="{{ c.name }}"
                    placeholder="Name" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <input type="text" name="contact_position" value="{{ c.position }}"
                    placeholder="Position" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <input type="text" name="contact_phone" value="{{ c.phone }}"
                    placeholder="Phone" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-            <button type="button" class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+            <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
           </div>
           {% endfor %}
         {% endif %}
       </div>
       <template id="contact-row-template">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
+        <div data-template-row class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
           <input type="text" name="contact_name" placeholder="Name"
                  class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           <input type="text" name="contact_position" placeholder="Position"
                  class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           <input type="text" name="contact_phone" placeholder="Phone"
                  class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <button type="button" class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+          <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
         </div>
       </template>
-    </div>
-
-    <div class="flex justify-end">
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        {% if supplier %}Save supplier{% else %}Create supplier{% endif %}
-      </button>
-    </div>
-  </form>
+  {% endcapture %}
+  {% include "ui/partials/form_card.html" with fields_html=form_fields footer_html=footer_html submit_label=submit_label %}
 </div>
-<script>
-  (function () {
-    const rows = document.getElementById("contact-rows");
-    const template = document.getElementById("contact-row-template");
-    document.getElementById("add-contact").addEventListener("click", function () {
-      rows.appendChild(template.content.cloneNode(true));
-    });
-    rows.addEventListener("click", function (e) {
-      const btn = e.target.closest(".remove-contact");
-      if (btn) btn.closest(".c-remove").parentElement.remove();
-    });
-  })();
-</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/template-rows.js' %}"></script>
 {% endblock %}

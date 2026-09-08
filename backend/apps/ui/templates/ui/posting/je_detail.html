@@ -3,37 +3,29 @@
 {% block title %}{{ entry.entry_no }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <div class="flex items-center justify-between">
-    <div>
-      <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
-      <h1 class="text-xl font-semibold text-slate-900 mt-1">{{ entry.entry_no }}</h1>
-      <p class="text-sm text-slate-500 mt-1">{{ entry.description }}</p>
-    </div>
-    <div class="flex items-center gap-2">
-      <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
-        {% if entry.status == 'posted' %}bg-emerald-100 text-emerald-800
-        {% elif entry.status == 'draft' %}bg-slate-100 text-slate-700
-        {% elif entry.status == 'approved' %}bg-blue-100 text-blue-800
-        {% elif entry.status == 'submitted' %}bg-amber-100 text-amber-800
-        {% else %}bg-red-100 text-red-800{% endif %}">
-        {{ entry.get_status_display }}
-      </span>
-      {% if not entry.is_posted %}
-      <form method="post" action="{% url 'ui:je_post' entry.id %}" class="flex items-center gap-3">
-        {% csrf_token %}
-        <label class="flex items-center gap-1.5 text-sm text-slate-600">
-          <input type="checkbox" name="approve" class="rounded border-slate-300">
-          Approve (&gt; ₱100k)
-        </label>
-        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post</button>
-      </form>
-      {% endif %}
-      <form method="post" action="{% url 'ui:je_reverse' entry.id %}">
-        {% csrf_token %}
-        <button type="submit" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reverse</button>
-      </form>
-    </div>
-  </div>
+  {% capture as entry_badge_color %}
+  {% if entry.status == 'approved' %}bg-blue-100 text-blue-800
+  {% elif entry.status == 'reversed' %}bg-red-100 text-red-800
+  {% else %}{{ entry.status|status_color_class }}{% endif %}
+  {% endcapture %}
+  {% capture as entry_actions %}
+  {% include "ui/partials/status_badge.html" with status=entry.status label=entry.get_status_display color=entry_badge_color %}
+  {% if not entry.is_posted %}
+  <form method="post" action="{% url 'ui:je_post' entry.id %}" class="flex items-center gap-3">
+    {% csrf_token %}
+    <label class="flex items-center gap-1.5 text-sm text-slate-600">
+      <input type="checkbox" name="approve" class="rounded border-slate-300">
+      Approve (&gt; ₱100k)
+    </label>
+    <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post</button>
+  </form>
+  {% endif %}
+  <form method="post" action="{% url 'ui:je_reverse' entry.id %}">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reverse</button>
+  </form>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=entry.entry_no subtitle=entry.description back_url_name="ui:je_list" back_label="Journal entries" actions=entry_actions %}
 
   <dl class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">

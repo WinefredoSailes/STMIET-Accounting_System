@@ -1,0 +1,23 @@
+{% comment %}
+Standard list/table card: page header + white card + table + pagination.
+The caller captures the thead/tbody/tfoot markup with {% capture as table_head %}
+/ {% capture as table_body %} / {% capture as table_foot %} and optionally wraps
+the card in a swappable HTMX target via table_wrapper_id.
+Params: min_width, table_head, table_body, table_foot, table_wrapper_id,
+show_pagination, card_class, table_class. Every page_header param passes through.
+{% endcomment %}
+{% include "ui/partials/page_header.html" with title=title subtitle=subtitle back_url_name=back_url_name back_label=back_label primary_url_name=primary_url_name primary_label=primary_label primary_href=primary_href link_url_name=link_url_name link_label=link_label actions=actions %}
+{% if table_wrapper_id %}<div id="{{ table_wrapper_id }}">{% endif %}
+<div class="{% if card_class %}{{ card_class }}{% else %}mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto{% endif %}">
+  <table class="{% if table_class %}{{ table_class }}{% else %}w-full text-sm min-w-[{{ min_width|default:"800" }}px]{% endif %}">
+    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      {{ table_head|safe }}
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{ table_body|safe }}
+    </tbody>
+    {% if table_foot %}<tfoot class="bg-slate-50 font-semibold">{{ table_foot|safe }}</tfoot>{% endif %}
+  </table>
+</div>
+{% if table_wrapper_id %}</div>{% endif %}
+{% if show_pagination %}{% include "ui/partials/pagination.html" %}{% endif %}

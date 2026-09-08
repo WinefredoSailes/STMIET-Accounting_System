@@ -1,0 +1,6 @@
+{% comment %}Status pill. Colors come from ui_filters.STATUS_COLOR_CLASSES
+(single source of truth); pass `color` as a raw Tailwind class string to
+override for domain-specific cases.
+Params: status (req), label (defaults to status), color (optional), small.{% endcomment %}
+{% load ui_filters %}
+<span class="inline-flex rounded-full {% if small %}px-2 py-0.5{% else %}px-2.5 py-1{% endif %} text-xs font-medium {% if color %}{{ color }}{% else %}{{ status|status_color_class }}{% endif %}">{{ label|default:status }}</span>

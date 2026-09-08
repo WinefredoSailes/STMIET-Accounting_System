@@ -1,0 +1,56 @@
+{% comment %}CV status -> action bar (uses `cv`).
+Extracted verbatim from ap/cv_detail.html; included within a
+"mt-4 flex items-center gap-3" container. The reject-toggle/reject-form pair is
+wired by toggle-block.js on the host page, and cv_reject -> cv_revise is the
+revision loop for rejected vouchers.{% endcomment %}
+<div class="mt-4 flex items-center gap-3">
+  {% if cv.status == "created" %}
+  <form method="post" action="{% url 'ui:cv_sign' cv.id %}">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Sign check</button>
+  </form>
+  <button type="button" id="reject-toggle" data-toggle-target="#reject-form" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+  <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
+    {% csrf_token %}
+    <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
+    <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
+  </form>
+  {% elif cv.status == "signed" %}
+  <form method="post" action="{% url 'ui:cv_release' cv.id %}">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Release check (Finance &amp; Acctg Head)</button>
+  </form>
+  <button type="button" id="reject-toggle" data-toggle-target="#reject-form" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+  <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
+    {% csrf_token %}
+    <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
+    <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
+  </form>
+  {% elif cv.status == "released" %}
+  <form method="post" action="{% url 'ui:cv_clear' cv.id %}">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Mark cleared &amp; post to GL</button>
+  </form>
+  <button type="button" id="reject-toggle" data-toggle-target="#reject-form" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+  <form method="post" action="{% url 'ui:cv_reject' cv.id %}" id="reject-form" class="mt-3 hidden">
+    {% csrf_token %}
+    <textarea name="note" rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The issuer will see this note before revising."></textarea>
+    <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return CV to issuer</button>
+  </form>
+  {% elif cv.status == "rejected" %}
+  <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 w-full">
+    <div class="text-sm font-semibold text-red-800">Rejected — returned for correction</div>
+    <div class="text-xs text-slate-500 mt-1">Returned by {{ cv.rejected_by.get_full_name|default:cv.rejected_by }} · {{ cv.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ cv.rejection_note }}</div>
+    {% if request.user.id == cv.created_by_id %}
+    <a href="{% url 'ui:cv_revise' cv.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise & resubmit</a>
+    {% else %}
+    <p class="mt-2 text-xs text-slate-500">Only the issuer ({{ cv.created_by.get_full_name|default:cv.created_by }}) can revise this CV.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if cv.journal_entry_id %}
+  <a href="{% url 'ui:je_detail' cv.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">CV JE →</a>
+  {% endif %}
+  <a href="{% url 'ui:cv_print' cv.id %}" class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>
+</div>

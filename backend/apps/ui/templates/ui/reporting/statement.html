@@ -3,29 +3,19 @@
 {% block title %}{{ label }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-slate-900">{{ label }}</h1>
-      <p class="text-sm text-slate-500 mt-1">Generated from posted GL. Per-segment columns + GRAND.</p>
-    </div>
-    <form method="post" class="flex items-center gap-2">
-      {% csrf_token %}
-      <input type="date" name="period_start" id="id_period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-      <span class="text-slate-400">to</span>
-      <input type="date" name="period_end" id="id_period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Generate</button>
-    </form>
-  </div>
-
-  <div class="flex items-center gap-2 mt-2">
-    <select name="format" id="id_format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-      <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
-      <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
-      <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
-    </select>
-    <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
-    <a href="{% url 'ui:statement_print' statement_type %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
-  </div>
+  {% capture as st_title %}{{ label }}{% endcapture %}
+  {% capture as gen_controls %}
+  <form method="post" class="flex items-center gap-2">
+    {% csrf_token %}
+    <input type="date" name="period_start" id="id_period_start" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+    <span class="text-slate-400">to</span>
+    <input type="date" name="period_end" id="id_period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Generate</button>
+  </form>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=st_title subtitle="Generated from posted GL. Per-segment columns + GRAND." actions=gen_controls %}
+  {% capture as st_print_href %}{% url 'ui:statement_print' statement_type %}{% endcapture %}
+  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True print_href=st_print_href %}
 
   {% if statement %}
   <div class="mt-4 flex items-center gap-3 text-sm">
@@ -63,15 +53,4 @@
   </div>
   {% endif %}
 </div>
-
-<script>
-  const formatSelect = document.getElementById('id_format');
-  if (formatSelect) {
-    formatSelect.addEventListener('change', () => {
-      const form = formatSelect.closest('form');
-      const newHref = form.action + '?format=' + formatSelect.value;
-      window.location.href = newHref;
-    });
-  }
-</script>
 {% endblock %}

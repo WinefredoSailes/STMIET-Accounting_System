@@ -225,17 +225,30 @@ the database, never from hardcoded strings.
 - `apps/ui/services.py` — read models (lists, TB rows, statement context,
   month-end close context) so templates stay logic-free.
 - `apps/ui/urls.py` — mounted at `/`; API remains under `api/v1/`.
-- Templates live in `apps/ui/templates/ui/…`; the stylesheet is built from
-  `backend/frontend/src/input.css` with Tailwind (content globs cover
-  `apps/**/templates/**`).
-- HTMX (1.9.12) is vendored at `backend/static/js/htmx.min.js` for future
-  partial updates; JE line grids use a small vanilla-JS snippet.
+- Templates live in `apps/ui/templates/ui/…` (organized by bounded context:
+  `ar/`, `ap/`, `cash/`, `posting/`, `foundation/`, `reporting/`); the
+  stylesheet is built from `backend/frontend/src/input.css` with Tailwind
+  (content globs cover `apps/**/templates/**`).
+- **Reusable partials** in `apps/ui/templates/ui/partials/` (ADR-039):
+  `page_header`, `list_card`, `form_card`, `status_badge`, `document_shell`,
+  `workflow_actions` (+ `workflow/rfp_actions.html`, `workflow/cv_actions.html`),
+  `report_toolbar`, `audit_trail`. Screens compose these via a custom `{% capture %}`
+  tag (`templatetags/ui_filters.py`) that renders a block into a context var for the
+  partial's `…_html` parameter.
+- **Static JS modules** in `backend/static/js/`: `base.js` (sidebar, CSRF,
+  toast, searchable combobox, report-format redirect, onafterprint close),
+  `line-grid.js` (JE/RFP/PCV line totals), `gross-net-calc.js` (gross − WHT = net),
+  `toggle-block.js` (show/hide), `template-rows.js` (clone-from-template rows,
+  e.g. supplier contacts). Per-screen modules load via `{% block extra_js %}`.
+- HTMX (1.9.12) is vendored at `backend/static/js/htmx.min.js`; swapped
+  fragments (`_rfp_row`, `_cv_row`, `_asset_rows`, `_coa_rows`,
+  `_cash_short_row`) re-bind partial JS via `htmx:afterSwap`.
 
 ## Tests
 
 ```powershell
 cd backend
-python -m pytest -q    # 154 tests: API contracts + UI smoke tests + E2E workflow
+python -m pytest -q    # 172 tests: API contracts + UI smoke tests + E2E workflow
 python manage.py check
 ```
 
@@ -256,3 +269,11 @@ lifecycle → transfer → advance liquidation → weekly cycles → COLLECTIBLE
 → cash flow statement → renders every register screen (general journal,
 cash flow, collectibles, aging, advances, transfers, COA) and re-checks
 posted-entry immutability.
+
+## Tailwind content sources
+- `backend/frontend/tailwind.config.js` scans BOTH `apps/**/templates/**/*.html`
+  and `static/js/**/*.js`. This second glob is required: `base.js` (searchable
+  combobox, toast) generates its DOM classes at runtime, so classes that only
+  appear there (`.h-4`, `.max-h-56`, `.z-50`, ...) would otherwise never be
+  emitted in `output.css`. Always add its classes to the JS glob when extending
+  the widget, or inline the style as a fallback.

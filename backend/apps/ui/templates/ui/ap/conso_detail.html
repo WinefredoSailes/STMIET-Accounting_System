@@ -3,16 +3,15 @@
 {% block title %}CONSO {{ batch.batch_no }} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:conso_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; CONSO batches</a>
-  <div class="mt-1 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-slate-900">{{ batch.batch_no }}</h1>
-    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
-      {% if batch.status == 'posted' %}bg-emerald-100 text-emerald-800
-      {% elif batch.status == 'open' %}bg-slate-100 text-slate-600
-      {% else %}bg-amber-100 text-amber-800{% endif %}">
-      {{ batch.status }}
-    </span>
-  </div>
+  {% capture as conso_badge_color %}
+  {% if batch.status == 'posted' %}bg-emerald-100 text-emerald-800
+  {% elif batch.status == 'open' %}bg-slate-100 text-slate-600
+  {% else %}bg-amber-100 text-amber-800{% endif %}
+  {% endcapture %}
+  {% capture as conso_actions %}
+  {% include "ui/partials/status_badge.html" with status=batch.status color=conso_badge_color %}
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=batch.batch_no back_url_name="ui:conso_list" back_label="CONSO batches" actions=conso_actions %}
   <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · {{ pcf_members|length }} PCF(s) · Total ₱{{ total|money }}</p>
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">

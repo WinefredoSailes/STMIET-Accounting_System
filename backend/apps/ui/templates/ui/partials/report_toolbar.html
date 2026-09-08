@@ -1,0 +1,23 @@
+{% load ui_filters %}{% comment %}Export/print toolbar for reporting screens.
+Params: format_select (bool, show dropdown), formats (whitespace-separated list
+of extension strings, e.g. "xlsx csv pdf"), format (current selection),
+export_button (bool), print_url_name | print_href.
+The format-dropdown redirect JS is global (tryFormatRedirect in base.js) and
+triggers on change of a select[data-format-redirect].{% endcomment %}
+<div class="flex items-center gap-2 mt-2">
+  {% if format_select %}
+  <select name="format" data-format-redirect class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+    {% for f in formats|split:" " %}<option value="{{ f }}" {% if format == f %}selected{% endif %}>{{ f|upper }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% if export_button %}
+  <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
+  {% endif %}
+  {% if print_href %}
+  <a href="{{ print_href }}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  {% else %}
+  {% if print_url_name %}
+  <a href="{% url print_url_name %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  {% endif %}
+  {% endif %}
+</div>

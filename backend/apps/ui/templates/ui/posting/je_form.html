@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load static %}
 {% block title %}New Journal Entry — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -54,7 +55,9 @@
             <th class="px-4 py-3 w-40">Credit</th>
           </tr>
         </thead>
-        <tbody id="lines-body" class="divide-y divide-slate-100">
+        <tbody id="lines-body" data-line-grid="je"
+               data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
+               class="divide-y divide-slate-100">
           <tr>
             <td class="px-4 py-2 text-slate-400 line-no">1</td>
             <td class="px-4 py-2">
@@ -76,7 +79,7 @@
           </tr>
           <tr>
             <td colspan="5" class="px-4 py-2">
-              <button type="button" id="add-line"
+              <button type="button" id="add-line" data-add-row
                       class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
                 + Add line
               </button>
@@ -97,39 +100,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-(function () {
-  const body = document.getElementById('lines-body');
-  const tpl = body.querySelector('tr');
-  const addBtn = document.getElementById('add-line');
-  const tdTotal = document.getElementById('total-debit');
-  const tcTotal = document.getElementById('total-credit');
-  const hint = document.getElementById('balance-hint');
-
-  function totals() {
-    let d = 0, c = 0;
-    body.querySelectorAll('tr').forEach(function (row) {
-      const dv = parseFloat(row.querySelector('.amount-debit').value) || 0;
-      const cv = parseFloat(row.querySelector('.amount-credit').value) || 0;
-      d += dv; c += cv;
-    });
-    tdTotal.textContent = d.toFixed(2);
-    tcTotal.textContent = c.toFixed(2);
-    if (d === c) { hint.textContent = 'Balanced'; hint.className = 'text-sm text-emerald-600 font-medium'; }
-    else { hint.textContent = 'Difference: ' + Math.abs(d - c).toFixed(2); hint.className = 'text-sm text-red-600 font-medium'; }
-  }
-
-  addBtn.addEventListener('click', function () {
-    const row = tpl.cloneNode(true);
-    row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
-    row.querySelector('.line-no').textContent = body.querySelectorAll('tr').length + 1;
-    body.appendChild(row);
-    row.querySelectorAll('input').forEach(function (i) {
-      i.addEventListener('input', totals);
-    });
-  });
-  body.addEventListener('input', totals);
-  totals();
-})();
-</script>
+<script src="{% static 'js/line-grid.js' %}"></script>
 {% endblock %}

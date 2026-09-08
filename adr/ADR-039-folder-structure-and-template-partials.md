@@ -1,7 +1,8 @@
 # ADR-039: Frontend Folder Structure & Reusable Template Partials
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-07
+**Last updated:** 2026-09-08 (status Proposed → Accepted after the phased refactor shipped)
 **Deciders:** Architecture Team
 
 **References:**
@@ -431,3 +432,63 @@ Used by: rfp_detail (immediately), any future expand/collapse pattern.
 2. `pytest apps/ui/test_e2e.py` — end-to-end write paths still work
 3. Manual check: every list screen renders with pagination, every form submits, every detail page loads workflow actions
 4. `npm run build` — Tailwind output includes all new partial classes
+
+---
+
+## Accepted (2026-09-08) — Execution notes & deviations from the original plan
+
+The refactor shipped in phases (0–8), each gated by a full test run
+(`pytest apps/ui apps/ap apps/posting apps/core -q` → 172 passing) plus an
+`npm run build` in Phase 8. No functional regression; screens preserved exact
+Tailwind markup while tests assert status 200 + cell text.
+
+Deliberate deviations from the draft spec:
+
+- **`{% capture %}` tag instead of named blocks.** Django `{% include %}`
+  cannot pass block content, so partials that wrap variable markup
+  (`list_card`, `form_card`, `document_shell`, `page_header`, `workflow_actions`)
+  receive captured `…_html` context params via the custom `CaptureNode`/
+  `do_capture` tag in `templatetags/ui_filters.py`.
+- **`report_toolbar.formats` is a whitespace-separated string**, split in the
+  partial by a new `split` filter (literal lists were verbose and read-only).
+  The format-dropdown redirect is global in `base.js`
+  (`select[data-format-redirect]`); report screens don't inline JS.
+- **Detail-screen status colors stay bespoke.** `rfp_detail`/`cv_detail`
+  pass explicit `color` overrides to `status_badge`, preserving the historical
+  per-status palette (e.g. CV cleared = emerald/slate-800) rather than the
+  canonical `status_color_class` defaults.
+- **`template-rows.js`** (not in the draft) was added for clone-from-`<template>`
+  rows (supplier contacts) that the original `supplier_form` inlined.
+- **`window.onafterprint` is centralized in `base.js`**; the five print
+  templates (`cv_print`, `coa_print`, `statement_print`, `trial_balance_print`,
+  `pcf_replenishment_print`) no longer inline it.
+- **Domain subdirectory move was skipped.** Templates were already
+  de-facto grouped by bounded context under `templates/ui/` (the ADR's target
+  layout already matched the live tree), so the mechanical file-move step was
+  unnecessary. The focused deliverable was the partials + JS-module extraction.
+- **All 16 remaining multi-line inline `<script>` blocks were removed.**
+  The only intentional inline JS left is the full-page RFP-prefill redirect in
+  `cv_form` (`onchange="if(this.value) location.href='?rfp='+this.value"`)
+  and the sidebar toggles in `base.html` that call the global
+  `toggleSidebar` (defined in `base.js`).
+
+## Execution notes � dropdown sizing regression (fixed)
+- **Root cause (2006-09-08):** the searchable-combobox widget builds its DOM at
+  runtime in `base.js` (trigger button, chevron SVG, open panel). Tailwind only
+  scanned `apps/**/templates/**/*.html`, so classes used *only* by JS
+  (`.h-4`, `.max-h-56`, `.z-50`) were never compiled into `output.css`. The
+  chevron `<svg class="h-4 w-4">` then lost its height, was blockified as a flex
+  item, and its intrinsic size snapped to the full button content box (424x424px
+  on a 1280px viewport), inflating the trigger to ~443-633px and the host grid
+  rows to >400px on every searchable field (New/Edit Bank GL, RFP payee/item
+  account). The open panel was also uncapped (`max-h-56` missing) and
+  un-layered (`z-50` missing, it rendered below the z-40 sidebar).
+- **Fix (shared, not per-field):** added `"./../static/js/**/*.js"` to the
+  Tailwind `content` glob so runtime-generated classes are always emitted.
+  `npm run build` regenerated `output.css` with `.h-4`, `.max-h-56`, `.z-50`.
+  Verified headlessly in Edge: trigger 38px, chevron 16x16, grid rows back to
+  ~62px, panels capped at 224px with z-50, all native selects ~32-39px, RFP
+  compact triggers 30px � at desktop and 390px widths.
+- **Operational rule:** any Tailwind class introduced inside `static/js/`
+  requires the JS content glob above (or an inline fallback). Do not reintroduce
+  per-field height overrides.

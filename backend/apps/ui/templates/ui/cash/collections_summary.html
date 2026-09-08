@@ -3,12 +3,10 @@
 {% block title %}Daily Collections JE Summary — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
-  <h1 class="text-xl font-semibold text-slate-900">DAILY COLLECTIONS JOURNAL ENTRIES SUMMARY</h1>
-  <p class="text-sm text-slate-500 mt-1">Per weekly cycle, one row per AR receipt (cashier worksheet format).</p>
-
-  <form method="get" class="mt-4 flex items-center gap-3">
+  {% capture as cycle_picker %}
+  <form method="get" class="flex items-center gap-3">
     <label class="text-sm text-slate-600" for="cycle">Cycle</label>
-    <select name="cycle" id="cycle" onchange="this.form.submit()"
+    <select name="cycle" id="cycle" data-submit-on-change
             class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
       {% for c in cycles %}
       <option value="{{ c.id }}" {% if cycle and c.id == cycle.id %}selected{% endif %}>
@@ -17,6 +15,8 @@
       {% endfor %}
     </select>
   </form>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="DAILY COLLECTIONS JOURNAL ENTRIES SUMMARY" subtitle="Per weekly cycle, one row per AR receipt (cashier worksheet format)." actions=cycle_picker %}
 
   {% if cycle %}
   <div class="mt-6 overflow-x-auto">
