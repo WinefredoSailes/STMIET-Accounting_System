@@ -303,12 +303,15 @@ function enhanceSearchable(root) {
 }
 
 document.addEventListener('click', function (e) {
-  if (e.target.closest('.searchable-panel')) return;
+  // Items live inside their panel, so item hits MUST be handled before the
+  // panel check — otherwise every click on a result is swallowed and the
+  // picker would be unusable with the mouse (keyboard Enter still worked).
   var item = e.target.closest ? e.target.closest('.searchable-item') : null;
   if (item) {
     selectItem(item.sbWrap, item);
     return;
   }
+  if (e.target.closest('.searchable-panel')) return;
   var wrap = e.target.closest ? e.target.closest('.searchable-wrap') : null;
   var panels = document.querySelectorAll('.searchable-panel:not(.hidden)');
   if (wrap) {
