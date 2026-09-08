@@ -90,7 +90,8 @@
               <th class="px-3 py-2">SEGMENT</th>
               <th class="px-3 py-2">COST CENTER</th>
               <th class="px-3 py-2">GL ACCOUNT</th>
-              <th class="px-3 py-2 text-right">AMOUNT</th>
+              <th class="px-3 py-2 text-right">DEBIT</th>
+              <th class="px-3 py-2 text-right">CREDIT</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -101,13 +102,15 @@
               <td class="px-3 py-2">{{ line.segment.code }}</td>
               <td class="px-3 py-2">{{ selected_rfp.purpose|default:"OS" }}</td>
               <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'dr' %}{{ line.amount|money }}{% endif %}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'cr' %}{{ line.amount|money }}{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
           <tfoot class="bg-slate-50 font-semibold">
             <tr>
               <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ selected_rfp.amount|money }}</td>
               <td class="px-3 py-2 text-right tabular-nums">{{ selected_rfp.amount|money }}</td>
             </tr>
           </tfoot>

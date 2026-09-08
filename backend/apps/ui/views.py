@@ -284,6 +284,43 @@ def _create_entry_from_form(request):
     return entry
 
 
+def _rfp_lines_from_form(request):
+    """Parse the RFP Dr/Cr line grid (parallel arrays) into line dicts.
+
+    Each row is a single RFP line (RFPLine carries one side + amount): the
+    amount must be entered in exactly one of the Debit or Credit columns. A
+    row with both filled is rejected rather than split across two lines.
+    """
+    seg_ids = request.POST.getlist("line_segment")
+    codes = request.POST.getlist("line_account")
+    debits = request.POST.getlist("line_debit")
+    credits = request.POST.getlist("line_credit")
+    descs = request.POST.getlist("line_description")
+    lines = []
+    for i, code in enumerate(codes):
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        if not code or not seg_id:
+            continue
+        debit = money((debits[i] if i < len(debits) else 0) or 0)
+        credit = money((credits[i] if i < len(credits) else 0) or 0)
+        if not debit and not credit:
+            continue
+        if debit and credit:
+            raise ValidationError(
+                f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+            )
+        lines.append(
+            {
+                "side": "dr" if debit else "cr",
+                "segment": Segment.objects.get(pk=seg_id),
+                "account_code": code,
+                "amount": debit or credit,
+                "description": descs[i] if i < len(descs) else "",
+            }
+        )
+    return lines
+
+
 @login_required
 @require_POST
 def je_post(request, pk):
@@ -887,24 +924,7 @@ def rfp_create(request):
                 form_code="RFP",
                 year=int(rfp_date[:4]),
             )
-            lines = []
-            seg_ids = request.POST.getlist("line_segment")
-            codes = request.POST.getlist("line_account")
-            sides = request.POST.getlist("line_side")
-            amounts = request.POST.getlist("line_amount")
-            descs = request.POST.getlist("line_description")
-            for i, seg_id in enumerate(seg_ids):
-                if not seg_id or not codes[i]:
-                    continue
-                lines.append(
-                    {
-                        "side": (sides[i] if i < len(sides) else "") or "dr",
-                        "segment": Segment.objects.get(pk=seg_id),
-                        "account_code": codes[i],
-                        "amount": amounts[i] or 0,
-                        "description": descs[i] if i < len(descs) else "",
-                    }
-                )
+            lines = _rfp_lines_from_form(request)
             if not lines:
                 raise ValueError("Add at least one charge line.")
             rfp = RFPService.create_rfp(
@@ -1102,24 +1122,7 @@ def rfp_revise(request, pk):
 
     if request.method == "POST":
         try:
-            lines = []
-            seg_ids = request.POST.getlist("line_segment")
-            codes = request.POST.getlist("line_account")
-            sides = request.POST.getlist("line_side")
-            amounts = request.POST.getlist("line_amount")
-            descs = request.POST.getlist("line_description")
-            for i, seg_id in enumerate(seg_ids):
-                if not seg_id or not codes[i]:
-                    continue
-                lines.append(
-                    {
-                        "side": (sides[i] if i < len(sides) else "") or "dr",
-                        "segment": Segment.objects.get(pk=seg_id),
-                        "account_code": codes[i],
-                        "amount": amounts[i] or 0,
-                        "description": descs[i] if i < len(descs) else "",
-                    }
-                )
+            lines = _rfp_lines_from_form(request)
             if not lines:
                 raise ValidationError("Add at least one charge line.")
             rfp = RFPService.revise(

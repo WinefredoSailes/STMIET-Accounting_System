@@ -52,10 +52,10 @@
           <tr>
             <th class="py-2">#</th>
             <th class="py-2">Account (GL)</th>
-            <th class="py-2 w-24">Dr / Cr</th>
             <th class="py-2 w-32">Segment</th>
             <th class="py-2">Description</th>
-            <th class="py-2 text-right w-40">Amount</th>
+            <th class="py-2 text-right w-40">Debit</th>
+            <th class="py-2 text-right w-40">Credit</th>
           </tr>
         </thead>
         <tbody id="lines-body" data-line-grid="rfp"
@@ -71,18 +71,13 @@
               </select>
             </td>
             <td class="py-2">
-              <select name="line_side" class="line-side w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                <option value="dr" {% if line.side == 'dr' %}selected{% endif %}>Dr</option>
-                <option value="cr" {% if line.side == 'cr' %}selected{% endif %}>Cr</option>
-              </select>
-            </td>
-            <td class="py-2">
               <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
               </select>
             </td>
             <td class="py-2"><input type="text" name="line_description" value="{{ line.description }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-            <td class="py-2"><input type="number" step="0.01" min="0" name="line_amount" value="{{ line.amount }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums line-amount"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_debit" {% if line.side == 'dr' %}value="{{ line.amount }}"{% endif %} class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_credit" {% if line.side == 'cr' %}value="{{ line.amount }}"{% endif %} class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
           </tr>
           {% endfor %}
           {% else %}
@@ -94,28 +89,20 @@
               </select>
             </td>
             <td class="py-2">
-              <select name="line_side" class="line-side w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                <option value="dr">Dr</option>
-                <option value="cr">Cr</option>
-              </select>
-            </td>
-            <td class="py-2">
               <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
               </select>
             </td>
             <td class="py-2"><input type="text" name="line_description" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-            <td class="py-2"><input type="number" step="0.01" min="0" name="line_amount" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums line-amount"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+            <td class="py-2"><input type="number" step="0.01" min="0" name="line_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
           </tr>
           {% endif %}
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="5" class="py-2 text-right font-semibold">TOTAL — DEBIT</td>
+            <td colspan="4" class="py-2 text-right font-semibold">TOTALS</td>
             <td id="total-dr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
-          </tr>
-          <tr>
-            <td colspan="5" class="py-2 text-right font-semibold">TOTAL — CREDIT</td>
             <td id="total-cr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
           </tr>
           <tr>
@@ -129,7 +116,7 @@
         </tfoot>
       </table>
       <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Debits and credits balance.</p>
-      <p class="mt-1 text-xs text-slate-500">Every line carries its own Dr/Cr side — credit accounts (AP, payables to officers, advances clearing, WHT) are entered as lines just like expenses. Debits must equal credits; minimum RFP is ₱2,500 (use PCV below it).</p>
+      <p class="mt-1 text-xs text-slate-500">Enter each line's amount in either the Debit or the Credit column — not both. Credit accounts (AP, payables to officers, advances clearing, WHT) are entered as credit lines just like expenses. Debits must equal credits; minimum RFP is ₱2,500 (use PCV below it).</p>
     </div>
 
     <div class="px-6 py-4 border-t border-slate-200 flex justify-end">

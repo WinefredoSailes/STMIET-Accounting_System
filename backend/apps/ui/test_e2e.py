@@ -126,10 +126,10 @@ class TestEndToEndWorkflow:
 
         before = RFPDocument.objects.count()
         for bad in (
-            {"line_amount": ["", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
-            {"line_amount": ["150000.00", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": ""},
-            {"line_amount": ["150000.00x", "150000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
-            {"line_amount": ["150000.00", "50000.00"], "line_side": ["dr", "cr"], "rfp_date": "2026-01-07"},
+            {"line_debit": ["", ""], "line_credit": ["", "150000.00"], "rfp_date": "2026-01-07"},
+            {"line_debit": ["150000.00", ""], "line_credit": ["", "150000.00"], "rfp_date": ""},
+            {"line_debit": ["150000.00x", ""], "line_credit": ["", "150000.00"], "rfp_date": "2026-01-07"},
+            {"line_debit": ["150000.00", ""], "line_credit": ["", "50000.00"], "rfp_date": "2026-01-07"},
         ):
             resp = client.post(
                 "/ap/rfps/new/",
@@ -150,8 +150,8 @@ class TestEndToEndWorkflow:
              "purpose": "purchase",
              "line_segment": [segment.id, segment.id],
              "line_account": ["61100", "20000"],
-             "line_amount": ["150,000.00", "150000.00"],
-             "line_side": ["dr", "cr"],
+             "line_debit": ["150,000.00", ""],
+             "line_credit": ["", "150000.00"],
              "line_description": ["Fuel", "AP - E2E Fuel Depot"],
              },
         )
@@ -166,8 +166,8 @@ class TestEndToEndWorkflow:
              "purpose": "purchase",
              "line_segment": [segment.id, segment.id],
              "line_account": ["61100", "20000"],
-             "line_amount": ["150000.00", "150000.00"],
-             "line_side": ["dr", "cr"],
+             "line_debit": ["150000.00", ""],
+             "line_credit": ["", "150000.00"],
              "line_description": ["E2E bulk fuel", "AP - E2E Fuel Depot"],
              },
         )

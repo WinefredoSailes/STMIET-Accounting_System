@@ -485,8 +485,8 @@ class TestRFPScreen:
             "purpose": "GEN-FUEL",
             "line_segment": [segment.id, segment.id],
             "line_account": ["61100", "20000"],
-            "line_amount": ["50000.00", "50000.00"],
-            "line_side": ["dr", "cr"],
+            "line_debit": ["50000.00", ""],
+            "line_credit": ["", "50000.00"],
             "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
         })
         assert resp.status_code == 302
@@ -496,9 +496,50 @@ class TestRFPScreen:
         assert rfp.status == "prepared"
         assert rfp.amount == Decimal("50000.00")
         assert rfp.lines.count() == 2
+        sides = {l.side for l in rfp.lines.all()}
+        assert sides == {"dr", "cr"}
+        assert {l.account.code for l in rfp.lines.all()} == {"61100", "20000"}
         assert rfp.particulars == "Fuel purchase"  # mirrors the first line
         supplier.refresh_from_db()
         assert supplier.last_ap == rfp.ap_number
+
+    def test_rfp_create_blank_row_skipped_and_mixed_row_rejected(self, client, company,
+                                                                 segment, accounts, supplier):
+        # A row with an amount in BOTH Debit and Credit is rejected outright
+        # (never split into two lines), and nothing is persisted.
+        resp = client.post("/ap/rfps/new/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id, segment.id],
+            "line_account": ["61100", "20000", "61100"],
+            "line_debit": ["2000.00", "", "500.00"],
+            "line_credit": ["", "2500.00", "500.00"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot", "Mixed"],
+        })
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "only one of Debit or Credit" in body
+        from apps.ap.models import RFPDocument
+
+        assert RFPDocument.objects.count() == 0
+
+        # A fully-blank row (no amount) is skipped, not rejected.
+        resp = client.post("/ap/rfps/new/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id, segment.id],
+            "line_account": ["61100", "20000", "61100"],
+            "line_debit": ["2000.00", "", ""],
+            "line_credit": ["", "2000.00", ""],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot", ""],
+        })
+        assert resp.status_code == 302
+        rfp = RFPDocument.objects.get()
+        assert rfp.lines.count() == 2
 
     def test_rfp_full_approval_chain(self, client, company, segment, accounts, fiscal_period,
                                      user, supplier):
@@ -707,8 +748,8 @@ class TestRFPRejectCycle:
             "purpose": "GEN-FUEL",
             "line_segment": [segment.id, segment.id],
             "line_account": ["61100", "20000"],
-            "line_amount": ["35000.00", "35000.00"],
-            "line_side": ["dr", "cr"],
+            "line_debit": ["35000.00", ""],
+            "line_credit": ["", "35000.00"],
             "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
         })
         rfp.refresh_from_db()
@@ -787,8 +828,8 @@ class TestRFPRejectCycle:
             "purpose": "GEN-FUEL",
             "line_segment": [segment.id, segment.id],
             "line_account": ["61100", "20000"],
-            "line_amount": ["30000.00", "30000.00"],
-            "line_side": ["dr", "cr"],
+            "line_debit": ["30000.00", ""],
+            "line_credit": ["", "30000.00"],
             "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
         })
         rfp.refresh_from_db()

@@ -65,7 +65,8 @@
           <td class="border border-slate-500 px-2 py-1 font-bold">Segment</td>
           <td class="border border-slate-500 px-2 py-1 font-bold">Cost Center</td>
           <td class="border border-slate-500 px-2 py-1 font-bold">GL Account</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1 font-bold text-right">Amount</td>
+          <td class="border border-slate-500 px-2 py-1 font-bold text-right">Debit</td>
+          <td class="border border-slate-500 px-2 py-1 font-bold text-right">Credit</td>
         </tr>
         {% for line in lines %}
         <tr>
@@ -74,7 +75,8 @@
           <td class="border border-slate-500 px-2 py-1.5">{{ line.segment.code }}</td>
           <td class="border border-slate-500 px-2 py-1.5">{{ rfp.purpose|default:"—" }}</td>
           <td class="border border-slate-500 px-2 py-1.5 font-mono text-xs">{{ line.account.code }}</td>
-          <td colspan="2" class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{{ line.amount|money }}</td>
+          <td class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{% if line.side == 'dr' %}{{ line.amount|money }}{% endif %}</td>
+          <td class="border border-slate-500 px-2 py-1.5 text-right tabular-nums">{% if line.side == 'cr' %}{{ line.amount|money }}{% endif %}</td>
         </tr>
         {% empty %}
         <tr>

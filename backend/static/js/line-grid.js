@@ -2,8 +2,8 @@
  * line-grid.js — generic line-item grids.
  * Supports the three line grids in the codebase:
  *   je  — debit/credit pair columns (.amount-debit / .amount-credit)
- *   rfp — per-line Dr/Cr side (.line-side) + amount (.line-amount)
- *   pcv — expense rows (input[name="exp_amount"]) with account-name preview
+ *   rfp — debit/credit pair columns (.amount-dr / .amount-cr)
+ *   pcv — expense rows (input[name="exp_amount"]) with total only
  *
  * The grid tbody declares behaviour via data attributes:
  *   data-line-grid="<variant>"
@@ -75,9 +75,8 @@
   function recalcRfp(grid) {
     var dr = 0, cr = 0;
     grid.querySelectorAll('tr').forEach(function (tr) {
-      var amt = num(tr.querySelector('.line-amount'));
-      var side = tr.querySelector('.line-side');
-      if (side && side.value === 'cr') cr += amt; else dr += amt;
+      dr += num(tr.querySelector('.amount-dr'));
+      cr += num(tr.querySelector('.amount-cr'));
     });
     var td = docSel(grid.dataset.totalDr);
     var tc = docSel(grid.dataset.totalCr);

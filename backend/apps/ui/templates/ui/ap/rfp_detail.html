@@ -43,10 +43,10 @@
         <tr>
           <th class="px-3 py-2">#</th>
           <th class="px-3 py-2">Account</th>
-          <th class="px-3 py-2 w-20">Dr / Cr</th>
           <th class="px-3 py-2">Segment</th>
           <th class="px-3 py-2">Description</th>
-          <th class="px-3 py-2 text-right">Amount</th>
+          <th class="px-3 py-2 text-right">Debit</th>
+          <th class="px-3 py-2 text-right">Credit</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -54,22 +54,22 @@
         <tr>
           <td class="px-3 py-2 text-slate-400">{{ line.line_no }}</td>
           <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }} <span class="font-sans text-slate-500">{{ line.account.name }}</span></td>
-          <td class="px-3 py-2">
-            <span class="inline-flex rounded-md px-2 py-0.5 text-xs font-semibold {% if line.side == 'dr' %}bg-indigo-50 text-indigo-700{% else %}bg-slate-100 text-slate-600{% endif %}">{{ line.get_side_display }}</span>
-          </td>
           <td class="px-3 py-2 text-xs">{{ line.segment.code }}</td>
           <td class="px-3 py-2 text-slate-600">{{ line.description|default:"—" }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'dr' %}{{ line.amount|money }}{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'cr' %}{{ line.amount|money }}{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
-          <td colspan="5" class="px-3 py-2 text-right">TOTAL — DEBIT</td>
+          <td colspan="4" class="px-3 py-2 text-right">TOTAL — DEBIT</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ rfp.amount|money }}</td>
+          <td class="px-3 py-2"></td>
         </tr>
         <tr class="font-normal text-slate-600">
-          <td colspan="5" class="px-3 py-2 text-right">TOTAL — CREDIT</td>
+          <td colspan="4" class="px-3 py-2 text-right">TOTAL — CREDIT</td>
+          <td class="px-3 py-2"></td>
           <td class="px-3 py-2 text-right tabular-nums">{{ cr_total|money }}</td>
         </tr>
       </tfoot>
