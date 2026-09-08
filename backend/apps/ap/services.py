@@ -13,9 +13,11 @@ Rules enforced (ADR-018/019/020/022 + POSTING_RULES 7.2-7.4):
 
 from datetime import date
 from decimal import Decimal
+import functools
+import time
 
 from django.conf import settings
-from django.db import transaction
+from django.db import OperationalError, transaction
 
 from apps.core.exceptions import PostingError, ValidationError
 from apps.core.money import money
@@ -48,6 +50,35 @@ def log_action(doc, action, *, actor=None, note=""):
         actor=actor,
         note=(note or "").strip(),
     )
+
+
+def retry_on_lock(max_attempts=5, initial_delay=0.05, backoff=2.0):
+    """Retry a service mutation that hits SQLite's 'database is locked'.
+
+    In WAL mode a read-then-write transaction can fail instantly with
+    SQLITE_BUSY_SNAPSHOT, which bypasses the connection's busy_timeout.
+    Retrying outside the failed atomic block gives a fresh snapshot. Must
+    wrap ABOVE @transaction.atomic so each attempt is its own transaction.
+    """
+
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            for attempt in range(max_attempts):
+                try:
+                    return fn(*args, **kwargs)
+                except OperationalError as exc:
+                    if "database is locked" not in str(exc).lower():
+                        raise
+                    if attempt == max_attempts - 1:
+                        raise
+                    time.sleep(delay)
+                    delay *= backoff
+
+        return wrapper
+
+    return deco
 
 # Approval roles in order (ADR-020 RFP matrix).
 RFP_APPROVAL_STEPS = ["prepared", "checked", "acctg_approved", "fin_approved"]
@@ -94,6 +125,7 @@ class RFPService:
     """Creates and advances RFPs through their approval chain."""
 
     @classmethod
+    @retry_on_lock()
     @transaction.atomic
     def create_rfp(
         cls,
@@ -166,6 +198,8 @@ class RFPService:
         return rfp
 
     @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def advance_step(cls, rfp: RFPDocument, *, role: str, user, comment: str = "") -> RFPDocument:
         """Move the RFP forward one approval role (ADR-020)."""
         if rfp.status == "posted":
@@ -218,6 +252,8 @@ class RFPService:
         return rfp
 
     @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def approve_cnr(cls, rfp: RFPDocument, *, user) -> RFPDocument:
         if rfp.amount <= CNR_ESCALATION_THRESHOLD:
             raise ValidationError("CNR approval is only required above P100,000.")
@@ -252,6 +288,8 @@ class RFPService:
         return rfp.status == "fin_approved" and rfp.amount > CNR_ESCALATION_THRESHOLD
 
     @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def reject(cls, rfp: RFPDocument, *, user, note: str = "") -> RFPDocument:
         """Return the RFP to the preparer with a note (reject/revise cycle).
 
@@ -278,6 +316,7 @@ class RFPService:
         return rfp
 
     @classmethod
+    @retry_on_lock()
     @transaction.atomic
     def revise(cls, rfp: RFPDocument, *, user, lines: list[dict], purpose: str = "") -> RFPDocument:
         """The preparer revises a rejected RFP and resubmits it.
@@ -361,6 +400,7 @@ class CONSOService:
     """Grades a CONSO batch and posts all member RFPs atomically (7.3)."""
 
     @classmethod
+    @retry_on_lock()
     @transaction.atomic
     def post_batch(cls, batch: CONSOBatch, *, user) -> CONSOBatch:
         rfps = list(batch.rfps.select_for_update().filter(status__in=("fin_approved", "cnr_approved")))
@@ -430,6 +470,7 @@ class CVPaymentService:
     """Check Voucher: clears AP with optional WHT split (7.4)."""
 
     @classmethod
+    @retry_on_lock()
     @transaction.atomic
     def create_cv(
         cls,
@@ -511,6 +552,8 @@ class CVPaymentService:
         return cv
 
     @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def clear(cls, cv: CheckVoucher, *, user) -> CheckVoucher:
         """released -> cleared (Finance & Accounting Head books it): post the
         CV's JE to the GL, then mark the encashment cleared."""
@@ -540,6 +583,8 @@ class CVPaymentService:
     REJECTABLE_STATUSES = ("created", "signed", "released")
 
     @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def reject(cls, cv: CheckVoucher, *, user, note: str = "") -> CheckVoucher:
         """Return the CV to the issuer with a note (reject/revise cycle).
 
@@ -577,6 +622,7 @@ class CVPaymentService:
         return cv
 
     @classmethod
+    @retry_on_lock()
     @transaction.atomic
     def revise(
         cls,

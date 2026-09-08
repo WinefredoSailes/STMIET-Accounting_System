@@ -628,6 +628,58 @@ class TestAdvanceLifecycle:
             AdvanceService.liquidate(adv, amount="6000.00", liquidate_date=date(2026, 1, 20))
 
 
+class TestRetryOnLock:
+    """The SQLite dev DB can raise 'database is locked' mid-request
+    (SQLITE_BUSY_SNAPSHOT bypasses busy_timeout); retry_on_lock must retry
+    only that error, in a fresh transaction."""
+
+    def test_retries_locked_then_succeeds(self):
+        from apps.ap.services import retry_on_lock
+        from django.db import OperationalError
+
+        calls = {"n": 0}
+
+        @retry_on_lock(max_attempts=5, initial_delay=0.001)
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise OperationalError("database is locked")
+            return "ok"
+
+        assert flaky() == "ok"
+        assert calls["n"] == 3
+
+    def test_non_lock_error_not_retried(self):
+        from apps.ap.services import retry_on_lock
+        from django.db import OperationalError
+
+        calls = {"n": 0}
+
+        @retry_on_lock(max_attempts=5, initial_delay=0.001)
+        def boom():
+            calls["n"] += 1
+            raise OperationalError("disk I/O error")
+
+        with pytest.raises(OperationalError):
+            boom()
+        assert calls["n"] == 1
+
+    def test_exhausts_attempts(self):
+        from apps.ap.services import retry_on_lock
+        from django.db import OperationalError
+
+        calls = {"n": 0}
+
+        @retry_on_lock(max_attempts=2, initial_delay=0.001)
+        def stuck():
+            calls["n"] += 1
+            raise OperationalError("database is locked")
+
+        with pytest.raises(OperationalError):
+            stuck()
+        assert calls["n"] == 2
+
+
 class TestImportSuppliers:
     def test_creates_and_is_idempotent(self, tmp_path, company, segment):
         from apps.ap.models import SupplierType

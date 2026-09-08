@@ -108,13 +108,15 @@ WSGI_APPLICATION = "config.wsgi.application"
 # PostgreSQL is the reference target (ADR-010).
 
 DATABASES = {"default": env.db("DATABASE_URL")}
-DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
 
-# SQLite tuning (dev fallback): ATOMIC_REQUESTS keeps one write transaction
-# open for the whole request, so concurrent writes used to collide and die
-# on SQLite's 5s default busy timeout ("database is locked"). WAL + a long
-# busy_timeout make a conflicting writer wait for the lock instead of erroring.
+# SQLite tuning (dev fallback). Transactions are scoped per service mutation
+# (see @transaction.atomic + @retry_on_lock in apps.ap.services), NOT per
+# request: with ATOMIC_REQUESTS every GET held a WAL read snapshot for the
+# whole request, so a concurrent writer could fail instantly with
+# SQLITE_BUSY_SNAPSHOT — which bypasses busy_timeout and produced the
+# 'database is locked' 500s on approve/sign/clear. WAL + a long
+# busy_timeout still make plain writers wait for the lock instead of erroring.
 if DATABASES["default"]["ENGINE"].endswith("sqlite3"):
     DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
 
