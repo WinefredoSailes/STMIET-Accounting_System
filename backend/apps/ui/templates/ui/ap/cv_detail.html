@@ -66,23 +66,23 @@
   <div class="px-6 pb-4">
     <div class="grid grid-cols-5 gap-2 text-center text-xs">
       <div class="border-t border-slate-300 pt-2">
-        <div class="font-medium">{{ cv.payee.name|default:"—" }}</div>
+        <div class="font-medium">{{ signatories.requested|default:"—" }}</div>
         <div class="text-slate-500">REQUESTED BY · Print Name/Sign/Date</div>
       </div>
       <div class="border-t border-slate-300 pt-2">
-        <div class="font-medium">—</div>
-        <div class="text-slate-500">NOTED BY · DEPARTMENT HEAD</div>
+        <div class="font-medium">{{ signatories.noted|default:"—" }}</div>
+        <div class="text-slate-500">PREPARED BY</div>
       </div>
       <div class="border-t border-slate-300 pt-2">
-        <div class="font-medium">{% if cv.signed_by %}{{ cv.signed_by.get_full_name|default:cv.signed_by.username }}{% else %}—{% endif %}</div>
-        <div class="text-slate-500">CHECKED BY / RECOMMENDING APPROVAL · FINANCE &amp; ACCTG HEAD</div>
+        <div class="font-medium">{{ signatories.checked|default:"—" }}</div>
+        <div class="text-slate-500">CHECKED BY</div>
       </div>
       <div class="border-t border-slate-300 pt-2">
-        <div class="font-medium">—</div>
+        <div class="font-medium">{{ signatories.approved|default:"—" }}</div>
         <div class="text-slate-500">APPROVED BY</div>
       </div>
       <div class="border-t border-slate-300 pt-2">
-        <div class="font-medium">{% if cv.released_by %}{{ cv.released_by.get_full_name|default:cv.released_by.username }}{% else %}—{% endif %}</div>
+        <div class="font-medium">{{ signatories.received|default:"—" }}</div>
         <div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div>
       </div>
     </div>

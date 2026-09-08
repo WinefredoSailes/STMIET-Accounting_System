@@ -1,5 +1,5 @@
 {% load ui_filters %}
-{# One check-voucher row — swapped on inline HTMX sign/release transitions. #}
+{# One check-voucher row — swapped on inline HTMX approve/clear transitions. #}
 <tr class="hover:bg-slate-50">
   <td class="px-4 py-2 font-mono text-xs">
     <a href="{% url 'ui:cv_detail' cv.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ cv.cv_number }}</a>
@@ -22,12 +22,9 @@
   </td>
   <td class="px-4 py-2 whitespace-nowrap">
     {% if cv.status == "created" %}
-    <button type="button" hx-post="{% url 'ui:cv_sign' cv.id %}" hx-target="closest tr" hx-swap="outerHTML"
-      hx-confirm="Sign {{ cv.cv_number }}?" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Sign</button>
-    {% elif cv.status == "signed" %}
-    <button type="button" hx-post="{% url 'ui:cv_release' cv.id %}" hx-target="closest tr" hx-swap="outerHTML"
-      class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Release</button>
-    {% elif cv.status == "released" %}
+    <button type="button" hx-post="{% url 'ui:cv_approve' cv.id %}" hx-target="closest tr" hx-swap="outerHTML"
+      hx-confirm="Approve {{ cv.cv_number }}?" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Approve</button>
+    {% elif cv.status == "approved" %}
     <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Clear…</a>
     {% elif cv.status == "rejected" %}
     {% if request.user.id == cv.created_by_id %}
