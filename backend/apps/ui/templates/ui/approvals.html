@@ -39,7 +39,6 @@
             <th class="px-4 py-3">Date</th>
             <th class="px-4 py-3 text-right">Amount</th>
             <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3 text-right">Action</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -53,12 +52,6 @@
             <td class="px-4 py-2.5 text-right tabular-nums">₱ {{ item.amount|money }}</td>
             <td class="px-4 py-2.5">
               <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">Awaiting {{ label }}</span>
-            </td>
-            <td class="px-4 py-2.5 text-right">
-              <form method="post" action="{% if item.action|length > 1 %}{% url item.action.0 item.action.1 %}{% else %}{% url item.action.0 %}{% endif %}">
-                {% csrf_token %}
-                <button type="submit" class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">{{ item.action_label }}</button>
-              </form>
             </td>
           </tr>
           {% endfor %}
