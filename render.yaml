@@ -1,36 +1,52 @@
+# Render Blueprint — STMIET Accounting System
+# Single source of truth for the Render deployment (see adr/ADR-040-deployment-render.md).
+# Apply via: Render Dashboard → New Blueprint (uses this file at repo root).
+
 services:
+  # ── Django web service (built from Dockerfile) ─────────────────────────
   - type: web
+    runtime: docker
     name: stmiet-accounting
-    env: production
     plan: free
-    disk: 1GB
-    webService:
-      # This command runs migrations, gathers static files, then starts gunicorn.
-      # Render injects DATABASE_URL and REDIS_URL automatically when the
-      # PostgreSQL and Redis add‑ons are attached.
-      command: python manage.py migrate --run-sync && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000
-    # Auto‑provision a PostgreSQL database (Render managed).
-    postgres:
-      - type: postgresql
-        name: stmiet-db
-        version: "15"
-    # Optional: auto‑provision a Redis instance for Celery broker/cache.
-    redis:
-      - type: redis
-        name: stmiet-redis
-        version: "7"
-    # Explicit environment variables that the app expects; Render will also
-    # inject DATABASE_URL and REDIS_URL when the add‑ons are attached.
+    rootDir: backend                 # Docker build context = backend/ (Dockerfile lives here)
+    dockerfilePath: ./Dockerfile
+    dockerCommand: >
+      python manage.py migrate --run-sync &&
+      python manage.py collectstatic --noinput &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:8000
     envVars:
       - key: SECRET_KEY
-        fromSecret: SECRET_KEY
+        sync: false                  # Fill in the Render Dashboard during first deploy
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.prod
-      # The following are automatically provided by Render's add‑ons;
-      # keeping them here for documentation purposes.
-      # - key: DATABASE_URL
-      #   fromService: stmiet-db
-      #   property: connectionString
-      # - key: REDIS_URL
-      #   fromService: stmiet-redis
-      #   property: connectionString
+      - key: ALLOWED_HOSTS           # Required; Django rejects every request if empty
+        value: .onrender.com
+      - key: DATABASE_URL            # Auto-wired from the PostgreSQL database below
+        fromDatabase:
+          name: stmiet-db
+          property: connectionString
+
+# ── PostgreSQL (managed by Render) ──────────────────────────────────────
+databases:
+  - name: stmiet-db
+    postgresMajorVersion: '18'
+    plan: free
+    databaseName: stmiet_accounting
+    ipAllowList: []                  # Private network only; web service accesses via internal URL
+
+# ── Celery / Redis ──────────────────────────────────────────────────────
+# Deferred until Celery is actually implemented in code. The app reads a
+# REDIS_URL env var but nothing uses it yet. When Celery lands, add:
+#
+#   - type: keyvalue
+#     name: stmiet-redis
+#     plan: free
+#     ipAllowList: []
+#
+# and wire it to the web service with:
+#
+#   - key: REDIS_URL
+#     fromService:
+#       type: keyvalue
+#       name: stmiet-redis
+#       property: connectionString
