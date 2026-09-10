@@ -91,8 +91,8 @@
                   <option value="" selected>— select —</option>
                 </select>
               </td>
-              <td class="px-1 py-2"><input type="number" step="0.01" min="0" name="exp_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
-              <td class="px-1 py-2"><input type="number" step="0.01" min="0" name="exp_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="exp_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="exp_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
               <td class="px-1 py-2"><button type="button" data-remove-row class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
             </tr>
           </tbody>

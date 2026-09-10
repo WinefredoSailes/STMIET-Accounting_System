@@ -25,7 +25,32 @@
     return sel ? document.querySelector(sel) : null;
   }
   function num(el) {
-    return el ? (parseFloat(el.value) || 0) : 0;
+    var v = el ? String(el.value).replace(/,/g, '') : '';
+    return v ? (parseFloat(v) || 0) : 0;
+  }
+  function fmtMoney(n) {
+    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function formatAmountInput(el) {
+    var full = el.value;
+    var start = el.selectionStart === null ? full.length : el.selectionStart;
+    var digitsBefore = (full.slice(0, start).match(/\d/g) || []).length;
+    var raw = full.replace(/[^\d.]/g, '');
+    var dot = raw.indexOf('.');
+    var whole = (dot === -1 ? raw : raw.slice(0, dot)).replace(/^0+(?=\d)/, '');
+    var frac = dot === -1 ? '' : raw.slice(dot + 1).slice(0, 2);
+    var text = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    if (dot !== -1) text += '.' + frac;
+    el.value = text;
+    var pos = 0, seen = 0;
+    while (pos < text.length && seen < digitsBefore) {
+      if (/\d/.test(text.charAt(pos))) seen++;
+      pos++;
+    }
+    if (el.setSelectionRange) el.setSelectionRange(pos, pos);
+  }
+  function isAmountInput(el) {
+    return !!(el && el.matches && el.matches('.amount-dr, .amount-cr, .amount-debit, .amount-credit'));
   }
 
   function resetSearchable(select) {
@@ -58,15 +83,15 @@
     });
     var td = docSel(grid.dataset.totalDebit);
     var tc = docSel(grid.dataset.totalCredit);
-    if (td) td.textContent = d.toFixed(2);
-    if (tc) tc.textContent = c.toFixed(2);
+    if (td) td.textContent = fmtMoney(d);
+    if (tc) tc.textContent = fmtMoney(c);
     var hint = docSel(grid.dataset.hint);
     if (hint) {
       if (d === c) {
         hint.textContent = 'Balanced';
         hint.className = grid.dataset.hintOk || 'text-sm text-emerald-600 font-medium';
       } else {
-        hint.textContent = 'Difference: ' + Math.abs(d - c).toFixed(2);
+        hint.textContent = 'Difference: ' + fmtMoney(Math.abs(d - c));
         hint.className = grid.dataset.hintBad || 'text-sm text-red-600 font-medium';
       }
     }
@@ -80,12 +105,12 @@
     });
     var td = docSel(grid.dataset.totalDr);
     var tc = docSel(grid.dataset.totalCr);
-    if (td) td.textContent = dr.toFixed(2);
-    if (tc) tc.textContent = cr.toFixed(2);
+    if (td) td.textContent = fmtMoney(dr);
+    if (tc) tc.textContent = fmtMoney(cr);
     var hint = docSel(grid.dataset.hint);
     if (hint) {
       if (dr !== cr) {
-        hint.textContent = 'Debits and credits do not balance (Dr ' + dr.toFixed(2) + ' vs Cr ' + cr.toFixed(2) + ').';
+        hint.textContent = 'Debits and credits do not balance (Dr ' + fmtMoney(dr) + ' vs Cr ' + fmtMoney(cr) + ').';
         hint.className = grid.dataset.hintBad || 'mt-2 text-xs text-red-700 font-medium';
       } else {
         hint.textContent = 'Debits and credits balance.';
@@ -100,7 +125,7 @@
       t += num(tr.querySelector('.amount-dr')) + num(tr.querySelector('.amount-cr'));
     });
     var total = docSel(grid.dataset.total);
-    if (total) total.textContent = t.toFixed(2);
+    if (total) total.textContent = fmtMoney(t);
   }
 
   function initGrid(grid) {
@@ -117,8 +142,14 @@
       recalc(grid);
     });
 
-    grid.addEventListener('input', function () { recalc(grid); });
-    grid.addEventListener('change', function (e) { recalc(grid); });
+    grid.addEventListener('input', function (e) {
+      if (isAmountInput(e.target)) formatAmountInput(e.target);
+      recalc(grid);
+    });
+    grid.addEventListener('change', function (e) {
+      if (isAmountInput(e.target)) formatAmountInput(e.target);
+      recalc(grid);
+    });
     grid.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('[data-remove-row]') : null;
       if (btn) {
@@ -126,6 +157,8 @@
         recalc(grid);
       }
     });
+    grid.querySelectorAll('input.amount-dr, input.amount-cr, input.amount-debit, input.amount-credit')
+        .forEach(formatAmountInput);
     recalc(grid);
   }
 
