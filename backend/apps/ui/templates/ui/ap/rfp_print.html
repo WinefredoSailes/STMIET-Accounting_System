@@ -3,144 +3,145 @@
 {% block title %}RFP {{ rfp.ap_number }} — Print{% endblock %}
 {% block content %}
 <style>
-  @page { size: A4 portrait; margin: 10mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   @media print {
     #sidebar, header, .p-4 { display: none !important; }
     body { background: #fff !important; }
   }
 </style>
-<div class="py-6 px-4 bg-white">
-  <div class="mx-auto max-w-[190mm] font-serif text-sm text-black">
+<div class="py-2 px-4 bg-white">
+  <div class="mx-auto max-w-[190mm] font-serif text-xs text-black">
     <table class="rfp-grid w-full border-collapse">
       <tbody>
         <!-- HEADER -->
         <tr>
-          <td colspan="2" class="border border-black px-2 py-1 align-middle">
-            <img src="{% static 'stmiet-trans-logo.png' %}" alt="Seven Trent logo" class="h-14 w-auto">
+          <td colspan="2" class="border border-black px-2 py-0.5 align-middle">
+            <img src="{% static 'stmiet-trans-logo.png' %}" alt="Seven Trent logo" class="h-10 w-auto">
           </td>
-          <td colspan="6" class="border border-black text-center text-[28px] font-black tracking-[0.15em] py-3 align-middle">
+          <td colspan="6" class="border border-black text-center text-[20px] font-black tracking-[0.1em] py-1 align-middle">
             REQUEST FOR PAYMENT
           </td>
-          <td colspan="4" class="border border-black px-3 py-1 text-right text-[10px] uppercase tracking-wider font-bold align-top">
+          <td colspan="4" class="border border-black px-3 py-0.5 text-right text-[10px] uppercase tracking-wider font-bold align-top">
             ACCOUNTING DEPARTMENT
           </td>
         </tr>
-        <tr class="text-xs">
+        <tr class="text-[10px]">
           <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-1">Document No.:</td>
-          <td colspan="3" class="border border-black px-2 py-1">ACCTG-FOR-012</td>
+          <td class="border border-black px-2 py-0.5">Document No.:</td>
+          <td colspan="3" class="border border-black px-2 py-0.5">ACCTG-FOR-012</td>
         </tr>
-        <tr class="text-xs">
+        <tr class="text-[10px]">
           <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-1">Effective Date:</td>
-          <td colspan="3" class="border border-black px-2 py-1">11.16.2024</td>
+          <td class="border border-black px-2 py-0.5">Effective Date:</td>
+          <td colspan="3" class="border border-black px-2 py-0.5">11.16.2024</td>
         </tr>
-        <tr class="text-xs">
+        <tr class="text-[10px]">
           <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-1">Revision No.:</td>
-          <td colspan="3" class="border border-black px-2 py-1">00</td>
+          <td class="border border-black px-2 py-0.5">Revision No.:</td>
+          <td colspan="3" class="border border-black px-2 py-0.5">00</td>
         </tr>
 
         <!-- PAYEE INFORMATION -->
         <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-0.5 font-bold uppercase tracking-wider">
+          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
             Payee Information
           </td>
         </tr>
-        <tr>
-          <td class="border border-black px-2 py-1 font-semibold">NAME:</td>
-          <td colspan="6" class="border border-black px-2 py-1 font-bold uppercase">{{ rfp.payee.name }}</td>
-          <td class="border border-black px-2 py-1 text-xs font-semibold">DATE OF REQUEST:</td>
-          <td colspan="3" class="border border-black px-2 py-1">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
+        <tr class="text-[10px]">
+          <td class="border border-black px-2 py-0.5 font-semibold">NAME:</td>
+          <td colspan="6" class="border border-black px-2 py-0.5 font-bold uppercase">{{ rfp.payee.name }}</td>
+          <td class="border border-black px-2 py-0.5 font-semibold">DATE OF REQUEST:</td>
+          <td colspan="3" class="border border-black px-2 py-0.5">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
         </tr>
-        <tr>
-          <td colspan="2" class="border border-black px-2 py-1 font-semibold">POSITION / CONTACT NO:</td>
-          <td colspan="6" class="border border-black px-2 py-1">{{ position|default:contact_no|default:"—" }}</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-xs font-semibold">VENDOR NO:</td>
-          <td colspan="2" class="border border-black px-2 py-1">{{ rfp.payee.code }}</td>
+        <tr class="text-[10px]">
+          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">POSITION / CONTACT NO:</td>
+          <td colspan="6" class="border border-black px-2 py-0.5">{{ position|default:contact_no|default:"—" }}</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">VENDOR NO:</td>
+          <td colspan="2" class="border border-black px-2 py-0.5">{{ rfp.payee.code }}</td>
         </tr>
-        <tr>
-          <td colspan="2" class="border border-black px-2 py-1 font-semibold">DEPARTMENT / ADDRESS:</td>
-          <td colspan="6" class="border border-black px-2 py-1">{{ address|default:"—" }}</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-xs font-semibold">AP NO:</td>
-          <td colspan="2" class="border border-black px-2 py-1 font-bold">{{ rfp.ap_number }}</td>
+        <tr class="text-[10px]">
+          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">DEPARTMENT / ADDRESS:</td>
+          <td colspan="6" class="border border-black px-2 py-0.5">{{ address|default:"—" }}</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">AP NO:</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 font-bold">{{ rfp.ap_number }}</td>
         </tr>
 
         <!-- DISTRIBUTION CHARGES -->
         <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-0.5 font-bold uppercase tracking-wider">
+          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
             Distribution Charges
           </td>
         </tr>
-        <tr class="text-[11px] uppercase tracking-wider">
-          <td colspan="5" class="border border-black px-2 py-1 font-bold">Purpose of Payment</td>
-          <td class="border border-black px-2 py-1 font-bold">Entity</td>
-          <td class="border border-black px-2 py-1 font-bold">Segment</td>
-          <td colspan="2" class="border border-black px-2 py-1 font-bold">Cost Center</td>
-          <td colspan="3" class="border border-black px-2 py-1 font-bold text-right">Amount</td>
+        <tr class="text-[10px] uppercase tracking-wider">
+          <td colspan="5" class="border border-black px-2 py-0.5 font-bold">Purpose of Payment</td>
+          <td class="border border-black px-2 py-0.5 font-bold">Entity</td>
+          <td class="border border-black px-2 py-0.5 font-bold">Segment</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 font-bold">Cost Center</td>
+          <td colspan="3" class="border border-black px-2 py-0.5 font-bold text-right">Amount</td>
         </tr>
         {% for line in dr_lines %}
-        <tr>
-          <td colspan="5" class="border border-black px-2 py-1">{{ line.description|default:rfp.particulars }}</td>
-          <td class="border border-black px-2 py-1">STMIET</td>
-          <td class="border border-black px-2 py-1">{{ line.segment.code }}</td>
-          <td colspan="2" class="border border-black px-2 py-1">{{ rfp.purpose|default:"—" }}</td>
-          <td colspan="3" class="border border-black px-2 py-1 text-right tabular-nums">{{ line.amount|money }}</td>
+        <tr class="text-[10px]">
+          <td colspan="5" class="border border-black px-2 py-0.5">{{ line.description|default:rfp.particulars }}</td>
+          <td class="border border-black px-2 py-0.5">STMIET</td>
+          <td class="border border-black px-2 py-0.5">{{ line.segment.code }}</td>
+          <td colspan="2" class="border border-black px-2 py-0.5">{{ rfp.purpose|default:"—" }}</td>
+          <td colspan="3" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ line.amount|money }}</td>
         </tr>
         {% endfor %}
         {% if not dr_lines %}
         <tr>
-          <td colspan="12" class="border border-black px-2 py-1.5 text-slate-400">No distribution lines.</td>
+          <td colspan="12" class="border border-black px-2 py-0.5 text-slate-400">No distribution lines.</td>
         </tr>
         {% endif %}
-        
+
+        <!-- CHART OF ACCOUNTS -->
         <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-0.5 font-bold uppercase tracking-wider">
+          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
             Chart of Accounts
           </td>
         </tr>
-        <tr class="font-semibold">
-          <td colspan="3" class="border border-black px-2 py-1.5">CHART OF ACCOUNTS:</td>
-          <td colspan="5" class="border border-black px-2 py-1.5"></td>
-          <td colspan="2" class="border border-black px-2 py-1.5 text-center uppercase">Total Amount:</td>
-          <td colspan="2" class="border border-black px-2 py-1.5 text-right tabular-nums">{{ total|money }}</td>
+        <tr class="font-semibold text-[10px]">
+          <td colspan="3" class="border border-black px-2 py-0.5">CHART OF ACCOUNTS:</td>
+          <td colspan="5" class="border border-black px-2 py-0.5"></td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-center uppercase">Total Amount:</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ total|money }}</td>
         </tr>
         {% for line in lines %}
-        <tr>
-          <td colspan="2" class="border border-black px-2 py-1 font-semibold">{{ line.side|upper }}.</td>
-          <td colspan="6" class="border border-black px-2 py-1">{{ line.account.name }}</td>
-          <td colspan="2" class="border border-black px-2 py-1"></td>
-          <td colspan="2" class="border border-black px-2 py-1 text-right tabular-nums">{{ line.amount|money }}</td>
+        <tr class="text-[10px]">
+          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">{{ line.side|upper }}.</td>
+          <td colspan="6" class="border border-black px-2 py-0.5">{{ line.account.name }}</td>
+          <td colspan="2" class="border border-black px-2 py-0.5"></td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ line.amount|money }}</td>
         </tr>
         {% endfor %}
-        <tr>
-          <td colspan="8" class="border border-black px-2 py-1"></td>
-          <td colspan="2" class="border border-black px-2 py-1 uppercase">VAT:</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-right tabular-nums">0.00</td>
+        <tr class="text-[10px]">
+          <td colspan="8" class="border border-black px-2 py-0.5"></td>
+          <td colspan="2" class="border border-black px-2 py-0.5 uppercase">VAT:</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">0.00</td>
         </tr>
-        <tr class="font-semibold">
-          <td colspan="8" class="border border-black px-2 py-1"></td>
-          <td colspan="2" class="border border-black px-2 py-1 uppercase">Net Invoice:</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-right tabular-nums">{{ total|money }}</td>
+        <tr class="font-semibold text-[10px]">
+          <td colspan="8" class="border border-black px-2 py-0.5"></td>
+          <td colspan="2" class="border border-black px-2 py-0.5 uppercase">Net Invoice:</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ total|money }}</td>
         </tr>
 
         <!-- SIGNATURE SECTION -->
-        <tr class="text-[11px] font-bold uppercase tracking-wide">
-          <td colspan="2" class="border border-black px-2 py-1">Requested By:</td>
-          <td colspan="5" class="border border-black px-2 py-1">Recommending Approver / or Checker</td>
-          <td colspan="5" class="border border-black px-2 py-1">Approval:</td>
+        <tr class="text-[10px] font-bold uppercase tracking-wide">
+          <td colspan="2" class="border border-black px-2 py-0.5">Requested By:</td>
+          <td colspan="5" class="border border-black px-2 py-0.5">Recommending Approver / or Checker</td>
+          <td colspan="5" class="border border-black px-2 py-0.5">Approval:</td>
         </tr>
-        <tr class="h-12 align-bottom">
-          <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ requested_by }}</td>
-          <td colspan="5" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ checked_by }}</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ approved_acctg }}</td>
-          <td colspan="3" class="border border-black px-2 py-1 text-center text-xs font-semibold uppercase">{{ approved_fin }}</td>
+        <tr class="h-8 align-bottom">
+          <td colspan="2" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ requested_by }}</td>
+          <td colspan="5" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ checked_by }}</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ approved_acctg }}</td>
+          <td colspan="3" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ approved_fin }}</td>
         </tr>
-        <tr class="text-[9px] uppercase tracking-wide text-slate-600">
-          <td colspan="2" class="border border-black px-2 py-1 text-center">Print Name/Sign/Date</td>
-          <td colspan="5" class="border border-black px-2 py-1 text-center">Department Head</td>
-          <td colspan="2" class="border border-black px-2 py-1 text-center">Accounting Manager</td>
-          <td colspan="3" class="border border-black px-2 py-1 text-center">Finance Manager</td>
+        <tr class="text-[8px] uppercase tracking-wide text-slate-600">
+          <td colspan="2" class="border border-black px-2 py-0.5 text-center">Print Name/Sign/Date</td>
+          <td colspan="5" class="border border-black px-2 py-0.5 text-center">Department Head</td>
+          <td colspan="2" class="border border-black px-2 py-0.5 text-center">Accounting Manager</td>
+          <td colspan="3" class="border border-black px-2 py-0.5 text-center">Finance Manager</td>
         </tr>
       </tbody>
     </table>
