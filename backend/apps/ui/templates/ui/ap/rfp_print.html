@@ -3,154 +3,209 @@
 {% block title %}RFP {{ rfp.ap_number }} — Print{% endblock %}
 {% block content %}
 <style>
-  @page { size: A4 portrait; margin: 8mm; }
+  @page { size: A5 portrait; margin: 6mm; }
+  .print-a4 @page { size: A4 portrait; margin: 8mm; }
   @media print {
-    #sidebar, header, .p-4 { display: none !important; }
-    body { background: #fff !important; }
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .rfp-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .rfp-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .rfp-paper td { padding: 1px 4px; }
+    tr, td { page-break-inside: avoid; break-inside: avoid; }
   }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
+  .print-toolbar button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .print-toolbar button:last-child:hover { background: #15803d; }
+  .rfp-paper {
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12);
+    margin: 16px auto; padding: 8mm; max-width: 148mm;
+  }
+  .rfp-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .rfp-paper td { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
+  .rfp-paper *, .rfp-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
 </style>
-<div class="py-2 px-4 bg-white">
-  <div class="mx-auto max-w-[190mm] font-serif text-xs text-black">
-    <table class="rfp-grid w-full border-collapse">
-      <tbody>
-        <!-- HEADER -->
-        <tr>
-          <td colspan="2" class="border border-black px-2 py-0.5 align-middle">
-            <img src="{% static 'stmiet-trans-logo.png' %}" alt="Seven Trent logo" class="h-10 w-auto">
-          </td>
-          <td colspan="6" class="border border-black text-center text-[20px] font-black tracking-[0.1em] py-1 align-middle">
-            REQUEST FOR PAYMENT
-          </td>
-          <td colspan="4" class="border border-black px-3 py-0.5 text-right text-[10px] uppercase tracking-wider font-bold align-top">
-            ACCOUNTING DEPARTMENT
-          </td>
-        </tr>
-        <tr class="text-[10px]">
-          <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-0.5">Document No.:</td>
-          <td colspan="3" class="border border-black px-2 py-0.5">ACCTG-FOR-012</td>
-        </tr>
-        <tr class="text-[10px]">
-          <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-0.5">Effective Date:</td>
-          <td colspan="3" class="border border-black px-2 py-0.5">11.16.2024</td>
-        </tr>
-        <tr class="text-[10px]">
-          <td colspan="8" class="border border-black"></td>
-          <td class="border border-black px-2 py-0.5">Revision No.:</td>
-          <td colspan="3" class="border border-black px-2 py-0.5">00</td>
-        </tr>
 
-        <!-- PAYEE INFORMATION -->
-        <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
-            Payee Information
-          </td>
-        </tr>
-        <tr class="text-[10px]">
-          <td class="border border-black px-2 py-0.5 font-semibold">NAME:</td>
-          <td colspan="6" class="border border-black px-2 py-0.5 font-bold uppercase">{{ rfp.payee.name }}</td>
-          <td class="border border-black px-2 py-0.5 font-semibold">DATE OF REQUEST:</td>
-          <td colspan="3" class="border border-black px-2 py-0.5">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
-        </tr>
-        <tr class="text-[10px]">
-          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">POSITION / CONTACT NO:</td>
-          <td colspan="6" class="border border-black px-2 py-0.5">{{ position|default:contact_no|default:"—" }}</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">VENDOR NO:</td>
-          <td colspan="2" class="border border-black px-2 py-0.5">{{ rfp.payee.code }}</td>
-        </tr>
-        <tr class="text-[10px]">
-          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">DEPARTMENT / ADDRESS:</td>
-          <td colspan="6" class="border border-black px-2 py-0.5">{{ address|default:"—" }}</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">AP NO:</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 font-bold">{{ rfp.ap_number }}</td>
-        </tr>
+<div class="no-print print-toolbar">
+  <button class="active" onclick="setPaper('a5')">A5 / Half-Bond</button>
+  <button onclick="setPaper('a4')">A4</button>
+  <button onclick="window.print()">Print</button>
+</div>
 
-        <!-- DISTRIBUTION CHARGES -->
-        <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
-            Distribution Charges
-          </td>
-        </tr>
-        <tr class="text-[10px] uppercase tracking-wider">
-          <td colspan="5" class="border border-black px-2 py-0.5 font-bold">Purpose of Payment</td>
-          <td class="border border-black px-2 py-0.5 font-bold">Entity</td>
-          <td class="border border-black px-2 py-0.5 font-bold">Segment</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 font-bold">Cost Center</td>
-          <td colspan="3" class="border border-black px-2 py-0.5 font-bold text-right">Amount</td>
-        </tr>
-        {% for line in dr_lines %}
-        <tr class="text-[10px]">
-          <td colspan="5" class="border border-black px-2 py-0.5">{{ line.description|default:rfp.particulars }}</td>
-          <td class="border border-black px-2 py-0.5">STMIET</td>
-          <td class="border border-black px-2 py-0.5">{{ line.segment.code }}</td>
-          <td colspan="2" class="border border-black px-2 py-0.5">{{ rfp.purpose|default:"—" }}</td>
-          <td colspan="3" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ line.amount|money }}</td>
-        </tr>
-        {% endfor %}
-        {% if not dr_lines %}
-        <tr>
-          <td colspan="12" class="border border-black px-2 py-0.5 text-slate-400">No distribution lines.</td>
-        </tr>
-        {% endif %}
+<div class="rfp-paper">
+  <!-- 12 equal columns — every row's colspans sum to exactly 12 -->
+  <table>
+    <colgroup>
+      <col><col><col><col><col><col><col><col><col><col><col><col>
+    </colgroup>
+    <tbody>
 
-        <!-- CHART OF ACCOUNTS -->
-        <tr>
-          <td colspan="12" class="border border-black bg-[#fce4d6] px-2 py-px font-bold uppercase tracking-wider">
-            Chart of Accounts
-          </td>
-        </tr>
-        <tr class="font-semibold text-[10px]">
-          <td colspan="3" class="border border-black px-2 py-0.5">CHART OF ACCOUNTS:</td>
-          <td colspan="5" class="border border-black px-2 py-0.5"></td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-center uppercase">Total Amount:</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ total|money }}</td>
-        </tr>
-        {% for line in lines %}
-        <tr class="text-[10px]">
-          <td colspan="2" class="border border-black px-2 py-0.5 font-semibold">{{ line.side|upper }}.</td>
-          <td colspan="6" class="border border-black px-2 py-0.5">{{ line.account.name }}</td>
-          <td colspan="2" class="border border-black px-2 py-0.5"></td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ line.amount|money }}</td>
-        </tr>
-        {% endfor %}
-        <tr class="text-[10px]">
-          <td colspan="8" class="border border-black px-2 py-0.5"></td>
-          <td colspan="2" class="border border-black px-2 py-0.5 uppercase">VAT:</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">0.00</td>
-        </tr>
-        <tr class="font-semibold text-[10px]">
-          <td colspan="8" class="border border-black px-2 py-0.5"></td>
-          <td colspan="2" class="border border-black px-2 py-0.5 uppercase">Net Invoice:</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-right tabular-nums">{{ total|money }}</td>
-        </tr>
+      <!-- ═══ HEADER  (2+6+4=12) ═══ -->
+      <tr style="height:28px">
+        <td colspan="2" style="text-align:center; vertical-align:middle">
+          <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:18px; width:auto">
+        </td>
+        <td colspan="6" style="text-align:center; vertical-align:middle; font-size:12px; font-weight:900; letter-spacing:.08em; background:#fce4d6">
+          REQUEST FOR PAYMENT
+        </td>
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+          ACCOUNTING DEPARTMENT
+        </td>
+      </tr>
 
-        <!-- SIGNATURE SECTION -->
-        <tr class="text-[10px] font-bold uppercase tracking-wide">
-          <td colspan="2" class="border border-black px-2 py-0.5">Requested By:</td>
-          <td colspan="5" class="border border-black px-2 py-0.5">Recommending Approver / or Checker</td>
-          <td colspan="5" class="border border-black px-2 py-0.5">Approval:</td>
-        </tr>
-        <tr class="h-8 align-bottom">
-          <td colspan="2" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ requested_by }}</td>
-          <td colspan="5" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ checked_by }}</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ approved_acctg }}</td>
-          <td colspan="3" class="border border-black px-2 py-0.5 text-center text-[10px] font-semibold uppercase">{{ approved_fin }}</td>
-        </tr>
-        <tr class="text-[8px] uppercase tracking-wide text-slate-600">
-          <td colspan="2" class="border border-black px-2 py-0.5 text-center">Print Name/Sign/Date</td>
-          <td colspan="5" class="border border-black px-2 py-0.5 text-center">Department Head</td>
-          <td colspan="2" class="border border-black px-2 py-0.5 text-center">Accounting Manager</td>
-          <td colspan="3" class="border border-black px-2 py-0.5 text-center">Finance Manager</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      <!-- ═══ DOCUMENT CONTROL  (8+1+3=12) ═══ -->
+      <tr style="font-size:7px">
+        <td colspan="8"></td>
+        <td>Document No.:</td>
+        <td colspan="3">ACCTG-FOR-012</td>
+      </tr>
+      <tr style="font-size:7px">
+        <td colspan="8"></td>
+        <td>Effective Date:</td>
+        <td colspan="3">11.16.2024</td>
+      </tr>
+      <tr style="font-size:7px">
+        <td colspan="8"></td>
+        <td>Revision No.:</td>
+        <td colspan="3">00</td>
+      </tr>
+
+      <!-- ═══ PAYEE INFORMATION  (12 full span) ═══ -->
+      <tr>
+        <td colspan="12" style="background:#fce4d6; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Payee Information
+        </td>
+      </tr>
+      <!-- NAME row: 1+6+1+4=12 -->
+      <tr style="font-size:7px">
+        <td style="font-weight:600">NAME:</td>
+        <td colspan="6" style="font-weight:700; text-transform:uppercase">{{ rfp.payee.name }}</td>
+        <td style="font-weight:600">DATE OF REQUEST:</td>
+        <td colspan="4">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
+      </tr>
+      <!-- POSITION row: 2+6+2+2=12 -->
+      <tr style="font-size:7px">
+        <td colspan="2" style="font-weight:600">POSITION / CONTACT NO:</td>
+        <td colspan="6">{{ position|default:contact_no|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">VENDOR NO:</td>
+        <td colspan="2">{{ rfp.payee.code }}</td>
+      </tr>
+      <!-- DEPARTMENT row: 2+6+2+2=12 -->
+      <tr style="font-size:7px">
+        <td colspan="2" style="font-weight:600">DEPARTMENT / ADDRESS:</td>
+        <td colspan="6">{{ address|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">AP NO:</td>
+        <td colspan="2" style="font-weight:700">{{ rfp.ap_number }}</td>
+      </tr>
+
+      <!-- ═══ DISTRIBUTION CHARGES  (12 full span) ═══ -->
+      <tr>
+        <td colspan="12" style="background:#fce4d6; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Distribution Charges
+        </td>
+      </tr>
+      <!-- Column headers: 5+1+1+2+3=12 -->
+      <tr style="font-size:7px; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="5" style="font-weight:700">Purpose of Payment</td>
+        <td style="font-weight:700">Entity</td>
+        <td style="font-weight:700">Segment</td>
+        <td colspan="2" style="font-weight:700">Cost Center</td>
+        <td colspan="3" style="font-weight:700; text-align:right">Amount</td>
+      </tr>
+      <!-- Data rows: 5+1+1+2+3=12 -->
+      {% for line in dr_lines %}
+      <tr style="font-size:7px">
+        <td colspan="5" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ line.description|default:rfp.particulars }}</td>
+        <td>STMIET</td>
+        <td>{{ line.segment.code }}</td>
+        <td colspan="2">{{ rfp.purpose|default:"—" }}</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
+      </tr>
+      {% endfor %}
+      {% if not dr_lines %}
+      <tr>
+        <td colspan="12" style="font-size:7px; color:#94a3b8">No distribution lines.</td>
+      </tr>
+      {% endif %}
+
+      <!-- ═══ CHART OF ACCOUNTS  (12 full span) ═══ -->
+      <tr>
+        <td colspan="12" style="background:#fce4d6; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Chart of Accounts
+        </td>
+      </tr>
+      <!-- COA total row: 3+5+2+2=12 -->
+      <tr style="font-size:7px; font-weight:600">
+        <td colspan="3">CHART OF ACCOUNTS:</td>
+        <td colspan="5"></td>
+        <td colspan="2" style="text-align:center; text-transform:uppercase">Total Amount:</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
+      </tr>
+      <!-- COA data rows: 2+6+2+2=12 -->
+      {% for line in lines %}
+      <tr style="font-size:7px">
+        <td colspan="2" style="font-weight:600">{{ line.side|upper }}.</td>
+        <td colspan="6">{{ line.account.name }}</td>
+        <td colspan="2"></td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
+      </tr>
+      {% endfor %}
+      <!-- VAT row: 8+2+2=12 -->
+      <tr style="font-size:7px">
+        <td colspan="8"></td>
+        <td colspan="2" style="text-transform:uppercase">VAT:</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">0.00</td>
+      </tr>
+      <!-- Net Invoice row: 8+2+2=12 -->
+      <tr style="font-size:7px; font-weight:600">
+        <td colspan="8"></td>
+        <td colspan="2" style="text-transform:uppercase">Net Invoice:</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
+      </tr>
+
+      <!-- ═══ SIGNATURE SECTION  ═══ -->
+      <!-- Labels: 2+5+5=12 -->
+      <tr style="font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="2">Requested By:</td>
+        <td colspan="5">Recommending Approver / or Checker</td>
+        <td colspan="5">Approval:</td>
+      </tr>
+      <!-- Names: 2+5+2+3=12 -->
+      <tr style="height:22px">
+        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ requested_by }}</td>
+        <td colspan="5" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ checked_by }}</td>
+        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ approved_acctg }}</td>
+        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ approved_fin }}</td>
+      </tr>
+      <!-- Roles: 2+5+2+3=12 -->
+      <tr style="font-size:6px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
+        <td colspan="2" style="text-align:center">Print Name/Sign/Date</td>
+        <td colspan="5" style="text-align:center">Department Head</td>
+        <td colspan="2" style="text-align:center">Accounting Manager</td>
+        <td colspan="3" style="text-align:center">Finance Manager</td>
+      </tr>
+
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+  function setPaper(size) {
+    document.body.classList.toggle('print-a4', size === 'a4');
+    document.querySelectorAll('.print-toolbar button').forEach(function(btn, i) {
+      if (i < 2) btn.classList.toggle('active', (i === 0 && size === 'a5') || (i === 1 && size === 'a4'));
+    });
+  }
   window.addEventListener("load", function () {
     setTimeout(function () { window.print(); }, 350);
   });
