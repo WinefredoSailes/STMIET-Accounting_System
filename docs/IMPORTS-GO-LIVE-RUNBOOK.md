@@ -155,6 +155,11 @@ receivables/payables/inventory open at zero.
   - `coo` (CNR/signing above thresholds)
   with `UserProfile.approval_role` set accordingly. Cash custodian users are
   already seeded by step C.4.
+- **Fill the First/Last name on every user** (user settings screen or Django
+  admin): printed signature blocks resolve dynamically to the account's own
+  full name (`first last`), falling back to first name, then last name, then
+  the username. A blank-name account prints the username, not a blank
+  signature — that is correct only for internal/test accounts.
 
 ---
 

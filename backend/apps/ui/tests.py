@@ -1467,6 +1467,42 @@ class TestCheckVoucherScreen:
         assert "Prepared By:" in body          # 5-column signature row
         assert "stmiet-trans-logo.png" in body
 
+    def test_cv_print_prepared_by_shows_creator_full_name(
+        self, client, company, segment, accounts, fiscal_period, approved_rfp, segment_account_map
+    ):
+        """Prepared By is the CV creator's first + last name, not the username."""
+        from apps.ap.services import CVPaymentService
+
+        prep = get_user_model().objects.create_user(
+            username="mquillosa", first_name="Mary", last_name="Q. Quillosa", password="x"
+        )
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0100",
+            cv_date=date(2026, 1, 20),
+            payee=approved_rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount="12345.67",
+            rfp=approved_rfp,
+            check_no="CHK-9100",
+            user=prep,
+        )
+        body = client.get(f"/ap/cv/{cv.id}/print/").content.decode()
+        assert "Mary Q. Quillosa" in body
+        assert "mquillosa" not in body
+
+    def test_rfp_print_requested_by_shows_creator_full_name(
+        self, client, company, segment, accounts, fiscal_period, approved_rfp, segment_account_map
+    ):
+        """A different creator prints their own full name (dynamic guarantee)."""
+        requester = get_user_model().objects.create_user(
+            username="ppascual", first_name="Peter", last_name="J. Pascual", password="x"
+        )
+        approved_rfp.created_by = requester
+        approved_rfp.save(update_fields=["created_by", "updated_at"])
+        body = client.get(f"/ap/rfps/{approved_rfp.id}/print/").content.decode()
+        assert "Peter J. Pascual" in body
+        assert "ppascual" not in body
+
     def test_rfp_print_renders(self, client, company, segment, accounts, fiscal_period,
                                user, approved_rfp, segment_account_map):
         resp = client.get(f"/ap/rfps/{approved_rfp.id}/print/")

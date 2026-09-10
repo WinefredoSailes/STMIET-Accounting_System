@@ -61,6 +61,26 @@ def display_name(user):
     return full or user.username
 
 
+def signatory_name(user):
+    """Printed-name resolution for RFP/CV signature blocks (dynamic).
+
+    Always reads the account's own first_name/last_name fields, so a
+    different account holder prints their own name. Resolution order:
+    "first last" -> first_name -> last_name -> username -> "".
+    """
+    if user is None:
+        return ""
+    first = (user.first_name or "").strip()
+    last = (user.last_name or "").strip()
+    if first and last:
+        return f"{first} {last}"
+    if first:
+        return first
+    if last:
+        return last
+    return user.username
+
+
 def get_profile(user, create=True):
     """Return the user's profile (created on demand, role empty)."""
     from apps.foundation.models import UserProfile

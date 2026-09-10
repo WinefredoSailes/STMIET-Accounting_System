@@ -1019,7 +1019,9 @@ def rfp_print(request, pk):
     from apps.ap.models import RFPDocument
 
     def _name(user):
-        return user.get_full_name() or user.username if user else ""
+        from apps.core.approvals import signatory_name
+
+        return signatory_name(user)
 
     rfp = get_object_or_404(
         RFPDocument.objects.select_related(
@@ -1532,7 +1534,9 @@ def cv_detail(request, pk):
     from apps.ap.models import CheckVoucher
 
     def _name(user):
-        return user.get_full_name() or user.username if user else ""
+        from apps.core.approvals import signatory_name
+
+        return signatory_name(user)
 
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "bank_account", "rfp"),
@@ -1566,7 +1570,9 @@ def cv_print(request, pk):
     from apps.ap.models import CheckVoucher
 
     def _name(user):
-        return user.get_full_name() or user.username if user else ""
+        from apps.core.approvals import signatory_name
+
+        return signatory_name(user)
 
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "bank_account", "approved_by", "rfp"),
