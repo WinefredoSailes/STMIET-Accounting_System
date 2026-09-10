@@ -88,9 +88,13 @@ the database, never from hardcoded strings.
   Liabilities + Equity) are shown as OK / FAILED.
 - **Month-End Close** (`/reports/month-end-close/`) — the four steps:
   **accruals → recon → close → appropriations**. Click **Mark done** on
-  each step, then **Close period**. The fiscal period locks when closed
-  (posting §17: no back-posting). Closing early is blocked until all four
-  steps are done.
+  each step, then **Close period**. Marking **close** posts the §13 closing
+  JEs (revenue/expense → Capital, per segment) and **appropriations** posts
+  the reserve JE when the COA carries the reserve accounts (current COA:
+  none, so it's a no-op) — the posted entries appear on the page. The fiscal
+  period locks when closed (posting §17: no back-posting); closing early is
+  blocked until all four steps are done, and a failed close/appropriation
+  posting leaves its step undone.
 
 ### 4. Receivables (AR)
 

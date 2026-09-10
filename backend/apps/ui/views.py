@@ -608,6 +608,13 @@ def month_end_advance(request):
         close = month_end_close_context()
         from apps.reporting.services import MonthEndCloseService
 
+        # The 'close' and 'appropriations' steps are not just checkboxes: they
+        # post the §13 closing journal entries. Only mark the step done when
+        # its posting succeeded, so a failed close blocks the final 'Close'.
+        if step == "close":
+            close = MonthEndCloseService.close_period(close, user=request.user)
+        elif step == "appropriations":
+            close = MonthEndCloseService.apply_appropriations(close, user=request.user)
         close = MonthEndCloseService.advance(close, step, user=request.user)
         messages.success(request, f"Step '{step}' marked done.")
     except (ValueError, AccountingError) as exc:

@@ -240,6 +240,47 @@ class TestMonthEndClose:
         assert resp.status_code == 200
         assert "accruals" in resp.content.decode()
 
+    def test_close_step_posts_closing_entries(
+        self, client, company, accounts, aug_period, segment
+    ):
+        """Marking 'close' must actually post §13.1/13.2 — not just tick a box."""
+        from apps.reporting.models import MonthEndClose
+
+        Account.objects.create(code="30000", name="Capital", account_type="equity", segment="DHPP")
+        je = JournalEntry.objects.create(
+            company=company, segment=segment, transaction_date=aug_period.start_date,
+            status=PostingStatus.DRAFT, entry_no="JE-CLOSE-TEST", description="expense test",
+        )
+        JournalEntryLine.objects.create(entry=je, line_no=1, account=accounts["61100"], debit="85000.00")
+        JournalEntryLine.objects.create(entry=je, line_no=2, account=accounts["20000"], credit="85000.00")
+        je.recalc_totals()
+        PostingService.post(je)
+
+        resp = client.post("/reports/month-end-close/advance/", {"step": "close"})
+        assert resp.status_code == 302
+
+        mec = MonthEndClose.objects.get(fiscal_period=aug_period)
+        assert mec.steps["close"] == "done"
+        assert mec.expense_close_entry is not None
+        assert mec.expense_close_entry.is_posted
+        assert mec.expense_close_entry.total_debit == Decimal("85000.00")
+        # A second re-post must not double-book the close.
+        assert JournalEntry.objects.filter(
+            source_doc_type="CLOSE", entry_no__startswith="CLE-"
+        ).count() == 1
+
+    def test_failed_close_leaves_step_pending(
+        self, client, company, aug_period, segment
+    ):
+        """Without an equity capital account the close must fail and stay
+        pending, so 'Close period' remains blocked."""
+        from apps.reporting.models import MonthEndClose
+
+        resp = client.post("/reports/month-end-close/advance/", {"step": "close"})
+        assert resp.status_code == 302
+        mec = MonthEndClose.objects.get(fiscal_period=aug_period)
+        assert mec.step_status("close") != "done"
+
 
 class TestMasterScreens:
     def test_customer_create(self, client, company, segment, accounts, user):

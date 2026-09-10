@@ -951,14 +951,26 @@ class MonthEndCloseService:
             )
             if net_income <= 0:
                 continue
+            from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
+            from apps.posting.services import PostingService, approve_threshold
+
+            # Idempotent: never post a second appropriation for the same
+            # segment/period (the UI button hides once 'done', this guards
+            # against re-runs and concurrent clicks).
+            token = f"{mec.company.pk}:{seg.code}:{period.end_date}"
+            if JournalEntry.objects.filter(
+                source_doc_type="APP", source_doc_no=token,
+                status=PostingStatus.POSTED,
+            ).exists():
+                posted_any = True
+                continue
+
             rm_acct = SegmentAccountMap.objects.filter(
                 segment=seg, role=rm_role, is_active=True).first()
             tith_acct = SegmentAccountMap.objects.filter(
                 segment=seg, role=tithing_role, is_active=True).first()
             if rm_acct is None or tith_acct is None:
                 continue  # COA does not carry reserve accounts for this segment.
-            from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
-            from apps.posting.services import PostingService, approve_threshold
 
             capital = cls._capital_account(seg)
             rm_amount = money(net_income * ten)

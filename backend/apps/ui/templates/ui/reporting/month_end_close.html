@@ -1,4 +1,5 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Month-End Close — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -45,6 +46,28 @@
       </li>
       {% endfor %}
     </ul>
+
+    {% if close.revenue_close_entry or close.expense_close_entry or close.appropriation_entry %}
+    <div class="mt-4 rounded-lg border border-slate-200 p-4">
+      <div class="text-sm font-semibold text-slate-900">Posted closing entries (§13)</div>
+      <ul class="mt-2 space-y-1 text-xs text-slate-600">
+        {% if close.revenue_close_entry %}
+        <li><span class="font-medium">Revenue close:</span> {{ close.revenue_close_entry.entry_no }} ·
+          {{ close.revenue_close_entry.total_credit|money }} credit to capital ·
+          <span class="{% if close.revenue_close_entry.is_posted %}text-emerald-600{% else %}text-amber-600{% endif %}">{{ close.revenue_close_entry.status }}</span></li>
+        {% endif %}
+        {% if close.expense_close_entry %}
+        <li><span class="font-medium">Expense close:</span> {{ close.expense_close_entry.entry_no }} ·
+          {{ close.expense_close_entry.total_debit|money }} debit from capital ·
+          <span class="{% if close.expense_close_entry.is_posted %}text-emerald-600{% else %}text-amber-600{% endif %}">{{ close.expense_close_entry.status }}</span></li>
+        {% endif %}
+        {% if close.appropriation_entry %}
+        <li><span class="font-medium">Appropriation:</span> {{ close.appropriation_entry.entry_no }} ·
+          <span class="{% if close.appropriation_entry.is_posted %}text-emerald-600{% else %}text-amber-600{% endif %}">{{ close.appropriation_entry.status }}</span></li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
 
     {% if close.status != "closed" %}
     <div class="mt-4 rounded-lg border border-slate-200 p-4">
