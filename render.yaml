@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: stmiet-accounting
+    env: production
+    plan: free
+    disk: 1GB
+    webService:
+      # This command runs migrations, gathers static files, then starts gunicorn.
+      # Render injects DATABASE_URL and REDIS_URL automatically when the
+      # PostgreSQL and Redis add‑ons are attached.
+      command: python manage.py migrate --run-sync && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    # Auto‑provision a PostgreSQL database (Render managed).
+    postgres:
+      - type: postgresql
+        name: stmiet-db
+        version: "15"
+    # Optional: auto‑provision a Redis instance for Celery broker/cache.
+    redis:
+      - type: redis
+        name: stmiet-redis
+        version: "7"
+    # Explicit environment variables that the app expects; Render will also
+    # inject DATABASE_URL and REDIS_URL when the add‑ons are attached.
+    envVars:
+      - key: SECRET_KEY
+        fromSecret: SECRET_KEY
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      # The following are automatically provided by Render's add‑ons;
+      # keeping them here for documentation purposes.
+      # - key: DATABASE_URL
+      #   fromService: stmiet-db
+      #   property: connectionString
+      # - key: REDIS_URL
+      #   fromService: stmiet-redis
+      #   property: connectionString

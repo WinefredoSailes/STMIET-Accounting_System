@@ -55,3 +55,17 @@ projection, approval threshold, rule-driven canonical JEs (ADR-018).
 
 PostgreSQL locally: use docker-compose (db) or point `DATABASE_URL` at a
 running instance (postgres 17 present on this machine).
+
+## Recent changes (as of UAT guide v2)
+
+All 341 tests passing after these session changes:
+
+- **Print forms:** spacer rows removed from cv_print.html + rfp_print.html  
+- **RFP header:** refactored: 3-col grid Payee|Date of Request|Cost Center / Ref, hidden segment + sync JS  
+- **Approvals list:** actions column removed from /approvals/ table  
+- **CONSO auto-assign:** double-count bug fixed (total_amount prior sum before attach)  
+- **CV lifecycle:** signed_by / released_by removed (migration 0009)  
+- **Tailwind:** rebuilt for new grid classes  
+- **Flags:** COO_REVIEW_ENABLED + CONSO_AUTO_ASSIGN both default False; flip at go-live  
+
+Run `pytest --nomigrations -q` all green.
