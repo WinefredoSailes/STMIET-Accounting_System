@@ -23,12 +23,12 @@ services:
         value: .onrender.com
       - key: DATABASE_URL            # Auto-wired from the PostgreSQL database below
         fromDatabase:
-          name: stmiet-db
+          name: stmiet-accounting-db
           property: connectionString
 
 # ── PostgreSQL (managed by Render) ──────────────────────────────────────
 databases:
-  - name: stmiet-db
+  - name: stmiet-accounting-db
     postgresMajorVersion: '18'
     plan: free
     databaseName: stmiet_accounting
