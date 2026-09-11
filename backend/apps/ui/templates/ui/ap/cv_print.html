@@ -26,8 +26,8 @@
   .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
   .print-toolbar button:last-child:hover { background: #15803d; }
   .cv-paper {
-    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12);
-    margin: 16px auto; padding: 8mm; max-width: 148mm;
+    background: #fff; box-shadow: none;
+    margin: 0 auto; padding: 0; max-width: 148mm;
   }
   .cv-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
   .cv-paper td { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
@@ -54,58 +54,58 @@
         <td rowspan="4" colspan="2" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
         </td>
-        <td rowspan="4" colspan="6" style="text-align:center; vertical-align:middle; font-size:12px; font-weight:900; letter-spacing:.08em; background:#e2efda">
+        <td rowspan="4" colspan="6" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#e2efda">
           CHECK VOUCHER
         </td>
-        <td colspan="4" style="text-align:right; vertical-align:top; font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
           ACCOUNTING DEPARTMENT
         </td>
       </tr>
       <!-- Row 2: Document No. -->
-      <tr style="font-size:7px">
-        <td>Document No.:</td>
-        <td colspan="3">ACCTG-FOR-010</td>
+      <tr style="font-size:10px">
+        <td colspan="2">Document No.:</td>
+        <td colspan="2">ACCTG-FOR-010</td>
       </tr>
       <!-- Row 3: Effective Date -->
-      <tr style="font-size:7px">
-        <td>Effective Date:</td>
-        <td colspan="3">08.18.2022</td>
+      <tr style="font-size:10px">
+        <td colspan="2">Effective Date:</td>
+        <td colspan="2">08.18.2022</td>
       </tr>
       <!-- Row 4: Revision No. -->
-      <tr style="font-size:7px">
-        <td>Revision No.:</td>
-        <td colspan="3">02</td>
+      <tr style="font-size:10px">
+        <td colspan="2">Revision No.:</td>
+        <td colspan="2">02</td>
       </tr>
 
       <!-- ═══ PAYEE INFORMATION  (12 full span) ═══ -->
       <tr>
-        <td colspan="12" style="background:#e2efda; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="12" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Payee Information
         </td>
       </tr>
       <!-- NAME row: 1+6+1+4=12 -->
-      <tr style="font-size:7px">
+      <tr style="font-size:10px">
         <td style="font-weight:600">NAME:</td>
         <td colspan="6" style="font-weight:700; text-transform:uppercase">{{ cv.payee.name }}</td>
-        <td style="font-weight:600">DATE OF REQUEST:</td>
-        <td colspan="4">{{ date_of_request|date:"m/d/Y" }}</td>
+        <td colspan="3"style="font-weight:600">DATE OF REQUEST:</td>
+        <td colspan="2">{{ date_of_request|date:"m/d/Y" }}</td>
       </tr>
       <!-- POSITION row: 1+6+1+4=12 -->
-      <tr style="font-size:7px">
+      <tr style="font-size:10px">
         <td style="font-weight:600">POSITION:</td>
         <td colspan="6">{{ position|default:"—" }}</td>
-        <td style="font-weight:600">CHECK ISSUED &amp; NO.:</td>
-        <td colspan="4">{{ cv.check_no|default:"" }}</td>
+        <td colspan="3"style="font-weight:600">CHECK ISSUED &amp; NO.:</td>
+        <td colspan="2">{{ cv.check_no|default:"" }}</td>
       </tr>
 
       <!-- ═══ DISTRIBUTION CHARGES  (12 full span) ═══ -->
       <tr>
-        <td colspan="12" style="background:#e2efda; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="12" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Distribution Charges
         </td>
       </tr>
       <!-- Column headers: 4+1+1+2+2+2=12 -->
-      <tr style="font-size:7px; text-transform:uppercase; letter-spacing:.03em">
+      <tr style="font-size:10px; text-transform:uppercase; letter-spacing:.03em">
         <td colspan="4" style="font-weight:700">Purpose of Payment</td>
         <td style="font-weight:700">Entity</td>
         <td style="font-weight:700">Segment</td>
@@ -115,23 +115,23 @@
       </tr>
       <!-- Data rows: 4+1+1+2+2+2=12 -->
       {% for line in dr_lines %}
-      <tr style="font-size:7px">
+      <tr style="font-size:10px; line-height:2;">
         <td colspan="4" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ line.description|default:rfp.particulars }}</td>
         <td>STMIET</td>
         <td>{{ line.segment.code }}</td>
         <td colspan="2">{{ rfp.purpose|default:"—" }}</td>
-        <td colspan="2" style="font-family:monospace; font-size:6.5px">{{ line.account.code }}</td>
+        <td colspan="2" style="font-family:monospace; font-size:9px">{{ line.account.code }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
       </tr>
       {% endfor %}
       {% if not dr_lines %}
       <tr>
-        <td colspan="12" style="font-size:7px; color:#94a3b8">No distribution lines.</td>
+        <td colspan="12" style="font-size:10px; color:#94a3b8">No distribution lines.</td>
       </tr>
       {% endif %}
 
       <!-- ═══ TOTAL / REMARKS  8+2+2=12 ═══ -->
-      <tr style="font-size:7px; font-weight:600">
+      <tr style="font-size:10px; font-weight:600">
         <td colspan="8">
           OTHER REMARKS:{% if rfp %} <span style="font-weight:400">See attached RFP {{ rfp.ap_number }}</span>{% endif %}
         </td>
@@ -141,13 +141,13 @@
 
       <!-- ═══ DISCLAIMER  12 full span ═══ -->
       <tr>
-        <td colspan="12" style="font-size:6.5px; font-style:italic; line-height:1.3">
+        <td colspan="12" style="font-size:9px; font-style:italic; line-height:1.3">
           Each check issued shall be supported with sufficient documentation. Failure to do so shall constitute neglect to the requester and/or the department.
         </td>
       </tr>
 
       <!-- ═══ SIGNATURE BLOCK  2+2+3+2+3=12 ═══ -->
-      <tr style="font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
+      <tr style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
         <td colspan="2">Prepared By:</td>
         <td colspan="2">Requested By:</td>
         <td colspan="3">Checked By:</td>
@@ -155,13 +155,13 @@
         <td colspan="3">Payment Received By:</td>
       </tr>
       <tr style="height:22px">
-        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ signatories.prepared }}</td>
-        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ signatories.requested }}</td>
-        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ signatories.checked }}</td>
-        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ signatories.approved }}</td>
-        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:7px; font-weight:600; text-transform:uppercase">{{ signatories.received }}</td>
+        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ signatories.prepared }}</td>
+        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ signatories.requested }}</td>
+        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ signatories.checked }}</td>
+        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ signatories.approved }}</td>
+        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ signatories.received }}</td>
       </tr>
-      <tr style="font-size:6px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
+      <tr style="font-size:8px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
         <td colspan="2" style="text-align:center">Print Name/Sign/Date</td>
         <td colspan="2" style="text-align:center">Print Name/Sign/Date</td>
         <td colspan="3" style="text-align:center">Finance &amp; Acctg. Head / Sign and Date</td>

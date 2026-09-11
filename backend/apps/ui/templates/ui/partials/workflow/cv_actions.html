@@ -41,5 +41,4 @@ revision loop for rejected vouchers.{% endcomment %}
   {% if cv.journal_entry_id %}
   <a href="{% url 'ui:je_detail' cv.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">CV JE →</a>
   {% endif %}
-  <a href="{% url 'ui:cv_print' cv.id %}" class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>
 </div>
