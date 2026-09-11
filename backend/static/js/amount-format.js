@@ -50,9 +50,11 @@
   window.AmountFormat = { parse: parseAmount, fmt: fmtAmount, format: formatAmountInput };
 
   document.addEventListener('input', function (e) {
+    if (e.isComposing) return;
     if (isAmountInput(e.target)) formatAmountInput(e.target);
   });
   document.addEventListener('change', function (e) {
+    if (e.isComposing) return;
     if (isAmountInput(e.target)) formatAmountInput(e.target);
   });
   preformat(document);
