@@ -38,8 +38,8 @@
   </div>
   <div>
     <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gl_account">GL account</label>
-    <select name="gl_account" id="id_gl_account" data-searchable data-search-placeholder="Type account code or name…" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      {% for acc in accounts %}<option value="{{ acc.id }}" {% if editing and editing.gl_account_id == acc.id %}selected{% endif %}>{{ acc.code }} {{ acc.name }}</option>{% endfor %}
+    <select name="gl_account" id="id_gl_account" data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=pcf{% if editing %}&amp;selected={{ editing.gl_account.code }}{% endif %}" data-search-value="id" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      {% if editing %}<option value="{{ editing.gl_account_id }}" selected>{{ editing.gl_account.code }} {{ editing.gl_account.name }}</option>{% else %}<option value="">— select —</option>{% endif %}
     </select>
   </div>
   <div>

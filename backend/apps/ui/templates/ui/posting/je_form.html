@@ -58,9 +58,8 @@
           <tr>
             <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">1</td>
             <td class="px-4 py-2 overflow-hidden">
-              <select name="account" data-searchable data-search-compact data-search-placeholder="Search…" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+              <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                 <option value="">— select —</option>
-                {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
               </select>
             </td>
             <td class="px-4 py-2 overflow-hidden">

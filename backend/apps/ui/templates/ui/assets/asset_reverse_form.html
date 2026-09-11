@@ -36,9 +36,8 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_funding_account">Funding account to debit (optional)</label>
-        <select name="funding_account" id="id_funding_account" data-searchable class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <select name="funding_account" id="id_funding_account" data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=cash" data-search-value="id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           <option value="">— auto ({{ asset.funding_source }}) —</option>
-          {% for acc in funding_accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
         </select>
       </div>
       <div>

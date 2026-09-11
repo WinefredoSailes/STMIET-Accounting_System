@@ -39,10 +39,8 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1" for="id_bank_account">BANK ACCOUNT (GL)</label>
-          <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-            {% for acc in bank_accounts %}
-            <option value="{{ acc.id }}" {% if acc.id == cv.bank_account_id %}selected{% endif %}>{{ acc.code }} {{ acc.name }}</option>
-            {% endfor %}
+          <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=bank&amp;selected={{ cv.bank_account.code }}" data-search-value="id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="{{ cv.bank_account_id }}" selected>{{ cv.bank_account.code }} {{ cv.bank_account.name }}</option>
           </select>
         </div>
         <div>

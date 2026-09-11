@@ -2461,6 +2461,87 @@ class TestSearchablePickers:
         # case-insensitive name match ("Cash on Hand")
         assert any("hand" in row["text"].lower() for row in resp.json())
 
+    def test_account_forms_use_server_driven_pickers(self, client, company, accounts):
+        """Every GL picker shares the async endpoint with the scope + id
+        contract its form submits (JE/CV/AR/asset/bank/PCF)."""
+        pages = {
+            "/journal/new/": "scope=all",
+            "/ap/cv/new/": "scope=bank",
+            "/ar/receipts/new/": "scope=cash",
+            "/cash/banks/new/": "scope=all",
+            "/cash/pcf/new/": "scope=pcf",
+        }
+        for path, scope in pages.items():
+            resp = client.get(path)
+            assert resp.status_code == 200, path
+            body = resp.content.decode()
+            assert "data-search-url" in body, path
+            assert scope in body, path
+            assert 'data-search-value="id"' in body, path
+
+    def test_je_form_renders_no_prefetched_options(self, client, company, accounts):
+        body = client.get("/journal/new/").content.decode()
+        assert 'name="account"' in body
+        # Full COA is fetched as you type; nothing pre-rendered.
+        assert "61100 Cost of Sales" not in body
+
+    def test_account_options_scopes(self, client, company, accounts):
+        from apps.cash.models import BankAccount
+
+        BankAccount.objects.create(
+            code="BDO-1", name="BDO Checking", account_type="checking",
+            gl_account=accounts["10110"], company=company,
+        )
+
+        def codes(**params):
+            resp = client.get("/foundation/coa/account-options/", params)
+            assert resp.status_code == 200
+            return [row["code"] for row in resp.json()]
+
+        assert "61100" in codes()
+        assert "61100" in codes(q="61100")
+        cash = codes(scope="cash")
+        assert "10010" in cash and "20000" not in cash and "61100" not in cash
+        bank = codes(scope="bank")
+        assert bank == ["10110"]
+        pcf = codes(scope="pcf")
+        assert "10010" in pcf and "10110" not in pcf and "61100" not in pcf
+
+    def test_account_options_selected_accepts_id(self, client, company, accounts):
+        pk = accounts["61100"].id
+        resp = client.get(
+            "/foundation/coa/account-options/",
+            {"q": "zzz-no-match", "selected": str(pk)},
+        )
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert rows and rows[0]["code"] == "61100"
+        assert rows[0]["id"] == pk
+
+    def test_je_submit_with_picked_option_ids(self, client, company, segment, accounts,
+                                              fiscal_period):
+        """End to end: ids from the picker submit into a balanced draft."""
+        def pick(q):
+            resp = client.get("/foundation/coa/account-options/", {"q": q, "scope": "all"})
+            return resp.json()[0]["id"]
+
+        dr, cr = pick("61100"), pick("20000")
+        resp = client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "source_doc_no": "",
+            "account": [dr, cr],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cost", "AP"],
+        })
+        assert resp.status_code == 302
+        je = JournalEntry.objects.first()
+        assert je.is_balanced
+        assert je.lines.count() == 2
+        assert je.lines.first().segment_id == segment.id
+
 
 class TestHTMXPartialUpdates:
     def test_coa_filter_returns_fragment(self, client, company, accounts):

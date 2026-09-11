@@ -37,9 +37,7 @@ from .services import (
     aging_context,
     approved_rfps,
     asset_context,
-    bank_accounts,
     book_balance,
-    cash_accounts,
     cash_flow_options,
     collectibles_cycle_options,
     conso_context,
@@ -59,7 +57,6 @@ from .services import (
     list_rfps,
     list_suppliers,
     month_end_close_context,
-    pcf_gl_candidates,
     rfp_summary,
     rfp_timeline,
     transfers_context,
@@ -233,7 +230,6 @@ def je_create(request):
     ctx = {
         "company": company,
         "segments": Segment.objects.order_by("code"),
-        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
         "today": date.today(),
     }
     return render(request, "ui/posting/je_form.html", ctx)
@@ -867,7 +863,6 @@ def receipt_create(request):
         "ui/ar/receipt_form.html",
         {
             "customers": list_customers(),
-            "cash_accounts": cash_accounts(),
             "today": date.today(),
         },
     )
@@ -1272,14 +1267,7 @@ def bank_create(request):
             return redirect("ui:bank_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/cash/bank_form.html",
-        {
-            "segments": Segment.objects.order_by("code"),
-            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
-        },
-    )
+    return render(request, "ui/cash/bank_form.html", {})
 
 
 @login_required
@@ -1288,7 +1276,7 @@ def bank_update(request, pk):
     require_can_edit_master(request.user)
     from apps.cash.models import BankAccount
 
-    bank = get_object_or_404(BankAccount, pk=pk)
+    bank = get_object_or_404(BankAccount.objects.select_related("gl_account"), pk=pk)
     if request.method == "POST":
         try:
             bank.code = request.POST["code"].strip()
@@ -1303,11 +1291,7 @@ def bank_update(request, pk):
             return redirect("ui:bank_list")
         except (IntegrityError, ValueError, Account.DoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(request, "ui/cash/bank_form.html", {
-        "bank": bank,
-        "segments": Segment.objects.order_by("code"),
-        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
-    })
+    return render(request, "ui/cash/bank_form.html", {"bank": bank})
 
 
 @login_required
@@ -1454,10 +1438,7 @@ def asset_dispose(request, pk):
     return render(
         request,
         "ui/assets/asset_dispose_form.html",
-        {
-            "asset": asset,
-            "cash_accounts": cash_accounts(),
-        },
+        {"asset": asset},
     )
 
 
@@ -1493,7 +1474,7 @@ def asset_reverse(request, pk):
     return render(
         request,
         "ui/assets/asset_reverse_form.html",
-        {"asset": asset, "funding_accounts": cash_accounts()},
+        {"asset": asset},
     )
 
 
@@ -1558,7 +1539,6 @@ def cv_create(request):
         "ui/ap/cv_form.html",
         {
             "rfps": approved_rfps(),
-            "bank_accounts": bank_accounts(),
             "today": date.today(),
             "selected_rfp": selected_rfp,
         },
@@ -1752,7 +1732,6 @@ def cv_revise(request, pk):
         {
             "cv": cv,
             "rfps": approved_rfps(),
-            "bank_accounts": bank_accounts(),
             "today": date.today(),
         },
     )
@@ -1959,10 +1938,7 @@ def pcf_create(request):
     return render(
         request,
         "ui/cash/pcf_form.html",
-        {
-            "accounts": pcf_gl_candidates(),
-            "custodians": get_user_model().objects.order_by("username"),
-        },
+        {"custodians": get_user_model().objects.order_by("username")},
     )
 
 
@@ -1972,7 +1948,7 @@ def pcf_update(request, pk):
     or remove), name, GL account, replenish trigger, and active state."""
     from apps.cash.models import PettyCashFund
 
-    fund = get_object_or_404(PettyCashFund, pk=pk)
+    fund = get_object_or_404(PettyCashFund.objects.select_related("gl_account"), pk=pk)
     if request.method == "POST":
         try:
             custodian = None
@@ -1996,7 +1972,6 @@ def pcf_update(request, pk):
         {
             "editing": fund,
             "editing_trigger_pct": int(round(fund.replenish_trigger_pct * 100)),
-            "accounts": pcf_gl_candidates(),
             "custodians": get_user_model().objects.order_by("username"),
         },
     )
@@ -2236,17 +2211,33 @@ def account_options(request):
     """Type-ahead source for searchable account pickers (server-side).
 
     Returns the first ~30 postable accounts matching the query by code or
-    name (existing ``coa_rows`` filter), plus the currently-selected account
-    (when editing) so the picker can keep a stable selection. Used by the
-    RFP/PCF line-grid and COA pickers via ``data-search-url``.
+    name, plus the currently-selected account (when editing) so the picker
+    can keep a stable selection.     ``?scope=`` narrows the pool so every
+    GL picker shares one endpoint: ``all`` (default, every postable
+    account), ``cash`` (postable assets — receipts, asset funding/cash),
+    ``bank`` (postable accounts linked to an active bank — check vouchers),
+    ``pcf`` (postable 100xx assets — petty-cash fund GL).
+    ``selected=`` accepts an account code or id. Used by all async
+    ``data-search-url`` pickers (JE/RFP/PCF/CV/AR/asset/bank forms).
     """
-    from .services import coa_rows
-
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
-    rows = coa_rows(q=q)[:30]
+    scope = request.GET.get("scope", "all").strip()
+    qs = Account.objects.filter(is_postable=True).order_by("code")
+    if scope == "cash":
+        qs = qs.filter(account_type="asset")
+    elif scope == "bank":
+        qs = qs.filter(bank_account__isnull=False, bank_account__is_active=True)
+    elif scope == "pcf":
+        qs = qs.filter(account_type="asset", code__startswith="100")
+    if q:
+        qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    rows = list(qs[:30])
     if selected and selected not in {a.code for a in rows}:
-        keep = Account.objects.filter(code=selected, is_postable=True).first()
+        lookup = Q(code=selected)
+        if selected.isdigit():
+            lookup |= Q(pk=selected)
+        keep = Account.objects.filter(lookup, is_postable=True).first()
         if keep:
             rows.insert(0, keep)
     return JsonResponse(

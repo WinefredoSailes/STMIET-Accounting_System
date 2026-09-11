@@ -120,21 +120,22 @@ function renderLocalItems(panel) {
 // types, matching the current query against both code and name. Selected
 // values are merged into the native <select> so form submission keeps
 // working while the picker exposes a fresh server-side result set. ----
-function searchableItem(wrap, value, text) {
+function searchableItem(wrap, value, text, code) {
   var item = document.createElement('div');
   item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
   item.dataset.value = value;
   item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
-  var code = document.createElement('span');
-  code.className = 'font-mono text-xs text-slate-500';
-  code.textContent = value;
+  var codeEl = document.createElement('span');
+  codeEl.className = 'font-mono text-xs text-slate-500';
+  codeEl.textContent = code || value;
   var title = document.createElement('span');
   title.className = 'text-slate-700 truncate';
   // Async results carry text like "61100 — Cost of Sales"; strip the code
-  // prefix (value) when it is duplicated so the title reads as the name only.
-  title.textContent = (text.indexOf(value + ' — ') === 0) ? text.slice(value.length + 3) : text;
-  item.appendChild(code);
+  // prefix when it is duplicated so the title reads as the name only.
+  var prefix = (code || value) + ' — ';
+  title.textContent = (text.indexOf(prefix) === 0) ? text.slice(prefix.length) : text;
+  item.appendChild(codeEl);
   item.appendChild(title);
   return item;
 }
@@ -144,7 +145,12 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
   panel.sbWrap._abort = null;
   list.innerHTML = '';
   var select = panel.sbWrap.querySelector('select');
+  // Preserve placeholder/empty options (e.g. "— none —" on optional
+  // fields) across async rebuilds so they stay selectable.
+  var blanks = [];
+  select.querySelectorAll('option[value=""]').forEach(function (o) { blanks.push(o); });
   select.innerHTML = '';
+  blanks.forEach(function (o) { select.appendChild(o); });
   if (selectedValue) {
     var keep = document.createElement('option');
     keep.value = selectedValue;
@@ -156,8 +162,11 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
     opt.value = r.value;
     opt.textContent = r.text;
     select.appendChild(opt);
-    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text));
+    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code));
   });
+  // Restore the pre-search selection so closing the panel without picking
+  // (e.g. Escape) never wipes a filled row.
+  if (selectedValue) select.value = selectedValue;
   if (!results.length) {
     var empty = document.createElement('div');
     empty.className = 'px-3 py-4 text-center text-xs text-slate-400';
@@ -183,12 +192,16 @@ function applyAsyncFilter(wrap, panel, query) {
   loading.textContent = 'Searching…';
   listEl.appendChild(loading);
 
+  // Pickers declare which identifier they submit via data-search-value
+  // ("code" for RFP/PCV lines, "id" for JE/CV/AR/asset/bank forms).
+  var valueField = wrap.querySelector('select').dataset.searchValue || 'code';
   var req = fetch(url, { signal: ctrl.signal, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
   req.then(function (resp) { return resp.json(); })
      .then(function (results) {
        if (wrap._abort !== ctrl) return; // stale response
        var normalized = (results || []).map(function (r) {
-         return { value: String(r.code), text: String(r.text || r.code) };
+         var v = (valueField === 'id') ? r.id : r.code;
+         return { value: String(v), code: String(r.code), text: String(r.text || r.code) };
        });
        renderAsyncItems(panel, normalized, selected, selectedText);
      })
