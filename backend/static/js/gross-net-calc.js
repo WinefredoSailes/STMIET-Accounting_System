@@ -18,9 +18,9 @@
     if (!gross || !tax || !net) return;
 
     function recalc() {
-      var g = parseFloat(gross.value) || 0;
-      var t = parseFloat(tax.value) || 0;
-      net.textContent = (g - t).toFixed(2);
+      var g = window.AmountFormat.parse(gross.value);
+      var t = window.AmountFormat.parse(tax.value);
+      net.textContent = window.AmountFormat.fmt(g - t);
     }
     gross.addEventListener('input', recalc);
     tax.addEventListener('input', recalc);

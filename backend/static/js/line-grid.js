@@ -17,6 +17,10 @@
  *
  * Note: searchable clones are reverted to their raw <select> state before the
  * row is appended so the MutationObserver in base.js re-wraps them.
+ *
+ * Amount formatting (thousand separators) is centralized in amount-format.js:
+ * every amount input carries data-amount and is formatted there. This file
+ * only sums (via AmountFormat.parse) and renders totals (via AmountFormat.fmt).
  */
 (function () {
   'use strict';
@@ -25,38 +29,10 @@
     return sel ? document.querySelector(sel) : null;
   }
   function num(el) {
-    var v = el ? String(el.value).replace(/,/g, '') : '';
-    return v ? (parseFloat(v) || 0) : 0;
+    return window.AmountFormat.parse(el ? el.value : '');
   }
   function fmtMoney(n) {
-    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  function formatAmountInput(el) {
-    var full = el.value;
-    var start = el.selectionStart === null ? full.length : el.selectionStart;
-    var digitsBefore = (full.slice(0, start).match(/\d/g) || []).length;
-    var dotIndex = full.indexOf('.');
-    var afterDot = dotIndex !== -1 && start > dotIndex;
-    var raw = full.replace(/[^\d.]/g, '');
-    var dot = raw.indexOf('.');
-    var whole = (dot === -1 ? raw : raw.slice(0, dot)).replace(/^0+(?=\d)/, '');
-    var frac = dot === -1 ? '' : raw.slice(dot + 1).replace(/\D/g, '').slice(0, 2);
-    var text = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    if (dot !== -1) text += '.' + frac;
-    el.value = text;
-    var pos = 0, seen = 0;
-    while (pos < text.length && seen < digitsBefore) {
-      if (/\d/.test(text.charAt(pos))) seen++;
-      pos++;
-    }
-    if (afterDot) {
-      var fd = text.indexOf('.');
-      if (fd !== -1 && pos <= fd) pos = fd + 1;
-    }
-    if (el.setSelectionRange) el.setSelectionRange(pos, pos);
-  }
-  function isAmountInput(el) {
-    return !!(el && el.matches && el.matches('.amount-dr, .amount-cr, .amount-debit, .amount-credit'));
+    return window.AmountFormat.fmt(n);
   }
 
   function resetSearchable(select) {
@@ -148,14 +124,8 @@
       recalc(grid);
     });
 
-    grid.addEventListener('input', function (e) {
-      if (isAmountInput(e.target)) formatAmountInput(e.target);
-      recalc(grid);
-    });
-    grid.addEventListener('change', function (e) {
-      if (isAmountInput(e.target)) formatAmountInput(e.target);
-      recalc(grid);
-    });
+    grid.addEventListener('input', function () { recalc(grid); });
+    grid.addEventListener('change', function () { recalc(grid); });
     grid.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('[data-remove-row]') : null;
       if (btn) {
@@ -163,8 +133,6 @@
         recalc(grid);
       }
     });
-    grid.querySelectorAll('input.amount-dr, input.amount-cr, input.amount-debit, input.amount-credit')
-        .forEach(formatAmountInput);
     recalc(grid);
   }
 

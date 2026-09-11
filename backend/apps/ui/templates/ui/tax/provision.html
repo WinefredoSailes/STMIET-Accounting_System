@@ -28,7 +28,7 @@
       </div>
       <div>
         <label class="text-xs uppercase tracking-wider text-slate-500">Taxable income (₱)</label>
-        <input type="number" name="taxable_income" step="0.01" required class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="taxable_income" required class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       </div>
       <div>
         <label class="text-xs uppercase tracking-wider text-slate-500">Rate (optional, blank = 20%)</label>

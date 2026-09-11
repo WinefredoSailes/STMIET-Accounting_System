@@ -41,7 +41,7 @@
         </div>
         <div class="flex gap-2">
           <input type="number" name="liters" step="0.01" min="0" placeholder="Liters" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-          <input type="number" name="cost_amount" step="0.01" min="0" placeholder="Cost (₱)" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="cost_amount" placeholder="Cost (₱)" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
         </div>
         <input type="text" name="notes" placeholder="Notes (optional)" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       </div>

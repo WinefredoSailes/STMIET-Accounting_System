@@ -33,7 +33,7 @@
         </div>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Amount</label>
-          <input type="number" name="amount" step="0.01" min="0.01" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="amount" required class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
         </div>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Purpose</label>
