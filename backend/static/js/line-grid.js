@@ -69,7 +69,7 @@
   function cloneRow(grid, resetSelects) {
     var src = grid.querySelector('tr');
     var row = src.cloneNode(true);
-    row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    row.querySelectorAll('input, textarea').forEach(function (i) { i.value = ''; i.removeAttribute('title'); if (i.tagName === 'TEXTAREA') i.style.height = 'auto'; });
     if (resetSelects) {
       row.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
     }

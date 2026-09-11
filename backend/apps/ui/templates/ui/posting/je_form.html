@@ -33,36 +33,44 @@
     </div>
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-      <table class="w-full text-sm min-w-[880px]">
+      <table class="w-full text-sm min-w-[880px] table-fixed">
+        <colgroup>
+          <col style="width:3rem">
+          <col style="width:26%">
+          <col style="width:6.5rem">
+          <col style="width:34%">
+          <col style="width:8rem">
+          <col style="width:8rem">
+        </colgroup>
         <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-4 py-3 w-8">#</th>
+            <th class="px-4 py-3">#</th>
             <th class="px-4 py-3">Account</th>
-            <th class="px-4 py-3 w-32">Segment</th>
+            <th class="px-4 py-3">Segment</th>
             <th class="px-4 py-3">Description</th>
-            <th class="px-4 py-3 w-40">Debit</th>
-            <th class="px-4 py-3 w-40">Credit</th>
+            <th class="px-4 py-3">Debit</th>
+            <th class="px-4 py-3">Credit</th>
           </tr>
         </thead>
         <tbody id="lines-body" data-line-grid="je"
                data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
                class="divide-y divide-slate-100">
           <tr>
-            <td class="px-4 py-2 text-slate-400 line-no">1</td>
-            <td class="px-4 py-2">
-              <select name="account" data-searchable data-search-compact data-search-placeholder="Search…" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+            <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">1</td>
+            <td class="px-4 py-2 overflow-hidden">
+              <select name="account" data-searchable data-search-compact data-search-placeholder="Search…" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                 <option value="">— select —</option>
                 {% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }} {{ acc.name }}</option>{% endfor %}
               </select>
             </td>
-            <td class="px-4 py-2">
-              <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+            <td class="px-4 py-2 overflow-hidden">
+              <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                 {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
               </select>
             </td>
-            <td class="px-4 py-2"><input type="text" name="line_description" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-            <td class="px-4 py-2"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
-            <td class="px-4 py-2"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
+            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
           </tr>
         </tbody>
         <tfoot class="bg-slate-50">
@@ -95,4 +103,36 @@
 
 {% block extra_js %}
 <script src="{% static 'js/line-grid.js' %}"></script>
+<script>
+  (function () {
+    function autogrow(ta) {
+      ta.style.height = "auto";
+      ta.style.height = ta.scrollHeight + "px";
+      ta.title = ta.value;
+    }
+    function syncAccountTitle(sel) {
+      var opt = sel.options[sel.selectedIndex];
+      sel.title = opt ? opt.text : "";
+    }
+    document.querySelectorAll('#lines-body textarea[name="line_description"]').forEach(autogrow);
+    document.querySelectorAll('#lines-body select[name="account"]').forEach(syncAccountTitle);
+    document.addEventListener("input", function (e) {
+      if (e.target && e.target.matches && e.target.matches('#lines-body textarea[name="line_description"]')) autogrow(e.target);
+    });
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('#lines-body select[name="account"]')) syncAccountTitle(e.target);
+    });
+    document.getElementById("add-line").addEventListener("click", function () {
+      setTimeout(function () {
+        var rows = document.querySelectorAll('#lines-body tr');
+        var last = rows[rows.length - 1];
+        if (!last) return;
+        var ta = last.querySelector('textarea[name="line_description"]');
+        if (ta) autogrow(ta);
+        var sel = last.querySelector('select[name="account"]');
+        if (sel) syncAccountTitle(sel);
+      }, 0);
+    });
+  })();
+</script>
 {% endblock %}
