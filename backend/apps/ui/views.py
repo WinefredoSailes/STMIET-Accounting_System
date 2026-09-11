@@ -214,7 +214,9 @@ def je_list(request):
 
 @login_required
 def je_detail(request, pk):
-    entry = get_object_or_404(JournalEntry.objects.prefetch_related("lines__account"), pk=pk)
+    entry = get_object_or_404(
+        JournalEntry.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
+    )
     return render(request, "ui/posting/je_detail.html", {"entry": entry})
 
 
@@ -239,12 +241,17 @@ def je_create(request):
 
 def _create_entry_from_form(request):
     """Build a draft JE from the form POST (lines as parallel arrays)."""
-    company = Company.objects.get(pk=request.POST["company"])
-    segment = Segment.objects.get(pk=request.POST["segment"])
+    company_id = request.POST.get("company")
+    company = (
+        Company.objects.filter(pk=company_id).first()
+        if company_id
+        else Company.objects.first()
+    )
+    if company is None:
+        raise ValueError("No company configured.")
     transaction_date = date.fromisoformat(request.POST["transaction_date"])
-    description = request.POST["description"].strip()
-    source_doc_type = request.POST.get("source_doc_type", "")
-    source_doc_no = request.POST.get("source_doc_no", "")
+    source_doc_type = request.POST.get("source_doc_type", "").strip()
+    source_doc_no = request.POST.get("source_doc_no", "").strip()
 
     period = (
         FiscalPeriod.objects.filter(
@@ -252,45 +259,75 @@ def _create_entry_from_form(request):
         ).first()
     )
 
+    accounts = request.POST.getlist("account")
+    seg_ids = request.POST.getlist("line_segment")
+    debits = request.POST.getlist("debit")
+    credits = request.POST.getlist("credit")
+    descs = request.POST.getlist("line_description")
+
+    parsed = []
+    for i, account_id in enumerate(accounts):
+        if not account_id:
+            continue
+        debit = money((debits[i] if i < len(debits) else "") or 0)
+        credit = money((credits[i] if i < len(credits) else "") or 0)
+        if not debit and not credit:
+            continue
+        account = Account.objects.filter(pk=account_id).first()
+        if account is None:
+            raise ValueError("Unknown account in line.")
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        line_segment = Segment.objects.filter(pk=seg_id).first() if seg_id else None
+        if not line_segment:
+            legacy = request.POST.get("segment")
+            line_segment = Segment.objects.filter(pk=legacy).first() if legacy else None
+        if line_segment is None:
+            raise ValueError(f"Line {i + 1}: select a segment.")
+        parsed.append(
+            {
+                "account": account,
+                "segment": line_segment,
+                "description": descs[i] if i < len(descs) else "",
+                "debit": debit,
+                "credit": credit,
+            }
+        )
+    if not parsed:
+        raise ValueError("Add at least one line with an amount.")
+
+    header_segment = parsed[0]["segment"]
+    header_description = next((p["description"].strip() for p in parsed if p["description"].strip()), "")
+    if not header_description:
+        header_description = f"{source_doc_type} {source_doc_no}".strip() or f"Journal entry {transaction_date.isoformat()}"
+    legacy_description = request.POST.get("description", "").strip()
+    if legacy_description:
+        header_description = legacy_description
+
     with transaction.atomic():
         entry = JournalEntry.objects.create(
             entry_no=DocumentSequence.next_number(
                 company=company, form_code="JE", year=transaction_date.year
             ),
             company=company,
-            segment=segment,
+            segment=header_segment,
             fiscal_period=period,
             transaction_date=transaction_date,
             status=PostingStatus.DRAFT,
-            description=description,
+            description=header_description,
             source_doc_type=source_doc_type,
             source_doc_no=source_doc_no,
             created_by=request.user,
         )
-        accounts = request.POST.getlist("account")
-        debits = request.POST.getlist("debit")
-        credits = request.POST.getlist("credit")
-        descs = request.POST.getlist("line_description")
-        for i, account_id in enumerate(accounts):
-            if not account_id:
-                continue
-            debit = money(debits[i] or 0)
-            credit = money(credits[i] or 0)
-            if not debit and not credit:
-                continue
-            account = Account.objects.filter(pk=account_id).first()
-            if account is None:
-                raise ValueError("Unknown account in line.")
+        for i, p in enumerate(parsed, start=1):
             JournalEntryLine.objects.create(
                 entry=entry,
-                line_no=i + 1,
-                account=account,
-                description=descs[i] if i < len(descs) else "",
-                debit=debit,
-                credit=credit,
+                line_no=i,
+                account=p["account"],
+                segment=p["segment"],
+                description=p["description"],
+                debit=p["debit"],
+                credit=p["credit"],
             )
-        if not entry.lines.exists():
-            raise ValueError("Add at least one line with an amount.")
         entry.recalc_totals()
     return entry
 

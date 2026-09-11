@@ -116,6 +116,7 @@ class PostingService:
                     entry=je,
                     line_no=i,
                     account=_resolve_account(rl.account_code),
+                    segment=segment,
                     description=rl.description or description,
                     **kwargs,
                 )
@@ -156,14 +157,14 @@ class PostingService:
             entry.save(update_fields=["status", "total_debit", "total_credit", "updated_by", "updated_at"])
 
             # Rule 4: build GL projection inside the same transaction.
-            _lines = list(entry.lines.all().select_related("account"))
+            _lines = list(entry.lines.all().select_related("account", "segment"))
             gl_rows = [
                 GeneralLedger(
                     entry=entry,
                     line=line,
                     account=line.account,
                     company=entry.company,
-                    segment=entry.segment,
+                    segment=line.segment or entry.segment,
                     fiscal_period=entry.fiscal_period,
                     transaction_date=entry.transaction_date,
                     debit=line.debit,
@@ -210,6 +211,7 @@ class PostingService:
                     entry=rev,
                     line_no=line.line_no,
                     account=line.account,
+                    segment=line.segment or entry.segment,
                     description=f"REV of {entry.entry_no}: {line.description}",
                     debit=line.credit,
                     credit=line.debit,
@@ -221,11 +223,11 @@ class PostingService:
             entry.save(update_fields=["reversal_token", "status", "updated_by", "updated_at"])
 
             # GL projection for the reversing entry:
-            _lines = list(rev.lines.all().select_related("account"))
+            _lines = list(rev.lines.all().select_related("account", "segment"))
             GeneralLedger.objects.bulk_create([
                 GeneralLedger(
                     entry=rev, line=line, account=line.account, company=rev.company,
-                    segment=rev.segment, fiscal_period=rev.fiscal_period,
+                    segment=line.segment or rev.segment, fiscal_period=rev.fiscal_period,
                     transaction_date=rev.transaction_date, debit=line.debit, credit=line.credit,
                 )
                 for line in _lines

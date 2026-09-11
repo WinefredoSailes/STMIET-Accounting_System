@@ -97,6 +97,10 @@ class JournalEntryLine(models.Model):
     entry = models.ForeignKey(JournalEntry, on_delete=models.PROTECT, related_name="lines")
     line_no = models.PositiveIntegerField()
     account = models.ForeignKey("foundation.Account", on_delete=models.PROTECT, related_name="je_lines")
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, related_name="je_lines",
+        null=True, blank=True,
+    )
     description = models.CharField(max_length=500, blank=True)
     debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))

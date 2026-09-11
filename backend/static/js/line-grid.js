@@ -133,7 +133,7 @@
     grid.dataset.lineGridBound = '1';
     var variant = grid.dataset.lineGrid;
     var recalc = { je: recalcJe, rfp: recalcRfp, pcv: recalcPcv }[variant];
-    var resetSelects = variant === 'rfp';
+    var resetSelects = variant === 'rfp' || variant === 'je';
     if (!recalc) return;
 
     var addBtn = grid.closest('table').querySelector('[data-add-row]');

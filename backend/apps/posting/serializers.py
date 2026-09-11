@@ -7,7 +7,7 @@ from apps.posting.services import PostingService
 class JournalEntryLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = JournalEntryLine
-        fields = ("id", "line_no", "account", "description", "debit", "credit", "reference")
+        fields = ("id", "line_no", "account", "segment", "description", "debit", "credit", "reference")
 
 
 class JournalEntrySerializer(serializers.ModelSerializer):
