@@ -35,10 +35,12 @@
     var full = el.value;
     var start = el.selectionStart === null ? full.length : el.selectionStart;
     var digitsBefore = (full.slice(0, start).match(/\d/g) || []).length;
+    var dotIndex = full.indexOf('.');
+    var afterDot = dotIndex !== -1 && start > dotIndex;
     var raw = full.replace(/[^\d.]/g, '');
     var dot = raw.indexOf('.');
     var whole = (dot === -1 ? raw : raw.slice(0, dot)).replace(/^0+(?=\d)/, '');
-    var frac = dot === -1 ? '' : raw.slice(dot + 1).slice(0, 2);
+    var frac = dot === -1 ? '' : raw.slice(dot + 1).replace(/\D/g, '').slice(0, 2);
     var text = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     if (dot !== -1) text += '.' + frac;
     el.value = text;
@@ -46,6 +48,10 @@
     while (pos < text.length && seen < digitsBefore) {
       if (/\d/.test(text.charAt(pos))) seen++;
       pos++;
+    }
+    if (afterDot) {
+      var fd = text.indexOf('.');
+      if (fd !== -1 && pos <= fd) pos = fd + 1;
     }
     if (el.setSelectionRange) el.setSelectionRange(pos, pos);
   }
