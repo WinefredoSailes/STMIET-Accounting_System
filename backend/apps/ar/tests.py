@@ -163,19 +163,30 @@ class TestCycleLedger:
         assert rows[1]["over_short"] == Decimal("4000.00")
         assert rows[1]["cumulative"] == Decimal("2000.00")
 
-    def test_aging_buckets(self, customer, bank_account, segment):
+    def test_aging_excludes_future_and_includes_same_day(
+        self, customer, bank_account, segment
+    ):
+        as_of = date(2026, 1, 31)
         ARInvoice.objects.create(
             invoice_no="OLD", customer=customer, transaction_date=date(2025, 10, 1),
             segment=segment, total=Decimal("7000.00"),
         )
         ARInvoice.objects.create(
-            invoice_no="NEW", customer=customer, transaction_date=date(2026, 1, 10),
-            segment=segment, total=Decimal("3000.00"),
+            invoice_no="TODAY", customer=customer, transaction_date=as_of,
+            segment=segment, total=Decimal("1000.00"),
         )
-        aging = CycleLedgerService.aging(as_of=date(2026, 1, 31))
+        ARInvoice.objects.create(
+            invoice_no="FUTURE", customer=customer, transaction_date=as_of + timedelta(days=1),
+            segment=segment, total=Decimal("4000.00"),
+        )
+
+        aging = CycleLedgerService.aging(as_of=as_of)
         by_bucket = {row["bucket"]: row["amount"] for row in aging}
         assert by_bucket["120+"] == Decimal("7000.00")
-        assert by_bucket["0-30"] == Decimal("3000.00")
+        assert by_bucket["0-30"] == Decimal("1000.00")
+        assert by_bucket["31-60"] == Decimal("0.00")
+        assert by_bucket["61-90"] == Decimal("0.00")
+        assert by_bucket["91-120"] == Decimal("0.00")
 
 
 class TestImportCustomers:

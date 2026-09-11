@@ -171,11 +171,18 @@ class CycleLedgerService:
 
     @classmethod
     def aging(cls, as_of: date) -> list[dict]:
-        """AR aging buckets 30/60/90/120+ from open invoice balances."""
+        """AR aging buckets 30/60/90/120+ from open invoice balances.
+
+        Future-dated invoices are excluded because they have not entered the
+        aging period yet.
+        """
         buckets = {"0-30": Decimal("0.00"), "31-60": Decimal("0.00"),
                    "61-90": Decimal("0.00"), "91-120": Decimal("0.00"),
                    "120+": Decimal("0.00")}
-        invoices = ARInvoice.objects.filter(status__in=("open", "partially_paid"))
+        invoices = ARInvoice.objects.filter(
+            status__in=("open", "partially_paid"),
+            transaction_date__lte=as_of,
+        )
         for inv in invoices:
             balance = inv.balance
             if balance <= 0:

@@ -657,6 +657,7 @@ def aging_context(as_of: date) -> dict:
 
     buckets = CycleLedgerService.aging(as_of)
     register = []
+    not_yet_due = []
     for inv in (
         ARInvoice.objects.filter(status__in=("open", "partially_paid"))
         .select_related("customer", "segment")
@@ -665,7 +666,20 @@ def aging_context(as_of: date) -> dict:
         balance = inv.balance
         if balance <= 0:
             continue
-        age_days = max((as_of - inv.transaction_date).days, 0)
+        if inv.transaction_date > as_of:
+            not_yet_due.append(
+                {
+                    "invoice_no": inv.invoice_no,
+                    "customer": inv.customer.name,
+                    "date": inv.transaction_date,
+                    "segment": inv.segment.code,
+                    "status": inv.status.replace("_", " ").title(),
+                    "balance": balance,
+                    "age_days": None,
+                }
+            )
+            continue
+        age_days = (as_of - inv.transaction_date).days
         register.append(
             {
                 "invoice_no": inv.invoice_no,
@@ -683,6 +697,8 @@ def aging_context(as_of: date) -> dict:
         "bucket_total": sum(b["amount"] for b in buckets),
         "register": register,
         "register_total": sum(r["balance"] for r in register),
+        "not_yet_due": not_yet_due,
+        "not_yet_due_total": sum(r["balance"] for r in not_yet_due),
     }
 
 
@@ -692,6 +708,9 @@ def ap_aging_context(as_of: date) -> dict:
     Open AP = the RFP's gross amount minus the gross of check vouchers that
     actually posted their clearing JEs (POSTING_RULES 7.4: Dr AP gross | Cr
     Cash net + Cr WHT). Buckets 30/60/90/120+ by RFP date.
+
+    Only RFPs dated on or before as_of are included in aging buckets.
+    Future-dated RFPs are listed separately as "not_yet_due".
     """
     from apps.ap.models import CheckVoucher, RFPDocument
 
@@ -713,6 +732,7 @@ def ap_aging_context(as_of: date) -> dict:
         "120+": Decimal("0.00"),
     }
     register = []
+    not_yet_due = []
     for rfp in (
         RFPDocument.objects.filter(status="posted")
         .select_related("payee", "segment")
@@ -722,7 +742,22 @@ def ap_aging_context(as_of: date) -> dict:
         balance = rfp.amount - paid
         if balance <= 0:
             continue
-        age_days = max((as_of - rfp.rfp_date).days, 0)
+        if rfp.rfp_date > as_of:
+            not_yet_due.append(
+                {
+                    "ap_number": rfp.ap_number,
+                    "payee": rfp.payee.name,
+                    "date": rfp.rfp_date,
+                    "segment": rfp.segment.code,
+                    "status": rfp.status.replace("_", " ").title(),
+                    "amount": rfp.amount,
+                    "paid": paid,
+                    "balance": balance,
+                    "age_days": None,
+                }
+            )
+            continue
+        age_days = (as_of - rfp.rfp_date).days
         key = (
             "0-30" if age_days <= 30
             else "31-60" if age_days <= 60
@@ -750,6 +785,8 @@ def ap_aging_context(as_of: date) -> dict:
         "bucket_total": sum(buckets.values()),
         "register": register,
         "register_total": sum(r["balance"] for r in register),
+        "not_yet_due": not_yet_due,
+        "not_yet_due_total": sum(r["balance"] for r in not_yet_due),
     }
 
 
