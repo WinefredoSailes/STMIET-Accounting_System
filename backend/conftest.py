@@ -36,7 +36,11 @@ def fiscal_period(db, fiscal_year):
 
 @pytest.fixture
 def user(db):
-    return get_user_model().objects.create_user(username="tester", password="x")
+    from apps.foundation.models import UserProfile
+
+    u = get_user_model().objects.create_user(username="tester", password="x")
+    UserProfile.objects.create(user=u, approval_role="staff")
+    return u
 
 
 @pytest.fixture

@@ -23,6 +23,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.core.exceptions import AccountingError, ValidationError
+from apps.core.approvals import require_can_create_master, require_can_edit_master
 from apps.core.money import approve_threshold, money
 from apps.foundation.models import Account, AccountType, Company, CostCenter, FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -741,8 +742,7 @@ def asset_list(request):
 
 @login_required
 def customer_create(request):
-    if not request.user.is_superuser:
-        raise PermissionDenied("Only a super admin can manage the customer master.")
+    require_can_create_master(request.user)
     if request.method == "POST":
         try:
             from apps.ar.models import Customer
@@ -770,8 +770,7 @@ def customer_create(request):
 def customer_update(request, pk):
     from apps.ar.models import Customer
 
-    if not request.user.is_superuser:
-        raise PermissionDenied("Only a super admin can edit the customer master.")
+    require_can_edit_master(request.user)
     customer = get_object_or_404(Customer, pk=pk)
     if request.method == "POST":
         try:
@@ -844,6 +843,7 @@ def receipt_create(request):
 
 @login_required
 def supplier_create(request):
+    require_can_create_master(request.user)
     if request.method == "POST":
         try:
             from apps.ap.models import Supplier
@@ -874,9 +874,8 @@ def supplier_create(request):
 
 @login_required
 def supplier_update(request, pk):
-    """Update an existing supplier (superadmin only)."""
-    if not request.user.is_superuser:
-        raise PermissionDenied("Only a super admin can edit suppliers.")
+    """Update an existing supplier (Accounting & Finance Head + admins only)."""
+    require_can_edit_master(request.user)
     from apps.ap.models import Supplier
     from apps.ap.services import SupplierService
 
@@ -1216,6 +1215,7 @@ def rfp_revise(request, pk):
 
 @login_required
 def bank_create(request):
+    require_can_create_master(request.user)
     if request.method == "POST":
         try:
             from apps.cash.models import BankAccount
@@ -1247,9 +1247,8 @@ def bank_create(request):
 
 @login_required
 def bank_update(request, pk):
-    """Update an existing bank account (superadmin only)."""
-    if not request.user.is_superuser:
-        raise PermissionDenied("Only a super admin can edit bank accounts.")
+    """Update an existing bank account (Accounting & Finance Head + admins only)."""
+    require_can_edit_master(request.user)
     from apps.cash.models import BankAccount
 
     bank = get_object_or_404(BankAccount, pk=pk)
@@ -2281,8 +2280,8 @@ def coa_print(request):
 
 @login_required
 def coa_create(request):
-    """Create a new COA account (superadmin only)."""
-    _require_superuser(request)
+    """Create a new COA account (staff add-only; head + admins)."""
+    require_can_create_master(request.user)
     from apps.foundation.models import NORMAL_BALANCE, Account
 
     if request.method == "POST":
@@ -2318,8 +2317,8 @@ def coa_create(request):
 
 @login_required
 def coa_update(request, pk):
-    """Update an existing COA account (superadmin only)."""
-    _require_superuser(request)
+    """Update an existing COA account (Accounting & Finance Head + admins only)."""
+    require_can_edit_master(request.user)
     from apps.foundation.models import NORMAL_BALANCE, Account
 
     account = get_object_or_404(Account, pk=pk)

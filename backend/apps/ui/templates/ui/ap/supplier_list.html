@@ -2,6 +2,11 @@
 {% load static ui_filters %}
 {% block title %}Suppliers — STMIET Accounting{% endblock %}
 {% block content %}
+{% capture as actions %}
+{% if can_create_master %}
+<a href="{% url 'ui:supplier_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New supplier</a>
+{% endif %}
+{% endcapture %}
 {% capture as table_head %}
 <tr>
   <th class="px-4 py-3">Code</th>
@@ -11,7 +16,7 @@
   <th class="px-4 py-3">Email</th>
   <th class="px-4 py-3">Contact</th>
   <th class="px-4 py-3">Attachments</th>
-  <th class="px-4 py-3">Actions</th>
+  {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
 </tr>
 {% endcapture %}
 {% capture as table_body %}
@@ -28,13 +33,15 @@
     {% else %}{{ s.contact_no|default:"—" }}{% endif %}
   </td>
   <td class="px-4 py-2 text-xs">{% if s.attachments_required %}Yes{% else %}—{% endif %}</td>
+  {% if can_edit_master %}
   <td class="px-4 py-2 text-xs">
     <a href="{% url 'ui:supplier_update' s.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
   </td>
+  {% endif %}
 </tr>
 {% empty %}
-<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No suppliers yet.</td></tr>
+<tr><td colspan="{% if can_edit_master %}8{% else %}7{% endif %}" class="px-4 py-8 text-center text-slate-400">No suppliers yet.</td></tr>
 {% endfor %}
 {% endcapture %}
-{% include "ui/partials/list_card.html" with title="Suppliers" subtitle="Vendor master for RFP → CONSO → CV workflows (ADR-008)." min_width="1100" primary_url_name="ui:supplier_create" primary_label="+ New supplier" link_url_name="ui:rfp_list" link_label="RFPs →" table_head=table_head table_body=table_body show_pagination=True %}
+{% include "ui/partials/list_card.html" with title="Suppliers" subtitle="Vendor master for RFP → CONSO → CV workflows (ADR-008)." min_width="1100" link_url_name="ui:rfp_list" link_label="RFPs →" table_head=table_head table_body=table_body show_pagination=True actions=actions %}
 {% endblock %}

@@ -6,8 +6,8 @@
   {% capture as customer_title %}{% if editing %}Edit Customer{% else %}New Customer{% endif %}{% endcapture %}
   {% capture as submit_label %}{% if editing %}Save changes{% else %}Create customer{% endif %}{% endcapture %}
   {% capture as banner_html %}
-  {% if not editing and not request.user.is_superuser %}
-  <p class="text-sm text-amber-700">You can view, but only a <strong>super admin</strong> can create or edit customers.</p>
+  {% if not can_edit_master %}
+  <p class="text-sm text-amber-700">Accounting staff can add customers; edits are reserved for the <strong>Accounting &amp; Finance Head</strong>.</p>
   {% endif %}
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=customer_title subtitle="Centralized customer master (ADR-007) — one-time migration cleans the macro-era per-client sheets." back_url_name="ui:customer_list" back_label="Customers" %}

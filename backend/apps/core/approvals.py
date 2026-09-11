@@ -13,6 +13,8 @@ that mapping — nothing is hard-coded to a login name.
 
 from datetime import date
 
+from django.core.exceptions import PermissionDenied
+
 from apps.core.exceptions import ValidationError
 
 APPROVAL_ROLES = (
@@ -51,6 +53,44 @@ CV_NEXT_ROLE = {
     "created": "head",
     "approved": "head",
 }
+
+
+# Master-data write permissions (COA, customers, suppliers, bank accounts):
+# the Accounting & Finance Head edits; accounting staff can only add.
+MASTER_CREATE_ROLES = ("staff", "head")
+MASTER_EDIT_ROLES = ("head",)
+
+
+def can_create_master(user):
+    """Whether `user` may add master data (add-only for staff)."""
+    if user.is_superuser:
+        return True
+    return approval_role_of(user) in MASTER_CREATE_ROLES
+
+
+def can_edit_master(user):
+    """Whether `user` may edit master data (head + admins only)."""
+    if user.is_superuser:
+        return True
+    return approval_role_of(user) in MASTER_EDIT_ROLES
+
+
+def require_can_create_master(user):
+    """Gate: raise PermissionDenied unless `user` may add master data."""
+    if not can_create_master(user):
+        raise PermissionDenied(
+            "Adding master data (COA, customers, suppliers, banks) requires an "
+            "accounting staff or Accounting & Finance Head account."
+        )
+
+
+def require_can_edit_master(user):
+    """Gate: raise PermissionDenied unless `user` may edit master data."""
+    if not can_edit_master(user):
+        raise PermissionDenied(
+            "Editing master data (COA, customers, suppliers, banks) is reserved "
+            "for the Accounting & Finance Head. Accounting staff can only add."
+        )
 
 
 def display_name(user):

@@ -95,6 +95,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.ui.context_processors.pending_approval_count",
+                "apps.ui.context_processors.master_data_permissions",
             ],
         },
     },

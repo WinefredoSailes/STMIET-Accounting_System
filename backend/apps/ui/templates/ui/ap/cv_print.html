@@ -48,39 +48,39 @@
     </colgroup>
     <tbody>
 
-      <!-- ═══ HEADER  (2+6+4=12) ═══ -->
-      <tr style="height:28px">
-        <td colspan="2" style="text-align:center; vertical-align:middle">
+      <!-- HEADER  (4 rows: logo/title rowspan + 3 document rows) -->
+      <!-- Row 1: logo + CHECK VOUCHER + ACCOUNTING DEPARTMENT -->
+      <tr>
+        <td rowspan="4" colspan="2" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:18px; width:auto">
         </td>
-        <td colspan="6" style="text-align:center; vertical-align:middle; font-size:12px; font-weight:900; letter-spacing:.08em; background:#e2efda">
+        <td rowspan="4" colspan="6" style="text-align:center; vertical-align:middle; font-size:12px; font-weight:900; letter-spacing:.08em; background:#e2efda">
           CHECK VOUCHER
         </td>
         <td colspan="4" style="text-align:right; vertical-align:top; font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
           ACCOUNTING DEPARTMENT
         </td>
       </tr>
-
-      <!-- ═══ DOCUMENT CONTROL  (8+1+3=12) ═══ -->
+      <!-- Row 2: Document No. -->
       <tr style="font-size:7px">
-        <td colspan="8"></td>
+        <td colspan="2"></td>
+        <td colspan="6"></td>
         <td>Document No.:</td>
         <td colspan="3">ACCTG-FOR-010</td>
       </tr>
+      <!-- Row 3: Effective Date -->
       <tr style="font-size:7px">
-        <td colspan="8"></td>
+        <td colspan="2"></td>
+        <td colspan="6"></td>
         <td>Effective Date:</td>
         <td colspan="3">08.18.2022</td>
       </tr>
+      <!-- Row 4: Revision No. -->
       <tr style="font-size:7px">
-        <td colspan="8"></td>
+        <td colspan="2"></td>
+        <td colspan="6"></td>
         <td>Revision No.:</td>
         <td colspan="3">02</td>
-      </tr>
-      <tr style="font-size:7px">
-        <td colspan="8"></td>
-        <td>SN:</td>
-        <td colspan="3" style="font-weight:700">{{ cv.cv_number }}</td>
       </tr>
 
       <!-- ═══ PAYEE INFORMATION  (12 full span) ═══ -->

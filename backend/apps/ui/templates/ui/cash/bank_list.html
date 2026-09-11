@@ -8,7 +8,9 @@
       <h1 class="text-xl font-semibold text-slate-900">Bank Accounts</h1>
       <p class="text-sm text-slate-500 mt-1">Bank masters with GL mappings and ADB requirements (ADR-010).</p>
     </div>
+    {% if can_create_master %}
     <a href="{% url 'ui:bank_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New bank account</a>
+    {% endif %}
   </div>
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[800px]">
@@ -22,12 +24,13 @@
           <th class="px-4 py-3">GL Account</th>
           <th class="px-4 py-3 text-right">ADB Req.</th>
           <th class="px-4 py-3">Active</th>
+          {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for b in page_obj %}
         <tr class="hover:bg-slate-50">
-<td class="px-4 py-2 font-mono text-xs">{{ b.code }}</td>
+  <td class="px-4 py-2 font-mono text-xs">{{ b.code }}</td>
           <td class="px-4 py-2">{{ b.name }}</td>
           <td class="px-4 py-2 text-xs">{{ b.get_account_type_display }}</td>
           <td class="px-4 py-2 text-xs">{{ b.bank_name|default:"-" }}</td>
@@ -39,12 +42,14 @@
               {{ b.is_active|yesno:"Active,Inactive" }}
             </span>
           </td>
+          {% if can_edit_master %}
           <td class="px-4 py-2 text-right">
             <a href="{% url 'ui:bank_update' b.pk %}" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Edit</a>
           </td>
+          {% endif %}
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No bank accounts yet.</td></tr>
+        <tr><td colspan="{% if can_edit_master %}9{% else %}8{% endif %}" class="px-4 py-8 text-center text-slate-400">No bank accounts yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

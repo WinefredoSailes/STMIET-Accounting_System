@@ -287,11 +287,13 @@ def list_cv(*, limit=100):
 
 
 def bank_accounts():
-    """GL accounts usable as CV/transfer bank accounts (100xx, postable)."""
+    """GL accounts linked to a BankAccount (all active banks, not just 100xx)."""
+    from apps.cash.models import BankAccount
     from apps.foundation.models import Account
 
     return Account.objects.filter(
-        is_postable=True, account_type="asset", code__startswith="100"
+        is_postable=True, bank_account__isnull=False,
+        bank_account__is_active=True,
     ).order_by("code")
 
 

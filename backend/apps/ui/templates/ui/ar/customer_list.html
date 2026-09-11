@@ -3,7 +3,7 @@
 {% block title %}Customers — STMIET Accounting{% endblock %}
 {% block content %}
 {% capture as actions %}
-{% if request.user.is_superuser %}
+{% if can_create_master %}
 <a href="{% url 'ui:customer_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New customer</a>
 {% endif %}
 {% endcapture %}
@@ -13,7 +13,7 @@
   <th class="px-4 py-3">Business Name</th>
   <th class="px-4 py-3">Owner</th>
   <th class="px-4 py-3">Contact</th>
-  {% if request.user.is_superuser %}<th class="px-4 py-3">Actions</th>{% endif %}
+  {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
 </tr>
 {% endcapture %}
 {% capture as table_body %}
@@ -23,14 +23,14 @@
   <td class="px-4 py-2 font-medium">{{ c.name }}</td>
   <td class="px-4 py-2 text-xs">{{ c.owner_name|default:"—" }}</td>
   <td class="px-4 py-2 text-xs text-slate-500">{{ c.contact_no|default:"—" }}</td>
-  {% if request.user.is_superuser %}
+  {% if can_edit_master %}
   <td class="px-4 py-2">
     <a href="{% url 'ui:customer_update' c.pk %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
   </td>
   {% endif %}
 </tr>
 {% empty %}
-<tr><td colspan="{% if request.user.is_superuser %}5{% else %}4{% endif %}" class="px-4 py-8 text-center text-slate-400">No customers yet.</td></tr>
+<tr><td colspan="{% if can_edit_master %}5{% else %}4{% endif %}" class="px-4 py-8 text-center text-slate-400">No customers yet.</td></tr>
 {% endfor %}
 {% endcapture %}
 {% include "ui/partials/list_card.html" with title="Customers" subtitle="Centralized customer master (ADR-007)." min_width="900" actions=actions link_url_name="ui:receipt_list" link_label="Receipts →" table_head=table_head table_body=table_body show_pagination=True %}

@@ -1849,7 +1849,7 @@ class TestCashShortScreen:
         assert ws.status == "open"
 
         # The head approves variances; the reporter cannot (ADR-036).
-        UserProfile.objects.create(user=user, approval_role="head")
+        UserProfile.objects.update_or_create(user=user, defaults={"approval_role": "head"})
         client.post(f"/cash/short/{ws.id}/approve/")
         ws.refresh_from_db()
         assert ws.status == "approved"
@@ -2424,8 +2424,9 @@ class TestCoAScreen:
         assert acc.name == "Cash on Hand (Renamed)"
         assert acc.normal_balance == "debit"
 
-    def test_coa_writes_require_superuser(self, client, company, accounts):
-        assert client.get("/foundation/coa/new/").status_code == 403
+    def test_coa_write_permissions(self, client, company, accounts):
+        # staff can create but not edit; head + superuser can edit
+        assert client.get("/foundation/coa/new/").status_code == 200
         assert client.get(f"/foundation/coa/{accounts['10010'].pk}/update/").status_code == 403
 
 
@@ -2484,7 +2485,7 @@ class TestHTMXPartialUpdates:
             cycle=cycle, segment=segment, expected_cash="10000.00",
             actual_cash="9500.00", variance="-500.00", cause="Miscount", status="open",
         )
-        UserProfile.objects.create(user=user, approval_role="head")
+        UserProfile.objects.update_or_create(user=user, defaults={"approval_role": "head"})
         resp = client.post(f"/cash/short/{ws.id}/approve/", {}, HTTP_HX_REQUEST="true")
         assert resp.status_code == 200
         assert resp.headers["HX-Trigger"]

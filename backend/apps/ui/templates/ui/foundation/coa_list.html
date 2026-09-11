@@ -7,10 +7,12 @@
       <h1 class="text-xl font-semibold text-slate-900">CHART OF ACCOUNTS</h1>
       <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s) — imported from COA-STMIET-2026.xlsx.</p>
     </div>
-    <div class="flex items-center gap-2">
-      <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
-      <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
-    </div>
+<div class="flex items-center gap-2">
+       <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+       {% if can_create_master %}
+       <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
+       {% endif %}
+     </div>
   </div>
 
   <div class="mt-4 bg-white rounded-xl border border-slate-200 p-4">
