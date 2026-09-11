@@ -51,144 +51,144 @@
       <!-- HEADER  (4 rows: logo/title rowspan + 3 document rows) -->
       <!-- Row 1: logo + REQUEST FOR PAYMENT + ACCOUNTING DEPARTMENT -->
       <tr>
-        <td rowspan="4" colspan="2" style="text-align:center; vertical-align:middle">
+        <td rowspan="4" colspan="3" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
         </td>
-        <td rowspan="4" colspan="6" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6">
+        <td rowspan="4" colspan="7" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6">
           REQUEST FOR PAYMENT
         </td>
-        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+        <td colspan="5" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
           ACCOUNTING DEPARTMENT
         </td>
       </tr>
       <!-- Row 2: Document No. -->
       <tr style="font-size:10px">
         <td colspan="2">Document No.:</td>
-        <td colspan="2">ACCTG-FOR-012</td>
+        <td colspan="3">ACCTG-FOR-012</td>
       </tr>
       <!-- Row 3: Effective Date -->
       <tr style="font-size:10px">
         <td colspan="2">Effective Date:</td>
-        <td colspan="2">11.16.2024</td>
+        <td colspan="3">11.16.2024</td>
       </tr>
       <!-- Row 4: Revision No. -->
       <tr style="font-size:10px">
         <td colspan="2">Revision No.:</td>
-        <td colspan="2">00</td>
+        <td colspan="3">00</td>
       </tr>
 
-      <!-- ═══ PAYEE INFORMATION  (12 full span) ═══ -->
+      <!-- ═══ PAYEE INFORMATION  (13 full span) ═══ -->
       <tr>
-        <td colspan="12" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="15" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Payee Information
         </td>
       </tr>
       <!-- NAME row: 1+6+1+4=12 -->
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">NAME:</td>
+        <td colspan="3" style="font-weight:600">NAME:</td>
         <td colspan="6" style="font-weight:700; text-transform:uppercase">{{ rfp.payee.name }}</td>
-        <td colspan="2" style="font-weight:600">DATE OF REQUEST:</td>
-        <td colspan="2">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
+        <td colspan="3" style="font-weight:600">DATE OF REQUEST:</td>
+        <td colspan="3">{{ rfp.rfp_date|date:"m/d/Y" }}</td>
       </tr>
       <!-- POSITION row: 2+6+2+2=12 -->
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">POSITION:</td>
+        <td colspan="3" style="font-weight:600">POSITION:</td>
         <td colspan="6">{{ position|default:contact_no|default:"—" }}</td>
-        <td colspan="2" style="font-weight:600">VENDOR NO:</td>
-        <td colspan="2">{{ rfp.payee.code }}</td>
+        <td colspan="3" style="font-weight:600">VENDOR NO:</td>
+        <td colspan="3">{{ rfp.payee.code }}</td>
       </tr>
       <!-- DEPARTMENT row: 2+6+2+2=12 -->
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">DEPARTMENT/ADDRESS:</td>
-        <td colspan="6">{{ address|default:"—" }}</td>
-        <td colspan="2" style="font-weight:600">AP NO:</td>
-        <td colspan="2" style="font-weight:700">{{ rfp.ap_number }}</td>
+        <td colspan="3" style="font-weight:600">DEPARTMENT/ADDRESS:</td>
+        <td colspan="6"  style="white-space:normal;">{{ address|default:"—" }}</td>
+        <td colspan="3" style="font-weight:600">AP NO:</td>
+        <td colspan="3" style="font-weight:700">{{ rfp.ap_number }}</td>
       </tr>
 
       <!-- ═══ DISTRIBUTION CHARGES  (12 full span) ═══ -->
       <tr>
-        <td colspan="12" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="15" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Distribution Charges
         </td>
       </tr>
       <!-- Column headers: 5+1+1+2+3=12 -->
-      <tr style="font-size:10px; text-transform:uppercase; letter-spacing:.03em">
-        <td colspan="5" style="font-weight:700">Purpose of Payment</td>
-        <td style="font-weight:700">Entity</td>
-        <td style="font-weight:700">Segment</td>
-        <td colspan="2" style="font-weight:700">Cost Center</td>
-        <td colspan="3" style="font-weight:700; text-align:right">Amount</td>
+      <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="7" style="font-weight:600">Purpose of Payment</td>
+        <td colspan="2" style="font-weight:600; text-align:left">Entity</td>
+        <td colspan="2" style="font-weight:600; text-align:center">Segment</td>
+        <td colspan="2" style="font-weight:600; text-align:center">Cost Center</td>
+        <td colspan="2" style="font-weight:600; text-align:right">Amount</td>
       </tr>
       <!-- Data rows: 5+1+1+2+3=12 -->
       {% for line in dr_lines %}
-      <tr style="font-size:10px; line-height:2;">
-        <td colspan="5" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ line.description|default:rfp.particulars }}</td>
-        <td>STMIET</td>
-        <td>{{ line.segment.code }}</td>
+      <tr style="font-size:10px; line-height:2; text-align:center;">
+        <td colspan="7" style="overflow:hidden; text-overflow:ellipsis; white-space:normal; text-align:left">{{ line.description|default:rfp.particulars }}</td>
+        <td colspan="2">STMIET</td>
+        <td colspan="2">{{ line.segment.code }}</td>
         <td colspan="2">{{ rfp.purpose|default:"—" }}</td>
-        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
       </tr>
       {% endfor %}
       {% if not dr_lines %}
       <tr>
-        <td colspan="12" style="font-size:10px; color:#94a3b8">No distribution lines.</td>
+        <td colspan="15" style="font-size:10px; color:#94a3b8">No distribution lines.</td>
       </tr>
       {% endif %}
 
       <!-- ═══ CHART OF ACCOUNTS  (12 full span) ═══ -->
       <tr>
-        <td colspan="12" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="15" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Chart of Accounts
         </td>
       </tr>
       <!-- COA total row: 3+5+2+2=12 -->
-      <tr style="font-size:10px; font-weight:600">
+      <tr style="font-size:9px; font-weight:600">
         <td colspan="3">CHART OF ACCOUNTS:</td>
-        <td colspan="5"></td>
-        <td colspan="2" style="text-align:center; text-transform:uppercase">Total Amount:</td>
-        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
+        <td colspan="6"></td>
+        <td colspan="3" style="text-align:center; text-transform:uppercase">Total Amount:</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
       </tr>
       <!-- COA data rows: 2+6+2+2=12 -->
       {% for line in lines %}
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">{{ line.side|upper }}.</td>
+        <td colspan="3" style="font-weight:600">{{ line.side|upper }}.</td>
         <td colspan="6">{{ line.account.name }}</td>
-        <td colspan="2"></td>
-        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
+        <td colspan="3"></td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
       </tr>
       {% endfor %}
       <!-- VAT row: 8+2+2=12 -->
       <tr style="font-size:10px">
-        <td colspan="8"></td>
-        <td colspan="2" style="text-transform:uppercase">VAT:</td>
-        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">0.00</td>
+        <td colspan="9"></td>
+        <td colspan="3" style="text-transform:uppercase">VAT:</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">0.00</td>
       </tr>
       <!-- Net Invoice row: 8+2+2=12 -->
       <tr style="font-size:10px; font-weight:600">
-        <td colspan="8"></td>
-        <td colspan="2" style="text-transform:uppercase">Net Invoice:</td>
-        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
+        <td colspan="9"></td>
+        <td colspan="3" style="text-transform:uppercase">Net Invoice:</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
       </tr>
 
       <!-- ═══ SIGNATURE SECTION  ═══ -->
       <!-- Labels: 2+5+5=12 -->
       <tr style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
-        <td colspan="2">Requested By:</td>
-        <td colspan="5">Recommending Approver / or Checker</td>
-        <td colspan="5">Approval:</td>
+        <td colspan="3">Requested By:</td>
+        <td colspan="6">Recommending Approver / or Checker</td>
+        <td colspan="6">Approval:</td>
       </tr>
       <!-- Names: 2+5+2+3=12 -->
       <tr style="height:22px">
-        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ requested_by }}</td>
-        <td colspan="5" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ checked_by }}</td>
-        <td colspan="2" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ approved_acctg }}</td>
+        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ requested_by }}</td>
+        <td colspan="6" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ checked_by }}</td>
+        <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ approved_acctg }}</td>
         <td colspan="3" style="text-align:center; vertical-align:bottom; font-size:10px; font-weight:600">{{ approved_fin }}</td>
       </tr>
       <!-- Roles: 2+5+2+3=12 -->
       <tr style="font-size:8px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
-        <td colspan="2" style="text-align:center">Print Name/Sign/Date</td>
-        <td colspan="5" style="text-align:center">Department Head</td>
-        <td colspan="2" style="text-align:center">Accounting Manager</td>
+        <td colspan="3" style="text-align:center">Print Name/Sign/Date</td>
+        <td colspan="6" style="text-align:center">Department Head</td>
+        <td colspan="3" style="text-align:center">Accounting Manager</td>
         <td colspan="3" style="text-align:center">Finance Manager</td>
       </tr>
 
