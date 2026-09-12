@@ -162,7 +162,10 @@ class TestBrandingRemoval:
     def test_rfp_form_description_fields_autogrow(self, client, company, accounts):
         body = client.get("/ap/rfps/new/").content.decode()
         assert 'name="line_description" data-autogrow rows="1"' in body
-        assert 'name="purpose" id="id_purpose" data-autogrow rows="1"' in body
+        assert 'name="line_cost_center"' in body
+        assert 'Coscenter/ref' in body
+        assert 'must be here' not in body
+        assert 'id_purpose' not in body
 
     def test_pcf_replenish_form_has_no_entity_and_description_autogrows(
         self, client, company, accounts
@@ -925,6 +928,7 @@ class TestRFPScreen:
             "line_debit": ["50000.00", ""],
             "line_credit": ["", "50000.00"],
             "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
+            "line_cost_center": ["OS — offsite", "GEN-FUEL"],
         })
         assert resp.status_code == 302
         from apps.ap.models import RFPDocument
@@ -936,6 +940,7 @@ class TestRFPScreen:
         sides = {l.side for l in rfp.lines.all()}
         assert sides == {"dr", "cr"}
         assert {l.account.code for l in rfp.lines.all()} == {"61100", "20000"}
+        assert {l.cost_center for l in rfp.lines.all()} == {"OS — offsite", "GEN-FUEL"}
         assert rfp.particulars == "Fuel purchase"  # mirrors the first line
         supplier.refresh_from_db()
         assert supplier.last_ap == rfp.ap_number

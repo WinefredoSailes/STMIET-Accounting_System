@@ -327,6 +327,7 @@ class PCFService:
                     account=acc,
                     credit=amount,
                     description=exp.get("description", ""),
+                    reference=exp.get("cost_center", ""),
                 )
             else:
                 dr_total += amount
@@ -336,6 +337,7 @@ class PCFService:
                     account=acc,
                     debit=amount,
                     description=exp.get("description", ""),
+                    reference=exp.get("cost_center", ""),
                 )
             line_no += 1
         cash_credit = dr_total - cr_total

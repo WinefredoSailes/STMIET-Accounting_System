@@ -23,6 +23,7 @@ from decimal import Decimal
 
 from django.db import models
 
+from apps.core.constants import COST_CENTER_MAX_LENGTH
 from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
@@ -178,6 +179,9 @@ class RFPLine(models.Model):
     account = models.ForeignKey("foundation.Account", on_delete=models.PROTECT, related_name="rfp_lines")
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     description = models.CharField(max_length=255, blank=True)
+    # Cost center / ref. lives per-line (ADR-038 §8), not on the RFP header:
+    # e.g. "OS — offsite", "GEN-FUEL".
+    cost_center = models.CharField("Coscenter/ref", max_length=COST_CENTER_MAX_LENGTH, blank=True)
 
     class Meta:
         ordering = ["rfp", "line_no"]

@@ -353,6 +353,7 @@ def _rfp_lines_from_form(request):
     debits = request.POST.getlist("line_debit")
     credits = request.POST.getlist("line_credit")
     descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
     lines = []
     for i, code in enumerate(codes):
         seg_id = seg_ids[i] if i < len(seg_ids) else ""
@@ -373,6 +374,7 @@ def _rfp_lines_from_form(request):
                 "account_code": code,
                 "amount": debit or credit,
                 "description": (descs[i] if i < len(descs) else "")[:500],
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
             }
         )
     return lines
@@ -1225,6 +1227,7 @@ def rfp_create(request):
         {
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         },
     )
 
@@ -1462,6 +1465,7 @@ def rfp_revise(request, pk):
             "editing": rfp,
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         },
     )
 

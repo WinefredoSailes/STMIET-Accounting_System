@@ -30,7 +30,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class RFPLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = RFPLine
-        fields = ("id", "line_no", "side", "segment", "account", "amount", "description")
+        fields = ("id", "line_no", "side", "segment", "account", "amount", "description", "cost_center")
 
 
 class RFPDocumentSerializer(serializers.ModelSerializer):

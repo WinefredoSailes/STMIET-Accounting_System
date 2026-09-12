@@ -123,7 +123,7 @@
       <tr style="font-size:10px; line-height:2; text-align:center;">
         <td colspan="9" style="overflow:hidden; text-overflow:ellipsis; white-space:normal; text-align:left">{{ line.description|default:rfp.particulars }}</td>
         <td colspan="2">{{ line.segment.code }}</td>
-        <td colspan="2">{{ rfp.purpose|default:"—" }}</td>
+        <td colspan="2">{{ line.cost_center|default:"—" }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
       </tr>
       {% endfor %}

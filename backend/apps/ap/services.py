@@ -206,6 +206,7 @@ class RFPService:
                 account=_account(line["account_code"]),
                 amount=money(line["amount"]),
                 description=line.get("description", ""),
+                cost_center=line.get("cost_center", ""),
             )
         if payee:
             payee.last_ap = ap_number
@@ -439,6 +440,7 @@ class RFPService:
                 account=_account(line["account_code"]),
                 amount=money(line["amount"]),
                 description=line.get("description", ""),
+                cost_center=line.get("cost_center", ""),
             )
         log_action(rfp, "revised", actor=user)
         return rfp
@@ -529,7 +531,9 @@ class CONSOService:
                 )
                 JournalEntryLine.objects.create(
                     entry=entry, line_no=i, account=line.account,
-                    description=line.description or rfp.particulars, **kwargs,
+                    description=line.description or rfp.particulars,
+                    reference=line.cost_center or "",
+                    **kwargs,
                 )
             entry.recalc_totals()
             # ADR-033: the last RFP approval is the JE approval gate for

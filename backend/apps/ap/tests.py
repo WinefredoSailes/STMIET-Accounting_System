@@ -408,6 +408,33 @@ class TestCONSOPosting:
             assert lines[2].credit == r.amount
             assert lines[2].account.code == "20000"  # AP DHPP
 
+    def test_line_cost_center_survives_posting(self, company, segment, supplier, alywin, accounts):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="headCC", password="x")
+        rfp = RFPService.create_rfp(
+            ap_number="A88831", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00",
+                 "description": "Fuel purchase", "cost_center": "OS — offsite"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00",
+                 "description": "AP", "cost_center": "GEN-FUEL"},
+            ],
+            user=alywin,
+        )
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-CC", conso_date=date(2026, 1, 20))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=head)
+
+        rfp.refresh_from_db()
+        je = rfp.journal_entry
+        assert je is not None
+        assert {l.reference for l in je.lines.all()} == {"OS — offsite", "GEN-FUEL"}
+
     def test_batch_requires_finance_approval(self, company, segment, supplier, rfp_lines, alywin, accounts):
         rfp = RFPService.create_rfp(
             ap_number="A88809", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
