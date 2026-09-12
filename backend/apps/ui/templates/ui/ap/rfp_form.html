@@ -19,8 +19,8 @@
     <div class="p-6 grid grid-cols-1 md:grid-cols-12 gap-4">
       <div class="md:col-span-8">
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee">Payee (NAME)</label>
-        <select name="payee" id="id_payee" required data-searchable data-search-placeholder="Type supplier name or code…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          {% for s in suppliers %}<option value="{{ s.id }}" {% if editing and editing.payee_id == s.id %}selected{% endif %}>{{ s.code }} — {{ s.name }}{% if s.last_ap %} (last AP {{ s.last_ap }}){% endif %}</option>{% endfor %}
+        <select name="payee" id="id_payee" required data-searchable data-search-value="id" data-search-placeholder="Type supplier name or code…" data-search-url="{% url 'ui:supplier_options' %}{% if editing %}?selected={{ editing.payee.code }}{% endif %}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% if editing %}<option value="{{ editing.payee_id }}" selected>{{ editing.payee.code }} — {{ editing.payee.name }}</option>{% else %}<option value="" selected>— select supplier —</option>{% endif %}
         </select>
       </div>
       <div class="md:col-span-2">

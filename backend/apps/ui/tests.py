@@ -161,13 +161,29 @@ class TestEntryWorkflow:
         assert je.is_balanced
         assert je.lines.count() == 2
 
-    def test_post_draft_under_threshold(self, client, company, accounts, fiscal_period, user):
-        je = _draft_entry(entry_no="JE-0002", transaction_date=date(2026, 1, 10),
-                          lines=[("10010", "1000.00"), ("20000", "-1000.00")], user=user)
-        resp = client.post(f"/journal/{je.id}/post/")
+    def test_long_source_fields_clamped_to_column_limits(self, client, company, segment, accounts, fiscal_period):
+        """Free-form JE fields are clamped to model lengths so Postgres never
+        raises StringDataRightTruncation (varchar limits are only enforced on
+        real DB engines, not SQLite — this guarded a production 500)."""
+        long_no = "X" * 80
+        long_desc = "Y" * 600
+        resp = client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "X" * 40,
+            "source_doc_no": long_no,
+            "description": long_desc,
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": [long_desc, "AP"],
+        })
         assert resp.status_code == 302
-        je.refresh_from_db()
-        assert je.is_posted
+        je = JournalEntry.objects.first()
+        assert len(je.source_doc_type) == 16
+        assert len(je.source_doc_no) == 32
+        assert len(je.description) == 500
+        assert all(len(l.description) <= 500 for l in je.lines.all())
 
     def test_post_draft_direct_blocked_now(self, client, company, accounts, fiscal_period, user):
         """Direct draft post should be blocked under new workflow (must submit first)."""
@@ -476,16 +492,16 @@ class TestEntryWorkflow:
                 {"account": accounts["20000"].id, "debit": "0.00", "credit": "1000.00", "description": "AP"},
             ],
         }
-        resp = staff_api.post("/api/posting/entries/", je_data, format="json")
+        resp = staff_api.post("/api/v1/posting/entries/", je_data, format="json")
         assert resp.status_code == 201
         je_id = resp.data["id"]
 
         # Staff tries to post with approve=True
-        resp = staff_api.post(f"/api/posting/entries/{je_id}/post/", {"approve": True}, format="json")
+        resp = staff_api.post(f"/api/v1/posting/entries/{je_id}/post/", {"approve": True}, format="json")
         assert resp.status_code == 422  # or 403
 
         # Head approves and posts
-        resp = head_api.post(f"/api/posting/entries/{je_id}/post/", {"approve": True}, format="json")
+        resp = head_api.post(f"/api/v1/posting/entries/{je_id}/post/", {"approve": True}, format="json")
         assert resp.status_code == 200
         assert resp.data["status"] == "posted"
 
@@ -494,16 +510,6 @@ class TestEntryWorkflow:
         je = _draft_entry(entry_no="JE-0004", transaction_date=date(2026, 1, 10),
                           lines=[("10010", "1000.00"), ("20000", "-1000.00")], user=user)
         PostingService.post(je, user=user)
-        resp = client.post(f"/journal/{je.id}/reverse/")
-        assert resp.status_code == 302
-
-    def test_reverse_redirects_with_message(self, client, company, accounts, fiscal_period, user):
-        je = _draft_entry(entry_no="JE-0004", transaction_date=date(2026, 1, 10),
-                          lines=[("10010", "1000.00"), ("20000", "-1000.00")], user=user)
-        resp = client.post(f"/journal/{je.id}/reverse/")
-        assert resp.status_code == 302
-        je = _draft_entry(entry_no="JE-0004", transaction_date=date(2026, 1, 10),
-                          lines=[("10010", "1000.00"), ("20000", "-1000.00")], user=user)
         resp = client.post(f"/journal/{je.id}/reverse/")
         assert resp.status_code == 302
 
@@ -2846,6 +2852,11 @@ class TestSearchablePickers:
         assert 'name="payee"' in body
         assert "data-searchable" in body
         assert "Type supplier name or code" in body
+        # The payee picker is server-driven like the Account (GL) picker.
+        assert "/foundation/supplier-options/" in body
+        assert 'data-search-value="id"' in body
+        # Nothing pre-rendered; options are fetched as you type.
+        assert "— select supplier —" in body
 
     def test_cv_form_bank_account_combobox(self, client, company, accounts):
         body = client.get("/ap/cv/new/").content.decode()
@@ -2925,6 +2936,41 @@ class TestSearchablePickers:
         rows = resp.json()
         assert rows and rows[0]["code"] == "61100"
         assert rows[0]["id"] == pk
+
+    def test_supplier_options_search_by_code_and_name(self, client, company, segment,
+                                                       accounts):
+        from apps.ap.models import Supplier
+
+        Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment",
+            default_segment=segment,
+        )
+        resp = client.get("/foundation/supplier-options/", {"q": "S001"})
+        assert resp.status_code == 200
+        assert [r["code"] for r in resp.json()] == ["S001"]
+
+        resp = client.get("/foundation/supplier-options/", {"q": "shell"})
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert rows and any("shell" in r["text"].lower() for r in rows)
+
+    def test_supplier_options_selected_accepts_id_or_code(self, client, company, segment,
+                                                           accounts):
+        from apps.ap.models import Supplier
+
+        s = Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment",
+            default_segment=segment,
+        )
+        for selected in (str(s.id), s.code):
+            resp = client.get(
+                "/foundation/supplier-options/",
+                {"q": "zzz-no-match", "selected": selected},
+            )
+            assert resp.status_code == 200
+            rows = resp.json()
+            assert rows and rows[0]["id"] == s.id
+            assert rows[0]["code"] == "S001"
 
     def test_je_submit_with_picked_option_ids(self, client, company, segment, accounts,
                                               fiscal_period):

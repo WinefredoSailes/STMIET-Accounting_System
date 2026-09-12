@@ -5,7 +5,15 @@ from decimal import Decimal, InvalidOperation
 from django import template
 from django.template import Library, Node, TemplateSyntaxError
 
+from apps.core.approvals import get_approval_role
+
 register = Library()
+
+
+@register.filter
+def approval_role_of(user):
+    """Template filter: return the approval role of a user ('' if none)."""
+    return get_approval_role(user)
 
 
 @register.filter

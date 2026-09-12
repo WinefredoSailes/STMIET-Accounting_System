@@ -1,10 +1,10 @@
 {% extends "ui/base.html" %}
-{% load static %}
-{% block title %}New Journal Entry — STMIET Accounting{% endblock %}
+{% load static ui_filters %}
+{% block title %}{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %} — STMIET Accounting{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
-  <h1 class="text-xl font-semibold text-slate-900 mt-1">New Journal Entry</h1>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %}</h1>
   <p class="text-sm text-slate-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
 
   <form method="post" class="mt-6 space-y-5">
@@ -13,12 +13,14 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_date">Date</label>
         <input type="date" name="transaction_date" id="id_transaction_date" required
-               value="{{ today|date:'Y-m-d' }}"
+               value="{{ editing.transaction_date|date:'Y-m-d'|default:today|date:'Y-m-d' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_source_doc_type">Source type</label>
         <input type="text" name="source_doc_type" id="id_source_doc_type" list="source-types"
+               maxlength="16"
+               value="{{ editing.source_doc_type|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
         <datalist id="source-types">
           <option value="AR"><option value="AP"><option value="CV"><option value="PCV">
@@ -28,6 +30,8 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1" for="id_source_doc_no">Source no.</label>
         <input type="text" name="source_doc_no" id="id_source_doc_no"
+               maxlength="32"
+               value="{{ editing.source_doc_no|default:'' }}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
     </div>
@@ -55,6 +59,26 @@
         <tbody id="lines-body" data-line-grid="je"
                data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
                class="divide-y divide-slate-100">
+          {% if editing %}
+          {% for line in editing.lines.all %}
+          <tr>
+            <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">{{ line.line_no }}</td>
+            <td class="px-4 py-2 overflow-hidden">
+              <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" title="{{ line.account.code }} — {{ line.account.name }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                <option value="{{ line.account.id }}" selected>{{ line.account.code }} {{ line.account.name }}</option>
+              </select>
+            </td>
+            <td class="px-4 py-2 overflow-hidden">
+              <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
+            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+          </tr>
+          {% endfor %}
+          {% else %}
           <tr>
             <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">1</td>
             <td class="px-4 py-2 overflow-hidden">
@@ -71,6 +95,7 @@
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
           </tr>
+          {% endif %}
         </tbody>
         <tfoot class="bg-slate-50">
           <tr>
@@ -92,7 +117,7 @@
 
     <div class="flex items-center gap-3">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        Save draft
+        {% if editing %}Save changes{% else %}Save draft{% endif %}
       </button>
       <span id="balance-hint" class="text-sm"></span>
     </div>

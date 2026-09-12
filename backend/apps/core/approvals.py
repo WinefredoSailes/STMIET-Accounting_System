@@ -54,6 +54,12 @@ CV_NEXT_ROLE = {
     "approved": "head",
 }
 
+# Manual Journal Entry approval: staff submits → head approves.
+# COO gate can be added later for >₱100k entries (extend map).
+JE_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 
 # Master-data write permissions (COA, customers, suppliers, bank accounts):
 # the Accounting & Finance Head edits; accounting staff can only add.
@@ -131,10 +137,14 @@ def get_profile(user, create=True):
     return getattr(user, "profile", None)
 
 
-def approval_role_of(user):
+def get_approval_role(user):
     """The single approval role a user holds ("" when unassigned)."""
     profile = get_profile(user, create=False)
     return profile.approval_role if profile else ""
+
+
+# Backward-compatible name for existing callers.
+approval_role_of = get_approval_role
 
 
 def users_with_role(role):
@@ -286,12 +296,40 @@ def cash_short_queue(user_roles):
     return out
 
 
+def je_queue(user_roles):
+    """Manual Journal Entries waiting on `user_roles` (head only)."""
+    if "head" not in user_roles:
+        return []
+    from apps.posting.models import JournalEntry, PostingStatus
+
+    out = []
+    docs = JournalEntry.objects.filter(
+        status=PostingStatus.SUBMITTED
+    ).select_related("company", "segment", "created_by")
+    for je in docs:
+        out.append(
+            {
+                "kind": "je",
+                "role": "head",
+                "doc": je,
+                "number": je.entry_no,
+                "title": je.description or "Journal Entry",
+                "date": je.transaction_date,
+                "amount": je.total_debit,
+                "detail": ("ui:je_detail", je.id),
+                "action": ("ui:je_approve", je.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pending_approval_queue(user):
     """All documents waiting on `user`, oldest first (My Approvals)."""
     role = approval_role_of(user)
     if not role:
         return []
-    queues = rfp_queue({role}) + cv_queue({role}) + cash_short_queue({role})
+    queues = rfp_queue({role}) + cv_queue({role}) + cash_short_queue({role}) + je_queue({role})
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
     return queues
 

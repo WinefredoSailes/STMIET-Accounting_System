@@ -54,7 +54,7 @@
 - [ ] GeneralLedger (account × segment × period, beginning/total Dr/Cr/ending)
 - [ ] Segment validation: JE segment consistency, except consolidating (ADR-011)
 - [ ] Voucher/sequence registry: AR# (YYYY-SEQ), RFP# (A#### + gap tracking), CV#, doc numbers (ACCTG-FOR series)
-- [ ] Approval workflow engine (Draft→Submitted→Approved→Posted→Closed; thresholds — ADR-008/020)
+- [x] Approval workflow engine (Draft→Submitted→Approved→Posted→Closed; thresholds — ADR-008/020) — manual JEs: `je_submit` → `je_approve`/`je_reject` → `je_post` (approved-only), head self-approve, rejection note, JE queue in My Approvals, print; API `post` with `approve=true` is head-only
 - [ ] Trial Balance report (monthly + YTD, per segment) — matches TB workbook structure (12-month pairs)
 - [ ] Fiscal period close (no back-posting to closed periods — rules §17)
 - [ ] Phase tests: FBAR-style entry tests for each POSTING_RULES family (§1-4, §12-13 baselines)

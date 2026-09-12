@@ -53,6 +53,15 @@ class JournalEntry(AuditableModel):
     # from its transaction date by apps.foundation.calendar.cycle_range_for.
     transaction_date = models.DateField(db_index=True)
     status = models.CharField(max_length=16, choices=PostingStatus.choices, default=PostingStatus.DRAFT, db_index=True)
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
     description = models.CharField(max_length=500)
     # References back to the originating document (voucher no., SI no., ...).
     source_doc_type = models.CharField(max_length=16, blank=True)

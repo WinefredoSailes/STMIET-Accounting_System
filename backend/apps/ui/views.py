@@ -20,10 +20,11 @@ from django.db.models import Count, Q, Sum
 from django.http import HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.core.exceptions import AccountingError, ValidationError
-from apps.core.approvals import require_can_create_master, require_can_edit_master
+from apps.core.approvals import get_approval_role, require_can_create_master, require_can_edit_master
 from apps.core.money import approve_threshold, money
 from apps.foundation.models import Account, AccountType, Company, CostCenter, FiscalPeriod, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -142,7 +143,7 @@ def logout_view(request):
 @login_required
 def my_approvals(request):
     from apps.core.approvals import (
-        approval_role_of,
+        get_approval_role,
         group_by_role,
         pending_approval_queue,
         role_assignee,
@@ -150,7 +151,7 @@ def my_approvals(request):
     )
 
     queues = pending_approval_queue(request.user)
-    my_role = approval_role_of(request.user)
+    my_role = get_approval_role(request.user)
     return render(
         request,
         "ui/approvals.html",
@@ -246,8 +247,8 @@ def _create_entry_from_form(request):
     if company is None:
         raise ValueError("No company configured.")
     transaction_date = date.fromisoformat(request.POST["transaction_date"])
-    source_doc_type = request.POST.get("source_doc_type", "").strip()
-    source_doc_no = request.POST.get("source_doc_no", "").strip()
+    source_doc_type = request.POST.get("source_doc_type", "").strip()[:16]
+    source_doc_no = request.POST.get("source_doc_no", "").strip()[:32]
 
     period = (
         FiscalPeriod.objects.filter(
@@ -283,7 +284,7 @@ def _create_entry_from_form(request):
             {
                 "account": account,
                 "segment": line_segment,
-                "description": descs[i] if i < len(descs) else "",
+                "description": (descs[i] if i < len(descs) else "")[:500],
                 "debit": debit,
                 "credit": credit,
             }
@@ -292,10 +293,10 @@ def _create_entry_from_form(request):
         raise ValueError("Add at least one line with an amount.")
 
     header_segment = parsed[0]["segment"]
-    header_description = next((p["description"].strip() for p in parsed if p["description"].strip()), "")
+    header_description = next((p["description"].strip() for p in parsed if p["description"].strip()), "")[:500]
     if not header_description:
         header_description = f"{source_doc_type} {source_doc_no}".strip() or f"Journal entry {transaction_date.isoformat()}"
-    legacy_description = request.POST.get("description", "").strip()
+    legacy_description = request.POST.get("description", "").strip()[:500]
     if legacy_description:
         header_description = legacy_description
 
@@ -359,7 +360,7 @@ def _rfp_lines_from_form(request):
                 "segment": Segment.objects.get(pk=seg_id),
                 "account_code": code,
                 "amount": debit or credit,
-                "description": descs[i] if i < len(descs) else "",
+                "description": (descs[i] if i < len(descs) else "")[:500],
             }
         )
     return lines
@@ -367,7 +368,91 @@ def _rfp_lines_from_form(request):
 
 @login_required
 @require_POST
+def je_submit(request, pk):
+    """Staff submits a draft JE for head approval."""
+    entry = get_object_or_404(JournalEntry, pk=pk)
+    if entry.created_by_id != request.user.id:
+        messages.error(request, "Only the preparer may submit this entry.")
+        return redirect("ui:je_detail", pk=pk)
+    if entry.status != PostingStatus.DRAFT:
+        messages.error(request, "Only draft entries can be submitted.")
+        return redirect("ui:je_detail", pk=pk)
+    if not entry.lines.exists():
+        messages.error(request, "Entry has no lines.")
+        return redirect("ui:je_detail", pk=pk)
+    try:
+        entry.status = PostingStatus.SUBMITTED
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.rejected_by = None
+        entry.rejected_at = None
+        entry.rejection_note = ""
+        entry.save(update_fields=["status", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_note", "updated_at"])
+        from apps.ap.services import log_action
+        log_action(entry, "submitted", actor=request.user)
+        messages.success(request, f"Entry {entry.entry_no} submitted for approval.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:je_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def je_approve(request, pk):
+    """Head approves a submitted JE (head self-approve allowed)."""
+    entry = get_object_or_404(JournalEntry, pk=pk)
+    from apps.core.approvals import require_approval_role
+    try:
+        require_approval_role(request.user, "head")
+        if entry.status != PostingStatus.SUBMITTED:
+            raise ValueError("Only submitted entries can be approved.")
+        entry.status = PostingStatus.APPROVED
+        entry.approved_by = request.user
+        entry.approved_at = timezone.now()
+        entry.rejected_by = None
+        entry.rejected_at = None
+        entry.rejection_note = ""
+        entry.save(update_fields=["status", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_note", "updated_at"])
+        from apps.ap.services import log_action
+        log_action(entry, "approved", actor=request.user)
+        messages.success(request, f"Entry {entry.entry_no} approved.")
+    except (ValueError, AccountingError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:je_detail", pk=pk)
+
+
+@require_POST
+@login_required
+def je_reject(request, pk):
+    """Head rejects a submitted JE, returning it to draft with a note."""
+    entry = get_object_or_404(JournalEntry, pk=pk)
+    from apps.core.approvals import require_approval_role
+    try:
+        require_approval_role(request.user, "head")
+        if entry.status != PostingStatus.SUBMITTED:
+            raise ValueError("Only submitted entries can be rejected.")
+        note = request.POST.get("note", "").strip()
+        if not note:
+            raise ValueError("Rejection note is required.")
+        entry.status = PostingStatus.DRAFT
+        entry.rejected_by = request.user
+        entry.rejected_at = timezone.now()
+        entry.rejection_note = note
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.save(update_fields=["status", "rejected_by", "rejected_at", "rejection_note", "approved_by", "approved_at", "updated_at"])
+        from apps.ap.services import log_action
+        log_action(entry, "rejected", actor=request.user, note=note)
+        messages.success(request, f"Entry {entry.entry_no} rejected and returned to draft.")
+    except (ValueError, AccountingError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:je_detail", pk=pk)
+
+
+@require_POST
+@login_required
 def je_post(request, pk):
+    """Post an approved JE. Only approved entries may be posted."""
     entry = get_object_or_404(JournalEntry, pk=pk)
     from apps.ap.models import CheckVoucher
 
@@ -379,16 +464,147 @@ def je_post(request, pk):
             "voucher — its entry must not be posted manually.",
         )
         return redirect("ui:je_detail", pk=pk)
-    approve = "approve" in request.POST
+    if entry.status != PostingStatus.APPROVED:
+        messages.error(request, "Only approved entries can be posted.")
+        return redirect("ui:je_detail", pk=pk)
     try:
-        if approve:
-            entry.status = PostingStatus.APPROVED
-            entry.save(update_fields=["status", "updated_at"])
-        posted = PostingService.post(entry, approver=request.user)
+        posted = PostingService.post(entry, approver=request.user, user=request.user)
         messages.success(request, f"Entry {posted.entry_no} posted.")
     except AccountingError as exc:
         messages.error(request, str(exc))
     return redirect("ui:je_detail", pk=pk)
+
+
+@login_required
+def je_edit(request, pk):
+    """Creator edits a draft JE (reuses je_form.html)."""
+    entry = get_object_or_404(JournalEntry, pk=pk)
+    if entry.status != PostingStatus.DRAFT:
+        messages.error(request, "Only draft entries can be edited.")
+        return redirect("ui:je_detail", pk=pk)
+    if entry.created_by_id != request.user.id and not request.user.is_superuser:
+        messages.error(request, "Only the creator or a super admin may edit this entry.")
+        return redirect("ui:je_detail", pk=pk)
+    if request.method == "POST":
+        try:
+            updated_entry = _update_entry_from_form(request, entry)
+            messages.success(request, f"Entry {updated_entry.entry_no} updated.")
+            return redirect("ui:je_detail", pk=updated_entry.id)
+        except (AccountingError, ValueError, KeyError) as exc:
+            messages.error(request, str(exc))
+    ctx = {
+        "company": entry.company,
+        "segments": Segment.objects.order_by("code"),
+        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+        "today": entry.transaction_date,
+        "editing": entry,
+    }
+    return render(request, "ui/posting/je_form.html", ctx)
+
+
+@login_required
+def je_print(request, pk):
+    """Print-optimized Journal Entry (RFP 3-signature style)."""
+    from apps.core.approvals import signatory_name
+    entry = get_object_or_404(
+        JournalEntry.objects.select_related("company", "segment", "approved_by")
+            .prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    lines = list(entry.lines.order_by("line_no"))
+    requested_by = signatory_name(entry.created_by)
+    checked_by = signatory_name(entry.approved_by) if entry.approved_by else ""
+    # For approved entries without explicit approved_by, use the head role assignee
+    if not checked_by and entry.status == PostingStatus.APPROVED:
+        from apps.core.approvals import role_assignee
+        checked_by = role_assignee("head")
+    return render(
+        request,
+        "ui/posting/je_print.html",
+        {
+            "entry": entry,
+            "lines": lines,
+            "total": entry.total_debit,
+            "requested_by": requested_by,
+            "checked_by": checked_by,
+            "approved_by": checked_by,  # Same as checked for 3-sig
+        },
+    )
+
+
+def _update_entry_from_form(request, entry):
+    """Update an existing draft JE from form POST (mirrors _create_entry_from_form)."""
+    transaction_date = date.fromisoformat(request.POST["transaction_date"])
+    source_doc_type = request.POST.get("source_doc_type", "").strip()[:16]
+    source_doc_no = request.POST.get("source_doc_no", "").strip()[:32]
+
+    period = (
+        FiscalPeriod.objects.filter(
+            start_date__lte=transaction_date, end_date__gte=transaction_date
+        ).first()
+    )
+
+    accounts = request.POST.getlist("account")
+    seg_ids = request.POST.getlist("line_segment")
+    debits = request.POST.getlist("debit")
+    credits = request.POST.getlist("credit")
+    descs = request.POST.getlist("line_description")
+
+    parsed = []
+    for i, account_id in enumerate(accounts):
+        if not account_id:
+            continue
+        debit = money((debits[i] if i < len(debits) else "") or 0)
+        credit = money((credits[i] if i < len(credits) else "") or 0)
+        if not debit and not credit:
+            continue
+        account = Account.objects.filter(pk=account_id).first()
+        if account is None:
+            raise ValueError("Unknown account in line.")
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        line_segment = Segment.objects.filter(pk=seg_id).first() if seg_id else None
+        if not line_segment:
+            raise ValueError(f"Line {i + 1}: select a segment.")
+        parsed.append(
+            {
+                "account": account,
+                "segment": line_segment,
+                "description": (descs[i] if i < len(descs) else "")[:500],
+                "debit": debit,
+                "credit": credit,
+            }
+        )
+    if not parsed:
+        raise ValueError("Add at least one line with an amount.")
+
+    header_segment = parsed[0]["segment"]
+    header_description = next((p["description"].strip() for p in parsed if p["description"].strip()), "")[:500]
+    if not header_description:
+        header_description = f"{source_doc_type} {source_doc_no}".strip() or f"Journal entry {transaction_date.isoformat()}"
+
+    with transaction.atomic():
+        entry.transaction_date = transaction_date
+        entry.segment = header_segment
+        entry.description = header_description
+        entry.source_doc_type = source_doc_type
+        entry.source_doc_no = source_doc_no
+        entry.fiscal_period = period
+        entry.save(update_fields=["transaction_date", "segment", "description", "source_doc_type", "source_doc_no", "fiscal_period", "updated_at"])
+
+        # Delete existing lines and recreate
+        entry.lines.all().delete()
+        for i, p in enumerate(parsed, start=1):
+            JournalEntryLine.objects.create(
+                entry=entry,
+                line_no=i,
+                account=p["account"],
+                segment=p["segment"],
+                description=p["description"],
+                debit=p["debit"],
+                credit=p["credit"],
+            )
+        entry.recalc_totals()
+    return entry
 
 
 @login_required
@@ -995,7 +1211,6 @@ def rfp_create(request):
         request,
         "ui/ap/rfp_form.html",
         {
-            "suppliers": list_suppliers(),
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
         },
@@ -1206,7 +1421,7 @@ def rfp_revise(request, pk):
     from apps.ap.services import RFPService
 
     rfp = get_object_or_404(
-        RFPDocument.objects.prefetch_related("lines"), pk=pk
+        RFPDocument.objects.select_related("payee").prefetch_related("lines"), pk=pk
     )
     if request.user.id != rfp.created_by_id:
         messages.error(request, "Only the preparer may revise this RFP.")
@@ -1233,7 +1448,6 @@ def rfp_revise(request, pk):
         "ui/ap/rfp_form.html",
         {
             "editing": rfp,
-            "suppliers": list_suppliers(),
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
         },
@@ -1778,7 +1992,7 @@ def pcf_replenish(request):
                         "account_code": Account.objects.get(code=acc_id).code,
                         "side": "dr" if debit else "cr",
                         "amount": str(debit or credit),
-                        "description": descs[i] if i < len(descs) else "",
+                        "description": (descs[i] if i < len(descs) else "")[:500],
                         "segment": segments[i] if i < len(segments) else "",
                         "cost_center": cost_centers[i] if i < len(cost_centers) else "",
                     }
@@ -2238,6 +2452,38 @@ def account_options(request):
         if selected.isdigit():
             lookup |= Q(pk=selected)
         keep = Account.objects.filter(lookup, is_postable=True).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {"id": a.id, "code": a.code, "text": f"{a.code} — {a.name}"}
+            for a in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
+def supplier_options(request):
+    """Type-ahead source for searchable supplier/payee pickers (server-side).
+
+    Returns the first ~30 active suppliers matching the query by code or name,
+    plus the currently-selected supplier (when editing) so the picker keeps a
+    stable selection. ``?selected=`` accepts a supplier code or id.
+    """
+    from apps.ap.models import Supplier
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    qs = Supplier.objects.order_by("code")
+    if q:
+        qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    rows = list(qs[:30])
+    if selected and selected not in {s.code for s in rows}:
+        lookup = Q(code=selected)
+        if selected.isdigit():
+            lookup |= Q(pk=selected)
+        keep = Supplier.objects.filter(lookup).first()
         if keep:
             rows.insert(0, keep)
     return JsonResponse(
