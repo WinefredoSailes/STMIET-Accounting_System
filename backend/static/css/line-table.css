@@ -11,8 +11,17 @@
  * base.html so it works regardless of the CSS build.
  *
  * Usage on a grid:
- *   <table class="line-table w-full text-sm" style="min-width: 1230px">
- *     <colgroup> ... one <col> per column with the fixed px width ... </colgroup>
+ *   <table class="line-table w-full text-sm" style="min-width: <col sum>px">
+ *     <colgroup> ... one <col> per column with the FIXED px width ... </colgroup>
+ *
+ * House column standard - every line grid uses the SAME width for a given
+ * header, so the tables share one visual rhythm:
+ *   #/remove ............ 40   SEGMENT/COST CENTER .. 90
+ *   TIN ............... 180   BUSINESS NAME ....... 250
+ *   ACCOUNT (GL) ...... 280   DESCRIPTION / PURPOSE-OF-PAYMENT 350
+ *   DEBIT/CREDIT ...... 170 each
+ * Current grids (min-width = col sum): PCV form 1620, PCV detail 1580,
+ * JE form/detail 1100, RFP form/detail 1190, CV form/detail 1150.
  *
  * With table-layout:fixed the <colgroup> is the ONLY thing that decides
  * column widths — never content — so short vs long names keep the exact same
