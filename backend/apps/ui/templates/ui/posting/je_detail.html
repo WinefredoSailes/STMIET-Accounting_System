@@ -30,8 +30,8 @@
     <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post</button>
   </form>
   {% endif %}
+<a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
   {% if not entry.is_posted %}
-  <a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
   <form method="post" action="{% url 'ui:je_reverse' entry.id %}" class="inline">
     {% csrf_token %}
     <button type="submit" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reverse</button>
