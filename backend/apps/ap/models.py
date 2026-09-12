@@ -181,7 +181,7 @@ class RFPLine(models.Model):
     description = models.CharField(max_length=255, blank=True)
     # Cost center / ref. lives per-line (ADR-038 §8), not on the RFP header:
     # e.g. "OS — offsite", "GEN-FUEL".
-    cost_center = models.CharField("Coscenter/ref", max_length=COST_CENTER_MAX_LENGTH, blank=True)
+    cost_center = models.CharField("Cost Center/Ref", max_length=COST_CENTER_MAX_LENGTH, blank=True)
 
     class Meta:
         ordering = ["rfp", "line_no"]

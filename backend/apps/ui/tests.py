@@ -163,7 +163,7 @@ class TestBrandingRemoval:
         body = client.get("/ap/rfps/new/").content.decode()
         assert 'name="line_description" data-autogrow rows="1"' in body
         assert 'name="line_cost_center"' in body
-        assert 'Coscenter/ref' in body
+        assert 'Cost Center/Ref' in body
         assert 'must be here' not in body
         assert 'id_purpose' not in body
 

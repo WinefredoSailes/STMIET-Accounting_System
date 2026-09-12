@@ -210,13 +210,13 @@ class PCFReplenishment(AuditableModel):
     # ACCTG-FOR-002 voucher number (ADR-032, per company/year: PCV-2026-0001).
     voucher_no = models.CharField(max_length=32, blank=True, db_index=True)
     # ACCTG-FOR-002 cost centre / reference (ADR-032, matching the RFP
-    # "Coscenter/ref" concept — the same display value, kept in sync via
+    # "Cost Center/Ref" concept — the same display value, kept in sync via
     # COST_CENTER_MAX_LENGTH).
     cost_center = models.CharField(
-        "Cost center / ref",
+        "Cost Center/Ref",
         max_length=COST_CENTER_MAX_LENGTH,
         blank=True,
-        help_text="e.g. OS, GEN-FUEL – shown at top of the form and on prints.",
+        help_text="e.g. OS, GEN-FUEL",
     )
     # Expense breakdown from liquidation receipts
     expenses = models.JSONField(default=list)  # [{account_code, amount, description}]
