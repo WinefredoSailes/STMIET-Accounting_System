@@ -37,7 +37,6 @@ from .models import (
     SupplierContact,
 )
 
-RFP_MIN_AMOUNT = Decimal("2000.00")
 CNR_ESCALATION_THRESHOLD = Decimal("100000.00")
 
 
@@ -185,11 +184,6 @@ class RFPService:
             raise ValidationError(
                 f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
-        if dr_total < RFP_MIN_AMOUNT:
-            raise ValidationError(
-                f"Amount {dr_total} is below the RFP threshold {RFP_MIN_AMOUNT}; use the petty cash voucher."
-            )
-
         particulars = lines[0].get("description", "") if lines else ""
         rfp = RFPDocument.objects.create(
             ap_number=ap_number,
@@ -413,11 +407,6 @@ class RFPService:
             raise ValidationError(
                 f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
-        if dr_total < RFP_MIN_AMOUNT:
-            raise ValidationError(
-                f"Amount {dr_total} is below the RFP threshold {RFP_MIN_AMOUNT}; use the petty cash voucher."
-            )
-
         rfp.lines.all().delete()
         rfp.amount = dr_total
         rfp.particulars = lines[0].get("description", "") if lines else ""
