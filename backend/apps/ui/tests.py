@@ -1973,14 +1973,26 @@ class TestPCFReplenishmentScreen:
             company=company,
         )
 
+    @pytest.fixture
+    def supplier(self, db, company, segment):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S001",
+            name="Adriano Fuel Station",
+            supplier_type="fuel",
+            tin="111-222-333-000",
+            default_segment=segment,
+        )
+
     def test_replenish_creates(self, client, company, segment, accounts, fiscal_period,
-                               user, fund):
+                               user, fund, supplier):
         resp = client.post("/cash/pcf/replenish/", {
             "fund": fund.id,
             "payee_name": "ADRIANO SILVA",
             "request_date": "2026-01-15",
             "reference": "OR-1234",
-            "customer_name": "DHPP Fleet",
+            "exp_supplier": [supplier.id],
             "exp_account": [accounts["61100"].code],
             "exp_segment": [segment.code],
             "exp_cost_center": ["OS"],
@@ -1997,8 +2009,51 @@ class TestPCFReplenishmentScreen:
         assert replen.status == "requested"
         assert replen.expenses[0]["account_code"] == "61100"
         assert replen.expenses[0]["side"] == "dr"
-        assert replen.customer_name == "DHPP Fleet"
+        assert replen.expenses[0]["business_name"] == "Adriano Fuel Station"
+        assert replen.expenses[0]["tin"] == "111-222-333-000"
+        assert replen.customer_name == ""
         assert replen.requested_by == user
+        assert replen.voucher_no.startswith(f"PCV-{date.today().year}-")
+
+    def test_replenish_requires_supplier(self, client, company, segment, accounts,
+                                         fiscal_period, user, fund):
+        resp = client.post("/cash/pcf/replenish/", {
+            "fund": fund.id,
+            "exp_account": [accounts["61100"].code],
+            "exp_segment": [segment.code],
+            "exp_cost_center": ["OS"],
+            "exp_debit": ["850.00"],
+            "exp_credit": [""],
+            "exp_description": ["PTO cable for MAW7645"],
+        })
+        assert resp.status_code == 200
+        assert "select a supplier" in resp.content.decode()
+        from apps.cash.models import PCFReplenishment
+
+        assert PCFReplenishment.objects.count() == 0
+
+    def test_replenish_fund_list_limited_to_custodian(self, client, company, segment,
+                                                      accounts, fiscal_period, user, fund):
+        from django.contrib.auth import get_user_model
+
+        from apps.cash.models import PettyCashFund
+        from apps.foundation.models import UserProfile
+
+        other = get_user_model().objects.create_user(username="other", password="x")
+        UserProfile.objects.create(user=other, approval_role="staff")
+        PettyCashFund.objects.create(
+            fund_code="otherfund",
+            name="PCF-Other",
+            custodian=other,
+            imprest_amount=Decimal("10000.00"),
+            gl_account=accounts["10110"],
+            company=company,
+        )
+        resp = client.get("/cash/pcf/replenish/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "PCF-General" in body
+        assert "PCF-Other" not in body
 
     def test_replenish_rejects_mixed_dr_cr_row(self, client, company, segment, accounts,
                                                fiscal_period, user, fund):
@@ -2020,18 +2075,20 @@ class TestPCFReplenishmentScreen:
 
         assert PCFReplenishment.objects.count() == 0
 
-    def test_replenish_form_shows_account_name(self, client, company, segment, accounts,
-                                               fiscal_period, user, fund):
+    def test_replenish_form_has_supplier_picker(self, client, company, segment, accounts,
+                                                fiscal_period, user, fund):
         resp = client.get("/cash/pcf/replenish/")
         assert resp.status_code == 200
         body = resp.content.decode()
         assert 'name="exp_account"' in body
         assert 'data-search-url' in body          # server-driven COA picker
-        assert "CUSTOMER / CLIENT" in body
+        assert 'name="exp_supplier"' in body      # supplier picker per line
+        assert "BUSINESS NAME" in body
+        assert "CUSTOMER / CLIENT" not in body    # customer field removed (ADR-032)
         assert "REQUESTED BY" in body
 
     def test_replenishment_post(self, client, company, segment, accounts, fiscal_period,
-                                user, fund):
+                                user, fund, role_users):
         from apps.cash.models import PCFReplenishment
         from apps.cash.services import PCFService
 
@@ -2040,14 +2097,38 @@ class TestPCFReplenishmentScreen:
             [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
             user=user,
         )
+        assert replen.voucher_no.startswith(f"PCV-{date.today().year}-")
+        client.force_login(role_users["head"])
         resp = client.post(f"/cash/pcf/replenishments/{replen.id}/post/")
         replen.refresh_from_db()
         assert replen.status == "posted"
         assert replen.journal_entry_id
         assert replen.journal_entry.is_posted
 
+    def test_staff_cannot_approve_or_post(self, client, company, segment, accounts,
+                                          fiscal_period, user, fund, role_users):
+        """Head-only gate (same flow as RFP): staff sees a loud error and the
+        voucher does not move."""
+        from apps.cash.services import PCFService
+
+        replen = PCFService.request_replenishment(
+            fund,
+            [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
+            user=user,
+        )
+        client.force_login(role_users["staff"])
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/post/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+
     def test_replenishment_approve_then_conso_posts(self, client, company, segment,
-                                                    accounts, fiscal_period, user, fund):
+                                                    accounts, fiscal_period, user, fund,
+                                                    role_users):
         from apps.cash.models import PCFReplenishment
         from apps.cash.services import PCFService
 
@@ -2056,12 +2137,15 @@ class TestPCFReplenishmentScreen:
             [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
             user=user,
         )
+        assert replen.voucher_no.startswith(f"PCV-{date.today().year}-")
+        head = role_users["head"]
+        client.force_login(head)
         resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
         assert resp.status_code == 302
         replen.refresh_from_db()
         assert replen.status == "approved"
         assert replen.conso_id
-        assert replen.approved_by == user
+        assert replen.approved_by == head
 
         # Batch posts the PCF JE through CONSO (no manual re-entry).
         resp = client.post(f"/ap/conso/{replen.conso_id}/post/")
@@ -2086,6 +2170,8 @@ class TestPCFReplenishmentScreen:
         body = resp.content.decode()
         assert "PETTY CASH VOUCHER" in body
         assert "ACCTG-FOR-002" in body
+        assert replen.voucher_no in body
+        assert "BUSINESS NAME" in body
         assert "850.00" in body
         assert "ENTITY" not in body
         assert "STMIET" not in body
@@ -2096,7 +2182,8 @@ class TestPCFReplenishmentScreen:
 
         replen = PCFService.request_replenishment(
             fund,
-            [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
+            [{"account_code": "61100", "amount": "850.00", "description": "Cable",
+              "business_name": "Adriano Fuel Station", "tin": "111-222-333-000"}],
             user=user,
         )
         replen.payee_name = "Josefina P. Ogabang"
@@ -2106,10 +2193,13 @@ class TestPCFReplenishmentScreen:
         assert resp.status_code == 200
         body = resp.content.decode()
         assert "PETTY CASH REPLENISHMENT" in body
+        assert replen.voucher_no in body
         assert "BUSINESS SEGMENT" in body      # workbook column header
         assert "Controllability" in body       # workbook column header
         assert "Josefina P. Ogabang" in body
         assert "PCV 09-03-2026" in body
+        assert "Adriano Fuel Station" in body  # Vendor/Customer column
+        assert "111-222-333-000" in body       # TIN column
         assert "Cable" in body                 # REMARKS
         assert "61100" in body                 # COA column
         assert "850.00" in body                # Dr. column

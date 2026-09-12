@@ -52,7 +52,7 @@ class PettyCashFundSerializer(serializers.ModelSerializer):
 class PCFReplenishmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PCFReplenishment
-        fields = ("id", "fund", "request_date", "amount", "expenses", "journal_entry", "status")
+        fields = ("id", "voucher_no", "fund", "request_date", "amount", "payee_name", "reference", "cost_center", "expenses", "journal_entry", "status")
 
 
 class InterAccountTransferSerializer(serializers.ModelSerializer):

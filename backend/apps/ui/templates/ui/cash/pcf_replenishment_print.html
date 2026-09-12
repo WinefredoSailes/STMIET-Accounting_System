@@ -1,26 +1,26 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}PCF Replenishment {{ replen.id }} — Print{% endblock %}
+{% block title %}PCF Replenishment {{ replen.voucher_no|default:replen.id }} — Print{% endblock %}
 {% block content %}
 <style>
   @page { size: A4 landscape; margin: 8mm; }
 </style>
 <div class="py-6 px-4 bg-white">
   <div class="mx-0">
-    <div class="text-center mb-4">
-      <div class="text-xl font-bold tracking-wide">PETTY CASH REPLENISHMENT</div>
-      <div class="text-xs text-slate-600 mt-1">
-        {{ fund_label }} · Custodian: {{ custodian_label }}
-        · {{ replen.request_date|date:"M d, Y" }} · Total ₱{{ total|money }}
+<div class="text-center mb-4">
+        <div class="text-xl font-bold tracking-wide">PETTY CASH REPLENISHMENT</div>
+        <div class="text-xs text-slate-600 mt-1">
+          {{ fund_label }} · Custodian: {{ custodian_label }}
+          · {{ replen.request_date|date:"M d, Y" }} · Total ₱{{ total|money }}
+          {% if replen.voucher_no %} · Voucher: <span class="font-mono">{{ replen.voucher_no }}</span>{% endif %}
+        </div>
+        {% if replen.payee_name or replen.reference %}
+        <div class="text-xs text-slate-600">
+          {% if replen.payee_name %}Payee: {{ replen.payee_name }}{% endif %}
+          {% if replen.reference %} · Ref: {{ replen.reference }}{% endif %}
+        </div>
+        {% endif %}
       </div>
-      {% if replen.payee_name or replen.reference or replen.customer_name %}
-      <div class="text-xs text-slate-600">
-        {% if replen.payee_name %}Payee: {{ replen.payee_name }}{% endif %}
-        {% if replen.reference %} · Ref: {{ replen.reference }}{% endif %}
-        {% if replen.customer_name %} · Customer: {{ replen.customer_name }}{% endif %}
-      </div>
-      {% endif %}
-    </div>
 
     <table class="w-full border-collapse text-[10px]">
       <thead>
@@ -55,9 +55,9 @@
         <tr>
           <td class="border border-slate-500 px-1 py-1"></td>
           <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.business_name }}</td>
           <td class="border border-slate-500 px-1 py-1"></td>
-          <td class="border border-slate-500 px-1 py-1"></td>
-          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.tin }}</td>
           <td class="border border-slate-500 px-1 py-1"></td>
           <td class="border border-slate-500 px-1 py-1">{{ row.remarks }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.segment|default:fund_label }}</td>

@@ -46,6 +46,15 @@
     var src = grid.querySelector('tr');
     var row = src.cloneNode(true);
     row.querySelectorAll('input, textarea').forEach(function (i) { i.value = ''; i.removeAttribute('title'); if (i.tagName === 'TEXTAREA') i.style.height = 'auto'; });
+    // Async pickers (searchable + data-search-url) must start blank on cloned
+    // rows: their options were fetched for the source row and the picked value
+    // would silently duplicate otherwise.
+    row.querySelectorAll('select[data-search-url]').forEach(function (s) {
+      var blank = s.querySelector('option[value=""]');
+      s.innerHTML = '';
+      if (blank) s.appendChild(blank);
+      s.selectedIndex = 0;
+    });
     if (resetSelects) {
       row.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
     }
@@ -108,6 +117,8 @@
     });
     var total = docSel(grid.dataset.total);
     if (total) total.textContent = fmtMoney(t);
+    var sync = docSel(grid.dataset.totalSync);
+    if (sync) sync.textContent = fmtMoney(t);
   }
 
   function initGrid(grid) {

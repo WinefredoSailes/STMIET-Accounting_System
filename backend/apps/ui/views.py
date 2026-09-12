@@ -1979,6 +1979,7 @@ def pcf_list(request):
 
 @login_required
 def pcf_replenish(request):
+    from apps.ap.models import Supplier
     from apps.cash.models import PettyCashFund
     from apps.cash.services import PCFService
 
@@ -1992,6 +1993,7 @@ def pcf_replenish(request):
             credits = request.POST.getlist("exp_credit")
             descs = request.POST.getlist("exp_description")
             cost_centers = request.POST.getlist("exp_cost_center")
+            suppliers = request.POST.getlist("exp_supplier")
             for i, acc_id in enumerate(accounts):
                 if not acc_id:
                     continue
@@ -2003,6 +2005,12 @@ def pcf_replenish(request):
                     raise ValidationError(
                         f"Line {i + 1}: enter the amount in only one of Debit or Credit."
                     )
+                supplier = None
+                supplier_id = suppliers[i] if i < len(suppliers) else ""
+                if supplier_id:
+                    supplier = Supplier.objects.filter(pk=supplier_id).first()
+                if supplier is None:
+                    raise ValidationError(f"Line {i + 1}: select a supplier (Business name).")
                 expenses.append(
                     {
                         "account_code": Account.objects.get(code=acc_id).code,
@@ -2010,7 +2018,10 @@ def pcf_replenish(request):
                         "amount": str(debit or credit),
                         "description": (descs[i] if i < len(descs) else "")[:500],
                         "segment": segments[i] if i < len(segments) else "",
-                        "cost_center": cost_centers[i] if i < len(cost_centers) else "",
+                        "cost_center": (cost_centers[i] if i < len(cost_centers) else "")[:64],
+                        "supplier_id": supplier.pk,
+                        "business_name": supplier.name,
+                        "tin": supplier.tin,
                     }
                 )
             if not expenses:
@@ -2022,11 +2033,10 @@ def pcf_replenish(request):
             )
             replen.payee_name = request.POST.get("payee_name", "")
             replen.reference = request.POST.get("reference", "")
-            replen.customer_name = request.POST.get("customer_name", "")
             if request.POST.get("request_date"):
                 replen.request_date = date.fromisoformat(request.POST["request_date"])
-            replen.save(update_fields=["payee_name", "reference", "customer_name", "request_date", "updated_at"])
-            messages.success(request, f"PCF replenishment {replen.id} requested (₱{replen.amount}).")
+            replen.save(update_fields=["payee_name", "reference", "request_date", "updated_at"])
+            messages.success(request, f"PCF replenishment {replen.voucher_no} requested (₱{replen.amount}).")
             return redirect("ui:pcf_replenishment_list")
         except (AccountingError, ValueError, KeyError) as exc:
             messages.error(request, str(exc))
@@ -2034,7 +2044,9 @@ def pcf_replenish(request):
         request,
         "ui/cash/pcf_replenish_form.html",
         {
-            "funds": list_pcf_funds(),
+            "funds": PettyCashFund.objects.filter(
+                custodian=request.user, is_active=True
+            ).select_related("gl_account", "company", "custodian").order_by("fund_code"),
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
@@ -2062,8 +2074,8 @@ def pcf_replenishment_detail(request, pk):
 @login_required
 def pcf_replenishment_print(request, pk):
     """Print-optimized Petty Cash Replenishment report (landscape) matching the
-    PETTY CASH REPLENISHMENT.xlsx columns. Columns the app does not capture
-    yet (Type, DATE, Vendor/Customer, REF., TIN, Address, VAT, AP NO) print blank."""
+    PETTY CASH REPLENISHMENT.xlsx columns. Columns the app does not capture yet
+    (Type, DATE, REF., Address, VAT, AP NO) print blank."""
     from apps.cash.models import PCFReplenishment
     from apps.foundation.models import Account
 
@@ -2084,6 +2096,8 @@ def pcf_replenishment_print(request, pk):
                 "segment": exp.get("segment", ""),
                 "cost_center": exp.get("cost_center", ""),
                 "remarks": exp.get("description", ""),
+                "business_name": exp.get("business_name", ""),
+                "tin": exp.get("tin", ""),
                 "classification": acct.classification if acct else "",
                 "category": acct.category if acct else "",
                 "sub_accounts": acct.sub_accounts if acct else "",
@@ -2112,11 +2126,15 @@ def pcf_replenishment_print(request, pk):
 @login_required
 @require_POST
 def pcf_replenishment_post(request, pk):
+    """Post the head-approved voucher to the GL. Same gate as RFP/CV steps:
+    only the Accounting & Finance Head may post (ADR-032)."""
     from apps.cash.models import PCFReplenishment
     from apps.cash.services import PCFService
+    from apps.core.approvals import require_approval_role
 
     replen = get_object_or_404(PCFReplenishment, pk=pk)
     try:
+        require_approval_role(request.user, "head")
         PCFService.post_replenishment(replen, user=request.user)
         messages.success(request, f"Replenishment {replen.id} posted to GL.")
     except (AccountingError, ValueError) as exc:
@@ -2128,12 +2146,15 @@ def pcf_replenishment_post(request, pk):
 @require_POST
 def pcf_replenishment_approve(request, pk):
     """Approve a PCF replenishment; this auto-creates its CONSO batch entry
-    (ADR-038 §7c). The JE posts when the CONSO batch is posted."""
+    (ADR-038 §7c). The JE posts when the CONSO batch is posted. Head-only,
+    mirroring the RFP approval step."""
     from apps.cash.models import PCFReplenishment
     from apps.cash.services import PCFService
+    from apps.core.approvals import require_approval_role
 
     replen = get_object_or_404(PCFReplenishment, pk=pk)
     try:
+        require_approval_role(request.user, "head")
         PCFService.approve_replenishment(replen, user=request.user)
         messages.success(request, f"Replenishment {replen.id} approved and batched to {replen.conso.batch_no}.")
     except (AccountingError, ValueError) as exc:
@@ -2504,7 +2525,12 @@ def supplier_options(request):
             rows.insert(0, keep)
     return JsonResponse(
         [
-            {"id": a.id, "code": a.code, "text": f"{a.code} — {a.name}"}
+            {
+                "id": a.id,
+                "code": a.code,
+                "text": f"{a.code} — {a.name}",
+                "tin": a.tin,
+            }
             for a in rows
         ],
         safe=False,

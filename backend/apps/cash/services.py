@@ -229,9 +229,22 @@ class PCFService:
         Each expense may carry an optional ``side`` ("dr"/"cr", default "dr")
         so the posting JE places the amount on the right side — the JSON API
         stays backward-compatible without it.
+
+        The voucher number is allocated from the per-company/per-year PCV
+        sequence (ADR-032) so PCVs never collide with JE/RFP/CV/CONSO numbers.
         """
+        from django.utils.timezone import localdate
+
+        from apps.sequences.models import DocumentSequence
+
         expenses = [dict(e, side=str(e.get("side", "dr")).lower()) for e in expenses]
         total = sum(money(e["amount"]) for e in expenses)
+        voucher_no = DocumentSequence.next_number(
+            company=fund.company,
+            form_code="PCV",
+            year=localdate().year,
+            pattern="PCV-{YYYY}-{SEQ:04d}",
+        )
         return PCFReplenishment.objects.create(
             fund=fund,
             request_date=date.today(),
@@ -239,6 +252,7 @@ class PCFService:
             expenses=expenses,
             status="requested",
             requested_by=user,
+            voucher_no=voucher_no,
         )
 
     @classmethod

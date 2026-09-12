@@ -14,14 +14,13 @@
     </div>
   </div>
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <table class="w-full text-sm min-w-[820px]">
+    <table class="w-full text-sm min-w-[900px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3">ID</th>
+          <th class="px-4 py-3">Voucher No.</th>
           <th class="px-4 py-3">Date</th>
           <th class="px-4 py-3">Fund</th>
           <th class="px-4 py-3">Payee</th>
-          <th class="px-4 py-3">Customer</th>
           <th class="px-4 py-3">Requested By</th>
           <th class="px-4 py-3">Reference</th>
           <th class="px-4 py-3 text-right">Amount</th>
@@ -32,12 +31,11 @@
         {% for r in page_obj %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2 font-mono text-xs">
-            <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">PCF-{{ r.id }}</a>
+            <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{% if r.voucher_no %}{{ r.voucher_no }}{% else %}PCF-{{ r.id }}{% endif %}</a>
           </td>
           <td class="px-4 py-2">{{ r.request_date|date:"M d, Y" }}</td>
           <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
           <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
-          <td class="px-4 py-2 text-xs">{{ r.customer_name|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{% if r.requested_by %}{{ r.requested_by.get_full_name|default:r.requested_by.username }}{% else %}—{% endif %}</td>
           <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
           <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|money }}</td>
@@ -50,7 +48,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No replenishments yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No replenishments yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -23,45 +23,58 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="md:col-span-2">
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_fund">FUND</label>
-            <select name="fund" id="id_fund" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <select name="fund" id="id_fund" required
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
               {% for fund in funds %}
               <option value="{{ fund.id }}">{{ fund.fund_code }} — {{ fund.name }} — {% if fund.custodian %}{{ fund.custodian.get_full_name|default:fund.custodian.username }}{% else %}No custodian{% endif %} (₱{{ fund.imprest_amount|money }})</option>
               {% endfor %}
             </select>
+            {% if not funds %}
+            <p class="mt-1 text-xs text-amber-600">You are not a custodian of any active petty cash fund. Ask an
+              administrator to assign you as custodian before requesting a replenishment.</p>
+            {% endif %}
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payee_name">NAME</label>
             <input type="text" name="payee_name" id="id_payee_name" maxlength="255"
-                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_request_date">DATE OF REQUEST</label>
             <input type="date" name="request_date" id="id_request_date" required value="{{ today|date:'Y-m-d' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_reference">REFERENCE</label>
             <input type="text" name="reference" id="id_reference" maxlength="64" placeholder="e.g. OR no. / PO no."
-                   class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1" for="id_customer_name">CUSTOMER / CLIENT</label>
-            <input type="text" name="customer_name" id="id_customer_name" maxlength="255"
-                   placeholder="e.g. DHPP Fleet" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">REQUESTED BY</label>
             <input type="text" value="{{ request.user.get_full_name|default:request.user.username }}" readonly
-                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+              class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
           </div>
         </div>
       </fieldset>
 
       <fieldset>
         <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium mb-2">Distribution Charges</legend>
-        <table class="w-full text-sm min-w-[820px]" id="exp-table">
+        <table class="line-table w-full text-sm" style="min-width: 1560px;" id="exp-table">
+          <colgroup>
+            <col style="width: 350px;"><!-- BUSINESS NAME -->
+            <col style="width: 140px;"><!-- TIN -->
+            <col style="width: 300px;"><!-- PURPOSE OF PAYMENT -->
+            <col style="width: 90px;"><!-- SEGMENT -->
+            <col style="width: 90px;"><!-- COST CENTER -->
+            <col style="width: 250px;"><!-- GL ACCOUNT -->
+            <col style="width: 150px;"><!-- DEBIT -->
+            <col style="width: 150px;"><!-- CREDIT -->
+            <col style="width: 40px;"><!-- remove -->
+          </colgroup>
           <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
+              <th class="px-3 py-2">BUSINESS NAME</th>
+              <th class="px-3 py-2">TIN</th>
               <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
               <th class="px-3 py-2">SEGMENT</th>
               <th class="px-3 py-2">COST CENTER</th>
@@ -71,58 +84,102 @@
               <th class="px-3 py-2"></th>
             </tr>
           </thead>
-          <tbody data-line-grid="pcv" data-total="#pcv-total" class="divide-y divide-slate-100">
-            <tr>
-              <td class="px-1 py-2"><textarea name="exp_description" data-autogrow rows="1" placeholder="PTO cable for MAW7645" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
+          <tbody data-line-grid="pcv" data-total="#pcv-total" data-total-sync="#liq-exp-total"
+            class="divide-y divide-slate-100">
+            <tr data-line-row>
+              <td class="px-1 py-2 overflow-hidden">
+                <select name="exp_supplier" data-searchable data-search-compact data-search-value="id"
+                  data-search-placeholder="Search supplier…" data-search-url="{% url 'ui:supplier_options' %}" required
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="" selected>— select —</option>
+                </select>
+              </td>
+              <td class="px-1 py-2">
+                <input type="text" name="exp_tin" maxlength="32" placeholder="—" readonly tabindex="-1"
+                  class="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs">
+              </td>
+              <td class="px-1 py-2"><textarea name="exp_description" data-autogrow rows="1"
+                  placeholder="PTO cable for MAW7645"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
               <td class="px-1 py-2">
                 <select name="exp_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   {% for seg in segments %}<option value="{{ seg.code }}">{{ seg.code }}</option>{% endfor %}
                 </select>
               </td>
               <td class="px-1 py-2">
-                <select name="exp_cost_center" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs" title="Cost center">
-                  {% for cc in cost_centers %}<option value="{{ cc.code }}" {% if cc.code == 'OS' %}selected{% endif %} title="{{ cc.name }}">{{ cc.code }}</option>{% endfor %}
-                </select>
+                <input type="text" name="exp_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS, GEN-FUEL"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
               </td>
               <td class="px-1 py-2">
-                <select name="exp_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <select name="exp_account" data-searchable data-search-compact
+                  data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   <option value="" selected>— select —</option>
                 </select>
               </td>
-              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="exp_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
-              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="exp_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
-              <td class="px-1 py-2"><button type="button" data-remove-row class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount
+                  pattern="[0-9,]*[.]?[0-9]*" name="exp_debit"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr">
+              </td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount
+                  pattern="[0-9,]*[.]?[0-9]*" name="exp_credit"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr">
+              </td>
+              <td class="px-1 py-2"><button type="button" data-remove-row
+                  class="text-xs text-slate-400 hover:text-red-600">✕</button></td>
             </tr>
           </tbody>
           <tfoot class="bg-slate-50">
             <tr>
-              <td colspan="6" class="px-3 py-2">
-                <button type="button" data-add-row class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ Add line</button>
+              <td colspan="7" class="px-3 py-2">
+                <button type="button" data-add-row class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+
+                  Add line</button>
               </td>
             </tr>
             <tr class="font-semibold">
-              <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td colspan="7" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
               <td class="px-3 py-2 text-right tabular-nums" id="pcv-total">0.00</td>
               <td></td>
             </tr>
           </tfoot>
         </table>
+        <datalist id="cost_center_options">
+          {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+        </datalist>
       </fieldset>
 
-      <p class="text-xs text-slate-500">Enter each line's amount in either the Debit or the Credit column — not both.</p>
+      <p class="text-xs text-slate-500">Enter each line's amount in either the Debit or the Credit column — not both.
+      </p>
 
-      <p class="text-xs text-slate-500 mt-1">Petty cash voucher shall be submitted with sufficient supporting documents. Failure to do so shall constitute neglect by the requester and/or the department.</p>
+      <p class="text-xs text-slate-500 mt-1">Petty cash voucher shall be submitted with sufficient supporting documents.
+        Failure to do so shall constitute neglect by the requester and/or the department.</p>
 
       <div class="grid grid-cols-5 gap-2 text-center text-xs">
-        <div class="border-t border-slate-300 pt-2"><div class="font-medium">Print Name/Sign/Date</div><div class="text-slate-500">REQUESTED BY</div></div>
-        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">APPROVING OFFICERS · DEPARTMENT HEAD</div></div>
-        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">APPROVING OFFICERS · COO</div></div>
-        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">TOTAL LIQUIDATED EXPENSES</div></div>
-        <div class="border-t border-slate-300 pt-2"><div class="font-medium">—</div><div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div></div>
+        <div class="border-t border-slate-300 pt-2">
+          <div class="font-medium">{{ request.user.get_full_name|default:request.user.username }}</div>
+          <div class="text-slate-500">REQUESTED BY</div>
+        </div>
+        <div class="border-t border-slate-300 pt-2">
+          <div class="font-medium">—</div>
+          <div class="text-slate-500">APPROVING OFFICERS · DEPARTMENT HEAD</div>
+        </div>
+        <div class="border-t border-slate-300 pt-2">
+          <div class="font-medium">—</div>
+          <div class="text-slate-500">APPROVING OFFICERS · COO</div>
+        </div>
+        <div class="border-t border-slate-300 pt-2">
+          <div class="font-medium tabular-nums" id="liq-exp-total">0.00</div>
+          <div class="text-slate-500">TOTAL LIQUIDATED EXPENSES</div>
+        </div>
+        <div class="border-t border-slate-300 pt-2">
+          <div class="font-medium">—</div>
+          <div class="text-slate-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div>
+        </div>
       </div>
 
       <div class="flex justify-end">
-        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        <button type="submit"
+          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
           Request replenishment
         </button>
       </div>

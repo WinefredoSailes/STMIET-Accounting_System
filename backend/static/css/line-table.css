@@ -1,0 +1,69 @@
+/* line-table.css — the one shared utility for all line-item grids
+ * (PCV form/detail, JE form + detail, RFP form + detail, CV form).
+ *
+ * Root cause of the squished/expanding columns: `<table>` defaults to the
+ * browser's AUTOMATIC table layout, so every column is re-measured from its
+ * content — a long supplier/account name stretches its column and shoves
+ * DEBIT/CREDIT right (and it happens mid-typing because the inputs resize).
+ * Tailwind's `table-fixed`/`min-w-[...]` helpers do NOT exist in the compiled
+ * output.css (there is no tailwind build step in this repo), which is why the
+ * same classes were invisible before. This file is linked directly from
+ * base.html so it works regardless of the CSS build.
+ *
+ * Usage on a grid:
+ *   <table class="line-table w-full text-sm" style="min-width: 1230px">
+ *     <colgroup> ... one <col> per column with the fixed px width ... </colgroup>
+ *
+ * With table-layout:fixed the <colgroup> is the ONLY thing that decides
+ * column widths — never content — so short vs long names keep the exact same
+ * grid. When the sum of <col> widths exceeds the viewport, the existing
+ * overflow-x-auto wrapper scrolls (browsers take the column sum as the table's
+ * minimum width). Add more columns later: they push the sum up and the same
+ * horizontal scroll keeps working. */
+
+.line-table {
+  table-layout: fixed;
+}
+
+/* Cells never overflow their fixed track horizontally. */
+.line-table th,
+.line-table td {
+  overflow: hidden;
+}
+
+/* Form controls (textareas, w-full inputs, searchable picker wraps) fill the
+ * cell track and must not contribute their intrinsic min-content width to it. */
+.line-table textarea,
+.line-table select,
+.line-table input,
+.line-table .searchable-wrap {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Searchable picker buttons: long account/supplier names are ellipsised
+ * inside the fixed column. The picker panel itself (rendered by base.js)
+ * already sets a title tooltip on every item, and the trigger carries the
+ * full text as its title too. */
+.line-table .searchable-trigger {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.line-table .searchable-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Plain-text cells (detail/list rows): single-line clip + ellipsis; pair with
+ * a title="..." attribute for the full-value hover tooltip. */
+.clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}

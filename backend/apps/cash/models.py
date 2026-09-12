@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from django.db import models
 
+from apps.core.constants import COST_CENTER_MAX_LENGTH
 from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
@@ -206,6 +207,17 @@ class PCFReplenishment(AuditableModel):
     )
     # Customer/client name for whom the petty cash is intended
     customer_name = models.CharField("Customer Name", max_length=255, blank=True)
+    # ACCTG-FOR-002 voucher number (ADR-032, per company/year: PCV-2026-0001).
+    voucher_no = models.CharField(max_length=32, blank=True, db_index=True)
+    # ACCTG-FOR-002 cost centre / reference (ADR-032, matching the RFP
+    # "Coscenter/ref" concept — the same display value, kept in sync via
+    # COST_CENTER_MAX_LENGTH).
+    cost_center = models.CharField(
+        "Cost center / ref",
+        max_length=COST_CENTER_MAX_LENGTH,
+        blank=True,
+        help_text="e.g. OS, GEN-FUEL – shown at top of the form and on prints.",
+    )
     # Expense breakdown from liquidation receipts
     expenses = models.JSONField(default=list)  # [{account_code, amount, description}]
     # Auto-CONSO integration (ADR-038 §7c): approval batches the replenishment

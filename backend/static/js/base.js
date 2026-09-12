@@ -120,10 +120,11 @@ function renderLocalItems(panel) {
 // types, matching the current query against both code and name. Selected
 // values are merged into the native <select> so form submission keeps
 // working while the picker exposes a fresh server-side result set. ----
-function searchableItem(wrap, value, text, code) {
+function searchableItem(wrap, value, text, code, tin) {
   var item = document.createElement('div');
   item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
   item.dataset.value = value;
+  item.dataset.tin = tin || '';
   item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
   var codeEl = document.createElement('span');
@@ -161,8 +162,9 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
     var opt = document.createElement('option');
     opt.value = r.value;
     opt.textContent = r.text;
+    opt.dataset.tin = r.tin || '';
     select.appendChild(opt);
-    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code));
+    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin));
   });
   // Restore the pre-search selection so closing the panel without picking
   // (e.g. Escape) never wipes a filled row.
@@ -199,10 +201,10 @@ function applyAsyncFilter(wrap, panel, query) {
   req.then(function (resp) { return resp.json(); })
      .then(function (results) {
        if (wrap._abort !== ctrl) return; // stale response
-       var normalized = (results || []).map(function (r) {
-         var v = (valueField === 'id') ? r.id : r.code;
-         return { value: String(v), code: String(r.code), text: String(r.text || r.code) };
-       });
+var normalized = (results || []).map(function (r) {
+          var v = (valueField === 'id') ? r.id : r.code;
+          return { value: String(v), code: String(r.code), text: String(r.text || r.code), tin: String(r.tin || '') };
+        });
        renderAsyncItems(panel, normalized, selected, selectedText);
      })
      .catch(function () { /* aborted or network error — keep prior state */ });
@@ -428,6 +430,19 @@ document.addEventListener('change', function (e) {
     var form = e.target.closest('form');
     if (form) form.submit();
   }
+});
+
+// PCF voucher lines: when a supplier is picked, mirror its TIN into the
+// line's TIN column so the voucher prints without re-typing it.
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t.matches || !t.matches('select[data-searchable][data-search-url]')) return;
+  var row = t.closest('[data-line-row]');
+  var tinField = row ? row.querySelector('input[name="exp_tin"]') : null;
+  if (!tinField) return;
+  var tin = t.selectedOptions.length ? (t.selectedOptions[0].dataset.tin || '') : '';
+  if (tin) tinField.value = tin;
+  else tinField.value = '';  // clear legacy rows when resetting the picker
 });
 
 // ---- Print templates (cv_print, statement_print, etc.): after printing from

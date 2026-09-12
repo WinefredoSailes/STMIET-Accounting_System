@@ -60,6 +60,8 @@ class TestRFPCreation:
         sides = {l.side for l in rfp.lines.all()}
         assert sides == {"dr", "cr"}
 
+    @pytest.mark.skip(reason="P2,000 RFP minimum temporarily removed (0217b7f) "
+                             "for new-system setup; un-skip when the threshold is restored.")
     def test_below_threshold_rejected(self, company, segment, supplier, alywin, accounts):
         with pytest.raises(ValidationError, match="petty cash"):
             RFPService.create_rfp(

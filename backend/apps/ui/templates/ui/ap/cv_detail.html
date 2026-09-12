@@ -23,7 +23,15 @@
   <div class="px-6 pb-4">
     <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
     {% if cv.rfp_id %}
-    <table class="w-full text-sm min-w-[760px]">
+    <table class="line-table w-full text-sm" style="min-width: 860px;">
+      <colgroup>
+        <col style="width: 300px;"><!-- PURPOSE OF PAYMENT -->
+        <col style="width: 110px;"><!-- SEGMENT -->
+        <col style="width: 120px;"><!-- COST CENTER -->
+        <col style="width: 150px;"><!-- GL ACCOUNT -->
+        <col style="width: 90px;"><!-- DEBIT -->
+        <col style="width: 90px;"><!-- CREDIT -->
+      </colgroup>
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-3 py-2">PURPOSE OF PAYMENT</th>

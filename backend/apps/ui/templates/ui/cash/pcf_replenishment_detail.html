@@ -3,7 +3,8 @@
 {% block title %}PCF Voucher {{ replen.id }}{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Replenishments</a>
+  <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr;
+    Replenishments</a>
 
   {% capture as doc_badge_color %}
   {% if replen.status == 'posted' %}bg-emerald-100 text-emerald-800
@@ -11,23 +12,39 @@
   {% endcapture %}
   {% capture as doc_meta %}
   {% include "ui/partials/status_badge.html" with status=replen.status color=doc_badge_color %}
-  <div class="text-xs text-slate-500 mt-1 font-mono">PCF-{{ replen.id }}</div>
+  <div class="text-xs text-slate-500 mt-1 font-mono">{% if replen.voucher_no %}{{ replen.voucher_no }}{% else %}PCF-{{ replen.id }}{% endif %}</div>
   {% endcapture %}
   {% capture as doc_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div><div class="text-xs text-slate-500">NAME</div><div class="mt-0.5 font-medium">{{ replen.payee_name|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ replen.request_date|date:"M d, Y" }}</div></div>
-    <div><div class="text-xs text-slate-500">REFERENCE</div><div class="mt-0.5">{{ replen.reference|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">FUND</div><div class="mt-0.5 text-xs">{{ replen.fund.get_fund_code_display }} ({{ replen.fund.custodian.username }})</div></div>
-    <div><div class="text-xs text-slate-500">CUSTOMER / CLIENT</div><div class="mt-0.5">{{ replen.customer_name|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">REQUESTED BY</div><div class="mt-0.5">{% if replen.requested_by %}{{ replen.requested_by.get_full_name|default:replen.requested_by.username }}{% else %}—{% endif %}</div></div>
+    <div>
+      <div class="text-xs text-slate-500">NAME</div>
+      <div class="mt-0.5 font-medium">{{ replen.payee_name|default:"—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-slate-500">DATE OF REQUEST</div>
+      <div class="mt-0.5">{{ replen.request_date|date:"M d, Y" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-slate-500">REFERENCE</div>
+      <div class="mt-0.5">{{ replen.reference|default:"—" }}</div>
+    </div>
+    <div>
+      <div class="text-xs text-slate-500">FUND</div>
+      <div class="mt-0.5 text-xs">{{ replen.fund.get_fund_code_display }} ({{ replen.fund.custodian.username }})</div>
+    </div>
+    <div>
+      <div class="text-xs text-slate-500">REQUESTED BY</div>
+      <div class="mt-0.5">{% if replen.requested_by %}{{ replen.requested_by.get_full_name|default:replen.requested_by.username }}{% else %}—{% endif %}</div>
+    </div>
   </div>
 
   <div class="px-6 pb-4">
     <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
-    <table class="w-full text-sm min-w-[720px]">
+    <!-- <table class="w-full table-fixed text-sm min-w-[1100px]">
       <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
+          <th class="px-3 py-2 w-[180px]">BUSINESS NAME</th>
+          <th class="px-3 py-2">TIN</th>
           <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
           <th class="px-3 py-2">SEGMENT</th>
           <th class="px-3 py-2">COST CENTER</th>
@@ -39,6 +56,8 @@
       <tbody class="divide-y divide-slate-100">
         {% for exp in replen.expenses %}
         <tr>
+          <td class="px-3 py-2 w-[180px] truncate">{{ exp.business_name|default:"—" }}</td>
+          <td class="px-3 py-2 text-xs">{{ exp.tin|default:"—" }}</td>
           <td class="px-3 py-2">{{ exp.description|default:"—" }}</td>
           <td class="px-3 py-2">{{ exp.segment|default:"OS" }}</td>
           <td class="px-3 py-2">{{ exp.cost_center|default:"OS" }}</td>
@@ -50,8 +69,91 @@
       </tbody>
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
-          <td colspan="4" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+          <td colspan="6" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ replen.amount|money }}</td>
+          <td class="px-3 py-2"></td>
+        </tr>
+      </tfoot>
+    </table> -->
+    <table class="line-table w-full text-sm" style="min-width: 1100px;">
+      <colgroup>
+        <col style="width: 160px;">
+        <col style="width: 120px;">
+        <col style="width: 240px;">
+        <col style="width: 120px;">
+        <col style="width: 120px;">
+        <col style="width: 120px;">
+        <col style="width: 110px;">
+        <col style="width: 110px;">
+      </colgroup>
+
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">BUSINESS NAME</th>
+          <th class="px-3 py-2">TIN</th>
+          <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+          <th class="px-3 py-2">SEGMENT</th>
+          <th class="px-3 py-2">COST CENTER</th>
+          <th class="px-3 py-2">GL ACCOUNT</th>
+          <th class="px-2 py-2 text-right">DEBIT</th>
+          <th class="px-2 py-2 text-right">CREDIT</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-slate-100">
+        {% for exp in replen.expenses %}
+        <tr>
+          <td class="px-3 py-2 overflow-hidden">
+            <div class="block overflow-hidden text-ellipsis whitespace-nowrap" title="{{ exp.business_name }}">
+              {{ exp.business_name|default:"—" }}
+            </div>
+          </td>
+
+          <td class="px-3 py-2 text-xs">
+            {{ exp.tin|default:"—" }}
+          </td>
+
+          <td class="px-3 py-2">
+            <div class="truncate" title="{{ exp.description }}">
+              {{ exp.description|default:"—" }}
+            </div>
+          </td>
+
+          <td class="px-3 py-2">
+            {{ exp.segment|default:"OS" }}
+          </td>
+
+          <td class="px-3 py-2">
+            {{ exp.cost_center|default:"OS" }}
+          </td>
+
+          <td class="px-2 py-2 font-mono text-xs">
+            {{ exp.account_code }}
+          </td>
+
+          <td class="px-2 py-2 text-right tabular-nums">
+            {% if exp.side != 'cr' %}
+            {{ exp.amount|money }}
+            {% endif %}
+          </td>
+
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if exp.side == 'cr' %}
+            {{ exp.amount|money }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="6" class="px-3 py-2 text-right">
+            TOTAL AMOUNT
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {{ replen.amount|money }}
+          </td>
           <td class="px-3 py-2"></td>
         </tr>
       </tfoot>
@@ -62,21 +164,33 @@
 
   <div class="mt-4 flex items-center gap-3">
     {% if replen.status == "requested" %}
-    <form method="post" action="{% url 'ui:pcf_replenishment_approve' replen.id %}">
-      {% csrf_token %}
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Approve &amp; batch to CONSO</button>
-    </form>
-    <form method="post" action="{% url 'ui:pcf_replenishment_post' replen.id %}">
-      {% csrf_token %}
-      <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post replenishment JE</button>
-    </form>
+      {% if request.user|approval_role_of == "head" %}
+      <form method="post" action="{% url 'ui:pcf_replenishment_approve' replen.id %}">
+        {% csrf_token %}
+        <button type="submit"
+          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Approve &amp;
+          batch to CONSO</button>
+      </form>
+      <form method="post" action="{% url 'ui:pcf_replenishment_post' replen.id %}">
+        {% csrf_token %}
+        <button type="submit"
+          class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post
+          replenishment JE</button>
+      </form>
+      {% else %}
+      <span class="text-sm text-amber-700">Submitted — awaiting Accounting &amp; Finance Head approval.</span>
+      {% endif %}
     {% elif replen.status == "approved" %}
-    <span class="text-sm text-slate-600">Approved — <a href="{% url 'ui:conso_detail' replen.conso_id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ replen.conso.batch_no }} →</a></span>
+    <span class="text-sm text-slate-600">Approved — <a href="{% url 'ui:conso_detail' replen.conso_id %}"
+        class="font-medium text-indigo-600 hover:text-indigo-800">{{ replen.conso.batch_no }} →</a></span>
     {% endif %}
     {% if replen.journal_entry_id %}
-    <a href="{% url 'ui:je_detail' replen.journal_entry_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>
+    <a href="{% url 'ui:je_detail' replen.journal_entry_id %}"
+      class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>
     {% endif %}
-    <a href="{% url 'ui:pcf_replenishment_print' replen.id %}" class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print Replenishment</a>
+    <a href="{% url 'ui:pcf_replenishment_print' replen.id %}"
+      class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print
+      Replenishment</a>
   </div>
 </div>
 {% endblock %}
