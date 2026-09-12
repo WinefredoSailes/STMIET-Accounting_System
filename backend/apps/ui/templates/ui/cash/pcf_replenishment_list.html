@@ -38,7 +38,7 @@
           <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
           <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
           <td class="px-4 py-2 text-xs">{{ r.customer_name|default:"—" }}</td>
-          <td class="px-4 py-2 text-xs">{{ r.requested_by.get_full_name|default:r.requested_by.username|default:"—" }}</td>
+          <td class="px-4 py-2 text-xs">{% if r.requested_by %}{{ r.requested_by.get_full_name|default:r.requested_by.username }}{% else %}—{% endif %}</td>
           <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
           <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|money }}</td>
           <td class="px-4 py-2">

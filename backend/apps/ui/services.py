@@ -277,7 +277,9 @@ def list_pcf_funds():
 def list_pcf_replenishments(*, limit=100):
     from apps.cash.models import PCFReplenishment
 
-    return PCFReplenishment.objects.select_related("fund__custodian", "fund__company").order_by("-request_date")[:limit]
+    return PCFReplenishment.objects.select_related(
+        "fund__custodian", "fund__company", "requested_by"
+    ).order_by("-request_date")[:limit]
 
 
 def list_cv(*, limit=100):

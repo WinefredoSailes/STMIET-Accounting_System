@@ -20,7 +20,7 @@
     <div><div class="text-xs text-slate-500">REFERENCE</div><div class="mt-0.5">{{ replen.reference|default:"—" }}</div></div>
     <div><div class="text-xs text-slate-500">FUND</div><div class="mt-0.5 text-xs">{{ replen.fund.get_fund_code_display }} ({{ replen.fund.custodian.username }})</div></div>
     <div><div class="text-xs text-slate-500">CUSTOMER / CLIENT</div><div class="mt-0.5">{{ replen.customer_name|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">REQUESTED BY</div><div class="mt-0.5">{{ replen.requested_by.get_full_name|default:replen.requested_by.username|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">REQUESTED BY</div><div class="mt-0.5">{% if replen.requested_by %}{{ replen.requested_by.get_full_name|default:replen.requested_by.username }}{% else %}—{% endif %}</div></div>
   </div>
 
   <div class="px-6 pb-4">

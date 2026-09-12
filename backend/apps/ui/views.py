@@ -300,33 +300,45 @@ def _create_entry_from_form(request):
     if legacy_description:
         header_description = legacy_description
 
-    with transaction.atomic():
-        entry = JournalEntry.objects.create(
-            entry_no=DocumentSequence.next_number(
-                company=company, form_code="JE", year=transaction_date.year
-            ),
-            company=company,
-            segment=header_segment,
-            fiscal_period=period,
-            transaction_date=transaction_date,
-            status=PostingStatus.DRAFT,
-            description=header_description,
-            source_doc_type=source_doc_type,
-            source_doc_no=source_doc_no,
-            created_by=request.user,
+    # Concurrent submissions can allocate the same entry number (SQLite ignores
+    # SELECT ... FOR UPDATE; PostgreSQL races on the fresh sequence row). The
+    # number is allocated in its own committed transaction so the counter
+    # advances even if the insert below fails — the retry then picks up the next
+    # available number instead of re-allocating the same one forever.
+    last_exc = None
+    for _ in range(8):
+        entry_no = DocumentSequence.next_number(
+            company=company, form_code="JE", year=transaction_date.year
         )
-        for i, p in enumerate(parsed, start=1):
-            JournalEntryLine.objects.create(
-                entry=entry,
-                line_no=i,
-                account=p["account"],
-                segment=p["segment"],
-                description=p["description"],
-                debit=p["debit"],
-                credit=p["credit"],
-            )
-        entry.recalc_totals()
-    return entry
+        try:
+            with transaction.atomic():
+                entry = JournalEntry.objects.create(
+                    entry_no=entry_no,
+                    company=company,
+                    segment=header_segment,
+                    fiscal_period=period,
+                    transaction_date=transaction_date,
+                    status=PostingStatus.DRAFT,
+                    description=header_description,
+                    source_doc_type=source_doc_type,
+                    source_doc_no=source_doc_no,
+                    created_by=request.user,
+                )
+                for i, p in enumerate(parsed, start=1):
+                    JournalEntryLine.objects.create(
+                        entry=entry,
+                        line_no=i,
+                        account=p["account"],
+                        segment=p["segment"],
+                        description=p["description"],
+                        debit=p["debit"],
+                        credit=p["credit"],
+                    )
+                entry.recalc_totals()
+                return entry
+        except IntegrityError as exc:
+            last_exc = exc
+    raise last_exc
 
 
 def _rfp_lines_from_form(request):

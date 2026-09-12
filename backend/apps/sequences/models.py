@@ -8,9 +8,14 @@ Format tokens supported in form patterns (see ADR-032):
     {YYYY} year, {SEQ} zero-padded running number, {MM} month, {CC} cost center
 """
 
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 
 from apps.core.models import AuditableModel
+
+# How many times to retry allocating a number when a concurrent request races
+# us to create the same per-company/per-form/per-year sequence row (PostgreSQL
+# raises IntegrityError on the fresh-row race; the retry re-reads the row).
+MAX_ALLOCATION_RETRIES = 8
 
 
 class DocumentSequence(AuditableModel):
@@ -34,17 +39,31 @@ class DocumentSequence(AuditableModel):
         return f"{self.company.code}/{self.form_code}/{self.year} -> {self.next_seq}"
 
     @classmethod
-    @transaction.atomic
     def next_number(cls, *, company, form_code, year, cost_center="", pattern=None) -> str:
-        """Atomically allocate the next document number."""
-        seq, _ = cls.objects.select_for_update().get_or_create(
-            company=company,
-            form_code=form_code,
-            year=year,
-            cost_center=cost_center,
-            defaults={"pattern": pattern} if pattern else {},
-        )
-        number = seq.pattern.format(YYYY=year, SEQ=seq.next_seq, MM=0, CC=cost_center)
-        seq.next_seq += 1
-        seq.save(update_fields=["next_seq", "updated_at"])
-        return number
+        """Atomically allocate the next document number.
+
+        Retries a bounded number of times if two requests race to create the
+        same sequence row concurrently, so the returned number is unique even
+        under load. ``select_for_update`` is a no-op on SQLite, so callers that
+        persist a document with the returned number must retry on a duplicate
+        key (the counters still advance on each allocation, which is the
+        intended ADR-032 numbering behaviour).
+        """
+        last_exc = None
+        for _ in range(MAX_ALLOCATION_RETRIES):
+            try:
+                with transaction.atomic():
+                    seq, _ = cls.objects.select_for_update().get_or_create(
+                        company=company,
+                        form_code=form_code,
+                        year=year,
+                        cost_center=cost_center,
+                        defaults={"pattern": pattern} if pattern else {},
+                    )
+                    number = seq.pattern.format(YYYY=year, SEQ=seq.next_seq, MM=0, CC=cost_center)
+                    seq.next_seq += 1
+                    seq.save(update_fields=["next_seq", "updated_at"])
+                    return number
+            except IntegrityError as exc:
+                last_exc = exc
+        raise last_exc

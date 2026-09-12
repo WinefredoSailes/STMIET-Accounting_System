@@ -161,6 +161,37 @@ class TestEntryWorkflow:
         assert je.is_balanced
         assert je.lines.count() == 2
 
+    def test_leftover_entry_no_routes_to_next_number(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        """An existing entry occupying the counter's next number (seeded/
+        manual/race) must not fail: the form retry advances the counter and
+        saves under the following available number instead of looping."""
+        JournalEntry.objects.create(
+            entry_no="2026-00001",
+            company=company,
+            segment=segment,
+            fiscal_period=fiscal_period,
+            transaction_date=date(2026, 1, 10),
+            status=PostingStatus.DRAFT,
+            description="Leftover entry",
+        )
+        resp = client.post("/journal/new/", {
+            "company": company.id,
+            "segment": segment.id,
+            "transaction_date": "2026-01-15",
+            "description": "Retry-me entry",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+        })
+        assert resp.status_code == 302
+        je = JournalEntry.objects.filter(entry_no="2026-00002").first()
+        assert je is not None
+        assert je.description == "Retry-me entry"
+
     def test_long_source_fields_clamped_to_column_limits(self, client, company, segment, accounts, fiscal_period):
         """Free-form JE fields are clamped to model lengths so Postgres never
         raises StringDataRightTruncation (varchar limits are only enforced on
