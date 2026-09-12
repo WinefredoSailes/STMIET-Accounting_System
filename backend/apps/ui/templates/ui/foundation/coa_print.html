@@ -1,8 +1,8 @@
 {% extends "ui/base.html" %}
-{% block title %}Chart of Accounts Print — STMIET Accounting{% endblock %}
+{% block title %}Chart of Accounts Print{% endblock %}
 {% block content %}
 <div class="p-6">
-  <h1 class="text-xl font-semibold text-slate-900 mb-1">CHART OF ACCOUNTS — STMIET</h1>
+  <h1 class="text-xl font-semibold text-slate-900 mb-1">CHART OF ACCOUNTS</h1>
   <p class="text-sm text-slate-500 mb-6">
     {{ total }} postable account(s) · generated {% now "M d, Y" %}.
     {% if q or segment_sel or account_type_sel %}<br>Filtered{% if segment_sel %} · segment {{ segment_sel }}{% endif %}{% if account_type_sel %} · type {{ account_type_sel }}{% endif %}{% if q %} · search "{{ q }}"{% endif %}.{% endif %}

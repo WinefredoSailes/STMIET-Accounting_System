@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}Inter-Account Transfers — STMIET Accounting{% endblock %}
+{% block title %}Inter-Account Transfers{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -37,7 +37,7 @@
         </div>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Purpose</label>
-          <input type="text" name="purpose" required maxlength="255" placeholder="e.g. fund transfer to PNB" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <textarea name="purpose" data-autogrow rows="1" required maxlength="255" placeholder="e.g. fund transfer to PNB" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"></textarea>
         </div>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Date</label>

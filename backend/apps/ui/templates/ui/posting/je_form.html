@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load static ui_filters %}
-{% block title %}{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %} — STMIET Accounting{% endblock %}
+{% block title %}{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
@@ -73,7 +73,7 @@
                 {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
               </select>
             </td>
-            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
+            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
           </tr>
@@ -91,7 +91,7 @@
                 {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
               </select>
             </td>
-            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
+            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
             <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
           </tr>
@@ -129,20 +129,11 @@
 <script src="{% static 'js/line-grid.js' %}"></script>
 <script>
   (function () {
-    function autogrow(ta) {
-      ta.style.height = "auto";
-      ta.style.height = ta.scrollHeight + "px";
-      ta.title = ta.value;
-    }
     function syncAccountTitle(sel) {
       var opt = sel.options[sel.selectedIndex];
       sel.title = opt ? opt.text : "";
     }
-    document.querySelectorAll('#lines-body textarea[name="line_description"]').forEach(autogrow);
     document.querySelectorAll('#lines-body select[name="account"]').forEach(syncAccountTitle);
-    document.addEventListener("input", function (e) {
-      if (e.target && e.target.matches && e.target.matches('#lines-body textarea[name="line_description"]')) autogrow(e.target);
-    });
     document.addEventListener("change", function (e) {
       if (e.target && e.target.matches && e.target.matches('#lines-body select[name="account"]')) syncAccountTitle(e.target);
     });
@@ -151,8 +142,6 @@
         var rows = document.querySelectorAll('#lines-body tr');
         var last = rows[rows.length - 1];
         if (!last) return;
-        var ta = last.querySelector('textarea[name="line_description"]');
-        if (ta) autogrow(ta);
         var sel = last.querySelector('select[name="account"]');
         if (sel) syncAccountTitle(sel);
       }, 0);

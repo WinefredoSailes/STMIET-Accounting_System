@@ -383,7 +383,34 @@ document.addEventListener('keydown', function (e) {
 });
 
 enhanceSearchable(document);
-var searchObserver = new MutationObserver(function () { enhanceSearchable(document); });
+
+// ---- Auto-growing textareas: any <textarea data-autogrow> keeps its height
+// at the content height (one line when empty) instead of a fixed scroll box,
+// matching the JE line-description behavior. The tooltip mirrors the value so
+// long text stays hover-readable in tight rows. enhanceAutogrow re-runs on
+// every DOM mutation (row clones, htmx swaps) through the observer below. ----
+function resizeAutogrow(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+  ta.title = ta.value;
+}
+function autogrowField(ta) {
+  if (!ta || ta.dataset.autogrown) return;
+  ta.dataset.autogrown = '1';
+  ta.style.resize = 'none';
+  ta.style.overflow = 'hidden';
+  ta.addEventListener('input', function () { resizeAutogrow(ta); });
+  resizeAutogrow(ta);
+}
+function enhanceAutogrow(root) {
+  var list = (root || document).querySelectorAll('textarea[data-autogrow]');
+  for (var i = 0; i < list.length; i++) autogrowField(list[i]);
+}
+enhanceAutogrow(document);
+var searchObserver = new MutationObserver(function () {
+  enhanceSearchable(document);
+  enhanceAutogrow(document);
+});
 searchObserver.observe(document.body, { childList: true, subtree: true });
 
 // ---- Report format dropdown (ui/partials/report_toolbar.html): on change,

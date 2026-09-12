@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load static ui_filters %}
-{% block title %}Revise CV {{ cv.cv_number }} — STMIET Accounting{% endblock %}
+{% block title %}Revise CV {{ cv.cv_number }}{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; CV {{ cv.cv_number }}</a>

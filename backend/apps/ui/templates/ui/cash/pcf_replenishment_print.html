@@ -32,7 +32,6 @@
           <th class="border border-slate-500 px-1 py-1 font-bold">TIN</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Address</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">REMARKS</th>
-          <th class="border border-slate-500 px-1 py-1 font-bold">ENTITY</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">BUSINESS SEGMENT</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">COST CENTER</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">COA</th>
@@ -61,7 +60,6 @@
           <td class="border border-slate-500 px-1 py-1"></td>
           <td class="border border-slate-500 px-1 py-1"></td>
           <td class="border border-slate-500 px-1 py-1">{{ row.remarks }}</td>
-          <td class="border border-slate-500 px-1 py-1">STMIET</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.segment|default:fund_label }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.cost_center }}</td>
           <td class="border border-slate-500 px-1 py-1 font-mono">{{ row.coa }}</td>
@@ -81,7 +79,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="24" class="border border-slate-500 px-2 py-4 text-center text-slate-400">No expense lines.</td>
+          <td colspan="23" class="border border-slate-500 px-2 py-4 text-center text-slate-400">No expense lines.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -89,7 +87,7 @@
         <tr class="font-bold">
           <td colspan="12" class="border border-slate-500 px-1 py-1 text-right uppercase">Total</td>
           <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{{ total|money }}</td>
-          <td colspan="11" class="border border-slate-500 px-1 py-1"></td>
+          <td colspan="10" class="border border-slate-500 px-1 py-1"></td>
         </tr>
       </tfoot>
     </table>

@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}{% if bank %}Edit{% else %}New{% endif %} Bank Account — STMIET Accounting{% endblock %}
+{% block title %}{% if bank %}Edit{% else %}New{% endif %} Bank Account{% endblock %}
 {% block content %}
 <div class="p-6">
   {% capture as bank_title %}{% if bank %}Edit{% else %}New{% endif %} Bank Account{% endcapture %}

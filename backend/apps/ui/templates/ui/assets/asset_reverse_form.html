@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}Reverse overstatement — {{ asset.asset_no }} — STMIET Account{% endblock %}
+{% block title %}Reverse overstatement — {{ asset.asset_no }}{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:asset_detail' asset.id %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; {{ asset.asset_no }}</a>

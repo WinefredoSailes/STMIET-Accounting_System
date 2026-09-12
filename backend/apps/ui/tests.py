@@ -141,6 +141,43 @@ class TestScreens:
         assert je.entry_no in resp.content.decode()
 
 
+class TestBrandingRemoval:
+    """STMIET branding and the hardcoded ENTITY column are gone from the UI."""
+
+    @pytest.mark.parametrize("path", TestScreens.SCREENS)
+    def test_screens_have_no_stmiet(self, client, company, accounts, path):
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert "STMIET" not in resp.content.decode()
+
+    def test_login_page_has_no_stmiet(self, client):
+        body = Client().get("/login/").content.decode()
+        assert "STMIET" not in body
+        assert "Accounting System" in body
+
+    def test_je_form_description_autogrows(self, client, company, accounts):
+        body = client.get("/journal/new/").content.decode()
+        assert 'name="line_description" data-autogrow rows="1"' in body
+
+    def test_rfp_form_description_fields_autogrow(self, client, company, accounts):
+        body = client.get("/ap/rfps/new/").content.decode()
+        assert 'name="line_description" data-autogrow rows="1"' in body
+        assert 'name="purpose" id="id_purpose" data-autogrow rows="1"' in body
+
+    def test_pcf_replenish_form_has_no_entity_and_description_autogrows(
+        self, client, company, accounts
+    ):
+        body = client.get("/cash/pcf/replenish/").content.decode()
+        assert 'name="exp_description" data-autogrow rows="1"' in body
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
+
+    def test_cv_form_has_no_entity(self, client, company, accounts):
+        body = client.get("/ap/cv/new/").content.decode()
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
+
+
 class TestEntryWorkflow:
     def test_create_draft_via_form(self, client, company, segment, accounts, fiscal_period):
         resp = client.post("/journal/new/", {
@@ -1825,6 +1862,8 @@ class TestCheckVoucherScreen:
         assert user.username in body           # requested-by signatory
         assert "Prepared By:" in body          # 5-column signature row
         assert "stmiet-trans-logo.png" in body
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
 
     def test_cv_print_prepared_by_shows_creator_full_name(
         self, client, company, segment, accounts, fiscal_period, approved_rfp, segment_account_map
@@ -1877,6 +1916,8 @@ class TestCheckVoucherScreen:
         assert "Requested By:" in body
         assert "Recommending Approver / or Checker" in body
         assert "stmiet-trans-logo.png" in body
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
 
     def test_cv_detail_renders(self, client, company, segment, accounts, fiscal_period,
                                user, approved_rfp, segment_account_map):
@@ -1897,6 +1938,8 @@ class TestCheckVoucherScreen:
         assert "CV-2026-0003" in body
         assert "ACCTG-FOR-010" in body
         assert "GROSS AMOUNT" in body
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
 
     def test_cv_create_form_populates_from_selected_rfp(
         self, client, company, segment, accounts, fiscal_period, user, approved_rfp,
@@ -2039,6 +2082,8 @@ class TestPCFReplenishmentScreen:
         assert "PETTY CASH VOUCHER" in body
         assert "ACCTG-FOR-002" in body
         assert "850.00" in body
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
 
     def test_replenishment_print_renders(self, client, company, segment, accounts,
                                          fiscal_period, user, fund):
@@ -2063,6 +2108,8 @@ class TestPCFReplenishmentScreen:
         assert "Cable" in body                 # REMARKS
         assert "61100" in body                 # COA column
         assert "850.00" in body                # Dr. column
+        assert "ENTITY" not in body
+        assert "STMIET" not in body
 
     def test_pcf_fund_create(self, client, company, segment, accounts, user):
         resp = client.post("/cash/pcf/new/", {

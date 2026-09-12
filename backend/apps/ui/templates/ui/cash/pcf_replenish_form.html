@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load static ui_filters %}
-{% block title %}Petty Cash Voucher — STMIET Accounting{% endblock %}
+{% block title %}Petty Cash Voucher{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:pcf_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Petty cash funds</a>
@@ -63,7 +63,6 @@
           <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
               <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
-              <th class="px-3 py-2">ENTITY</th>
               <th class="px-3 py-2">SEGMENT</th>
               <th class="px-3 py-2">COST CENTER</th>
               <th class="px-3 py-2">GL ACCOUNT</th>
@@ -74,8 +73,7 @@
           </thead>
           <tbody data-line-grid="pcv" data-total="#pcv-total" class="divide-y divide-slate-100">
             <tr>
-              <td class="px-1 py-2"><input type="text" name="exp_description" placeholder="PTO cable for MAW7645" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-              <td class="px-1 py-2"><input type="text" value="STMIET" readonly class="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs"></td>
+              <td class="px-1 py-2"><textarea name="exp_description" data-autogrow rows="1" placeholder="PTO cable for MAW7645" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
               <td class="px-1 py-2">
                 <select name="exp_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   {% for seg in segments %}<option value="{{ seg.code }}">{{ seg.code }}</option>{% endfor %}
@@ -98,14 +96,13 @@
           </tbody>
           <tfoot class="bg-slate-50">
             <tr>
-              <td colspan="7" class="px-3 py-2">
+              <td colspan="6" class="px-3 py-2">
                 <button type="button" data-add-row class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ Add line</button>
               </td>
             </tr>
             <tr class="font-semibold">
               <td colspan="5" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
               <td class="px-3 py-2 text-right tabular-nums" id="pcv-total">0.00</td>
-              <td></td>
               <td></td>
             </tr>
           </tfoot>

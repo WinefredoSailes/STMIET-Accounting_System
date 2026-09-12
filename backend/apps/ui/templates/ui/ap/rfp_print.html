@@ -111,19 +111,17 @@
           Distribution Charges
         </td>
       </tr>
-      <!-- Column headers: 5+1+1+2+3=12 -->
+      <!-- Column headers: 9+2+2+2=15 -->
       <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
-        <td colspan="7" style="font-weight:600">Purpose of Payment</td>
-        <td colspan="2" style="font-weight:600; text-align:left">Entity</td>
+        <td colspan="9" style="font-weight:600">Purpose of Payment</td>
         <td colspan="2" style="font-weight:600; text-align:center">Segment</td>
         <td colspan="2" style="font-weight:600; text-align:center">Cost Center</td>
         <td colspan="2" style="font-weight:600; text-align:right">Amount</td>
       </tr>
-      <!-- Data rows: 5+1+1+2+3=12 -->
+      <!-- Data rows: 9+2+2+2=15 -->
       {% for line in dr_lines %}
       <tr style="font-size:10px; line-height:2; text-align:center;">
-        <td colspan="7" style="overflow:hidden; text-overflow:ellipsis; white-space:normal; text-align:left">{{ line.description|default:rfp.particulars }}</td>
-        <td colspan="2">STMIET</td>
+        <td colspan="9" style="overflow:hidden; text-overflow:ellipsis; white-space:normal; text-align:left">{{ line.description|default:rfp.particulars }}</td>
         <td colspan="2">{{ line.segment.code }}</td>
         <td colspan="2">{{ rfp.purpose|default:"—" }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>

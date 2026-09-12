@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}{% if editing %}Edit Customer — STMIET Accounting{% else %}New Customer — STMIET Accounting{% endif %}{% endblock %}
+{% block title %}{% if editing %}Edit Customer{% else %}New Customer{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
   {% capture as customer_title %}{% if editing %}Edit Customer{% else %}New Customer{% endif %}{% endcapture %}
@@ -67,8 +67,8 @@
   </div>
   <div>
     <label class="block text-sm font-medium text-slate-700 mb-1" for="id_notes">Notes</label>
-    <input type="text" name="notes" id="id_notes" value="{{ customer.notes|default:'' }}"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <textarea name="notes" id="id_notes" data-autogrow rows="1"
+           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">{{ customer.notes|default:'' }}</textarea>
   </div>
   {% endcapture %}
   {% include "ui/partials/form_card.html" with top_html=banner_html fields_html=form_fields submit_label=submit_label %}

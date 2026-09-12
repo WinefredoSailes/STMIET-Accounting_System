@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}STMIET Accounting{% endblock %}</title>
+  <title>{% block title %}Accounting{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'img/logo.svg' %}">
   <link rel="stylesheet" href="{% static 'css/output.css' %}">
   <meta name="csrf-token" content="{{ csrf_token }}">
@@ -19,10 +19,9 @@
     <aside id="sidebar"
       class="fixed inset-y-0 left-0 z-40 w-56 -translate-x-full transform bg-white border-r border-slate-200 text-slate-700 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0">
       <div class="relative px-4 py-4 border-b border-slate-200 flex items-center gap-2.5">
-        <img src="{% static 'img/logo.svg' %}" alt="STMIET logo" class="h-9 w-9 rounded-lg shadow">
+        <img src="{% static 'img/logo.svg' %}" alt="logo" class="h-9 w-9 rounded-lg shadow">
         <div>
-          <div class="font-semibold text-slate-900 text-sm leading-tight">STMIET</div>
-          <div class="text-[11px] text-slate-400">Accounting System</div>
+          <div class="font-semibold text-slate-900 text-sm leading-tight">Accounting System</div>
         </div>
         <button onclick="toggleSidebar(false)" aria-label="Close menu"
           class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 text-lg leading-none">×</button>
@@ -44,7 +43,7 @@
       <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-white border-b border-slate-200 px-4 py-3 shadow-sm">
         <button onclick="toggleSidebar(true)" aria-label="Open menu"
           class="rounded-md px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100">☰</button>
-        <span class="font-semibold text-slate-900 text-sm">STMIET Accounting</span>
+        <span class="font-semibold text-slate-900 text-sm">Accounting System</span>
       </header>
       {% endif %}
       {% if messages %}
