@@ -170,24 +170,27 @@ class TestRFPCreation:
 
 class TestRFPApproval:
     def test_chain_with_head_holding_all_steps(self, company, segment, supplier,
-                                               rfp_lines, alywin):
+                                               rfp_lines, role_users):
         """ADR-036: the Accounting & Finance Head (Alywin) checks then
-        approves acctg + fin on the same RFP; the COO is a fresh hand."""
-        from django.contrib.auth import get_user_model
+        approves acctg + fin on the same RFP; the COO is a fresh hand.
 
-        User = get_user_model()
-        head = User.objects.create_user(username="head", password="x")
-        coo = User.objects.create_user(username="coo", password="x")
+        The head may also prepare his own RFP and approve it, since no
+        separate staff exists; non-head preparers are still blocked."""
+        head = role_users["head"]
+        coo = role_users["coo"]
+        staff = role_users["staff"]
 
+        # The head prepares AND approves his own RFP end-to-end.
         rfp = RFPService.create_rfp(
             ap_number="A0010", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
             lines=[
                 {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00"},
                 {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00"},
             ],
-            user=alywin,
+            user=head,
         )
         assert rfp.status == "prepared"
+        assert rfp.created_by == head
 
         for role in ("checked", "acctg_approved", "fin_approved"):
             rfp = RFPService.advance_step(rfp, role=role, user=head)
@@ -195,17 +198,17 @@ class TestRFPApproval:
         assert rfp.checked_by == head and rfp.approved_by_acctg == head
         assert rfp.approved_by_fin == head
 
-        # The preparer cannot approve their own disbursement.
+        # A staff preparer still cannot approve their own disbursement.
         rfp2 = RFPService.create_rfp(
             ap_number="A0011", rfp_date=date(2026, 1, 16), payee=supplier, segment=segment,
             lines=[
                 {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00"},
                 {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
             ],
-            user=alywin,
+            user=staff,
         )
         with pytest.raises(ValidationError, match="cannot approve it again"):
-            RFPService.advance_step(rfp2, role="checked", user=alywin)
+            RFPService.advance_step(rfp2, role="checked", user=staff)
 
         # Re-recording a step is an explicit error, never silent.
         with pytest.raises(ValidationError, match="already recorded"):
@@ -219,7 +222,7 @@ class TestRFPApproval:
                 {"side": "dr", "segment": segment, "account_code": "61100", "amount": "150000.00"},
                 {"side": "cr", "segment": segment, "account_code": "20000", "amount": "150000.00"},
             ],
-            user=alywin,
+            user=staff,
         )
         for role in ("checked", "acctg_approved", "fin_approved"):
             rfp3 = RFPService.advance_step(rfp3, role=role, user=head)

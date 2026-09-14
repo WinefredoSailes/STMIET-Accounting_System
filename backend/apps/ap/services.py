@@ -20,6 +20,7 @@ from django.conf import settings
 from django.db import OperationalError, transaction
 from django.utils import timezone
 
+from apps.core.approvals import approval_role_of
 from apps.core.exceptions import PostingError, ValidationError
 from apps.core.money import money
 from apps.foundation.models import Account, SegmentAccountMap, resolve_segment_account
@@ -235,7 +236,15 @@ class RFPService:
             )
             if uid and uid == user.id
         ]
-        if user.id in (rfp.created_by_id, rfp.approved_by_cnr_id):
+        # Every non-head user is blocked from approving their own RFP. The
+        # Accounting & Finance Head is exempt: he holds all three approval
+        # steps (ADR-036) and may, out of necessity, prepare and approve a
+        # disbursement himself when no separate staff is available.
+        preparer_blocked = (
+            approval_role_of(user) != "head"
+            and user.id == rfp.created_by_id
+        )
+        if preparer_blocked or user.id == rfp.approved_by_cnr_id:
             raise ValidationError(
                 "The person who prepared an RFP (or approved it as COO/CNR) "
                 "cannot approve it again."
