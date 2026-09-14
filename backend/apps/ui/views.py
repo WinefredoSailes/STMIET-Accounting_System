@@ -17,7 +17,7 @@ from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponseRedirect, Http404, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -231,6 +231,7 @@ def je_create(request):
     ctx = {
         "company": company,
         "segments": Segment.objects.order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         "today": date.today(),
     }
     return render(request, "ui/posting/je_form.html", ctx)
@@ -249,6 +250,9 @@ def _create_entry_from_form(request):
     transaction_date = date.fromisoformat(request.POST["transaction_date"])
     source_doc_type = request.POST.get("source_doc_type", "").strip()[:16]
     source_doc_no = request.POST.get("source_doc_no", "").strip()[:32]
+    supplier_name = request.POST.get("supplier_name", "").strip()[:255]
+    po = request.POST.get("po", "").strip()[:128]
+    ref_number = request.POST.get("ref_number", "").strip()[:128]
 
     period = (
         FiscalPeriod.objects.filter(
@@ -261,6 +265,7 @@ def _create_entry_from_form(request):
     debits = request.POST.getlist("debit")
     credits = request.POST.getlist("credit")
     descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
 
     parsed = []
     for i, account_id in enumerate(accounts):
@@ -285,6 +290,7 @@ def _create_entry_from_form(request):
                 "account": account,
                 "segment": line_segment,
                 "description": (descs[i] if i < len(descs) else "")[:500],
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
                 "debit": debit,
                 "credit": credit,
             }
@@ -322,6 +328,9 @@ def _create_entry_from_form(request):
                     description=header_description,
                     source_doc_type=source_doc_type,
                     source_doc_no=source_doc_no,
+                    supplier_name=supplier_name,
+                    po=po,
+                    ref_number=ref_number,
                     created_by=request.user,
                 )
                 for i, p in enumerate(parsed, start=1):
@@ -331,6 +340,7 @@ def _create_entry_from_form(request):
                         account=p["account"],
                         segment=p["segment"],
                         description=p["description"],
+                        cost_center=p["cost_center"],
                         debit=p["debit"],
                         credit=p["credit"],
                     )
@@ -466,7 +476,7 @@ def je_reject(request, pk):
 @require_POST
 @login_required
 def je_post(request, pk):
-    """Post an approved JE. Only approved entries may be posted."""
+    """Post an approved JE. Only the Accounting & Finance Head may post."""
     entry = get_object_or_404(JournalEntry, pk=pk)
     from apps.ap.models import CheckVoucher
 
@@ -482,6 +492,9 @@ def je_post(request, pk):
         messages.error(request, "Only approved entries can be posted.")
         return redirect("ui:je_detail", pk=pk)
     try:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
         posted = PostingService.post(entry, approver=request.user, user=request.user)
         messages.success(request, f"Entry {posted.entry_no} posted.")
     except AccountingError as exc:
@@ -510,6 +523,7 @@ def je_edit(request, pk):
         "company": entry.company,
         "segments": Segment.objects.order_by("code"),
         "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         "today": entry.transaction_date,
         "editing": entry,
     }
@@ -546,11 +560,147 @@ def je_print(request, pk):
     )
 
 
+@login_required
+def je_csv_export(request, pk):
+    """Export a journal entry as a structured CSV download.
+
+    Mirrors the printed voucher (je_print / je_pdf_export) as closely as a
+    CSV allows: ENTRY INFORMATION block first, then the ACCOUNT DISTRIBUTION
+    table (# | COA | Account Name | Segment | Cost Center | Description |
+    Debit | Credit) with one row per distribution line, TOTALS, and the
+    Prepared By / Approved By block. Amounts are exported as raw unformatted
+    decimals (no thousand separators); the csv module handles quoting of
+    commas and long descriptions.
+    """
+    entry = get_object_or_404(
+        JournalEntry.objects.select_related("company", "segment")
+            .prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+
+    from apps.core.approvals import role_assignee, signatory_name
+    from apps.foundation.calendar import cycle_range_for
+
+    import csv
+    import io
+
+    requested_by = signatory_name(entry.created_by)
+    approved_by = signatory_name(entry.approved_by) if entry.approved_by else ""
+    if not approved_by and entry.status == PostingStatus.APPROVED:
+        approved_by = role_assignee("head")
+
+    cycle_start, cycle_end = cycle_range_for(
+        entry.transaction_date, company=entry.company
+    )
+    if cycle_start.month == cycle_end.month:
+        cycle_label = f"{cycle_start:%b} {cycle_start.day}-{cycle_end.day}, {cycle_start:%Y}"
+    else:
+        cycle_label = (
+            f"{cycle_start:%b} {cycle_start.day} - {cycle_end:%b} {cycle_end.day}, {cycle_end:%Y}"
+        )
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+
+    # ENTRY INFORMATION (mirrors the printed header block)
+    writer.writerow(["ENTRY INFORMATION"])
+    writer.writerow(["Voucher Ref #", entry.entry_no])
+    writer.writerow(["Supplier / Customer", entry.supplier_name or ""])
+    writer.writerow(["PO", entry.po or ""])
+    writer.writerow(["REF #", entry.ref_number or ""])
+    writer.writerow(["Date", entry.transaction_date.isoformat()])
+    writer.writerow(["Cycle", cycle_label])
+    writer.writerow(["Source Type", entry.source_doc_type or ""])
+    writer.writerow(["Source No.", entry.source_doc_no or ""])
+    writer.writerow(["Description", entry.description])
+    writer.writerow([])
+
+    # ACCOUNT DISTRIBUTION (mirrors the printed table)
+    writer.writerow(["ACCOUNT DISTRIBUTION"])
+    writer.writerow(["#", "COA", "Account Name", "Segment", "Cost Center", "Description", "Debit", "Credit"])
+    entry_segment_code = entry.segment.code if entry.segment else ""
+    for line in entry.lines.order_by("line_no"):
+        writer.writerow(
+            [
+                line.line_no,
+                line.account.code,
+                line.account.name,
+                line.segment.code if line.segment else entry_segment_code,
+                line.cost_center or "",
+                line.description or "",
+                str(line.debit.quantize(Decimal("0.01"))) if line.debit else "",
+                str(line.credit.quantize(Decimal("0.01"))) if line.credit else "",
+            ]
+        )
+    writer.writerow([])
+    writer.writerow(
+        [
+            "TOTALS",
+            "",
+            "",
+            "",
+            "",
+            "",
+            str(entry.total_debit.quantize(Decimal("0.01"))),
+            str(entry.total_credit.quantize(Decimal("0.01"))),
+        ]
+    )
+    writer.writerow([])
+
+    # SIGNATURE BLOCK (mirrors the printed Prepared By / Approved By)
+    writer.writerow(["Prepared By", requested_by])
+    writer.writerow(["Approved By", approved_by])
+    writer.writerow(["Signature over Printed Name", ""])
+    writer.writerow(["Signature over Printed Name", ""])
+
+    response = HttpResponse(output.getvalue(), content_type="text/csv")
+    response["Content-Disposition"] = (
+        f'attachment; filename="JE_{entry.entry_no}.csv"'
+    )
+    return response
+
+
+@login_required
+def je_pdf_export(request, pk):
+    """Download the journal entry as a real vector/text PDF voucher.
+
+    Rendered server-side with ReportLab (apps/ui/pdf.py) following the same
+    layout as the printed ACCTG-FOR-012 voucher: fixed column widths, cell
+    text wrapping, repeated table headers across pages, selectable text.
+    """
+    entry = get_object_or_404(
+        JournalEntry.objects.select_related("company", "segment")
+            .prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+
+    from apps.core.approvals import role_assignee, signatory_name
+
+    requested_by = signatory_name(entry.created_by)
+    approved_by = signatory_name(entry.approved_by) if entry.approved_by else ""
+    if not approved_by and entry.status == PostingStatus.APPROVED:
+        approved_by = role_assignee("head")
+
+    from .pdf import build_journal_voucher_pdf
+
+    data = build_journal_voucher_pdf(
+        entry, requested_by=requested_by, approved_by=approved_by
+    )
+    response = HttpResponse(data, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="JE_{entry.entry_no}.pdf"'
+    )
+    return response
+
+
 def _update_entry_from_form(request, entry):
     """Update an existing draft JE from form POST (mirrors _create_entry_from_form)."""
     transaction_date = date.fromisoformat(request.POST["transaction_date"])
     source_doc_type = request.POST.get("source_doc_type", "").strip()[:16]
     source_doc_no = request.POST.get("source_doc_no", "").strip()[:32]
+    supplier_name = request.POST.get("supplier_name", "").strip()[:255]
+    po = request.POST.get("po", "").strip()[:128]
+    ref_number = request.POST.get("ref_number", "").strip()[:128]
 
     period = (
         FiscalPeriod.objects.filter(
@@ -563,6 +713,7 @@ def _update_entry_from_form(request, entry):
     debits = request.POST.getlist("debit")
     credits = request.POST.getlist("credit")
     descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
 
     parsed = []
     for i, account_id in enumerate(accounts):
@@ -584,6 +735,7 @@ def _update_entry_from_form(request, entry):
                 "account": account,
                 "segment": line_segment,
                 "description": (descs[i] if i < len(descs) else "")[:500],
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
                 "debit": debit,
                 "credit": credit,
             }
@@ -602,8 +754,11 @@ def _update_entry_from_form(request, entry):
         entry.description = header_description
         entry.source_doc_type = source_doc_type
         entry.source_doc_no = source_doc_no
+        entry.supplier_name = supplier_name
+        entry.po = po
+        entry.ref_number = ref_number
         entry.fiscal_period = period
-        entry.save(update_fields=["transaction_date", "segment", "description", "source_doc_type", "source_doc_no", "fiscal_period", "updated_at"])
+        entry.save(update_fields=["transaction_date", "segment", "description", "source_doc_type", "source_doc_no", "supplier_name", "po", "ref_number", "fiscal_period", "updated_at"])
 
         # Delete existing lines and recreate
         entry.lines.all().delete()
@@ -614,6 +769,7 @@ def _update_entry_from_form(request, entry):
                 account=p["account"],
                 segment=p["segment"],
                 description=p["description"],
+                cost_center=p["cost_center"],
                 debit=p["debit"],
                 credit=p["credit"],
             )
@@ -2452,6 +2608,192 @@ def general_journal(request):
     return render(request, "ui/reporting/general_journal.html", ctx)
 
 
+def _table_workbook(title, header, rows, sheet_title="SHEET"):
+    """Minimal styled workbook: title row + bold header + data rows."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (sheet_title or "SHEET")[:31]
+    ws.append([title])
+    ws.append([h for h in header])
+    for i, cell in enumerate(ws[2], start=1):
+        cell.font = Font(bold=True)
+    for row in rows:
+        ws.append([("" if v is None else str(v)) for v in row])
+    return wb
+
+
+def _wide_pdf_response(title, column_labels, data, filename):
+    """Landscape PDF table whose columns share the page width evenly."""
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import LETTER, landscape
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    buffer = BytesIO()
+    page = landscape(LETTER)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=page, leftMargin=0.4 * inch, rightMargin=0.4 * inch,
+        topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+    )
+    usable = page[0] - 0.8 * inch
+    col_width = usable / max(len(column_labels), 1)
+    table = Table(
+        [column_labels] + data,
+        colWidths=[col_width] * len(column_labels),
+        repeatRows=1,
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f0f0")]),
+            ]
+        )
+    )
+    doc.build([table])
+    response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def je_xlsx_export(request, pk):
+    """Export a single journal entry as an Excel (.xlsx) download."""
+    from apps.reporting.excel_export import xlsx_response
+
+    entry = get_object_or_404(
+        JournalEntry.objects.prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    rows = [
+        ["Voucher Ref #", entry.entry_no],
+        ["Date", entry.transaction_date.isoformat()],
+        ["Source Type", entry.source_doc_type or ""],
+        ["Source No.", entry.source_doc_no or ""],
+        ["Supplier / Customer Name", entry.supplier_name or ""],
+        ["PO", entry.po or ""],
+        ["REF #", entry.ref_number or ""],
+        ["Segment", entry.segment.code if entry.segment else ""],
+    ]
+    for line in entry.lines.order_by("line_no"):
+        rows.append(
+            [
+                line.account.code or "",
+                line.account.name or "",
+                line.segment.code if line.segment else "",
+                line.cost_center or "",
+                line.description or "",
+                line.debit,
+                line.credit,
+            ]
+        )
+    rows.append(["TOTALS", "", "", "", "", entry.total_debit, entry.total_credit])
+    wb = _table_workbook(
+        f"JOURNAL ENTRY {entry.entry_no}",
+        ["COA", "Account Name", "Segment", "Cost Center", "Description", "Debit", "Credit"],
+        rows,
+        sheet_title="JE",
+    )
+    return xlsx_response(wb, f"JE_{entry.entry_no}.xlsx")
+
+
+@login_required
+def je_list_export(request):
+    """Download the whole journal entries list as XLSX / CSV / PDF."""
+    from apps.core.approvals import display_name
+    from apps.reporting.excel_export import xlsx_response
+    from apps.reporting.exports import csv_response
+
+    from .services import list_entries
+
+    fmt = request.GET.get("format", "xlsx")
+    entries = list_entries(limit=None)
+    header = ["Entry No.", "Date", "Description", "Segment", "Debit", "Credit", "Status", "Prepared By"]
+    rows = [
+        [
+            e.entry_no,
+            e.transaction_date.isoformat(),
+            e.description,
+            e.segment.code if e.segment else "",
+            str(e.total_debit),
+            str(e.total_credit),
+            e.get_status_display(),
+            display_name(e.created_by),
+        ]
+        for e in entries
+    ]
+    stem = "JOURNAL-ENTRIES"
+
+    if fmt == "csv":
+        return csv_response(rows, f"{stem}.csv", header=header)
+    if fmt == "pdf":
+        return _wide_pdf_response("Journal Entries", header, rows, f"{stem}.pdf")
+    wb = _table_workbook("JOURNAL ENTRIES", header, rows, sheet_title="JE LIST")
+    return xlsx_response(wb, f"{stem}.xlsx")
+
+
+@login_required
+def general_journal_export(request):
+    """Download the General Journal register as XLSX / CSV / PDF.
+
+    Honors the same date/segment filters as the screen, so the download can
+    never disagree with what the user sees."""
+    from apps.reporting.excel_export import xlsx_response
+    from apps.reporting.exports import csv_response
+
+    from .services import general_journal as gj
+
+    fmt = request.GET.get("format", "xlsx")
+    start = request.GET.get("start") or None
+    end = request.GET.get("end") or None
+    segment = request.GET.get("segment") or None
+    if start:
+        start = date.fromisoformat(start)
+    if end:
+        end = date.fromisoformat(end)
+
+    data = gj(start=start, end=end, segment=segment, limit=None)
+    header = [
+        "Date", "Cycle", "Ref #", "Supplier / Customer", "PO #", "Description",
+        "CoA", "Account Name", "Cost Center", "Debit", "Credit",
+    ]
+    rows = [
+        [
+            r["date"].isoformat(),
+            r["cycle"],
+            r["ref"],
+            r["party"],
+            r["po"],
+            r["description"],
+            r["coa"],
+            r["account_name"],
+            r["cost_center"],
+            str(r["debit"]),
+            str(r["credit"]),
+        ]
+        for r in data["rows"]
+    ]
+    stem = "GENERAL-JOURNAL"
+
+    if fmt == "csv":
+        return csv_response(rows, f"{stem}.csv", header=header)
+    if fmt == "pdf":
+        return _wide_pdf_response("General Journal", header, rows, f"{stem}.pdf")
+    wb = _table_workbook("GENERAL JOURNAL", header, rows, sheet_title="GJ")
+    return xlsx_response(wb, f"{stem}.xlsx")
+
+
 # ---------------------------------------------------------------------------
 # Foundation — Chart of Accounts (read-only)
 # ---------------------------------------------------------------------------
@@ -2535,6 +2877,72 @@ def supplier_options(request):
         ],
         safe=False,
     )
+
+
+@login_required
+def party_options(request):
+    """Type-ahead source for the Journal Voucher Supplier/Customer picker.
+
+    Combines the supplier and customer masters into one result set so a
+    single picker can assign the voucher party. ``?q=`` filters by code or
+    name; results cap at 30, newest first. ``?selected=`` accepts a code, an
+    id, or an exact recorded name (the journal stores the plain name, so
+    editing re-attaches the stored party by name).
+    """
+    from apps.ap.models import Supplier
+    from apps.ar.models import Customer
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    rows_by_name = {}
+
+    def pool(base_qs):
+        if q:
+            base_qs = base_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+        return base_qs
+
+    def match_selected(done, base_qs):
+        keep = None
+        if selected:
+            lookup = Q(code=selected) | Q(name__icontains=selected)
+            if selected.isdigit():
+                lookup |= Q(pk=selected)
+            keep = base_qs.filter(lookup).first()
+        return keep
+
+    suppliers = pool(Supplier.objects.select_related("default_segment"))
+    customers = pool(Customer.objects.all())
+
+    for s in suppliers[:20]:
+        rows_by_name[f"{s.code} — {s.name}"] = {
+            "id": s.id, "code": s.code, "text": f"{s.code} — {s.name}",
+            "tin": s.tin, "kind": "supplier",
+        }
+    for c in customers[:20]:
+        rows_by_name[f"{c.code} — {c.name}"] = {
+            "id": c.id, "code": c.code, "text": f"{c.code} — {c.name}",
+            "tin": c.tin, "kind": "customer",
+        }
+
+    keep_s = match_selected(set(), Supplier.objects.all())
+    keep_c = match_selected(set(), Customer.objects.all())
+    chosen = None
+    if keep_s:
+        chosen = {
+            "id": keep_s.id, "code": keep_s.code,
+            "text": f"{keep_s.code} — {keep_s.name}",
+            "tin": keep_s.tin, "kind": "supplier",
+        }
+    elif keep_c:
+        chosen = {
+            "id": keep_c.id, "code": keep_c.code,
+            "text": f"{keep_c.code} — {keep_c.name}",
+            "tin": keep_c.tin, "kind": "customer",
+        }
+    results = list(rows_by_name.values())
+    if chosen and chosen["text"] not in rows_by_name:
+        results.insert(0, chosen)
+    return JsonResponse(results[:30], safe=False)
 
 
 @login_required

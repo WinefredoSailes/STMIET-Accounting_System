@@ -265,7 +265,7 @@ class TestEntryWorkflow:
         assert je.status == PostingStatus.DRAFT  # still draft, not posted
 
     def test_submit_approve_post_flow(self, client, company, segment, accounts, fiscal_period, role_users):
-        """Staff submits draft → head approves → anyone posts."""
+        """Staff submits draft → head approves → only the head posts."""
         staff_client = Client()
         staff_client.force_login(role_users["staff"])
         head_client = Client()
@@ -299,11 +299,47 @@ class TestEntryWorkflow:
         assert je.status == PostingStatus.APPROVED
         assert je.approved_by == role_users["head"]
 
-        # Anyone (staff) can post
+        # Staff cannot post — the post step belongs to the Accounting Head.
         resp = staff_client.post(f"/journal/{je.id}/post/")
         assert resp.status_code == 302
         je.refresh_from_db()
+        assert je.status == PostingStatus.APPROVED  # unchanged
+
+        # Head posts
+        resp = head_client.post(f"/journal/{je.id}/post/")
+        assert resp.status_code == 302
+        je.refresh_from_db()
         assert je.is_posted
+
+    def test_staff_cannot_post_approved_je(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Non-head users cannot post an approved JE (head-only gate)."""
+        staff_client = Client()
+        staff_client.force_login(role_users["staff"])
+        head_client = Client()
+        head_client.force_login(role_users["head"])
+
+        resp = staff_client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+        })
+        je = JournalEntry.objects.first()
+        staff_client.post(f"/journal/{je.id}/submit/")
+        head_client.post(f"/journal/{je.id}/approve/")
+        je.refresh_from_db()
+        assert je.status == PostingStatus.APPROVED
+
+        resp = staff_client.post(f"/journal/{je.id}/post/")
+        je.refresh_from_db()
+        assert je.status == PostingStatus.APPROVED  # staff blocked, still approved
+        resp = staff_client.get(f"/journal/{je.id}/")
+        body = resp.content.decode()
+        assert "This step is for the Accounting &amp; Finance Head" in body or \
+            "Accounting &amp; Finance Head" in body
 
     def test_non_head_cannot_approve(self, client, company, segment, accounts, fiscal_period, role_users):
         """Staff cannot approve their own or others' JEs."""
@@ -514,8 +550,158 @@ class TestEntryWorkflow:
 
         resp = head_client.get(f"/journal/{je.id}/print/")
         assert resp.status_code == 200
-        assert "JOURNAL ENTRY" in resp.content.decode()
-        assert "Requested By:" in resp.content.decode()
+        assert "GENERAL JOURNAL VOUCHER" in resp.content.decode()
+        assert "Prepared By:" in resp.content.decode()
+        assert "Approved By:" in resp.content.decode()
+
+    def test_je_cost_center_persists_and_displays(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Cost Center entered per line persists and shows on detail + print."""
+        staff_client = Client()
+        staff_client.force_login(role_users["staff"])
+
+        resp = staff_client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+            "line_cost_center": ["OS — offsite", "GEN-FUEL"],
+        })
+        assert resp.status_code == 302
+        je = JournalEntry.objects.first()
+        assert {l.cost_center for l in je.lines.all()} == {"OS — offsite", "GEN-FUEL"}
+
+        resp = staff_client.get(f"/journal/{je.id}/")
+        body = resp.content.decode()
+        assert "Cost Center" in body
+        assert "OS — offsite" in body
+
+        resp = staff_client.get(f"/journal/{je.id}/print/")
+        body = resp.content.decode()
+        assert "Cost Center" in body
+        assert "OS — offsite" in body
+
+    def test_je_edit_updates_cost_center(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Editing a draft preserves/updates the per-line cost center."""
+        staff_client = Client()
+        staff_client.force_login(role_users["staff"])
+
+        resp = staff_client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+            "line_cost_center": ["OS", "GEN"],
+        })
+        je = JournalEntry.objects.first()
+
+        resp = staff_client.post(f"/journal/{je.id}/edit/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in revised", "AP"],
+            "line_cost_center": ["TL", "HRAC"],
+        })
+        assert resp.status_code == 302
+        je.refresh_from_db()
+        assert {l.cost_center for l in je.lines.all()} == {"TL", "HRAC"}
+
+    def test_je_form_has_cost_center_and_party_picker(self, client, company, segment, accounts, fiscal_period, role_users):
+        """The JE form carries cost-center suggestions per line and the
+        Supplier/Customer picker wired to the recorded master lists."""
+        from apps.ap.models import Supplier
+
+        Supplier.objects.create(code="S9PARTY", name="Adriano Fuel Station", default_segment=segment)
+
+        staff_client = Client()
+        staff_client.force_login(role_users["staff"])
+        resp = staff_client.get("/journal/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert 'name="line_cost_center"' in body
+        assert 'id="cost_center_options"' in body
+        assert 'id="id_supplier_picker"' in body
+        assert "party-options" in body  # picker backed by the recorded lists
+
+        # The recorded supplier is offered by the picker's search endpoint.
+        resp = staff_client.get("/foundation/party-options/?q=Adriano")
+        assert resp.status_code == 200
+        import json
+
+        results = json.loads(resp.content.decode())
+        assert any(r["text"] and "Adriano Fuel Station" in r["text"] for r in results)
+
+    def test_je_export_formats(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Per-entry XLSX export and the whole-list XLSX/CSV/PDF exports."""
+        head_client = Client()
+        head_client.force_login(role_users["head"])
+        head_client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+        })
+        je = JournalEntry.objects.first()
+
+        resp = head_client.get(f"/journal/{je.id}/xlsx/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"].startswith("application/vnd.openxmlformats")
+
+        for fmt in ("xlsx", "csv", "pdf"):
+            resp = head_client.get(f"/journal/export/?format={fmt}")
+            assert resp.status_code == 200
+        resp = head_client.get("/journal/export/?format=csv")
+        body = resp.content.decode()
+        assert "Entry No." in body
+
+    def test_geje_general_journal_cost_center_and_export(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Posted JEs surface their cost center in the General Journal register
+        and its XLSX/CSV/PDF exports."""
+        staff_client = Client()
+        staff_client.force_login(role_users["staff"])
+        head_client = Client()
+        head_client.force_login(role_users["head"])
+
+        resp = staff_client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+            "line_cost_center": ["AG", "AG"],
+        })
+        je = JournalEntry.objects.first()
+        staff_client.post(f"/journal/{je.id}/submit/")
+        head_client.post(f"/journal/{je.id}/approve/")
+        head_client.post(f"/journal/{je.id}/post/")
+        je.refresh_from_db()
+        assert je.is_posted
+
+        resp = head_client.get("/journal/general/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Cost Center" in body
+        assert "AG" in body
+
+        for fmt in ("xlsx", "csv", "pdf"):
+            resp = head_client.get(f"/journal/general/export/?format={fmt}")
+            assert resp.status_code == 200
+        resp = head_client.get("/journal/general/export/?format=csv")
+        body = resp.content.decode()
+        assert "Cost Center" in body
 
     def test_my_approvals_shows_submitted_je(self, client, company, segment, accounts, fiscal_period, role_users):
         """Submitted JE appears in head's My Approvals queue."""
@@ -3242,3 +3428,412 @@ class TestHTMXPartialUpdates:
         cv.refresh_from_db()
         assert cv.status == "approved"
         assert "approved" in resp.content.decode()
+
+
+class TestJournalVoucherLayout:
+    """Redesigned journal entry frontend: voucher-style form, document
+    metadata fields, CSV export, and print/PDF output."""
+
+    def test_je_form_renders_voucher_layout(self, client, company, accounts):
+        body = client.get("/journal/new/").content.decode()
+        assert "New Journal Entry" in body
+        # The form is not branded (no logo / company / GENERAL JOURNAL VOUCHER)
+        # — the full voucher layout only appears on print/preview and exports.
+        assert "GENERAL JOURNAL VOUCHER" not in body
+        assert "stmiet-trans-logo.png" not in body
+        assert company.name not in body
+        assert "Account Distribution" in body
+        assert "Voucher Ref #" in body
+        assert "Supplier / Customer" in body
+        assert 'name="supplier_name"' in body
+        assert "party-options" in body  # RFP-style party picker endpoint
+        assert 'name="po"' in body
+        assert 'name="ref_number"' in body
+        assert 'name="transaction_date"' in body
+        assert "Cycle" in body
+        assert 'name="source_doc_type"' in body
+        assert 'name="source_doc_no"' in body
+        assert ">COA</th>" in body
+        assert ">Account Name</th>" in body
+        assert ">Description</th>" in body
+        assert ">Debit</th>" in body
+        assert ">Credit</th>" in body
+        assert "Prepared By:" in body
+        assert "Approved By:" in body
+        assert "Signature over Printed Name" in body
+        assert 'id="total-debit"' in body
+        assert 'id="total-credit"' in body
+        assert 'id="balance-hint"' in body
+        assert "data-add-row" in body
+
+    def test_je_form_party_picker_keeps_stored_name_when_editing(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Recorded Party Co.",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["100.00", ""],
+            "credit": ["", "100.00"],
+            "line_description": ["dr", "cr"],
+        })
+        je = JournalEntry.objects.first()
+        body = client.get(f"/journal/{je.id}/edit/").content.decode()
+        assert 'id="id_supplier_picker"' in body
+        assert 'value="Recorded Party Co."' in body  # pre-selected option
+        assert 'name="supplier_name"' in body  # hidden input keeps the name
+
+    def test_party_options_combines_suppliers_and_customers(
+        self, client, company, segment, accounts
+    ):
+        from apps.ap.models import Supplier
+        from apps.ar.models import Customer
+
+        Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment",
+            default_segment=segment,
+        )
+        Customer.objects.create(code="C001", name="3DS Refilling Station", segment=segment)
+
+        resp = client.get("/foundation/party-options/", {"q": "fuel"})
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert any(r["code"] == "S001" and r["kind"] == "supplier" for r in rows)
+
+        resp = client.get("/foundation/party-options/", {"q": "refilling"})
+        rows = resp.json()
+        assert any(r["code"] == "C001" and r["kind"] == "customer" for r in rows)
+
+        # selected= by recorded name re-attaches the picker selection
+        resp = client.get("/foundation/party-options/", {"selected": "Shell Fuel Depot"})
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert rows and rows[0]["code"] == "S001"
+
+    def test_je_form_keeps_per_line_segment_and_account_picker(
+        self, client, company, accounts
+    ):
+        body = client.get("/journal/new/").content.decode()
+        assert 'name="line_segment"' in body
+        assert 'name="account"' in body
+        assert "data-searchable" in body
+        assert 'data-search-value="id"' in body
+
+    def test_create_draft_saves_document_metadata(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        resp = client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Shell Fuel Depot",
+            "po": "PO-2026-0115",
+            "ref_number": "REF-88",
+            "source_doc_type": "AP",
+            "source_doc_no": "A0001",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["2500.00", ""],
+            "credit": ["", "2500.00"],
+            "line_description": ["Cash payment", "AP payable"],
+        })
+        assert resp.status_code == 302
+        je = JournalEntry.objects.first()
+        assert je.supplier_name == "Shell Fuel Depot"
+        assert je.po == "PO-2026-0115"
+        assert je.ref_number == "REF-88"
+        assert je.source_doc_type == "AP"
+        assert je.source_doc_no == "A0001"
+        assert je.is_balanced
+
+    def test_document_metadata_fields_are_clamped(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        resp = client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "S" * 300,
+            "po": "P" * 200,
+            "ref_number": "R" * 200,
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["100.00", ""],
+            "credit": ["", "100.00"],
+            "line_description": ["x", "y"],
+        })
+        assert resp.status_code == 302
+        je = JournalEntry.objects.first()
+        assert len(je.supplier_name) == 255
+        assert len(je.po) == 128
+        assert len(je.ref_number) == 128
+
+    def test_edit_draft_preserves_and_updates_metadata(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        create = client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Supplier A",
+            "po": "PO-A",
+            "ref_number": "REF-A",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["500.00", ""],
+            "credit": ["", "500.00"],
+            "line_description": ["dr", "cr"],
+        })
+        je = JournalEntry.objects.first()
+
+        edit_url = f"/journal/{je.id}/edit/"
+        body = client.get(edit_url).content.decode()
+        assert 'value="Supplier A"' in body
+        assert 'value="PO-A"' in body
+        assert 'value="REF-A"' in body
+        assert je.entry_no in body  # readonly voucher ref rendered
+
+        resp = client.post(edit_url, {
+            "transaction_date": "2026-01-20",
+            "supplier_name": "Supplier B Updated",
+            "po": "PO-B",
+            "ref_number": "REF-B",
+            "account": [accounts["10010"].id, accounts["20000"].id, accounts["61100"].id],
+            "line_segment": [segment.id, segment.id, segment.id],
+            "debit": ["300.00", "", ""],
+            "credit": ["", "200.00", "100.00"],
+            "line_description": ["dr", "cr", "cr2"],
+        })
+        assert resp.status_code == 302
+        je.refresh_from_db()
+        assert je.supplier_name == "Supplier B Updated"
+        assert je.po == "PO-B"
+        assert je.ref_number == "REF-B"
+        assert je.transaction_date.isoformat() == "2026-01-20"
+        assert je.lines.count() == 3
+        assert je.is_balanced
+
+    def test_csv_export_content(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Fuel, Depot Inc.",
+            "po": "PO-1",
+            "ref_number": 'REF "1"',
+            "source_doc_type": "AP",
+            "source_doc_no": "A0001",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["2590000.00", ""],
+            "credit": ["", "2590000.00"],
+            "line_description": ["Opening, asset cost", "Long description with \"quotes\""],
+        })
+        je = JournalEntry.objects.first()
+        resp = client.get(f"/journal/{je.id}/csv/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"].startswith("text/csv")
+        assert je.entry_no in resp["Content-Disposition"]
+
+        text = resp.content.decode()
+        # Mirrors the printed voucher: ENTRY INFORMATION block first
+        assert "ENTRY INFORMATION" in text
+        assert 'Voucher Ref #,' + je.entry_no in text
+        assert "2026-01-15" in text
+        assert "Cycle" in text
+        assert '"Fuel, Depot Inc."' in text  # comma quoted
+        assert '"REF ""1"""' in text  # quotes escaped
+        assert "PO-1" in text
+        assert "2500000.00" not in text  # raw values, never formatted display strings
+        assert "2,590,000.00" not in text
+        # ACCOUNT DISTRIBUTION table mirrors the print:
+        # #|COA|Account Name|Segment|Cost Center|Description|Debit|Credit
+        assert "ACCOUNT DISTRIBUTION" in text
+        assert '#,COA,Account Name,Segment,Cost Center,Description,Debit,Credit' in text
+        assert '1,10010,Cash on Hand,DHPP,,"Opening, asset cost",2590000.00,' in text
+        assert '2,20000,A/Payables - Current - DHPP,DHPP,,"Long description with ""quotes""",,2590000.00' in text
+        # Totals aligned under Debit/Credit + signature block
+        assert "TOTALS,,,,,,2590000.00,2590000.00" in text
+        assert "Prepared By" in text
+        assert "Approved By" in text
+
+    def test_pdf_export_downloads_pdf(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "PDF Supplier Co.",
+            "po": "PO-PDF",
+            "ref_number": "REF-PDF",
+            "source_doc_type": "ADJ",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["1234.50", ""],
+            "credit": ["", "1234.50"],
+            "line_description": ["Very long description that must wrap inside its fixed column width", "AP"],
+        })
+        je = JournalEntry.objects.first()
+        resp = client.get(f"/journal/{je.id}/pdf/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"].startswith("application/pdf")
+        assert f'filename="JE_{je.entry_no}.pdf"' in resp["Content-Disposition"]
+        data = resp.content
+        assert data.startswith(b"%PDF")
+        assert len(data) > 800  # real content, not an empty stub
+
+    def test_exports_survive_null_line_segments(
+        self, client, company, segment, accounts
+    ):
+        """System-posted entries can have lines with segment=NULL; the print/
+        PDF/CSV exports fall back to the entry-level segment instead of
+        crashing (regression: AttributeError 'NoneType' has no attribute
+        'code')."""
+        from apps.core.money import money
+
+        je = JournalEntry.objects.create(
+            entry_no="NULLSEG-0001",
+            company=company,
+            segment=segment,
+            transaction_date=date(2026, 1, 15),
+            status=PostingStatus.DRAFT,
+            description="Null-segment entry",
+        )
+        JournalEntryLine.objects.create(
+            entry=je, line_no=1, account=accounts["10010"],
+            segment=None, debit=money("1500.00"), credit=money("0.00"),
+        )
+        JournalEntryLine.objects.create(
+            entry=je, line_no=2, account=accounts["20000"],
+            segment=None, debit=money("0.00"), credit=money("1500.00"),
+        )
+        je.recalc_totals()
+
+        resp = client.get(f"/journal/{je.id}/pdf/")
+        assert resp.status_code == 200
+        assert resp.content.startswith(b"%PDF")
+
+        resp = client.get(f"/journal/{je.id}/csv/")
+        assert resp.status_code == 200
+        text = resp.content.decode()
+        # segment cell falls back to the entry segment code
+        assert "1,10010,Cash on Hand,DHPP,,,1500.00," in text
+
+        resp = client.get(f"/journal/{je.id}/print/")
+        assert resp.status_code == 200
+        assert "DHPP" in resp.content.decode()
+
+    def test_csv_export_requires_login(self, db, company, segment, accounts,
+                                       fiscal_period):
+        c = Client()
+        assert c.get("/journal/new/").status_code == 302
+
+    def test_je_print_renders_voucher_document(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Supplier Print Co.",
+            "po": "PO-9",
+            "ref_number": "REF-9",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["750.50", ""],
+            "credit": ["", "750.50"],
+            "line_description": ["Petty cash replenish", "AP"],
+        })
+        je = JournalEntry.objects.first()
+        resp = client.get(f"/journal/{je.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "GENERAL JOURNAL VOUCHER" in body
+        assert "ACCTG-FOR-012" in body
+        assert je.entry_no in body
+        assert "Supplier Print Co." in body
+        assert "PO-9" in body
+        assert "REF-9" in body
+        assert "CYCLE:" in body
+        assert "Account Distribution" in body
+        assert "Prepared By:" in body
+        assert "Approved By:" in body
+        assert "Signature over Printed Name" in body
+        assert "750.50" in body
+
+    def test_je_detail_shows_document_metadata(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "supplier_name": "Detail Supplier",
+            "po": "PO-D",
+            "ref_number": "REF-D",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["100.00", ""],
+            "credit": ["", "100.00"],
+            "line_description": ["dr", "cr"],
+        })
+        je = JournalEntry.objects.first()
+        resp = client.get(f"/journal/{je.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Detail Supplier" in body
+        assert "PO-D / REF-D" in body
+        body_export = client.get(f"/journal/{je.id}/csv/")
+        assert body_export.status_code == 200
+
+    def test_je_detail_has_export_links(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        client.post("/journal/new/", {
+            "transaction_date": "2026-01-15",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "line_segment": [segment.id, segment.id],
+            "debit": ["100.00", ""],
+            "credit": ["", "100.00"],
+            "line_description": ["dr", "cr"],
+        })
+        je = JournalEntry.objects.first()
+        resp = client.get(f"/journal/{je.id}/")
+        body = resp.content.decode()
+        assert "Export PDF" in body
+        assert "Export CSV" in body
+        assert f"/journal/{je.id}/pdf/" in body
+        assert f"/journal/{je.id}/csv/" in body
+
+    def test_general_journal_surfaces_voucher_party_and_po(
+        self, client, company, segment, accounts, fiscal_period
+    ):
+        """Manual voucher JEs without a backing source document carry the
+        party/PO on the header; the General Journal register + export must
+        surface them (fallback when no AR/AP master derives the party)."""
+        from apps.core.money import money
+
+        je = JournalEntry.objects.create(
+            entry_no="GJ-2026-0001",
+            company=company,
+            segment=segment,
+            fiscal_period=fiscal_period,
+            transaction_date=date(2026, 1, 15),
+            status=PostingStatus.POSTED,
+            description="Manual adjustment voucher",
+            supplier_name="Bagatua Trading",
+            po="PO-GJ-99",
+            created_by=None,
+        )
+        JournalEntryLine.objects.create(
+            entry=je, line_no=1, account=accounts["10010"], segment=segment,
+            description="Manual dr", debit=money("500.00"), credit=money("0.00"),
+        )
+        JournalEntryLine.objects.create(
+            entry=je, line_no=2, account=accounts["20000"], segment=segment,
+            description="Manual cr", debit=money("0.00"), credit=money("500.00"),
+        )
+        je.recalc_totals()
+
+        resp = client.get("/journal/general/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Bagatua Trading" in body
+        assert "PO-GJ-99" in body
+
+        resp = client.get("/journal/general/export/?format=csv")
+        assert resp.status_code == 200
+        text = resp.content.decode()
+        assert "Bagatua Trading" in text
+        assert "PO-GJ-99" in text

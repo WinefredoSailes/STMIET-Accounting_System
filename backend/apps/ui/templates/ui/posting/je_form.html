@@ -4,122 +4,219 @@
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
-  <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %}</h1>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit{% else %}New{% endif %} Journal Entry</h1>
   <p class="text-sm text-slate-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
 
-  <form method="post" class="mt-6 space-y-5">
+  <form method="post" class="mt-6 space-y-6">
     {% csrf_token %}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_date">Date</label>
-        <input type="date" name="transaction_date" id="id_transaction_date" required
-               value="{{ editing.transaction_date|date:'Y-m-d'|default:today|date:'Y-m-d' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_source_doc_type">Source type</label>
-        <input type="text" name="source_doc_type" id="id_source_doc_type" list="source-types"
-               maxlength="16"
-               value="{{ editing.source_doc_type|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-        <datalist id="source-types">
-          <option value="AR"><option value="AP"><option value="CV"><option value="PCV">
-          <option value="RFP"><option value="DEP"><option value="ADJ"><option value="JE">
-        </datalist>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_source_doc_no">Source no.</label>
-        <input type="text" name="source_doc_no" id="id_source_doc_no"
-               maxlength="32"
-               value="{{ editing.source_doc_no|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+
+    <!-- ===================== DOCUMENT METADATA ===================== -->
+    <div class="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+      <!-- Two-sided document metadata -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3">
+        <!-- LEFT SIDE -->
+        <div class="space-y-3">
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_entry_no">Voucher Ref #</label>
+            <input type="text" id="id_entry_no" value="{{ editing.entry_no|default:'—' }}" readonly
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-600 focus:outline-none">
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_supplier_picker">Supplier / Customer</label>
+            <div class="flex flex-col gap-1 min-w-0">
+              <select id="id_supplier_picker" data-searchable data-search-compact
+                      data-search-placeholder="Pick from recorded suppliers / customers…"
+                      data-search-url="{% url 'ui:party_options' %}{% if editing and editing.supplier_name %}?selected={{ editing.supplier_name|urlencode }}{% endif %}"
+                      data-search-value="id"
+                      title="Pick from recorded suppliers / customers…"
+                      class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {% if editing and editing.supplier_name %}
+                <option value="{{ editing.supplier_name }}" selected>{{ editing.supplier_name }}</option>
+                {% else %}
+                <option value="">Pick from recorded suppliers / customers…</option>
+                {% endif %}
+              </select>
+              <input type="hidden" name="supplier_name" id="id_supplier_name" value="{{ editing.supplier_name|default:'' }}">
+            </div>
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_po">PO</label>
+            <input type="text" name="po" id="id_po" maxlength="128"
+                   value="{{ editing.po|default:'' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_ref_number">REF #</label>
+            <input type="text" name="ref_number" id="id_ref_number" maxlength="128"
+                   value="{{ editing.ref_number|default:'' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+        </div>
+
+        <!-- RIGHT SIDE -->
+        <div class="space-y-3">
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_transaction_date">Date</label>
+            <input type="date" name="transaction_date" id="id_transaction_date" required
+                   value="{{ editing.transaction_date|date:'Y-m-d'|default:today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_cycle">Cycle</label>
+            {% if editing %}
+            <input type="text" id="id_cycle" readonly
+                   value="{{ editing.transaction_date|cycle_label:company }}"
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600">
+            {% else %}
+            <input type="text" id="id_cycle" readonly
+                   value="{{ today|cycle_label:company }}"
+                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600">
+            {% endif %}
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_source_doc_type">Source Type</label>
+            <input type="text" name="source_doc_type" id="id_source_doc_type" list="source-types"
+                   maxlength="16"
+                   value="{{ editing.source_doc_type|default:'' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <datalist id="source-types">
+              <option value="AR"><option value="AP"><option value="CV"><option value="PCV">
+              <option value="RFP"><option value="DEP"><option value="ADJ"><option value="JE">
+            </datalist>
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_source_doc_no">Source No.</label>
+            <input type="text" name="source_doc_no" id="id_source_doc_no"
+                   maxlength="32"
+                   value="{{ editing.source_doc_no|default:'' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-      <table class="line-table w-full text-sm" style="min-width: 1100px;">
-        <colgroup>
-          <col style="width:40px"><!-- # -->
-          <col style="width:280px"><!-- Account (GL) -->
-          <col style="width:90px"><!-- Segment -->
-          <col style="width:350px"><!-- Description -->
-          <col style="width:170px"><!-- Debit -->
-          <col style="width:170px"><!-- Credit -->
-        </colgroup>
-        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-3">#</th>
-            <th class="px-4 py-3">Account</th>
-            <th class="px-4 py-3">Segment</th>
-            <th class="px-4 py-3">Description</th>
-            <th class="px-4 py-3">Debit</th>
-            <th class="px-4 py-3">Credit</th>
-          </tr>
-        </thead>
-        <tbody id="lines-body" data-line-grid="je"
-               data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
-               class="divide-y divide-slate-100">
-          {% if editing %}
-          {% for line in editing.lines.all %}
-          <tr>
-            <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">{{ line.line_no }}</td>
-            <td class="px-4 py-2 overflow-hidden">
-              <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" title="{{ line.account.code }} — {{ line.account.name }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                <option value="{{ line.account.id }}" selected>{{ line.account.code }} {{ line.account.name }}</option>
-              </select>
-            </td>
-            <td class="px-4 py-2 overflow-hidden">
-              <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
-              </select>
-            </td>
-            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
-            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
-            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
-          </tr>
-          {% endfor %}
-          {% else %}
-          <tr>
-            <td class="px-4 py-2 text-slate-400 line-no overflow-hidden">1</td>
-            <td class="px-4 py-2 overflow-hidden">
-              <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                <option value="">— select —</option>
-              </select>
-            </td>
-            <td class="px-4 py-2 overflow-hidden">
-              <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
-              </select>
-            </td>
-            <td class="px-4 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
-            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
-            <td class="px-4 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
-          </tr>
-          {% endif %}
-        </tbody>
-        <tfoot class="bg-slate-50">
-          <tr>
-            <td colspan="4" class="px-4 py-3 text-right font-semibold">TOTALS</td>
-            <td id="total-debit" class="px-4 py-3 text-right font-semibold tabular-nums">0.00</td>
-            <td id="total-credit" class="px-4 py-3 text-right font-semibold tabular-nums">0.00</td>
-          </tr>
-          <tr>
-            <td colspan="6" class="px-4 py-2">
-              <button type="button" id="add-line" data-add-row
-                      class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
-                + Add line
-              </button>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+    <!-- ===================== ACCOUNT DISTRIBUTION ===================== -->
+    <div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-700 mb-3">Account Distribution</div>
 
-    <div class="flex items-center gap-3">
+      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <table class="line-table w-full text-sm" style="min-width: 1210px;">
+          <colgroup>
+            <col style="width:44px"><!-- # -->
+            <col style="width:80px"><!-- COA -->
+            <col style="width:226px"><!-- Account Name -->
+            <col style="width:90px"><!-- Segment -->
+            <col style="width:90px"><!-- Cost Center -->
+            <col style="width:340px"><!-- Description -->
+            <col style="width:170px"><!-- Debit -->
+            <col style="width:170px"><!-- Credit -->
+          </colgroup>
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-3">#</th>
+              <th class="px-3 py-3">COA</th>
+              <th class="px-3 py-3">Account Name</th>
+              <th class="px-3 py-3">Segment</th>
+              <th class="px-3 py-3">Cost Center</th>
+              <th class="px-3 py-3">Description</th>
+              <th class="px-3 py-3 text-right">Debit</th>
+              <th class="px-3 py-3 text-right">Credit</th>
+            </tr>
+          </thead>
+          <tbody id="lines-body" data-line-grid="je"
+                 data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
+                 class="divide-y divide-slate-100">
+            {% if editing %}
+            {% for line in editing.lines.all %}
+            <tr>
+              <td class="px-3 py-2 text-slate-400 line-no overflow-hidden">{{ line.line_no }}</td>
+              <td class="px-3 py-2 overflow-hidden"><span class="coa-display font-mono text-xs whitespace-nowrap">{{ line.account.code }}</span></td>
+              <td class="px-3 py-2 overflow-hidden">
+                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" title="{{ line.account.code }} — {{ line.account.name }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                  <option value="{{ line.account.id }}" selected>{{ line.account.code }} {{ line.account.name }}</option>
+                </select>
+              </td>
+              <td class="px-3 py-2 overflow-hidden">
+                <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                  {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr>
+              <td class="px-3 py-2 text-slate-400 line-no overflow-hidden">1</td>
+              <td class="px-3 py-2 overflow-hidden"><span class="coa-display font-mono text-xs whitespace-nowrap"></span></td>
+              <td class="px-3 py-2 overflow-hidden">
+                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                  <option value="">— select —</option>
+                </select>
+              </td>
+              <td class="px-3 py-2 overflow-hidden">
+                <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                  {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS — offsite, GEN-FUEL" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+            </tr>
+            {% endif %}
+          </tbody>
+          <tfoot class="bg-slate-50">
+            <tr class="border-t-2 border-slate-300">
+              <td colspan="6" class="px-3 py-3 text-right text-sm font-bold uppercase tracking-wider text-slate-700">Totals</td>
+              <td id="total-debit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td id="total-credit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+            </tr>
+            <tr>
+              <td colspan="8" class="px-3 py-2">
+                <button type="button" id="add-line" data-add-row
+                        class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                  + Add line
+                </button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    <datalist id="cost_center_options">
+      {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+    </datalist>
+
+    <!-- ===================== ACTIONS ===================== -->
+    <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
         {% if editing %}Save changes{% else %}Save draft{% endif %}
       </button>
+      {% if editing %}
+      <a href="{% url 'ui:je_pdf_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export PDF</a>
+      <a href="{% url 'ui:je_xlsx_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>
+      <a href="{% url 'ui:je_csv_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export CSV</a>
+      {% endif %}
       <span id="balance-hint" class="text-sm"></span>
+    </div>
+
+    <!-- ===================== APPROVAL SECTION ===================== -->
+    <div class="pt-8">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-16">
+        <div>
+          <div class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-8">Prepared By:</div>
+          <div class="border-b border-slate-400 mb-1 h-10"></div>
+          <div class="text-xs text-slate-500">Signature over Printed Name</div>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-8">Approved By:</div>
+          <div class="border-b border-slate-400 mb-1 h-10"></div>
+          <div class="text-xs text-slate-500">Signature over Printed Name</div>
+        </div>
+      </div>
     </div>
   </form>
 </div>
@@ -129,21 +226,105 @@
 <script src="{% static 'js/line-grid.js' %}"></script>
 <script>
   (function () {
-    function syncAccountTitle(sel) {
-      var opt = sel.options[sel.selectedIndex];
-      sel.title = opt ? opt.text : "";
+    // Clone of the server-side weekly-cycle range (apps/foundation/calendar.py)
+    // used only to live-update the readonly Cycle field when the date changes.
+    // The saved entry derives its real fiscal period/cycle server-side.
+    var CYCLE_START_WD = 1; // Tuesday
+    var CYCLE_END_WD = 0;   // Monday
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function fmtDay(d) {
+      return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + ' ' + d.getDate();
     }
-    document.querySelectorAll('#lines-body select[name="account"]').forEach(syncAccountTitle);
-    document.addEventListener("change", function (e) {
-      if (e.target && e.target.matches && e.target.matches('#lines-body select[name="account"]')) syncAccountTitle(e.target);
+    function cycleLabelFor(dateStr) {
+      if (!dateStr) return '';
+      var d = new Date(dateStr + 'T00:00:00');
+      if (isNaN(d.getTime())) return '';
+      var daysSince = (d.getDay() - CYCLE_START_WD + 7) % 7;
+      var start = new Date(d); start.setDate(d.getDate() - daysSince);
+      var end = new Date(start); end.setDate(start.getDate() + ((CYCLE_END_WD - CYCLE_START_WD + 7) % 7));
+      if (start.getMonth() === end.getMonth()) {
+        return fmtDay(start) + '-' + end.getDate() + ', ' + start.getFullYear();
+      }
+      return fmtDay(start) + ' - ' + fmtDay(end) + ', ' + end.getFullYear();
+    }
+
+    var dateInput = document.getElementById('id_transaction_date');
+    var cycleInput = document.getElementById('id_cycle');
+    if (dateInput && cycleInput) {
+      dateInput.addEventListener('change', function () {
+        cycleInput.value = cycleLabelFor(dateInput.value);
+      });
+    }
+
+    // Supplier / Customer picker -> hidden supplier_name input. The async
+    // results carry "CODE — Name"; we store just the recorded name so the
+    // voucher header/print/exports show the plain party name.
+    function syncPartyName(sel) {
+      var hidden = document.getElementById('id_supplier_name');
+      if (!hidden) return;
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) { hidden.value = ''; return; }
+      var raw = opt.textContent;
+      var m = raw.match(/^[^\s—]+\s*[—-]?\s*(.+)$/);
+      hidden.value = m && m[1] ? m[1].trim() : raw.trim();
+    }
+    var partySel = document.getElementById('id_supplier_picker');
+    if (partySel) {
+      syncPartyName(partySel);
+      partySel.addEventListener('change', function () { syncPartyName(partySel); });
+    }
+
+    // Split the account picker display into COA code + Account Name.
+    function splitAccountText(text) {
+      var parts = String(text || '').trim().split(/\s+/);
+      var code = parts.length ? parts[0] : '';
+      var rest = String(text || '').replace(/^\s*\S+\s*/, '');
+      rest = rest.replace(/^[—-]\s*/, '').trim(); // strip " — " separator
+      return { code: code, name: rest };
+    }
+
+    function syncAccountDisplay(sel, coaSpan, nameSpan) {
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) {
+        if (coaSpan) coaSpan.textContent = '';
+        if (nameSpan) nameSpan.textContent = '';
+        return;
+      }
+      var parts = splitAccountText(opt.textContent);
+      if (coaSpan) coaSpan.textContent = parts.code;
+      // Show the account NAME only in the picker label + name span after a pick.
+      if (nameSpan) nameSpan.textContent = parts.name;
+      var label = sel.closest('.searchable-wrap') && sel.closest('.searchable-wrap').querySelector('.searchable-label');
+      if (label && opt.textContent !== parts.name) {
+        opt.textContent = parts.name;
+        label.textContent = parts.name;
+        if (sel.title && sel.title.indexOf(parts.code) !== -1 && sel.title.indexOf(parts.name) === -1) {
+          sel.title = parts.code + ' — ' + parts.name;
+        }
+      }
+    }
+
+    document.querySelectorAll('#lines-body select[name="account"]').forEach(function (sel) {
+      var row = sel.closest('tr');
+      syncAccountDisplay(sel, row.querySelector('.coa-display'), row.querySelector('.account-name-display'));
     });
-    document.getElementById("add-line").addEventListener("click", function () {
+
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.matches && e.target.matches('#lines-body select[name="account"]')) {
+        var row = e.target.closest('tr');
+        syncAccountDisplay(e.target, row.querySelector('.coa-display'), row.querySelector('.account-name-display'));
+      }
+    });
+
+    document.getElementById('add-line').addEventListener('click', function () {
       setTimeout(function () {
         var rows = document.querySelectorAll('#lines-body tr');
         var last = rows[rows.length - 1];
         if (!last) return;
         var sel = last.querySelector('select[name="account"]');
-        if (sel) syncAccountTitle(sel);
+        if (sel) {
+          syncAccountDisplay(sel, last.querySelector('.coa-display'), last.querySelector('.account-name-display'));
+        }
       }, 0);
     });
   })();

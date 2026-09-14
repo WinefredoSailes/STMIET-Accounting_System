@@ -16,6 +16,14 @@
     </select>
     <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Filter</button>
   </form>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'ui:general_journal_export' %}?format=xlsx{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if segment_sel %}&segment={{ segment_sel }}{% endif %}"
+       class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+    <a href="{% url 'ui:general_journal_export' %}?format=pdf{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if segment_sel %}&segment={{ segment_sel }}{% endif %}"
+       class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+    <a href="{% url 'ui:general_journal_export' %}?format=csv{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if segment_sel %}&segment={{ segment_sel }}{% endif %}"
+       class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+  </div>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="GENERAL JOURNAL" subtitle="Register of posted entries — workbook layout: Date | Cycle | Ref | Party | PO | Description | CoA | Account Name | Debit | Credit." actions=gj_filters %}
 
@@ -31,9 +39,11 @@
           <th class="px-3 py-3">Description</th>
           <th class="px-3 py-3">CoA</th>
           <th class="px-3 py-3">Account Name</th>
+          <th class="px-3 py-3">Cost Center</th>
           <th class="px-3 py-3 text-right">Debit</th>
           <th class="px-3 py-3 text-right">Credit</th>
           <th class="px-3 py-3 text-center">Bal.</th>
+          <th class="px-3 py-3"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -47,6 +57,7 @@
           <td class="px-3 py-1.5">{{ row.description|truncatechars:60 }}</td>
           <td class="px-3 py-1.5 tabular-nums">{{ row.coa }}</td>
           <td class="px-3 py-1.5">{{ row.account_name|truncatechars:40 }}</td>
+          <td class="px-3 py-1.5">{{ row.cost_center|default:"—" }}</td>
           <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.debit|money }}</td>
           <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.credit|money }}</td>
           <td class="px-3 py-1.5 text-center">
@@ -56,19 +67,25 @@
             <span class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800" title="Entry {{ row.ref }} is not balanced">NOT BALANCE</span>
             {% endif %}
           </td>
+          <td class="px-3 py-1.5 whitespace-nowrap">
+            {% if row.new_entry %}
+            <a href="{% url 'ui:je_print' row.entry_pk %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>
+            {% endif %}
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="11" class="px-4 py-8 text-center text-slate-400">No posted journal entries match the filters.</td></tr>
+        <tr><td colspan="13" class="px-4 py-8 text-center text-slate-400">No posted journal entries match the filters.</td></tr>
         {% endfor %}
       </tbody>
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
-          <td colspan="8" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals</td>
+          <td colspan="9" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals</td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_debit|money }}</td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_credit|money }}</td>
           <td class="px-3 py-2 text-center">
             {% if variance == 0 %}<span class="text-emerald-700">OK</span>{% else %}<span class="text-red-700">VARIANCE {{ variance|money }}</span>{% endif %}
           </td>
+          <td class="px-3 py-2"></td>
         </tr>
       </tfoot>
     </table>

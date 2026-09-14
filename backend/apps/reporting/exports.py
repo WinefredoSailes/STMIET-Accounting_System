@@ -7,6 +7,7 @@ The XLSX builders are the existing openpyxl ones in reporting.excel_export.
 Formats are selected via ?format=xlsx|csv|pdf on the export URLs.
 """
 
+import csv
 from decimal import Decimal
 from io import BytesIO, StringIO
 

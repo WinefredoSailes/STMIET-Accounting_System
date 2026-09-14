@@ -594,20 +594,26 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
         else:
             cycle_label = f"{cycle_start:%b} {cycle_start.day} - {cycle_end:%b} {cycle_end.day}, {cycle_end:%Y}"
         party = party_by.get(entry.source_doc_no, "") if entry.source_doc_no else ""
+        # Manual voucher JEs carry their party/PO on the header (supplier_name
+        # / po); master-derived parties still win when the entry has one.
+        party = party or entry.supplier_name or ""
+        po = entry.po or ""
         balanced = entry.is_balanced
         for line in entry.lines.all():
             rows.append(
                 {
                     "new_entry": True,
+                    "entry_pk": entry.id,
                     "date": entry.transaction_date,
                     "cycle": cycle_label,
                     "ref": entry.entry_no,
                     "source_type": entry.source_doc_type,
                     "party": party,
-                    "po": "",
+                    "po": po,
                     "description": line.description or entry.description,
                     "coa": line.account.code,
                     "account_name": line.account.name,
+                    "cost_center": line.cost_center or "",
                     "debit": line.debit,
                     "credit": line.credit,
                     "entry_balanced": balanced,

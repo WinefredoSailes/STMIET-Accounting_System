@@ -72,6 +72,10 @@ class JournalEntry(AuditableModel):
     reversal_token = models.CharField(max_length=40, blank=True, db_index=True)
     total_debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     total_credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    # Document metadata for voucher layout (ACCTG-FOR-012).
+    supplier_name = models.CharField(max_length=255, blank=True, default="")
+    po = models.CharField(max_length=128, blank=True, default="")
+    ref_number = models.CharField(max_length=128, blank=True, default="")
 
     class Meta:
         ordering = ["-transaction_date", "-id"]
@@ -115,6 +119,9 @@ class JournalEntryLine(models.Model):
     credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     # Optional operational tagging (AR/AP subledger refs, payroll event no.):
     reference = models.CharField(max_length=64, blank=True)
+    # Display-level cost center / ref. carried per line (ADR-038 §8):
+    # e.g. "OS — offsite", "GEN-FUEL". Same concept/width as RFPLine.cost_center.
+    cost_center = models.CharField("Cost center", max_length=64, blank=True)
 
     class Meta:
         ordering = ["line_no"]

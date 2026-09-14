@@ -50,6 +50,24 @@ def pct(value):
         return value
 
 
+@register.filter
+def cycle_label(date_value, company=None):
+    """Transaction date -> weekly cash cycle label, e.g. "Sep 8-14, 2026".
+
+    Mirrors the format used by the General Journal register
+    (apps/ui/services.py::general_journal).
+    """
+    from apps.foundation.calendar import cycle_range_for
+
+    try:
+        start, end = cycle_range_for(date_value, company=company)
+    except Exception:
+        return ""
+    if start.month == end.month:
+        return f"{start:%b} {start.day}-{end.day}, {start:%Y}"
+    return f"{start:%b} {start.day} - {end:%b} {end.day}, {end:%Y}"
+
+
 # Single source of truth for status -> Tailwind badge color mapping.
 # Consumed by ui/partials/status_badge.html. "Approved" and "open" have
 # domain-specific colors today (JE approved = blue, cash-short approved =
