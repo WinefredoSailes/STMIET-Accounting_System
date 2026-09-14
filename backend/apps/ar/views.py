@@ -61,6 +61,7 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
         receipt = CollectionService.record_collection(
             receipt_no=data.get("receipt_no") or DocumentSequence.next_number(
                 company=customer.segment.company, form_code="AR", year=request.data.get("year", 2026),
+                pattern="AR-{YYYY}-{SEQ:05d}",
             ),
             customer=customer,
             transaction_date=data.get("transaction_date"),

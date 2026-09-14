@@ -84,7 +84,7 @@ class CollectionService:
             )
 
             entry = JournalEntry.objects.create(
-                entry_no=receipt_no,
+                entry_no=receipt_no if receipt_no.startswith("AR-") else f"AR-{receipt_no}",
                 company=customer.segment.company,
                 segment=seg,
                 transaction_date=transaction_date,

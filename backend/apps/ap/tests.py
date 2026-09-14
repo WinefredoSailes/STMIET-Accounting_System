@@ -413,6 +413,47 @@ class TestCONSOPosting:
             assert lines[2].credit == r.amount
             assert lines[2].account.code == "20000"  # AP DHPP
 
+    def test_posting_uses_prefixed_je_number_even_when_number_is_taken(
+        self, company, segment, supplier, alywin, accounts
+    ):
+        """Regression for the production 500: RFP/AR/manual JEs all allocated
+        the bare 'YYYY-SEQ' namespace, so an RFP whose ap_number equalled an
+        existing JE entry_no (manual or AR) blew the unique constraint on post.
+        RFP-derived JEs now carry an 'RFP-' prefix and always post cleanly."""
+        from django.contrib.auth import get_user_model
+
+        head = get_user_model().objects.create_user(username="headRFP", password="x")
+        rfp = RFPService.create_rfp(
+            ap_number="2026-00005", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "50000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "50000.00"},
+            ],
+            user=alywin,
+        )
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-06", conso_date=date(2026, 1, 20))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+
+        # Simulate the pre-existing JE that owned the bare number (manual JE
+        # or AR receipt) which previously blocked the RFP post with a 500.
+        JournalEntry.objects.create(
+            entry_no="2026-00005", company=company, segment=segment,
+            transaction_date=date(2026, 1, 10), status=PostingStatus.DRAFT,
+            description="Some earlier entry",
+        )
+
+        CONSOService.post_batch(batch, user=head)
+
+        rfp.refresh_from_db()
+        assert rfp.status == "posted"
+        assert rfp.journal_entry.entry_no == "RFP-2026-00005"
+        assert rfp.journal_entry.is_posted
+        # The pre-existing bare-number entry is untouched.
+        assert JournalEntry.objects.filter(entry_no="2026-00005").exists()
+
     def test_line_cost_center_survives_posting(self, company, segment, supplier, alywin, accounts):
         from django.contrib.auth import get_user_model
 

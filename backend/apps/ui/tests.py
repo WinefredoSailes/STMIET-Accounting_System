@@ -1089,7 +1089,7 @@ class TestReceiptScreen:
         from apps.ar.models import AcknowledgmentReceipt
 
         receipt = AcknowledgmentReceipt.objects.get()
-        assert receipt.receipt_no == "2026-00001"
+        assert receipt.receipt_no == "AR-2026-00001"
         assert receipt.journal_entry_id
         assert receipt.journal_entry.is_posted
 

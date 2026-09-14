@@ -520,7 +520,7 @@ class CONSOService:
     def _post_one(cls, rfp: RFPDocument, *, user) -> JournalEntry:
         with transaction.atomic():
             entry = JournalEntry.objects.create(
-                entry_no=rfp.ap_number,
+                entry_no=f"RFP-{rfp.ap_number}",
                 company=rfp.segment.company,
                 segment=rfp.segment,
                 transaction_date=rfp.rfp_date,
