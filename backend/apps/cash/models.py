@@ -243,6 +243,7 @@ class InterAccountTransfer(AuditableModel):
     """Inter-account transfer (ADR-030): Dr Cash-To | Cr Cash-From; purpose required."""
 
     transfer_date = models.DateField(db_index=True)
+    voucher_no = models.CharField(max_length=32, blank=True, db_index=True)
     from_account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="transfers_out")
     to_account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="transfers_in")
     amount = models.DecimalField(max_digits=18, decimal_places=2)

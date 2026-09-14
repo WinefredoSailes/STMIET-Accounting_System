@@ -69,10 +69,14 @@
             <td class="px-4 py-2">{{ t.to_account.code }} <span class="text-slate-400">({{ t.to_account.bank_name }})</span></td>
             <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ t.amount|money }}</td>
             <td class="px-4 py-2">{{ t.purpose }}</td>
-            <td class="px-4 py-2">
-              {% if t.journal_entry %}
-              <a href="{% url 'ui:je_detail' t.journal_entry.pk %}" class="text-indigo-600 hover:underline">{{ t.journal_entry.entry_no }}</a>
-              {% else %}<span class="text-slate-400">—</span>{% endif %}
+            <td class="px-4 py-2 whitespace-nowrap">
+              <div class="flex items-center gap-2">
+                {% if t.journal_entry %}
+                <a href="{% url 'ui:je_detail' t.journal_entry.pk %}" class="text-indigo-600 hover:underline">{{ t.journal_entry.entry_no }}</a>
+                {% else %}<span class="text-slate-400">—</span>{% endif %}
+                <a href="{% url 'ui:ftv_print' t.id %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>
+                <a href="{% url 'ui:ftv_pdf_export' t.id %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">PDF</a>
+              </div>
             </td>
           </tr>
           {% empty %}

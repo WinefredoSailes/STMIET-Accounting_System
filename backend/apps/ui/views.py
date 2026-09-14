@@ -1229,6 +1229,7 @@ def receipt_create(request):
                 company=customer.segment.company,
                 form_code="AR",
                 year=int(request.POST["transaction_date"][:4]),
+                pattern="AR-{YYYY}-{SEQ:05d}",
             )
             receipt = CollectionService.record_collection(
                 receipt_no=receipt_no,
@@ -3478,6 +3479,83 @@ def transfer_create(request):
     except (BankAccount.DoesNotExist, ValueError, AccountingError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:transfers")
+
+
+def _transfer_type(transfer):
+    """Derived TRANSFER TYPE (no schema field): same bank -> intra-bank."""
+    from_bank = (transfer.from_account.bank_name or "").strip().casefold()
+    to_bank = (transfer.to_account.bank_name or "").strip().casefold()
+    return "Intra-Bank Transfer" if from_bank and from_bank == to_bank else "Inter-Bank Transfer"
+
+
+def _ftv_context(transfer):
+    """Shared context for the FTV print view and ReportLab PDF export."""
+    from apps.cash.services import TransferService
+    from apps.core.approvals import role_assignee, signatory_name
+
+    entry = transfer.journal_entry
+    prepared_by = signatory_name(
+        transfer.initiated_by or (entry.created_by if entry else None)
+    )
+    checked_by = role_assignee("head")
+    approved_by = role_assignee("coo") or checked_by
+    return {
+        "transfer": transfer,
+        "voucher_no": TransferService.ensure_voucher_no(transfer),
+        "transfer_type": _transfer_type(transfer),
+        "entry": entry,
+        "lines": list(entry.lines.order_by("line_no")) if entry else [],
+        "total": entry.total_debit if entry else transfer.amount,
+        "total_credit": entry.total_credit if entry else transfer.amount,
+        "prepared_by": prepared_by,
+        "checked_by": checked_by,
+        "approved_by": approved_by,
+        "date_label": (
+            transfer.transfer_date.strftime("%B %d, %Y") if transfer.transfer_date else ""
+        ),
+    }
+
+
+def _ftv_get(request, pk):
+    from apps.cash.models import InterAccountTransfer
+
+    return get_object_or_404(
+        InterAccountTransfer.objects.select_related(
+            "from_account", "to_account", "journal_entry", "initiated_by"
+        ).prefetch_related("journal_entry__lines__account", "journal_entry__lines__segment"),
+        pk=pk,
+    )
+
+
+@login_required
+def ftv_print(request, pk):
+    """Print-optimized Fund Transfer Voucher (FTV) — browser print dialog."""
+    transfer = _ftv_get(request, pk)
+    return render(request, "ui/cash/ftv_print.html", _ftv_context(transfer))
+
+
+@login_required
+def ftv_pdf_export(request, pk):
+    """Download the Fund Transfer Voucher as a real vector/text PDF."""
+    transfer = _ftv_get(request, pk)
+    ctx = _ftv_context(transfer)
+
+    from .pdf import build_fund_transfer_voucher_pdf
+
+    data = build_fund_transfer_voucher_pdf(
+        transfer,
+        voucher_no=ctx["voucher_no"],
+        transfer_type=ctx["transfer_type"],
+        date_label=ctx["date_label"],
+        prepared_by=ctx["prepared_by"],
+        checked_by=ctx["checked_by"],
+        approved_by=ctx["approved_by"],
+    )
+    response = HttpResponse(data, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="FTV_{ctx["voucher_no"]}.pdf"'
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------

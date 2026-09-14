@@ -397,9 +397,22 @@ class TransferService:
             raise ValidationError("From and to accounts must differ.")
         if from_account.company_id != to_account.company_id:
             raise ValidationError("Transfers are only allowed within one company.")
+        if isinstance(transfer_date, str):
+            transfer_date = date.fromisoformat(transfer_date)
 
+        # Voucher number from the per-company/per-year FTV sequence (ADR-032)
+        # so printed FTVs never collide with JE/RFP/CV/PCV numbers.
+        from apps.sequences.models import DocumentSequence
+
+        voucher_no = DocumentSequence.next_number(
+            company=from_account.company,
+            form_code="FTV",
+            year=(transfer_date or date.today()).year,
+            pattern="FTV-{YYYY}-{SEQ:04d}",
+        )
         transfer = InterAccountTransfer.objects.create(
             transfer_date=transfer_date or date.today(),
+            voucher_no=voucher_no,
             from_account=from_account,
             to_account=to_account,
             amount=amount,
@@ -436,6 +449,22 @@ class TransferService:
         transfer.journal_entry = entry
         transfer.save(update_fields=["journal_entry", "updated_at"])
         return transfer
+
+    @classmethod
+    def ensure_voucher_no(cls, transfer: InterAccountTransfer) -> str:
+        """Lazily allocate the FTV number for transfers created before the
+        FTV series existed. Kept stable afterwards so reprints match."""
+        if not transfer.voucher_no:
+            from apps.sequences.models import DocumentSequence
+
+            transfer.voucher_no = DocumentSequence.next_number(
+                company=transfer.from_account.company,
+                form_code="FTV",
+                year=(transfer.transfer_date or timezone.localdate()).year,
+                pattern="FTV-{YYYY}-{SEQ:04d}",
+            )
+            transfer.save(update_fields=["voucher_no", "updated_at"])
+        return transfer.voucher_no
 
 
 class CashFlowService:

@@ -117,6 +117,8 @@ urlpatterns = [
     path("cash/collectibles/", views.collectibles, name="collectibles"),
     path("cash/transfers/", views.transfers, name="transfers"),
     path("cash/transfers/new/", views.transfer_create, name="transfer_create"),
+    path("cash/transfers/<int:pk>/print/", views.ftv_print, name="ftv_print"),
+    path("cash/transfers/<int:pk>/pdf/", views.ftv_pdf_export, name="ftv_pdf_export"),
     # Assets
     path("assets/", views.asset_list, name="asset_list"),
     path("assets/new/", views.asset_create, name="asset_create"),
