@@ -48,7 +48,7 @@
   function cloneRow(grid, resetSelects) {
     var src = grid.querySelector('tr');
     var row = src.cloneNode(true);
-    row.querySelectorAll('input, textarea').forEach(function (i) { i.value = ''; i.removeAttribute('title'); if (i.tagName === 'TEXTAREA') i.style.height = 'auto'; });
+    row.querySelectorAll('input, textarea').forEach(function (i) { i.value = ''; i.removeAttribute('title'); if (i.tagName === 'TEXTAREA') { i.style.height = 'auto'; i.removeAttribute('data-autogrown'); } });
     // Async pickers (searchable + data-search-url) must start blank on cloned
     // rows: their options were fetched for the source row and the picked value
     // would silently duplicate otherwise.

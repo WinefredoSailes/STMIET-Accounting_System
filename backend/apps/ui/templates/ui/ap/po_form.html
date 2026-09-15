@@ -83,7 +83,7 @@
             <td class="py-2"><input type="text" name="line_pr_no" maxlength="32" value="{{ line.pr_number }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" value="{{ line.qty }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
             <td class="py-2"><input type="text" name="line_unit" maxlength="32" value="{{ line.unit }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-            <td class="py-2"><input type="text" name="line_description" maxlength="255" value="{{ line.description }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><textarea name="line_description" data-autogrow rows="1" maxlength="255" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">{{ line.description }}</textarea></td>
             <td class="py-2">
               <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}{% if line.account %}?selected={{ line.account.code }}{% endif %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 {% if line.account %}<option value="{{ line.account.code }}" selected>{{ line.account.code }} — {{ line.account.name }}</option>{% else %}<option value="" selected>— select —</option>{% endif %}
@@ -100,7 +100,7 @@
             <td class="py-2"><input type="text" name="line_pr_no" maxlength="32" placeholder="2026-189" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
             <td class="py-2"><input type="text" name="line_unit" maxlength="32" placeholder="DRUM" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-            <td class="py-2"><input type="text" name="line_description" maxlength="255" placeholder="ENGINE OIL 15W40" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><textarea name="line_description" data-autogrow rows="1" placeholder="ENGINE OIL 15W40" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
             <td class="py-2">
               <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                 <option value="" selected>— select —</option>
@@ -216,6 +216,10 @@
       row.querySelectorAll('input, textarea').forEach(function (i) {
         i.value = '';
         i.removeAttribute('title');
+        if (i.tagName === 'TEXTAREA') {
+          i.style.height = 'auto';
+          i.removeAttribute('data-autogrown');
+        }
       });
       // Async account pickers on cloned rows must start blank and re-wrap:
       // their options were fetched for the source row and the wrapped select

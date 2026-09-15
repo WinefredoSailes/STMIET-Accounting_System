@@ -3932,6 +3932,12 @@ class TestPurchaseOrderScreen:
         assert 'name="line_account"' in body
         assert "GL ACCOUNT" in body
 
+    def test_po_form_description_autogrows(self, client, company, segment, accounts, supplier):
+        resp = client.get("/ap/pos/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert 'name="line_description" data-autogrow rows="1"' in body
+
     def test_po_options_filters_approved_and_vendor(
         self, client, company, segment, accounts, supplier, other_supplier, approved_po
     ):
