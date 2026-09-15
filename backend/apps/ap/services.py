@@ -587,7 +587,7 @@ class PurchaseOrderService:
         supplier: Supplier,
         segment,
         particulars: str = "",
-        lines: list[dict],  # [{pr_number, qty, unit, description, unit_price}]
+        lines: list[dict],  # [{pr_number, qty, unit, description, unit_price, account}]
         discount: Decimal = Decimal("0.00"),
         vat_amount: Decimal = Decimal("0.00"),
         other_charges: Decimal = Decimal("0.00"),
@@ -604,7 +604,7 @@ class PurchaseOrderService:
         subtotal - discount + VAT + other charges."""
         subtotal = Decimal("0.00")
         parsed = []
-        for line in lines:
+        for line_no, line in enumerate(lines, start=1):
             qty = money(line["qty"])
             price = money(line["unit_price"])
             if qty <= 0 or price <= 0:
@@ -612,8 +612,12 @@ class PurchaseOrderService:
             desc = (line.get("description") or "").strip()
             if not desc:
                 raise ValidationError("Each PO line needs a description.")
+            account = None
+            account_code = (line.get("account") or "").strip()
+            if account_code:
+                account = _account(account_code)
             amt = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            parsed.append((qty, price, amt, line))
+            parsed.append((qty, price, amt, line, account, account_code))
             subtotal += amt
         if not parsed:
             raise ValidationError("A PO needs at least one line item.")
@@ -644,7 +648,7 @@ class PurchaseOrderService:
             status="prepared",
             created_by=user,
         )
-        for i, (qty, price, amt, line) in enumerate(parsed, start=1):
+        for i, (qty, price, amt, line, account, _code) in enumerate(parsed, start=1):
             POLine.objects.create(
                 po=po,
                 line_no=i,
@@ -654,6 +658,7 @@ class PurchaseOrderService:
                 description=(line.get("description") or "").strip(),
                 unit_price=price,
                 amount=amt,
+                account=account,
             )
         log_action(po, "created", actor=user)
         return po
@@ -827,7 +832,7 @@ class PurchaseOrderService:
         if lines is not None:
             subtotal = Decimal("0.00")
             parsed = []
-            for line in lines:
+            for line_no, line in enumerate(lines, start=1):
                 qty = money(line["qty"])
                 price = money(line["unit_price"])
                 if qty <= 0 or price <= 0:
@@ -835,14 +840,18 @@ class PurchaseOrderService:
                 desc = (line.get("description") or "").strip()
                 if not desc:
                     raise ValidationError("Each PO line needs a description.")
+                account = None
+                account_code = (line.get("account") or "").strip()
+                if account_code:
+                    account = _account(account_code)
                 amt = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                parsed.append((qty, price, amt, line))
+                parsed.append((qty, price, amt, line, account, account_code))
                 subtotal += amt
             if not parsed:
                 raise ValidationError("A PO needs at least one line item.")
             po.lines.all().delete()
             po.subtotal = subtotal
-            for i, (qty, price, amt, line) in enumerate(parsed, start=1):
+            for i, (qty, price, amt, line, account, _code) in enumerate(parsed, start=1):
                 POLine.objects.create(
                     po=po,
                     line_no=i,
@@ -852,6 +861,7 @@ class PurchaseOrderService:
                     description=(line.get("description") or "").strip(),
                     unit_price=price,
                     amount=amt,
+                    account=account,
                 )
         if discount is not None:
             po.discount = money(discount)

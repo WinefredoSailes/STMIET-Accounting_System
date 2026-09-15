@@ -34,7 +34,7 @@
         <select name="po" id="id_po" data-searchable data-search-value="id" data-search-placeholder="Search PO number or vendor…" data-search-url="{% url 'ui:po_options' %}{% if editing and editing.po %}?supplier={{ editing.payee_id }}&selected={{ editing.po_id }}{% endif %}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
           {% if editing and editing.po %}<option value="{{ editing.po_id }}" selected>{{ editing.po.po_number }} — {{ editing.po.supplier.name }} (available ₱{{ editing.po.available_amount }})</option>{% else %}<option value="" selected>— no PO —</option>{% endif %}
         </select>
-        <p class="text-xs text-slate-500 mt-1">Pick an approved PO from the same vendor to authorize this disbursement. The remaining balance is enforced when the RFP is approved.</p>
+        <p class="text-xs text-slate-500 mt-1">Pick an approved PO from the same vendor to authorize this disbursement. The remaining balance is enforced when the RFP is approved. Picking a PO pre-fills the vendor, segment and the distribution grid — over blank lines only, so manual entries are never overwritten. Drag ⋮⋮ to reorder lines; &times; removes a line.</p>
       </div>
     </div>
     <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
@@ -45,16 +45,19 @@
     <div class="px-6 pb-4">
       <table class="line-table w-full text-sm" style="min-width: 1190px;">
         <colgroup>
+          <col style="width:30px"><!-- drag -->
           <col style="width:40px"><!-- # -->
-          <col style="width:280px"><!-- Account (GL) -->
+          <col style="width:270px"><!-- Account (GL) -->
           <col style="width:90px"><!-- Segment -->
-          <col style="width:350px"><!-- Description -->
+          <col style="width:340px"><!-- Description -->
           <col style="width:90px"><!-- Cost Center/Ref -->
           <col style="width:170px"><!-- Debit -->
           <col style="width:170px"><!-- Credit -->
+          <col style="width:36px"><!-- remove -->
         </colgroup>
         <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
           <tr>
+            <th class="py-2"></th>
             <th class="py-2">#</th>
             <th class="py-2">Account (GL)</th>
             <th class="py-2">Segment</th>
@@ -62,6 +65,7 @@
             <th class="py-2">Cost Center/Ref</th>
             <th class="py-2 text-right">Debit</th>
             <th class="py-2 text-right">Credit</th>
+            <th class="py-2"></th>
           </tr>
         </thead>
         <tbody id="lines-body" data-line-grid="rfp"
@@ -70,6 +74,7 @@
           {% if editing %}
           {% for line in editing.lines.all %}
           <tr>
+            <td class="py-2 text-slate-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
             <td class="py-2 text-slate-400 line-no">{{ forloop.counter }}</td>
             <td class="py-2">
               <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?selected={{ line.account.code }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
@@ -85,10 +90,12 @@
             <td class="py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" {% if line.side == 'dr' %}value="{{ line.amount }}"{% endif %} class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" {% if line.side == 'cr' %}value="{{ line.amount }}"{% endif %} class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
           </tr>
           {% endfor %}
           {% else %}
           <tr>
+            <td class="py-2 text-slate-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
             <td class="py-2 text-slate-400 line-no">1</td>
             <td class="py-2">
               <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
@@ -104,17 +111,18 @@
             <td class="py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS — offsite, GEN-FUEL" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
           </tr>
           {% endif %}
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="5" class="py-2 text-right font-semibold">TOTALS</td>
+            <td colspan="7" class="py-2 text-right font-semibold">TOTALS</td>
             <td id="total-dr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
             <td id="total-cr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
           </tr>
           <tr>
-            <td colspan="7" class="py-2">
+            <td colspan="9" class="py-2">
               <button type="button" id="add-line" data-add-row
                       class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
                 + Add line
@@ -157,6 +165,7 @@
     // whenever the payee changes, and drop a picked PO from another vendor.
     var payee = document.getElementById("id_payee");
     var poSel = document.getElementById("id_po");
+    var tbody = document.getElementById("lines-body");
     var poBase = "{% url 'ui:po_options' %}";
     if (payee && poSel) {
       document.addEventListener("change", function (e) {
@@ -164,6 +173,116 @@
         var url = new URL(poBase, window.location.origin);
         if (payee.value) url.searchParams.set("supplier", payee.value);
         poSel.dataset.searchUrl = url.toString();
+      });
+    }
+
+    // PO -> RFP pre-fill: picking an approved PO carries the vendor, segment
+    // and line items (description + amount + optional GL account) into the
+    // form. Lines only populate when nothing has been typed yet — manual
+    // distribution entries are never clobbered; re-picking the same lines
+    // re-populates seamlessly (tracked by signature).
+    var poPreBase = "{% url 'ui:po_prefill' 0 %}".replace(/\/0\/$/, "/");
+    var accountUrl = "{% url 'ui:account_options' %}";
+    var prefillSig = null;
+
+    function rowIsBlank(tr) {
+      var acc = tr.querySelector('select[name="line_account"]');
+      var desc = tr.querySelector('textarea[name="line_description"]');
+      var dr = tr.querySelector('input[name="line_debit"]');
+      var cr = tr.querySelector('input[name="line_credit"]');
+      return (!acc || !acc.value) && (!desc || !desc.value.trim()) && (!dr || !dr.value) && (!cr || !cr.value);
+    }
+
+    function gridIsEmpty() {
+      var rows = tbody.querySelectorAll('tr');
+      return !rows.length || (rows.length === 1 && rowIsBlank(rows[0]));
+    }
+
+    function gridSig() {
+      var parts = [];
+      tbody.querySelectorAll('tr').forEach(function (tr) {
+        var acc = tr.querySelector('select[name="line_account"]');
+        var desc = tr.querySelector('textarea[name="line_description"]');
+        var dr = tr.querySelector('input[name="line_debit"]');
+        parts.push((acc ? acc.value : "") + "|" + (desc ? desc.value : "") + "|" + (dr ? dr.value : ""));
+      });
+      return parts.join("\n");
+    }
+
+    function prefilledLinesSig(data) {
+      return data.lines.map(function (ln) {
+        return (ln.account_code || "") + "|" + (ln.description || "") + "|" + (ln.amount || "");
+      }).join("\n");
+    }
+
+    function resetCloneSearchable(sel) {
+      sel.removeAttribute("data-search-enhanced");
+      var wrap = sel.closest(".searchable-wrap");
+      if (wrap) wrap.replaceWith(sel);
+      sel.classList.add("hidden");
+    }
+
+    function applyPrefill(data) {
+      if (payee && data.supplier_id && !payee.value) {
+        setSearchableValue(payee, String(data.supplier_id), data.supplier_code + " — " + data.supplier_name);
+      }
+      if (data.segment_id) {
+        if (hidden && !hidden.value) hidden.value = String(data.segment_id);
+        if (!data.lines || !data.lines.length) return;
+        var canFillLines = gridIsEmpty() || (prefillSig !== null && gridSig() === prefillSig);
+        if (!canFillLines) return;
+      }
+      if (!data.lines || !data.lines.length) return;
+
+      var src = tbody.querySelector("tr");
+      tbody.innerHTML = "";
+      data.lines.forEach(function (ln, i) {
+        var tr = src.cloneNode(true);
+        tr.querySelectorAll("input, textarea").forEach(function (el) {
+          if (el.name === "line_debit") el.value = ln.amount || "";
+          else el.value = "";
+          el.removeAttribute("title");
+        });
+        var accSel = tr.querySelector('select[name="line_account"]');
+        if (accSel) {
+          resetCloneSearchable(accSel);
+          if (ln.account_code) {
+            accSel.dataset.searchUrl = accountUrl + "?selected=" + encodeURIComponent(ln.account_code);
+            accSel.innerHTML = '<option value="' + ln.account_code + '" selected>' +
+              ln.account_code + " — " + (ln.account_name || "") + "</option>";
+          } else {
+            accSel.dataset.searchUrl = accountUrl;
+            accSel.innerHTML = '<option value="" selected>— select —</option>';
+          }
+        }
+        var segSel = tr.querySelector('select[name="line_segment"]');
+        if (segSel && data.segment_id) segSel.value = String(data.segment_id);
+        var descTa = tr.querySelector('textarea[name="line_description"]');
+        if (descTa) {
+          descTa.value = ln.description || "";
+          if (window.resizeAutogrow) window.resizeAutogrow(descTa);
+        }
+        var no = tr.querySelector(".line-no");
+        if (no) no.textContent = i + 1;
+        tbody.appendChild(tr);
+      });
+      window.enhanceSearchable(document);
+      window.enhanceAutogrow(document);
+      tbody.dispatchEvent(new Event("change", { bubbles: true }));
+      syncSegment();
+      prefillSig = prefilledLinesSig(data);
+    }
+
+    if (poSel) {
+      poSel.addEventListener("change", function () {
+        var id = poSel.value;
+        if (!id) return;
+        fetch(poPreBase + id + "/", { headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (data && !data.error) applyPrefill(data);
+          })
+          .catch(function () {});
       });
     }
   })();

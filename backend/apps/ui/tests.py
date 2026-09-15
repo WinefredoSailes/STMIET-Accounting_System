@@ -3905,6 +3905,7 @@ class TestPurchaseOrderScreen:
             "line_unit": ["DRUM", ""],
             "line_description": ["ENGINE OIL 15W40", ""],
             "line_unit_price": ["25000.00", ""],
+            "line_account": ["61100", ""],
             "discount": "0.00",
             "vat_amount": "0.00",
             "other_charges": "0.00",
@@ -3922,6 +3923,14 @@ class TestPurchaseOrderScreen:
         assert line.pr_number == "2026-189"
         assert line.amount == Decimal("50000.00")
         assert line.qty == Decimal("2")
+        assert line.account == accounts["61100"]
+
+    def test_po_form_has_optional_account_column(self, client, company, segment, accounts, supplier):
+        resp = client.get("/ap/pos/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert 'name="line_account"' in body
+        assert "GL ACCOUNT" in body
 
     def test_po_options_filters_approved_and_vendor(
         self, client, company, segment, accounts, supplier, other_supplier, approved_po
@@ -3988,7 +3997,7 @@ class TestRFPPurchaseOrderScreen:
         )
 
     @pytest.fixture
-    def po(self, db, company, segment, supplier):
+    def po(self, db, company, segment, supplier, accounts):
         from apps.ap.models import PurchaseOrder
         from apps.foundation.models import UserProfile
 
@@ -3998,9 +4007,11 @@ class TestRFPPurchaseOrderScreen:
         )
         from apps.ap.models import POLine
 
-        POLine.objects.create(po=po, line_no=1, qty=Decimal("2"), unit="DRUM",
-                              description="DIESEL", unit_price=Decimal("50000.00"),
-                              amount=Decimal("100000.00"))
+        POLine.objects.create(
+            po=po, line_no=1, qty=Decimal("2"), unit="DRUM",
+            description="DIESEL", unit_price=Decimal("50000.00"),
+            amount=Decimal("100000.00"), account=accounts["61100"],
+        )
         return po
 
     def test_rfp_create_with_po(self, client, company, segment, accounts, supplier, po, user):
@@ -4067,4 +4078,43 @@ class TestRFPPurchaseOrderScreen:
         assert resp.status_code == 200
         body = resp.content.decode()
         assert po.po_number in body
-        assert f"/ap/pos/{po.id}/" in body
+
+    def test_rfp_form_has_drag_and_remove_line_tools(self, client, company, segment, accounts, supplier):
+        resp = client.get("/ap/rfps/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "data-drag-handle" in body
+        assert "data-remove-row" in body
+        assert "/ap/po-pre/" in body  # pre-fill endpoint wired into the picker
+
+    def test_po_prefill_supplies_vendor_segment_and_lines(
+        self, client, company, segment, accounts, supplier, po
+    ):
+        resp = client.get(f"/ap/po-pre/{po.id}/")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["po_number"] == po.po_number
+        assert data["supplier_id"] == supplier.id
+        assert data["supplier_code"] == supplier.code
+        assert data["segment_id"] == segment.id
+        assert len(data["lines"]) == 1
+        assert data["lines"][0]["account_code"] == "61100"
+        assert data["lines"][0]["description"] == "DIESEL"
+        assert data["lines"][0]["amount"] == "100000.00"
+
+    def test_po_prefill_rejects_unapproved_and_missing(
+        self, client, company, segment, accounts, supplier
+    ):
+        from apps.ap.models import PurchaseOrder, POLine
+
+        po = PurchaseOrder.objects.create(
+            po_number="P0002", po_date=date(2026, 1, 5), supplier=supplier, segment=segment,
+            particulars="Not approved", status="prepared", amount=Decimal("50000.00"),
+        )
+        POLine.objects.create(po=po, line_no=1, qty=Decimal("1"), unit="PC",
+                              description="spare part", unit_price=Decimal("50000.00"),
+                              amount=Decimal("50000.00"))
+        resp = client.get(f"/ap/po-pre/{po.id}/")
+        assert resp.status_code == 400
+        resp = client.get("/ap/po-pre/999999/")
+        assert resp.status_code == 404

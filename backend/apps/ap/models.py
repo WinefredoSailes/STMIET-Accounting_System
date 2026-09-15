@@ -296,6 +296,12 @@ class POLine(models.Model):
     description = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=18, decimal_places=2)
     amount = models.DecimalField(max_digits=18, decimal_places=2)
+    # Optional GL account (ADR-042): lets the RFP picker pre-fill distribution
+    # lines from the PO. Optional so procurement entry stays unconstrained;
+    # RFP staff picks the account when the line omits it.
+    account = models.ForeignKey(
+        "foundation.Account", null=True, blank=True, on_delete=models.PROTECT, related_name="po_lines"
+    )
 
     class Meta:
         ordering = ["po", "line_no"]

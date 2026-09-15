@@ -262,6 +262,30 @@ function selectItem(wrap, item) {
   wrap.querySelector('.searchable-trigger').focus();
 }
 
+// Programmatic pick — used by the RFP form to prefill the payee when a PO is
+// selected. Sets value + label and fires change so scoping listeners rerun.
+function setSearchableValue(select, value, text) {
+  var v = String(value);
+  var opt = Array.prototype.slice.call(select.options).filter(function (o) { return o.value === v; })[0];
+  if (!opt) {
+    opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = text;
+    select.appendChild(opt);
+  }
+  select.value = v;
+  var wrap = select.closest('.searchable-wrap');
+  if (wrap) {
+    var label = wrap.querySelector('.searchable-label');
+    if (label) {
+      label.textContent = text;
+      label.classList.toggle('text-slate-700', !!v);
+      label.classList.toggle('text-slate-400', !v);
+    }
+  }
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function activeItem(panel) {
   var items = panel.querySelectorAll('.searchable-item:not([hidden])');
   for (var i = 0; i < items.length; i++) {

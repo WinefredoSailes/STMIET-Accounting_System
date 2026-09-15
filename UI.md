@@ -129,7 +129,12 @@ the database, never from hardcoded strings.
     defaults and the total amount is validated against the lines (min
     ₱2,500; advance &lt; total). An optional **Master Purchase Order** picker
     (scoped to the chosen vendor, only approved POs with remaining balance)
-    links the disbursement to its committing order (ADR-042).
+    links the disbursement to its committing order (ADR-042). Picking a PO
+    pre-fills the vendor, segment, and the distribution grid (description +
+    amount + the PO line's GL account) over **blank lines only** — manual
+    entries are never overwritten. The grid supports **per-line removal**
+    (&times;) and **drag-to-reorder** (⋮⋮ handle); re-picking the same PO
+    re-populates seamlessly.
   - **Detail** (`/ap/rfps/<id>/`) — document view with distribution table,
     TOTAL AMOUNT / ADVANCE CREDIT foot, and the ADR-020 approval chain:
     **Requested by → Checked / Recommending → Accounting Manager →
@@ -141,7 +146,8 @@ the database, never from hardcoded strings.
 - **Purchase Orders** (`/ap/pos/`) — `YYYY-SEQ` commitment documents
   (PO_LIMDON layout, ADR-042): vendor, PO date, particulars, and the
   PR/QTY/UNIT/DESCRIPTION/PRICE/AMOUNT line grid with
-  DISCOUNT / SUBTOTAL / VAT / OTHER / TOTAL foot.
+  DISCOUNT / SUBTOTAL / VAT / OTHER / TOTAL foot. Each line may carry an
+  **optional GL account** that the RFP form uses to pre-fill expense lines.
   - **+ New PO** (`/ap/pos/new/`) — vendor, date, line grid, totals, payment
     terms & contract duration, deliver-to block; saved as **prepared**.
   - **Detail** (`/ap/pos/<id>/`) — document view with VENDOR / GRAND TOTAL /

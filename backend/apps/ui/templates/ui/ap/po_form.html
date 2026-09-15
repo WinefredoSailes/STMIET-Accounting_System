@@ -47,16 +47,17 @@
     <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
 
     <div class="px-6 py-3 border-t border-slate-200 text-xs uppercase tracking-wider text-slate-500">
-      Line items — PR NO / QTY / UNIT / DESCRIPTION / UNIT PRICE / AMOUNT
+      Line items — PR NO / QTY / UNIT / DESCRIPTION / UNIT PRICE / AMOUNT &middot; optional GL account pre-fills RFP expense lines
     </div>
     <div class="px-6 pb-4">
-      <table class="line-table w-full text-sm" style="min-width: 1100px;">
+      <table class="line-table w-full text-sm" style="min-width: 1300px;">
         <colgroup>
           <col style="width:40px"><!-- # -->
           <col style="width:130px"><!-- PR No -->
           <col style="width:80px"><!-- QTY -->
           <col style="width:90px"><!-- UNIT -->
-          <col style="width:360px"><!-- DESCRIPTION -->
+          <col style="width:340px"><!-- DESCRIPTION -->
+          <col style="width:210px"><!-- GL ACCOUNT -->
           <col style="width:150px"><!-- UNIT PRICE -->
           <col style="width:150px"><!-- AMOUNT -->
           <col style="width:36px"><!-- remove -->
@@ -68,6 +69,7 @@
             <th class="py-2 text-right">QTY</th>
             <th class="py-2">UNIT</th>
             <th class="py-2">DESCRIPTION</th>
+            <th class="py-2">GL ACCOUNT (opt.)</th>
             <th class="py-2 text-right">UNIT PRICE</th>
             <th class="py-2 text-right">AMOUNT</th>
             <th></th>
@@ -82,6 +84,11 @@
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" value="{{ line.qty }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
             <td class="py-2"><input type="text" name="line_unit" maxlength="32" value="{{ line.unit }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" name="line_description" maxlength="255" value="{{ line.description }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}{% if line.account %}?selected={{ line.account.code }}{% endif %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                {% if line.account %}<option value="{{ line.account.code }}" selected>{{ line.account.code }} — {{ line.account.name }}</option>{% else %}<option value="" selected>— select —</option>{% endif %}
+              </select>
+            </td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_unit_price" value="{{ line.unit_price }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-price"></td>
             <td class="py-2 text-right tabular-nums po-row-amount">{{ line.amount|default:"" }}</td>
             <td class="py-2"><button type="button" data-po-remove-row class="text-slate-400 hover:text-red-600" title="Remove row">&times;</button></td>
@@ -94,6 +101,11 @@
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
             <td class="py-2"><input type="text" name="line_unit" maxlength="32" placeholder="DRUM" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" name="line_description" maxlength="255" placeholder="ENGINE OIL 15W40" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="" selected>— select —</option>
+              </select>
+            </td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_unit_price" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums po-price"></td>
             <td class="py-2 text-right tabular-nums po-row-amount">0.00</td>
             <td class="py-2"><button type="button" data-po-remove-row class="text-slate-400 hover:text-red-600" title="Remove row">&times;</button></td>
@@ -204,6 +216,17 @@
       row.querySelectorAll('input, textarea').forEach(function (i) {
         i.value = '';
         i.removeAttribute('title');
+      });
+      // Async account pickers on cloned rows must start blank and re-wrap:
+      // their options were fetched for the source row and the wrapped select
+      // would otherwise carry the source's picked value into the new line.
+      row.querySelectorAll('select[data-search-url]').forEach(function (s) {
+        s.removeAttribute('data-search-enhanced');
+        var wrap = s.closest('.searchable-wrap');
+        if (wrap) wrap.replaceWith(s);
+        s.classList.add('hidden');
+        s.innerHTML = '<option value="" selected>— select —</option>';
+        s.value = '';
       });
       var amtCell = row.querySelector('.po-row-amount');
       if (amtCell) amtCell.textContent = '0.00';

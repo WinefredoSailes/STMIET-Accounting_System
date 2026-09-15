@@ -50,9 +50,21 @@ class RFPDocumentSerializer(serializers.ModelSerializer):
 
 
 class POLineSerializer(serializers.ModelSerializer):
+    account_code = serializers.SerializerMethodField()
+    account_name = serializers.SerializerMethodField()
+
+    def get_account_code(self, obj):
+        return obj.account.code if obj.account else ""
+
+    def get_account_name(self, obj):
+        return obj.account.name if obj.account else ""
+
     class Meta:
         model = POLine
-        fields = ("id", "line_no", "pr_number", "qty", "unit", "description", "unit_price", "amount")
+        fields = (
+            "id", "line_no", "pr_number", "qty", "unit", "description",
+            "unit_price", "amount", "account", "account_code", "account_name",
+        )
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):

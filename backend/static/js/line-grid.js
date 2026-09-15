@@ -12,7 +12,10 @@
  *   variant pcv: data-total
  * All selectors are CSS selectors resolved in document scope, the add button is
  * any [data-add-row] inside the grid's <table>, row removal is any
- * [data-remove-row] inside the tbody. Cloned rows keep cost-center selections
+ * [data-remove-row] inside the tbody (one per row — every row, template or
+ * cloned, keeps its own delete button). Rows may be reordered by dragging a
+ * [data-drag-handle]; a row is draggable only while its handle is held so
+ * typing in inputs is unaffected. Cloned rows keep cost-center selections
  * unless the variant sets resetSelects.
  *
  * Note: searchable clones are reverted to their raw <select> state before the
@@ -58,7 +61,8 @@
     if (resetSelects) {
       row.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
     }
-    row.querySelectorAll('[data-remove-row]').forEach(function (b) { b.remove(); });
+    // Keep [data-remove-row] and [data-drag-handle] so every row — template or
+    // freshly cloned — can delete and reorder itself.
     row.querySelectorAll('select[data-searchable]').forEach(resetSearchable);
     var no = row.querySelector('.line-no');
     if (no) no.textContent = grid.querySelectorAll('tr').length + 1;
@@ -121,6 +125,13 @@
     if (sync) sync.textContent = fmtMoney(t);
   }
 
+  function renumberLines(grid) {
+    grid.querySelectorAll('tr').forEach(function (tr, i) {
+      var no = tr.querySelector('.line-no');
+      if (no) no.textContent = i + 1;
+    });
+  }
+
   function initGrid(grid) {
     if (grid.dataset.lineGridBound) return;
     grid.dataset.lineGridBound = '1';
@@ -141,9 +152,70 @@
       var btn = e.target.closest ? e.target.closest('[data-remove-row]') : null;
       if (btn) {
         btn.closest('tr').remove();
+        renumberLines(grid);
         recalc(grid);
       }
     });
+
+    // Drag to reorder lines via a per-row [data-drag-handle]. Rows become
+    // draggable only while their handle is pressed, so text selection inside
+    // the inputs is never hijacked; drop inserts above/below the target by its
+    // midpoint. Line numbers (`.line-no`) and totals are refreshed after.
+    var dragging = null;
+    grid.addEventListener('mousedown', function (e) {
+      var handle = e.target.closest ? e.target.closest('[data-drag-handle]') : null;
+      if (handle) handle.closest('tr').draggable = true;
+    });
+    // Release the handle without an actual drag: clear draggable so typing and
+    // text selection inside the row's inputs behave normally afterwards.
+    grid.addEventListener('mouseup', function (e) {
+      if (e.target.closest && e.target.closest('[data-drag-handle]')) {
+        grid.querySelectorAll('tr').forEach(function (tr) { tr.draggable = false; });
+      }
+    });
+    grid.addEventListener('dragstart', function (e) {
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if (!tr || !tr.querySelector('[data-drag-handle]')) return;
+      dragging = tr;
+      tr.style.opacity = '0.4';
+      tr.style.userSelect = 'none';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'row');
+    });
+    grid.addEventListener('dragover', function (e) {
+      if (!dragging) return;
+      e.preventDefault();
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if (tr && tr !== dragging) tr.style.outline = '2px solid #6366f1';
+    });
+    grid.addEventListener('dragleave', function (e) {
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if (tr) tr.style.outline = '';
+    });
+    grid.addEventListener('drop', function (e) {
+      if (!dragging) return;
+      e.preventDefault();
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if (tr && tr !== dragging) {
+        var rect = tr.getBoundingClientRect();
+        if (e.clientY > rect.top + rect.height / 2) tr.parentNode.insertBefore(dragging, tr.nextSibling);
+        else tr.parentNode.insertBefore(dragging, tr);
+      }
+    });
+    grid.addEventListener('dragend', function () {
+      if (!dragging) return;
+      dragging.style.opacity = '';
+      dragging.style.userSelect = '';
+      dragging.draggable = false;
+      grid.querySelectorAll('tr').forEach(function (tr) {
+        tr.style.outline = '';
+        tr.draggable = false;
+      });
+      dragging = null;
+      renumberLines(grid);
+      recalc(grid);
+    });
+
     recalc(grid);
   }
 

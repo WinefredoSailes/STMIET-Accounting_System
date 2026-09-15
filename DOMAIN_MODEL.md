@@ -402,6 +402,7 @@ class POLine(models.Model):
     description = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=18, decimal_places=2)
     amount = models.DecimalField(max_digits=18, decimal_places=2)  # qty * price
+    account = models.ForeignKey(Account, null=True, blank=True)  # optional GL pre-fill (ADR-042)
 ```
 
 ### 3.4 ReceivingReport

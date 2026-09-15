@@ -1861,6 +1861,7 @@ def _po_lines_from_form(request):
     units = request.POST.getlist("line_unit")
     descs = request.POST.getlist("line_description")
     prices = request.POST.getlist("line_unit_price")
+    accounts = request.POST.getlist("line_account")
     lines = []
     for i, desc in enumerate(descs):
         desc = (desc or "").strip()
@@ -1880,6 +1881,7 @@ def _po_lines_from_form(request):
                 "unit": (units[i] if i < len(units) else "").strip(),
                 "description": desc,
                 "unit_price": price,
+                "account": (accounts[i] if i < len(accounts) else "").strip(),
             }
         )
     return lines
@@ -2226,6 +2228,44 @@ def po_options(request):
             for po in rows
         ],
         safe=False,
+    )
+
+
+@login_required
+def po_prefill(request, pk):
+    """JSON used by the RFP form when a Purchase Order is picked: the PO's
+    vendor, segment and line items (each with its optional GL account) so the
+    payee picker and distribution grid can be pre-filled. Only approved POs
+    prefill; editing an RFP whose PO is no longer billable degrades to a
+    manual entry (the picker keeps the stale selection via ?selected)."""
+    from apps.ap.models import PurchaseOrder
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.select_related("supplier", "segment").prefetch_related("lines"),
+        pk=pk,
+    )
+    if po.status != "approved":
+        return JsonResponse({"error": "Only approved POs can pre-fill an RFP."}, status=400)
+    return JsonResponse(
+        {
+            "id": po.id,
+            "po_number": po.po_number,
+            "supplier_id": po.supplier_id,
+            "supplier_code": po.supplier.code,
+            "supplier_name": po.supplier.name,
+            "segment_id": po.segment_id,
+            "segment_code": po.segment.code,
+            "available": str(po.available_amount),
+            "lines": [
+                {
+                    "description": line.description,
+                    "amount": str(line.amount),
+                    "account_code": line.account.code if line.account else "",
+                    "account_name": line.account.name if line.account else "",
+                }
+                for line in po.lines.all()
+            ],
+        }
     )
 
 

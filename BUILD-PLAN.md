@@ -85,7 +85,7 @@
 ## PHASE 3 — ACCOUNTS PAYABLE & PROCUREMENT *[est. 6-8 wks]*
 
 - [x] Supplier master (Depot/Equipment/Service/Govt; TIN; "LAST AP" auto-track — kills pain #5, ADR-024) — model mirrors finance-head columns (owner/email/position/contact/attachment flag); real 8-supplier master imported
-- [x] PR → PO → RR → Supplier Invoice → RFP → CONSO → CV document chain (ADR-017; forms: PO_LIMDON layout, RFP ACCTG-FOR-012) — **RFP→CONSO→CV + PO built (ADR-042); PR/RR still not built**
+- [x] PR → PO → RR → Supplier Invoice → RFP → CONSO → CV document chain (ADR-017; forms: PO_LIMDON layout, RFP ACCTG-FOR-012) — **RFP→CONSO→CV + PO built (ADR-042); PR/RR still not built; PO lines carry an optional GL account feeding RFP pre-fill**
 - [x] RFP model: A#### auto-numbering + gap enforcement (ADR-019); 4-level approval (ADR-020); P2,500 threshold enforced (ADR-022; ≥RFP, <PCV)
 - [x] **RFP JE (canonical):** Dr Expense/Inventory/Asset {TOTAL} | Cr Advances-to-Employees 12070–76 {20,000} | Cr AP {TOTAL − 20,000} (RESOLUTION #5)
 - [x] Advances to Employees ledger (standing 20k, liquidation, aging) — ADR-021

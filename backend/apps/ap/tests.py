@@ -899,6 +899,47 @@ class TestPurchaseOrder:
             self._make(supplier=supplier, alywin=alywin, segment=segment,
                        lines=[{"qty": "-1", "unit": "PC", "description": "Bad", "unit_price": "100.00"}])
 
+    def test_create_po_captures_optional_line_account(self, company, segment, supplier, alywin, accounts):
+        po = self._make(
+            supplier=supplier, alywin=alywin, segment=segment,
+            lines=[
+                {"qty": "2", "unit": "DRUM", "description": "ENGINE OIL 15W40", "unit_price": "25000.00", "account": "61100"},
+                {"qty": "1", "unit": "PC", "description": "OIL FILTER", "unit_price": "1000.00"},
+            ],
+        )
+        po_lines = list(po.lines.all())
+        assert po_lines[0].account == accounts["61100"]
+        assert po_lines[0].amount == Decimal("50000.00")
+        assert po_lines[1].account is None
+
+    def test_create_po_unknown_line_account_rejected(self, company, segment, supplier, alywin, accounts):
+        with pytest.raises(ValidationError, match="not found"):
+            self._make(
+                supplier=supplier, alywin=alywin, segment=segment,
+                lines=[{"qty": "1", "unit": "PC", "description": "Lubricant", "unit_price": "100.00", "account": "99999"}],
+            )
+
+    def test_revise_po_replaces_lines_with_accounts(self, company, segment, supplier, alywin, accounts):
+        from apps.ap.services import PurchaseOrderService
+
+        po = self._make(supplier=supplier, alywin=alywin, segment=segment)
+        po.status = "submitted"
+        po.save(update_fields=["status"])
+        PurchaseOrderService.reject(po, user=alywin, note="Wrong quantity.")
+        revised = PurchaseOrderService.revise(
+            po,
+            user=alywin,
+            lines=[
+                {"qty": "2", "unit": "DRUM", "description": "ENGINE OIL 15W40", "unit_price": "25000.00", "account": "61100"},
+                {"qty": "1", "unit": "L", "description": "COOLANT", "unit_price": "800.00", "account": "20000"},
+            ],
+        )
+        revised_lines = list(revised.lines.all())
+        assert revised_lines[0].account == accounts["61100"]
+        assert revised_lines[1].account == accounts["20000"]
+        assert revised.status == "submitted"
+        assert revised.subtotal == Decimal("50800.00")
+
     def test_po_head_approval_rolls_straight_to_approved(self, company, segment, supplier, alywin, head):
         po = self._make(supplier=supplier, alywin=alywin, segment=segment)
         out = self._approved(po, head)
