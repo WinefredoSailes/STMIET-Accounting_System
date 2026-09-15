@@ -185,6 +185,7 @@
 - [x] Dashboard: fiscal period, entry counts, close progress, recent entries
 - [x] Journal: list / detail / create (line grid + balance hint) / post (P100k approve gate) / reverse stub
 - [x] Trial Balance screen (as-of + segment filter)
+- [x] General Ledger screen: COA-grouped index + classic per-account running-balance register (query-time projection from the posted GL — no schema change); fiscal-month (default = latest posted period) / date-range windows, segment filter, print + XLSX/CSV/PDF export, Trial Balance drill-down (`apps/ui/services.py::ledger_index/ledger_account/ledger_window`)
 - [x] Financial statements: 5 types, generate + persisted snapshot, identity OK/FAILED
 - [x] Month-end close screen: step-by-step advance + complete (locks period)
 - [x] List screens: customers, receipts, suppliers, RFPs, banks, cash cycles, assets

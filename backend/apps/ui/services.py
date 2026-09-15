@@ -72,6 +72,7 @@ class TrialBalanceService:
                 continue
             rows.append(
                 {
+                    "id": acc.id,
                     "code": acc.code,
                     "name": acc.name,
                     "segment": acc.segment,
@@ -555,22 +556,36 @@ def asset_context(asset):
 # ---------------------------------------------------------------------------
 
 
+def _source_parties():
+    """Map source_doc_no -> party name from the AR/AP document masters.
+
+    Register/ledger rows always resolve the counterparty from the current
+    master record (AR receipt customer / RFP & CV payee), never a stale copy
+    held on the journal entry.
+    """
+    from apps.ap.models import CheckVoucher, RFPDocument
+    from apps.ar.models import AcknowledgmentReceipt
+
+    parties = {}
+    for r in AcknowledgmentReceipt.objects.exclude(journal_entry__isnull=True).select_related("customer"):
+        parties[r.receipt_no] = r.customer.name
+    for doc in RFPDocument.objects.exclude(journal_entry__isnull=True).select_related("payee"):
+        if doc.payee:
+            parties[doc.ap_number] = doc.payee.name
+    for cv in CheckVoucher.objects.exclude(journal_entry__isnull=True).select_related("payee"):
+        if cv.payee:
+            parties[cv.cv_number] = cv.payee.name
+    return parties
+
+
 def general_journal(*, start=None, end=None, segment=None, limit=500):
     """Posted entries with per-line rows: Date | Cycle | Ref | Party | PO |
     Description | CoA | Account Name | Debit | Credit. Party derives from the
     source document masters (AR receipt customer / AP payee), never stale
     copies on the JE."""
-    from apps.ap.models import CheckVoucher, RFPDocument
-    from apps.ar.models import AcknowledgmentReceipt
     from apps.posting.models import PostingStatus
 
-    party_by = {}
-    for r in AcknowledgmentReceipt.objects.exclude(journal_entry__isnull=True).select_related("customer"):
-        party_by[r.receipt_no] = r.customer.name
-    for doc in RFPDocument.objects.exclude(journal_entry__isnull=True).select_related("payee"):
-        party_by[doc.ap_number] = doc.payee.name if doc.payee else ""
-    for cv in CheckVoucher.objects.exclude(journal_entry__isnull=True).select_related("payee"):
-        party_by[cv.cv_number] = cv.payee.name if cv.payee else ""
+    party_by = _source_parties()
 
     qs = (
         JournalEntry.objects.filter(status=PostingStatus.POSTED)
@@ -848,3 +863,297 @@ def tax_calendar_context():
         "calendar": list(qs),
         "due": qs.filter(status__in=["due", "overdue"]).count(),
     }
+
+
+# ---------------------------------------------------------------------------
+# General Ledger (classic per-account running balance + COA-grouped index)
+# ---------------------------------------------------------------------------
+
+LEDGER_GROUP_ORDER = [
+    "asset", "contra_asset",
+    "liability", "contra_liability",
+    "equity", "contra_equity", "drawing",
+    "revenue", "contra_revenue",
+    "expense",
+]
+
+
+def _period_for_month(company, month):
+    """Find the FiscalPeriod whose month matches `YYYY-MM` for the company."""
+    if not month or len(month) != 7:
+        return None
+    try:
+        year, mon = int(month[:4]), int(month[5:7])
+    except ValueError:
+        return None
+    if not 1 <= mon <= 12:
+        return None
+    return FiscalPeriod.objects.filter(
+        fiscal_year__company=company, start_date__year=year, start_date__month=mon
+    ).first()
+
+
+def ledger_window(params):
+    """Resolve a Ledger run's window + segment from GET params.
+
+    `month=YYYY-MM` (fiscal-period mode) wins over explicit start/end (date
+    range, like the General Journal register). With neither given, the window
+    defaults to the period containing the latest posted GL date — the same
+    "most recent activity" default as the Trial Balance screen.
+    """
+    from apps.foundation.models import Company
+    from apps.posting.models import GeneralLedger
+
+    company = Company.objects.first()
+    segment = (params.get("segment") or "").strip()
+    month = (params.get("month") or "").strip()
+    start = end = None
+    mode = "range"
+
+    period = _period_for_month(company, month) if month else None
+    if period:
+        start, end = period.start_date, period.end_date
+        mode = "month"
+
+    if not start and not end:
+        raw_start = (params.get("start") or "").strip()
+        raw_end = (params.get("end") or "").strip()
+        if raw_start:
+            try:
+                start = date.fromisoformat(raw_start)
+            except ValueError:
+                start = None
+        if raw_end:
+            try:
+                end = date.fromisoformat(raw_end)
+            except ValueError:
+                end = None
+        if start or end:
+            mode = "range"
+
+    if not start and not end:
+        latest = (
+            GeneralLedger.objects.filter(entry__status="posted", entry__company=company)
+            .order_by("-transaction_date")
+            .values_list("transaction_date", flat=True)
+            .first()
+        )
+        period = None
+        if latest:
+            period = (
+                FiscalPeriod.objects.filter(start_date__lte=latest, end_date__gte=latest)
+                .order_by("-period_no")
+                .first()
+            )
+        if period:
+            start, end = period.start_date, period.end_date
+            month = f"{period.start_date:%Y-%m}"
+            mode = "month"
+
+    return {
+        "company": company,
+        "start": start,
+        "end": end,
+        "month": month,
+        "mode": mode,
+        "segment": segment,
+        "segments": list(Segment.objects.order_by("code")),
+    }
+
+
+def _gl_per_account(qs):
+    """{account_id: {"debit":..., "credit":...}} over a GL queryset."""
+    out = {}
+    rows = qs.values("account_id").annotate(debit=Sum("debit"), credit=Sum("credit"))
+    for r in rows:
+        out[r["account_id"]] = {
+            "debit": r["debit"] or Decimal("0.00"),
+            "credit": r["credit"] or Decimal("0.00"),
+        }
+    return out
+
+
+def _signed(dr, cr, normal_balance):
+    """ADR-005 signed balance: positive toward the account's normal column."""
+    if normal_balance == "credit":
+        return (cr or Decimal("0.00")) - (dr or Decimal("0.00"))
+    return (dr or Decimal("0.00")) - (cr or Decimal("0.00"))
+
+
+def ledger_index(*, company, start=None, end=None, segment=None):
+    """COA-grouped ledger index: opening | period Dr | period Cr | closing.
+
+    Query-time projection over the posted GL (ADR-005) — no stored balances.
+    Accounts are presented in classic order (Assets -> Liabilities -> Equity ->
+    Revenue -> Expenses), each type sub-grouped by the COA's CLASSIFICATION
+    column. Closing = signed opening + period movement.
+    """
+    from apps.foundation.models import Account, AccountType
+    from apps.posting.models import GeneralLedger
+
+    gs = GeneralLedger.objects.filter(
+        entry__status=PostingStatus.POSTED, entry__company=company
+    )
+    if segment:
+        gs = gs.filter(segment__code=segment)
+
+    period_qs = gs
+    if start:
+        period_qs = period_qs.filter(transaction_date__gte=start)
+    if end:
+        period_qs = period_qs.filter(transaction_date__lte=end)
+    period = _gl_per_account(period_qs)
+
+    opening = {}
+    if start:
+        opening = _gl_per_account(gs.filter(transaction_date__lt=start))
+
+    ids = set(period) | set(opening)
+    accounts = {a.id: a for a in Account.objects.filter(id__in=ids)}
+    labels = {t: label for t, label in AccountType.choices}
+
+    by_type: dict[str, list] = {}
+    for aid in ids:
+        acc = accounts.get(aid)
+        if not acc:
+            continue
+        o = opening.get(aid, {"debit": Decimal("0.00"), "credit": Decimal("0.00")})
+        p = period.get(aid, {"debit": Decimal("0.00"), "credit": Decimal("0.00")})
+        normal = acc.normal_balance or "debit"
+        closing = _signed(o["debit"] + p["debit"], o["credit"] + p["credit"], normal)
+        by_type.setdefault(acc.account_type, []).append(
+            {
+                "id": acc.id,
+                "code": acc.code,
+                "name": acc.name,
+                "segment": acc.segment,
+                "classification": acc.classification or "",
+                "account_type": acc.account_type,
+                "normal_balance": normal,
+                "opening": _signed(o["debit"], o["credit"], normal),
+                "debit": p["debit"],
+                "credit": p["credit"],
+                "closing": closing,
+            }
+        )
+
+    groups = []
+    for atype in LEDGER_GROUP_ORDER:
+        rows = by_type.get(atype)
+        if not rows:
+            continue
+        rows.sort(key=lambda r: (not r["classification"], r["classification"], r["code"]))
+        sections, current = [], None
+        for r in rows:
+            cls = r["classification"]
+            if current is None or current["classification"] != cls:
+                current = {"classification": cls, "rows": []}
+                sections.append(current)
+            current["rows"].append(r)
+        groups.append(
+            {"account_type": atype, "label": labels.get(atype, atype), "sections": sections}
+        )
+
+    return {
+        "groups": groups,
+        "total_debit": sum(
+            r["debit"] for g in groups for s in g["sections"] for r in s["rows"]
+        ),
+        "total_credit": sum(
+            r["credit"] for g in groups for s in g["sections"] for r in s["rows"]
+        ),
+        "count": len(ids),
+    }
+
+
+def ledger_account(*, account, company, start=None, end=None, segment=None):
+    """The classic per-account register: balance brought forward, then every
+    posted GL line in the window with a running balance, then period totals.
+
+    Running balance is ADR-005 signed (positive toward the account's normal
+    column). Each row carries the source document, cost center and the party
+    resolved from the source-document masters (matching General Journal).
+    """
+    from apps.posting.models import GeneralLedger
+
+    gs = GeneralLedger.objects.filter(
+        entry__status=PostingStatus.POSTED, entry__company=company, account=account
+    )
+    if segment:
+        gs = gs.filter(segment__code=segment)
+
+    normal = account.normal_balance or "debit"
+    opening_dr = opening_cr = Decimal("0.00")
+    if start:
+        agg = gs.filter(transaction_date__lt=start).aggregate(
+            debit=Sum("debit"), credit=Sum("credit")
+        )
+        opening_dr, opening_cr = agg["debit"] or Decimal("0.00"), agg["credit"] or Decimal("0.00")
+    opening = _signed(opening_dr, opening_cr, normal)
+
+    window_qs = gs
+    if start:
+        window_qs = window_qs.filter(transaction_date__gte=start)
+    if end:
+        window_qs = window_qs.filter(transaction_date__lte=end)
+    gl_rows = list(
+        window_qs.order_by("transaction_date", "id")
+        .select_related("entry", "line__account", "segment")
+    )
+
+    parties = _source_parties()
+    running = opening
+    period_dr = period_cr = Decimal("0.00")
+    rows = []
+    for gl in gl_rows:
+        period_dr += gl.debit
+        period_cr += gl.credit
+        running += _signed(gl.debit, gl.credit, normal)
+        entry = gl.entry
+        party = (
+            parties.get(entry.source_doc_no, "") if entry.source_doc_no else ""
+        )
+        party = party or entry.supplier_name or ""
+        rows.append(
+            {
+                "date": gl.transaction_date,
+                "entry_no": entry.entry_no,
+                "entry_pk": entry.id,
+                "source_type": entry.source_doc_type or "",
+                "source_doc_no": entry.source_doc_no or "",
+                "party": party,
+                "particulars": gl.line.description or entry.description,
+                "cost_center": gl.line.cost_center or "",
+                "segment": gl.segment.code if gl.segment else (account.segment or ""),
+                "debit": gl.debit,
+                "credit": gl.credit,
+                "balance": running,
+                "balance_dr": _balance_cell(running, normal, "debit"),
+                "balance_cr": _balance_cell(running, normal, "credit"),
+            }
+        )
+
+    return {
+        "account": account,
+        "start": start,
+        "end": end,
+        "opening": opening,
+        "opening_dr": _balance_cell(opening, normal, "debit"),
+        "opening_cr": _balance_cell(opening, normal, "credit"),
+        "rows": rows,
+        "period_debit": period_dr,
+        "period_credit": period_cr,
+        "closing": running,
+        "closing_dr": _balance_cell(running, normal, "debit"),
+        "closing_cr": _balance_cell(running, normal, "credit"),
+        "normal_balance": normal,
+    }
+
+
+def _balance_cell(balance, normal_balance, column):
+    """Amount for a classic Dr/Cr balance column, or `None` when the running
+    balance sits on the opposite side (an overdrawn account shows up there)."""
+    side = "debit" if balance >= 0 else "credit"
+    if column == side:
+        return abs(balance)
+    return None

@@ -56,6 +56,7 @@
 
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Reports</div>
   <a href="{% url 'ui:trial_balance' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Trial Balance</a>
+  <a href="{% url 'ui:ledger_index' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'ledger_index' or request.resolver_match.url_name == 'ledger_account_detail' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Ledger</a>
   <a href="{% url 'ui:cash_flow' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Cash Flow Statement</a>
   <a href="{% url 'ui:statement' 'is' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Income Statement</a>
   <a href="{% url 'ui:statement' 'sfp' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Financial Position</a>

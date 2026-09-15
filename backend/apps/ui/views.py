@@ -79,6 +79,27 @@ AUDIT_ACTION_LABELS = {
 }
 
 
+def _parse_date(value, fallback=None):
+    """date.fromisoformat with a fallback — malformed query params must
+    never raise a 500."""
+    if not value:
+        return fallback
+    try:
+        return date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return fallback
+
+
+def _parse_int(value, fallback=None):
+    """int() with a fallback — hostile query params never raise a 500."""
+    if not value:
+        return fallback
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return fallback
+
+
 def _audit_trail(doc_type, doc_id):
     """Immutable action history for an RFP or Check Voucher, newest first."""
     from apps.ap.models import ActionLog
@@ -792,7 +813,8 @@ def je_reverse(request, pk):
 
 @login_required
 def trial_balance(request):
-    as_of = request.GET.get("as_of") or date.today().isoformat()
+    as_of_date = _parse_date(request.GET.get("as_of"), date.today())
+    as_of = as_of_date.isoformat()
     segment = request.GET.get("segment") or ""
     rows, totals = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
     return render(
@@ -813,10 +835,12 @@ def trial_balance_export(request):
     """Download trial balance as XLSX / CSV / PDF."""
     fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
-    year = int(request.GET.get("year") or date.today().year)
+    year = _parse_int(request.GET.get("year"), date.today().year) or date.today().year
 
     from apps.ui.services import TrialBalanceService
     rows, (debit, credit) = TrialBalanceService.rows(as_of=f"{year}-12-31")
+
+    from apps.reporting.exports import csv_response, pdf_response
 
     if fmt == "csv":
         header = ["Code", "Account", "Segment", "Normal Balance", "Balance"]
@@ -836,7 +860,7 @@ def trial_balance_export(request):
 @login_required
 def trial_balance_print(request):
     """Print‑optimized page for the trial balance (browser print dialog)."""
-    as_of = request.GET.get("as_of") or date.today().isoformat()
+    as_of = _parse_date(request.GET.get("as_of"), date.today()).isoformat()
     segment = request.GET.get("segment") or ""
     from apps.ui.services import TrialBalanceService
 
@@ -2598,9 +2622,9 @@ def general_journal(request):
     from .services import general_journal as gj
 
     ctx = gj(
-        start=request.GET.get("start") or None,
-        end=request.GET.get("end") or None,
-        segment=request.GET.get("segment") or None,
+        start=_parse_date(request.GET.get("start")),
+        end=_parse_date(request.GET.get("end")),
+        segment=_parse_int(request.GET.get("segment")),
     )
     ctx["page_obj"] = _page(request, ctx.pop("rows"))
     ctx["start"] = request.GET.get("start", "")
@@ -2756,13 +2780,9 @@ def general_journal_export(request):
     from .services import general_journal as gj
 
     fmt = request.GET.get("format", "xlsx")
-    start = request.GET.get("start") or None
-    end = request.GET.get("end") or None
-    segment = request.GET.get("segment") or None
-    if start:
-        start = date.fromisoformat(start)
-    if end:
-        end = date.fromisoformat(end)
+    start = _parse_date(request.GET.get("start"))
+    end = _parse_date(request.GET.get("end"))
+    segment = _parse_int(request.GET.get("segment"))
 
     data = gj(start=start, end=end, segment=segment, limit=None)
     header = [
@@ -3635,3 +3655,232 @@ def user_update(request, pk):
     except (UserProfile.DoesNotExist, ValueError, ValidationError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:user_management")
+
+
+# ---------------------------------------------------------------------------
+# General Ledger — COA-grouped index + classic per-account running balance
+# ---------------------------------------------------------------------------
+
+
+def _ledger_month_options(company):
+    """(month, label) options for the fiscal-month dropdown, from posted GL."""
+    from apps.posting.models import GeneralLedger
+
+    months = sorted(
+        {
+            (d.year, d.month)
+            for d in GeneralLedger.objects.filter(
+                entry__status="posted", entry__company=company
+            ).values_list("transaction_date", flat=True)
+        },
+        reverse=True,
+    )
+    return [
+        {"key": f"{year}-{month:02d}", "label": f"{date(year, month, 1):%b %Y}"}
+        for year, month in months
+    ]
+
+
+def _ledger_ctx(request, extra=None):
+    """Shared filter context for the ledger screens (window + period choices)."""
+    from django.utils.http import urlencode
+
+    from .services import ledger_window
+
+    win = ledger_window(request.GET)
+    q = {}
+    if win["month"]:
+        q["month"] = win["month"]
+    elif win["start"] or win["end"]:
+        if win["start"]:
+            q["start"] = win["start"].isoformat()
+        if win["end"]:
+            q["end"] = win["end"].isoformat()
+    if win["segment"]:
+        q["segment"] = win["segment"]
+    ctx = {
+        "win": win,
+        "period_options": _ledger_month_options(win["company"]),
+        "start": win["start"].isoformat() if win["start"] else "",
+        "end": win["end"].isoformat() if win["end"] else "",
+        "segment_sel": win["segment"],
+        "filter_qs": urlencode(q),
+        "format": request.GET.get("format", "xlsx"),
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
+
+
+@login_required
+def ledger_index(request):
+    """The COA-grouped ledger index: opening | period Dr | period Cr | closing.
+
+    Filters are the shared window (fiscal month or date range) + optional
+    segment; every account row drills into its running-balance register."""
+    from .services import ledger_index as ledger_index_data
+
+    win = _ledger_ctx(request)["win"]
+    data = ledger_index_data(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    return render(
+        request,
+        "ui/reporting/ledger_index.html",
+        _ledger_ctx(request, data),
+    )
+
+
+@login_required
+def ledger_account_detail(request, pk):
+    """The classic per-account register with a running balance."""
+    from .services import ledger_account as account_reg
+
+    win = _ledger_ctx(request)["win"]
+    account = get_object_or_404(Account, pk=pk)
+    reg = account_reg(
+        account=account,
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    return render(
+        request,
+        "ui/reporting/ledger_account.html",
+        _ledger_ctx(request, reg),
+    )
+
+
+@login_required
+def ledger_print(request):
+    """Print-optimized copy of the ledger index (browser print dialog)."""
+    win = _ledger_ctx(request)["win"]
+    from .services import ledger_index as ledger_index_data
+
+    data = ledger_index_data(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    return render(
+        request,
+        "ui/reporting/ledger_index_print.html",
+        _ledger_ctx(request, data),
+    )
+
+
+@login_required
+def ledger_account_print(request, pk):
+    """Print-optimized copy of a per-account register."""
+    win = _ledger_ctx(request)["win"]
+    from .services import ledger_account as account_reg
+
+    account = get_object_or_404(Account, pk=pk)
+    reg = account_reg(
+        account=account,
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    return render(
+        request,
+        "ui/reporting/ledger_account_print.html",
+        _ledger_ctx(request, reg),
+    )
+
+
+@login_required
+def ledger_export(request):
+    """Download the ledger index as XLSX / CSV / PDF (filters honored)."""
+    from apps.reporting.excel_export import xlsx_response
+    from apps.reporting.exports import csv_response
+
+    from .services import ledger_index as ledger_index_data
+
+    fmt = request.GET.get("format", "xlsx")
+    win = _ledger_ctx(request)["win"]
+    data = ledger_index_data(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    header = ["Code", "Account", "Classification", "Opening", "Debit", "Credit", "Closing"]
+    rows = []
+    for g in data["groups"]:
+        for s in g["sections"]:
+            for r in s["rows"]:
+                rows.append(
+                    [
+                        r["code"],
+                        r["name"],
+                        r["classification"],
+                        str(r["opening"]),
+                        str(r["debit"]),
+                        str(r["credit"]),
+                        str(r["closing"]),
+                    ]
+                )
+    rows.append(["", "TOTALS", "", "", str(data["total_debit"]), str(data["total_credit"]), ""])
+    stem = "LEDGER-INDEX"
+    win_label = win["month"] or f"{win['start'] or ''}_{win['end'] or ''}".strip("_")
+
+    if fmt == "csv":
+        return csv_response(rows, f"{stem}-{win_label}.csv", header=header)
+    if fmt == "pdf":
+        return _wide_pdf_response("Ledger Index", header, rows, f"{stem}-{win_label}.pdf")
+    wb = _table_workbook("LEDGER INDEX", header, rows, sheet_title="LEDGER")
+    return xlsx_response(wb, f"{stem}-{win_label}.xlsx")
+
+
+@login_required
+def ledger_account_export(request, pk):
+    """Download a per-account register as XLSX / CSV / PDF."""
+    from apps.reporting.excel_export import xlsx_response
+    from apps.reporting.exports import csv_response
+
+    from .services import ledger_account as account_reg
+
+    fmt = request.GET.get("format", "xlsx")
+    win = _ledger_ctx(request)["win"]
+    account = get_object_or_404(Account, pk=pk)
+    reg = account_reg(
+        account=account,
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    header = ["Date", "Ref #", "Source", "Particulars", "Cost Center", "Debit", "Credit", "Balance"]
+    rows = [
+        [win["start"] or "", "Balance B/f", "", "Opening balance", "", "", "", str(reg["opening"])]
+    ]
+    for r in reg["rows"]:
+        rows.append(
+            [
+                r["date"].isoformat(),
+                r["entry_no"],
+                f"{r['source_type']} {r['source_doc_no']}".strip(),
+                r["particulars"],
+                r["cost_center"],
+                str(r["debit"]),
+                str(r["credit"]),
+                str(r["balance"]),
+            ]
+        )
+    rows.append([win["end"] or "", "TOTALS", "", f"Period movement", "", str(reg["period_debit"]), str(reg["period_credit"]), str(reg["closing"])])
+    stem = f"LEDGER-{account.code}"
+    win_label = win["month"] or f"{win['start'] or ''}_{win['end'] or ''}".strip("_")
+
+    if fmt == "csv":
+        return csv_response(rows, f"{stem}-{win_label}.csv", header=header)
+    if fmt == "pdf":
+        return _wide_pdf_response(account.name, header, rows, f"{stem}-{win_label}.pdf")
+    wb = _table_workbook(f"LEDGER — {account.code} {account.name}", header, rows, sheet_title="LEDGER")
+    return xlsx_response(wb, f"{stem}-{win_label}.xlsx")

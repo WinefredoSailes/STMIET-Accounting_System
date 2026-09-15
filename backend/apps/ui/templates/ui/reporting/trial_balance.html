@@ -32,7 +32,7 @@
         {% for row in rows %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2 font-mono text-xs">{{ row.code }}</td>
-          <td class="px-4 py-2">{{ row.name }}</td>
+          <td class="px-4 py-2"><a class="text-indigo-600 hover:underline" href="{% url 'ui:ledger_account_detail' row.id %}?start={{ as_of|slice:":4" }}-01-01&amp;end={{ as_of }}{% if segment %}&amp;segment={{ segment }}{% endif %}">{{ row.name }}</a></td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ row.segment }}</td>
           <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "debit" %}{{ row.balance|money }}{% endif %}</td>
           <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "credit" %}{{ row.balance|money }}{% endif %}</td>

@@ -1,0 +1,64 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}General Ledger Print{% endblock %}
+{% block content %}
+<div class="p-6">
+  <h1 class="text-xl font-semibold text-slate-900 mb-1">General Ledger — Index</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    COA-grouped index from posted GL{% if win.month %}, fiscal period {{ win.month }}{% elif start or end %} for {{ start }} to {{ end }}{% endif %}.
+    {% if segment_sel %}{{ segment_sel }} segment . {% endif %}Opening/closing are signed toward each account's normal balance.
+  </p>
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[1000px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3">Code</th>
+          <th class="px-3 py-3">Account</th>
+          <th class="px-3 py-3">Segment</th>
+          <th class="px-3 py-3 text-right">Opening</th>
+          <th class="px-3 py-3 text-right">Debit</th>
+          <th class="px-3 py-3 text-right">Credit</th>
+          <th class="px-3 py-3 text-right">Closing</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for group in groups %}
+        <tr class="bg-slate-100">
+          <td colspan="7" class="px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-700">{{ group.label }}</td>
+        </tr>
+        {% for section in group.sections %}
+        {% if section.classification %}
+        <tr class="bg-slate-50/60">
+          <td colspan="7" class="px-3 py-1.5 text-xs font-semibold text-slate-500">{{ section.classification }}</td>
+        </tr>
+        {% endif %}
+        {% for row in section.rows %}
+        <tr>
+          <td class="px-3 py-1.5 font-mono text-xs">{{ row.code }}</td>
+          <td class="px-3 py-1.5">{{ row.name }}</td>
+          <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.segment }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.opening|money }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.debit|money }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.credit|money }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap font-medium">{{ row.closing|money }}</td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No posted GL activity matches the window and segment.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="3" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals ({{ count }} accounts)</td>
+          <td class="px-3 py-2"></td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_debit|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_credit|money }}</td>
+          <td class="px-3 py-2"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

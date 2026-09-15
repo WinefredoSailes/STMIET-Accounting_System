@@ -123,6 +123,8 @@ class TestScreens:
         "/reports/tax/wht/",
         "/reports/tax/provision/",
         "/reports/tax/calendar/",
+        "/reports/ledger/",
+        "/reports/ledger/print/",
         "/assets/",
         "/assets/new/",
         "/foundation/coa/",
