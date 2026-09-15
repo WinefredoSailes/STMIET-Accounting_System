@@ -29,5 +29,10 @@
 <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No receipts yet.</td></tr>
 {% endfor %}
 {% endcapture %}
-{% include "ui/partials/list_card.html" with title="Acknowledgment Receipts" subtitle="AR-YYYY-SEQ numbered receipts that post on creation (ADR-007)." min_width="900" primary_url_name="ui:receipt_create" primary_label="+ New receipt" link_url_name="ui:customer_list" link_label="← Customers" table_head=table_head table_body=table_body show_pagination=True %}
+{% capture as list_actions %}
+<a href="{% url 'ui:ar_receipts_export' 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+<a href="{% url 'ui:ar_receipts_export' 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+<a href="{% url 'ui:ar_receipts_export' 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+{% endcapture %}
+{% include "ui/partials/list_card.html" with title="Acknowledgment Receipts" subtitle="AR-YYYY-SEQ numbered receipts that post on creation (ADR-007)." min_width="900" primary_url_name="ui:receipt_create" primary_label="+ New receipt" link_url_name="ui:customer_list" link_label="← Customers" table_head=table_head table_body=table_body show_pagination=True actions=list_actions %}
 {% endblock %}

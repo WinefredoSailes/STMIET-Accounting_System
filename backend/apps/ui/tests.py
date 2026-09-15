@@ -3839,3 +3839,232 @@ class TestJournalVoucherLayout:
         text = resp.content.decode()
         assert "Bagatua Trading" in text
         assert "PO-GJ-99" in text
+
+
+class TestPurchaseOrderScreen:
+    """PO screens: list, create (auto-number + line grid), options endpoint
+    (same-vendor + approved filter for the RFP picker), detail readout."""
+
+    @pytest.fixture
+    def supplier(self, db, company, segment, accounts):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment", default_segment=segment
+        )
+
+    @pytest.fixture
+    def other_supplier(self, db, company, segment):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S002", name="Other Vendor Inc", supplier_type="service", default_segment=segment
+        )
+
+    @pytest.fixture
+    def approved_po(self, db, company, segment, supplier, user):
+        from datetime import timedelta
+        from apps.ap.services import PurchaseOrderService
+
+        po = PurchaseOrderService.create_po(
+            po_number="P0001",
+            po_date=date(2026, 1, 5),
+            supplier=supplier,
+            segment=segment,
+            particulars="Diesel supply",
+            lines=[{"qty": "2", "unit": "DRUM", "description": "DIESEL", "unit_price": "50000.00"}],
+            user=user,
+        )
+        po.status = "submitted"
+        po.save(update_fields=["status"])
+        from apps.foundation.models import UserProfile
+
+        head = get_user_model().objects.create_user(username="pohead", password="x")
+        UserProfile.objects.create(user=head, approval_role="head")
+        from apps.ap.services import PurchaseOrderService as Svc
+
+        Svc.approve_head(po, user=head)
+        po.refresh_from_db()
+        return po
+
+    def test_po_list_and_link_to_form(self, client, company, segment, accounts, supplier):
+        resp = client.get("/ap/pos/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Purchase Orders" in body
+        assert "/ap/pos/new/" in body
+
+    def test_po_create_documents_from_line_grid(self, client, company, segment, accounts, supplier):
+        resp = client.post("/ap/pos/new/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-01-15",
+            "particulars": "Engine oil for fleet",
+            "line_pr_no": ["2026-189", ""],
+            "line_qty": ["2", ""],
+            "line_unit": ["DRUM", ""],
+            "line_description": ["ENGINE OIL 15W40", ""],
+            "line_unit_price": ["25000.00", ""],
+            "discount": "0.00",
+            "vat_amount": "0.00",
+            "other_charges": "0.00",
+            "payment_terms": "30 days",
+        })
+        assert resp.status_code == 302
+        from apps.ap.models import PurchaseOrder, POLine
+
+        po = PurchaseOrder.objects.get()
+        assert po.po_number == "2026-00001"
+        assert po.po_number.startswith("2026-")
+        assert po.amount == Decimal("50000.00")
+        assert po.lines.count() == 1
+        line = po.lines.get()
+        assert line.pr_number == "2026-189"
+        assert line.amount == Decimal("50000.00")
+        assert line.qty == Decimal("2")
+
+    def test_po_options_filters_approved_and_vendor(
+        self, client, company, segment, accounts, supplier, other_supplier, approved_po
+    ):
+        # the approved PO belongs to 'supplier'
+        resp = client.get("/ap/po-options/")
+        assert resp.status_code == 200
+        results = resp.json()
+        assert isinstance(results, list)
+        ids = [r["id"] for r in results]
+        assert approved_po.id in ids
+        assert len(results) == 1  # only the approved PO, other POs excluded
+
+        # vendor filter: another supplier sees nothing from this vendor
+        resp = client.get(f"/ap/po-options/?supplier={other_supplier.id}")
+        assert resp.status_code == 200
+        results = resp.json()
+        assert results == []
+
+    def test_po_detail_renders_totals_and_available(
+        self, client, company, segment, accounts, supplier, approved_po
+    ):
+        resp = client.get(f"/ap/pos/{approved_po.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert approved_po.po_number in body
+        assert "50,000.00" in body
+        assert "AVAILABLE" in body
+
+    def test_po_print_page_uses_template_layout(
+        self, client, company, segment, accounts, supplier, approved_po
+    ):
+        resp = client.get(f"/ap/pos/{approved_po.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "PURCHASE ORDER" in body
+        assert approved_po.po_number in body
+        assert "Deliver To" in body
+
+    def test_po_list_shows_sidebar_and_new_link(
+        self, client, company, segment, accounts, supplier
+    ):
+        """The sidebar (base layout) exposes the Purchase Orders entry."""
+        from datetime import timedelta
+        from apps.ap.models import Supplier as S
+        from apps.ap.services import PurchaseOrderService
+
+        resp = client.get("/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "/ap/pos/" in body
+
+
+class TestRFPPurchaseOrderScreen:
+    """The RFP form carries a PO picker scoped to the chosen vendor and the
+    detail page renders the linked PO."""
+
+    @pytest.fixture
+    def supplier(self, db, company, segment, accounts):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S001", name="Shell Fuel Depot", supplier_type="equipment", default_segment=segment
+        )
+
+    @pytest.fixture
+    def po(self, db, company, segment, supplier):
+        from apps.ap.models import PurchaseOrder
+        from apps.foundation.models import UserProfile
+
+        po = PurchaseOrder.objects.create(
+            po_number="P0001", po_date=date(2026, 1, 5), supplier=supplier, segment=segment,
+            particulars="Diesel supply", status="approved", amount=Decimal("100000.00"),
+        )
+        from apps.ap.models import POLine
+
+        POLine.objects.create(po=po, line_no=1, qty=Decimal("2"), unit="DRUM",
+                              description="DIESEL", unit_price=Decimal("50000.00"),
+                              amount=Decimal("100000.00"))
+        return po
+
+    def test_rfp_create_with_po(self, client, company, segment, accounts, supplier, po, user):
+        resp = client.post("/ap/rfps/new/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "po": po.id,
+            "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_debit": ["20000.00", ""],
+            "line_credit": ["", "20000.00"],
+            "line_description": ["Fuel under PO", "AP - Shell Fuel Depot"],
+            "line_cost_center": ["GEN-FUEL", "GEN-FUEL"],
+        })
+        assert resp.status_code == 302
+        from apps.ap.models import RFPDocument
+
+        rfp = RFPDocument.objects.get()
+        assert rfp.po_id == po.id
+
+    def test_rfp_create_rejects_unapproved_po(self, client, company, segment, accounts, supplier):
+        from apps.ap.models import PurchaseOrder, POLine
+
+        po = PurchaseOrder.objects.create(
+            po_number="P0002", po_date=date(2026, 1, 5), supplier=supplier, segment=segment,
+            particulars="Not approved", status="prepared", amount=Decimal("50000.00"),
+        )
+        POLine.objects.create(po=po, line_no=1, qty=Decimal("1"), unit="PC",
+                              description="spare part", unit_price=Decimal("50000.00"),
+                              amount=Decimal("50000.00"))
+        resp = client.post("/ap/rfps/new/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "po": po.id,
+            "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_debit": ["20000.00", ""],
+            "line_credit": ["", "20000.00"],
+            "line_description": ["Fuel under PO", "AP - Shell Fuel Depot"],
+            "line_cost_center": ["GEN-FUEL", "GEN-FUEL"],
+        })
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "must be approved" in body
+
+    def test_rfp_detail_shows_po_chip(self, client, company, segment, accounts, supplier, po, user):
+        from apps.ap.models import RFPDocument
+        from apps.ap.services import RFPService
+
+        rfp = RFPService.create_rfp(
+            ap_number="A0001", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "20000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "20000.00"},
+            ],
+            user=user,
+            po=po,
+        )
+        resp = client.get(f"/ap/rfps/{rfp.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert po.po_number in body
+        assert f"/ap/pos/{po.id}/" in body

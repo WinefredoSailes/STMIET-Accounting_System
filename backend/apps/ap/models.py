@@ -146,6 +146,12 @@ class RFPDocument(AuditableModel):
     approved_by_acctg = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_by_fin = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_by_cnr = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Optional Purchase Order that authorized this disbursement (ADR-0XX).
+    # The PO is committed only for the same supplier; partial billing deducts
+    # from the PO's balance as the RFP moves approved -> posted.
+    po = models.ForeignKey(
+        "PurchaseOrder", null=True, blank=True, on_delete=models.PROTECT, related_name="rfps"
+    )
     # Reject cycle (ADR-020 revision): an approver can return the RFP to the
     # preparer with a note; the preparer edits and resubmits.
     rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
@@ -189,6 +195,114 @@ class RFPLine(models.Model):
 
     def __str__(self):
         return f"{self.rfp.ap_number} L{self.line_no} {self.account.code} {self.amount}"
+
+
+class PurchaseOrder(AuditableModel):
+    """Purchase Order (commitment document) that authorizes disbursement by a
+    Request for Payment against the same supplier (ADR-0XX).
+
+    Header mirrors the finance head's PO template (PURCHASE ORDER_LIMDON.docx):
+    PO# / date / vendor (name, address, TIN from the Supplier master) / line
+    items (PR no, QTY, UNIT, DESCRIPTION, UNIT PRICE, AMOUNT) / DISCOUNT,
+    SUBTOTAL, VAT, OTHER, TOTAL / payment terms & contract duration / deliver
+    to block / Accounting & Finance (AADB) + CNR signature lines.
+
+    Lifecycle mirrors the RFP approval matrix (ADR-020):
+      prepared -> submitted -> checked -> acctg_approved -> fin_approved ->
+      [cnr_approved] -> (approved) ; rejected returns to the preparer for
+      revision. `closed` is an operational stop — a head action that forbids
+      further RFP references. A PO is never posted to the GL on its own: the
+      RFP it authorizes carries the JE through CONSO.
+
+    Billing is a header-level derivation from the RFPs that reference it:
+      reserved = sum of linked RFP amounts that are approved and awaiting CONSO
+      billed   = sum of linked RFP amounts already posted to the GL
+      available = amount - reserved - billed
+    Partial billing is supported; each RFP must stay within `available`.
+    """
+
+    po_number = models.CharField(max_length=16, unique=True)  # {YYYY}-{SEQ:05d}
+    po_date = models.DateField(db_index=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="pos")
+    segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="pos")
+    particulars = models.CharField(max_length=500, blank=True)
+    # Template footer fields.
+    payment_terms = models.CharField(max_length=255, blank=True)
+    contract_duration = models.CharField(max_length=255, blank=True)
+    ship_to_company = models.CharField("Deliver to — Company", max_length=255, blank=True)
+    ship_to_address = models.CharField("Deliver to — Address", max_length=255, blank=True)
+    contact_person = models.CharField("Deliver to — Contact Person", max_length=255, blank=True)
+    notes = models.TextField(blank=True)
+    # Template totals. Grand total = subtotal - discount + vat + other.
+    subtotal = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    discount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    vat_amount = models.DecimalField("VAT", max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    other_charges = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    amount = models.DecimalField(max_digits=18, decimal_places=2)  # grand total
+    status = models.CharField(max_length=24, default="prepared", db_index=True)
+    checked_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_by_acctg = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_by_fin = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_by_cnr = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Manual close (head-only): stops further RFP references without voiding
+    # reservations already made by approved RFPs.
+    closed_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    closed_at = models.DateTimeField(null=True, blank=True)
+    # Reject/revise cycle (same as RFP).
+    rejected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    finance_notes = models.TextField(blank=True, help_text="Notes from Finance Head for Ellen/COO")
+    revision_count = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-po_date", "-po_number"]
+
+    def __str__(self):
+        return f"{self.po_number} {self.supplier} {self.amount} ({self.status})"
+
+    @property
+    def billed_amount(self):
+        """Posted RFP amounts already drawn against this PO."""
+        return sum(
+            (r.amount for r in self.rfps.all() if r.status == "posted"),
+            Decimal("0.00"),
+        )
+
+    @property
+    def reserved_amount(self):
+        """Approved (fin/cnr) but not yet posted RFP amounts."""
+        return sum(
+            (r.amount for r in self.rfps.all() if r.status in ("fin_approved", "cnr_approved")),
+            Decimal("0.00"),
+        )
+
+    @property
+    def available_amount(self):
+        """Total still billable against this PO."""
+        return self.amount - self.billed_amount - self.reserved_amount
+
+
+class POLine(models.Model):
+    """One line-item row of a Purchase Order (ADR-0XX). The line amount is
+    qty * unit_price; the sum of all lines is the PO's subtotal. The template's
+    columns map 1:1: PR NO / QTY / UNIT / DESCRIPTION / UNIT PRICE / AMOUNT."""
+
+    po = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name="lines")
+    line_no = models.PositiveIntegerField()
+    pr_number = models.CharField("PR No.", max_length=32, blank=True)
+    qty = models.DecimalField("QTY", max_digits=18, decimal_places=2)
+    unit = models.CharField("UNIT", max_length=32, blank=True)
+    description = models.CharField(max_length=255)
+    unit_price = models.DecimalField(max_digits=18, decimal_places=2)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+
+    class Meta:
+        ordering = ["po", "line_no"]
+        unique_together = ("po", "line_no")
+
+    def __str__(self):
+        return f"{self.po.po_number} L{self.line_no} {self.description} {self.amount}"
 
 
 class CONSOBatch(AuditableModel):
@@ -296,6 +410,7 @@ class ActionLog(models.Model):
     class DocType(models.TextChoices):
         RFP = "rfp", "RFP"
         CV = "cv", "Check Voucher"
+        PO = "po", "Purchase Order"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)

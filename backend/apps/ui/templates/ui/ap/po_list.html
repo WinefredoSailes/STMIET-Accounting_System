@@ -1,0 +1,76 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Purchase Orders{% endblock %}
+{% block content %}
+<div class="p-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Purchase Orders</h1>
+      <p class="text-sm text-slate-500 mt-1">YYYY-SEQ — commitment document ahead of the RFP: prepared → checked → acctg → fin → [CNR] → approved → closed (PO module)</p>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+      <a href="{% url 'ui:po_create' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ New PO</a>
+      <a href="{% url 'ui:supplier_list' %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Suppliers</a>
+    </div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Total POs</div>
+      <div class="mt-1 text-2xl font-bold text-slate-900">{{ summary.total }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.total_amount|money }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Pending approval</div>
+      <div class="mt-1 text-2xl font-bold text-amber-600">{{ summary.pending }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.pending_amount|money }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Approved (for RFP funding)</div>
+      <div class="mt-1 text-2xl font-bold text-violet-600">{{ summary.approved }}</div>
+      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.approved_amount|money }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Billed via posted RFPs</div>
+      <div class="mt-1 text-2xl font-bold text-emerald-600">{{ summary.billed_amount|money }}</div>
+      <div class="text-xs text-slate-500 mt-1">amount drawn so far</div>
+    </div>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[900px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">PO No</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Vendor</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3">Particulars</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for po in page_obj %}
+        {% include "ui/ap/_po_row.html" %}
+        {% empty %}
+        <tr>
+          <td colspan="7" class="px-6 py-14">
+            <div class="mx-auto max-w-sm text-center">
+              <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">📦</div>
+              <h2 class="mt-3 text-sm font-semibold text-slate-800">No purchase orders yet</h2>
+              <p class="mt-1 text-xs text-slate-500">Commit big purchases to a vendor ahead of the RFP. Once the PO is approved, RFPs for the same vendor draw down its balance.</p>
+              <div class="mt-4 flex items-center justify-center gap-2">
+                <a href="{% url 'ui:po_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ New PO</a>
+                <a href="{% url 'ui:supplier_create' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">Add a supplier</a>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+  {% include "ui/partials/pagination.html" %}
+{% endblock %}

@@ -252,6 +252,83 @@ def rfp_timeline(rfp):
     return out
 
 
+def list_pos(*, limit=100):
+    """Purchase Orders, newest first, for the PO screen (ADR-0XX)."""
+    from apps.ap.models import PurchaseOrder
+
+    return (
+        PurchaseOrder.objects.select_related("supplier", "segment")
+        .order_by("-po_date", "-po_number")[:limit]
+    )
+
+
+def po_summary():
+    """Counts/amounts by stage for the PO list stat cards (ADR-0XX)."""
+    from django.db.models import Sum
+
+    from apps.ap.models import PurchaseOrder
+
+    pending_qs = PurchaseOrder.objects.exclude(status__in=["approved", "closed", "rejected"])
+    approved_qs = PurchaseOrder.objects.filter(status__in=["approved", "closed"])
+    posted_qs = PurchaseOrder.objects.filter(rfps__status="posted").distinct()
+    return {
+        "total": PurchaseOrder.objects.count(),
+        "total_amount": PurchaseOrder.objects.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "pending": pending_qs.count(),
+        "pending_amount": pending_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "approved": approved_qs.count(),
+        "approved_amount": approved_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "billed_amount": posted_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+    }
+
+
+def po_timeline(po):
+    """[(status, label, holder)] for the PO document screen (ADR-0XX matrix)."""
+    holders = {
+        "prepared": getattr(po, "created_by", None),
+        "submitted": None,
+        "checked": po.checked_by,
+        "acctg_approved": po.approved_by_acctg,
+        "fin_approved": po.approved_by_fin,
+        "cnr_approved": po.approved_by_cnr,
+    }
+    order = ["prepared", "submitted", "checked", "acctg_approved", "fin_approved"]
+    from apps.ap.services import po_coo_required
+
+    if po_coo_required(po):
+        order.append("cnr_approved")
+    labels = {
+        "prepared": "Prepared by",
+        "submitted": "Submitted",
+        "checked": "Checked / Recommending",
+        "acctg_approved": "Accounting Head",
+        "fin_approved": "Finance Head",
+        "cnr_approved": "CNR Approval",
+    }
+    out = []
+    reached = False
+    for step in order:
+        reached = reached or step == po.status
+        holder = holders.get(step)
+        out.append(
+            {
+                "step": step,
+                "label": labels[step],
+                "state": "done" if reached else ("current" if step == po.status else "todo"),
+                "holder": holder.get_full_name() if holder else "",
+            }
+        )
+    # The PO's terminal markers shown after the chain steps.
+    if po.status == "approved":
+        out.append({"step": "approved", "label": "Approved (void for RFP funding)", "state": "current", "holder": ""})
+    elif po.status == "closed":
+        out.append({"step": "approved", "label": "Approved (void for RFP funding)", "state": "done", "holder": ""})
+        out.append({"step": "closed", "label": "Closed by Finance Head", "state": "current", "holder": po.closed_by.get_full_name() if po.closed_by else ""})
+    elif po.status == "rejected":
+        out.append({"step": "rejected", "label": "Rejected — returned to preparer", "state": "current", "holder": po.rejected_by.get_full_name() if po.rejected_by else ""})
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Cash
 # ---------------------------------------------------------------------------

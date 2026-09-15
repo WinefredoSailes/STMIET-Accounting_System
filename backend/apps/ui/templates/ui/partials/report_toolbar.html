@@ -1,17 +1,23 @@
 {% load ui_filters %}{% comment %}Export/print toolbar for reporting screens.
 Params: format_select (bool, show dropdown), formats (whitespace-separated list
 of extension strings, e.g. "xlsx csv pdf"), format (current selection),
-export_button (bool), print_url_name | print_href.
+export_button (bool), export_url (optional absolute/relative export endpoint —
+when present the format select redirects there and Export becomes a link to
+it), print_url_name | print_href.
 The format-dropdown redirect JS is global (tryFormatRedirect in base.js) and
 triggers on change of a select[data-format-redirect].{% endcomment %}
 <div class="flex items-center gap-2 mt-2">
   {% if format_select %}
-  <select name="format" data-format-redirect class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+  <select name="format" data-format-redirect{% if export_url %} data-export-url="{{ export_url }}"{% endif %} class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
     {% for f in formats|split:" " %}<option value="{{ f }}" {% if format == f %}selected{% endif %}>{{ f|upper }}</option>{% endfor %}
   </select>
   {% endif %}
   {% if export_button %}
-  <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
+    {% if export_url %}
+    <a href="{{ export_url }}" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</a>
+    {% else %}
+    <button type="submit" name="export" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Export</button>
+    {% endif %}
   {% endif %}
   {% if print_href %}
   <a href="{{ print_href }}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>

@@ -11,6 +11,9 @@
   {% capture as asset_title %}{{ asset.asset_no }} · {{ asset.name }}{% endcapture %}
   {% capture as asset_actions %}
   {% include "ui/partials/status_badge.html" with status=asset.status color=asset_badge_color %}
+  <a href="{% url 'ui:asset_export' asset.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+  <a href="{% url 'ui:asset_export' asset.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+  <a href="{% url 'ui:asset_export' asset.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=asset_title back_url_name="ui:asset_list" back_label="Assets" actions=asset_actions %}
 

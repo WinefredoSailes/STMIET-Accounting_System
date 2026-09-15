@@ -833,6 +833,208 @@ class TestRetryOnLock:
         assert calls["n"] == 2
 
 
+class TestPurchaseOrder:
+    """Master Purchase Order lifecycle (ADR-0XX): auto-numbered, RFP-mirror
+    approval chain, manual head close, and derived billing balances."""
+
+    @staticmethod
+    def _make(*, supplier, alywin, segment, lines=None, po_number="P0001"):
+        from apps.ap.services import PurchaseOrderService
+
+        return PurchaseOrderService.create_po(
+            po_number=po_number,
+            po_date=date(2026, 1, 5),
+            supplier=supplier,
+            segment=segment,
+            particulars="Engine oil for diesel fleet",
+            lines=lines
+            or [
+                {"qty": "2", "unit": "DRUM", "description": "ENGINE OIL 15W40", "unit_price": "25000.00"},
+            ],
+            payment_terms="30 days",
+            user=alywin,
+        )
+
+    @pytest.fixture
+    def head(self, db):
+        from django.contrib.auth import get_user_model
+        from apps.foundation.models import UserProfile
+
+        u = get_user_model().objects.create_user(username="pohead", password="x")
+        UserProfile.objects.create(user=u, approval_role="head")
+        return u
+
+    def _approved(self, po, head):
+        po.status = "submitted"
+        po.save(update_fields=["status"])
+        from apps.ap.services import PurchaseOrderService
+
+        PurchaseOrderService.approve_head(po, user=head)
+        po.refresh_from_db()
+        return po
+
+    def test_create_po_totals_and_lines(self, company, segment, supplier, alywin):
+        po = self._make(
+            supplier=supplier, alywin=alywin, segment=segment,
+            lines=[
+                {"qty": "2", "unit": "DRUM", "description": "ENGINE OIL 15W40", "unit_price": "25000.00"},
+                {"qty": "3", "unit": "PC", "description": "OIL FILTER", "unit_price": "1000.00"},
+            ],
+        )
+        assert po.po_number == "P0001"
+        assert po.subtotal == Decimal("53000.00")
+        assert po.amount == Decimal("53000.00")  # no discount/vat/other yet
+        assert po.available_amount == Decimal("53000.00")
+        assert po.status == "prepared"
+        assert [l.amount for l in po.lines.all()] == [Decimal("50000.00"), Decimal("3000.00")]
+
+    def test_create_po_requires_valid_lines(self, company, segment, supplier, alywin):
+        with pytest.raises(ValidationError, match="quantity and unit price"):
+            self._make(supplier=supplier, alywin=alywin, segment=segment,
+                       lines=[{"qty": "0", "unit": "PC", "description": "Bad", "unit_price": "100.00"}])
+        with pytest.raises(ValidationError, match="description"):
+            self._make(supplier=supplier, alywin=alywin, segment=segment,
+                       lines=[{"qty": "1", "unit": "PC", "description": "", "unit_price": "100.00"}])
+        with pytest.raises(ValidationError, match="greater than zero"):
+            self._make(supplier=supplier, alywin=alywin, segment=segment,
+                       lines=[{"qty": "-1", "unit": "PC", "description": "Bad", "unit_price": "100.00"}])
+
+    def test_po_head_approval_rolls_straight_to_approved(self, company, segment, supplier, alywin, head):
+        po = self._make(supplier=supplier, alywin=alywin, segment=segment)
+        out = self._approved(po, head)
+        assert out.status == "approved"
+        assert out.approved_by_fin == head
+        assert out.approved_by_cnr is None
+        assert out.available_amount == out.amount
+
+    def test_po_close_blocks_and_head_only(self, company, segment, supplier, alywin, head):
+        from apps.ap.services import PurchaseOrderService
+
+        po = self._approved(self._make(supplier=supplier, alywin=alywin, segment=segment), head)
+        # only the head can close
+        from django.contrib.auth import get_user_model
+
+        staff = get_user_model().objects.create_user(username="postaff", password="x")
+        with pytest.raises(ValidationError, match="Head"):
+            PurchaseOrderService.close_po(po, user=staff)
+        PurchaseOrderService.close_po(po, user=head)
+        po.refresh_from_db()
+        assert po.status == "closed"
+
+
+class TestRFPPurchaseOrderLink:
+    """An RFP references a master PO from the same vendor; the PO's available
+    balance falls as the RFP is approved (reserved) and posted (billed)."""
+
+    @pytest.fixture
+    def po(self, db, company, segment, supplier, alywin):
+        from apps.ap.services import PurchaseOrderService
+
+        return PurchaseOrderService.create_po(
+            po_number="P0001",
+            po_date=date(2026, 1, 5),
+            supplier=supplier,
+            segment=segment,
+            particulars="Diesel supply",
+            lines=[{"qty": "1", "unit": "UNIT", "description": "DIESEL", "unit_price": "100000.00"}],
+            user=alywin,
+        )
+
+    @pytest.fixture
+    def head(self, db):
+        from django.contrib.auth import get_user_model
+        from apps.foundation.models import UserProfile
+
+        u = get_user_model().objects.create_user(username="rfppohead", password="x")
+        UserProfile.objects.create(user=u, approval_role="head")
+        return u
+
+    def _approved_po(self, po, head):
+        po.status = "submitted"
+        po.save(update_fields=["status"])
+        from apps.ap.services import PurchaseOrderService
+
+        PurchaseOrderService.approve_head(po, user=head)
+        po.refresh_from_db()
+        return po
+
+    def _rfp(self, *, supplier, segment, amount, alywin, po, tag="1"):
+        return RFPService.create_rfp(
+            ap_number=f"A{po.id}r{tag}",
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": amount},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": amount},
+            ],
+            user=alywin,
+            po=po,
+        )
+
+    def test_rfp_requires_an_approved_po(self, company, segment, supplier, alywin, po):
+        with pytest.raises(ValidationError, match="must be approved"):
+            self._rfp(supplier=supplier, segment=segment, amount="20000.00", alywin=alywin, po=po)
+
+    def test_rfp_po_must_match_the_vendor(self, company, segment, supplier, alywin, po, head):
+        approved = self._approved_po(po, head)
+        other = Supplier.objects.create(code="S002", name="Other Vendor", default_segment=segment)
+        with pytest.raises(ValidationError, match="same supplier"):
+            self._rfp(supplier=other, segment=segment, amount="20000.00", alywin=alywin, po=approved)
+
+    def test_approved_po_links_and_reserves_on_approval(self, company, segment, supplier, alywin, po,
+                                                        head, accounts):
+        approved = self._approved_po(po, head)
+        rfp = self._rfp(supplier=supplier, segment=segment, amount="80000.00", alywin=alywin, po=approved)
+        assert rfp.po_id == approved.id
+        assert approved.available_amount == Decimal("100000.00")  # not reserved until approved
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        rfp.refresh_from_db()
+        approved.refresh_from_db()
+        assert rfp.status == "fin_approved"
+        assert approved.reserved_amount == Decimal("80000.00")
+        assert approved.available_amount == Decimal("20000.00")
+
+    def test_created_amount_cannot_exceed_po_balance(self, company, segment, supplier, alywin, po, head):
+        approved = self._approved_po(po, head)
+        with pytest.raises(ValidationError, match="exceeds the available balance"):
+            self._rfp(supplier=supplier, segment=segment, amount="150000.00", alywin=alywin, po=approved)
+
+    def test_final_approval_guard_blocks_over_commit(self, company, segment, supplier, alywin, po, head,
+                                                     accounts):
+        from apps.ap.services import PurchaseOrderService
+
+        approved = self._approved_po(po, head)
+        rfp1 = self._rfp(supplier=supplier, segment=segment, amount="80000.00", alywin=alywin, po=approved)
+        rfp2 = self._rfp(supplier=supplier, segment=segment, amount="30000.00", alywin=alywin, po=approved,
+                         tag="2")
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp1 = RFPService.advance_step(rfp1, role=role, user=head)
+        # rfp2 fits at creation (0 reserved) but not once rfp1 is approved:
+        # the guard re-derives the drawn balance at rfp2's final (fin_approved)
+        # step.
+        rfp2 = RFPService.advance_step(rfp2, role="checked", user=head)
+        rfp2 = RFPService.advance_step(rfp2, role="acctg_approved", user=head)
+        with pytest.raises(ValidationError, match="no longer holds enough balance"):
+            RFPService.advance_step(rfp2, role="fin_approved", user=head)
+
+    def test_posted_rfp_counts_as_billed(self, company, segment, supplier, alywin, po, head, accounts):
+        approved = self._approved_po(po, head)
+        rfp = self._rfp(supplier=supplier, segment=segment, amount="60000.00", alywin=alywin, po=approved)
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-PO1", conso_date=date(2026, 1, 20))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=head)
+        rfp.refresh_from_db()
+        approved.refresh_from_db()
+        assert rfp.status == "posted"
+        assert approved.billed_amount == Decimal("60000.00")
+        assert approved.available_amount == Decimal("40000.00")
+
+
 class TestImportSuppliers:
     def test_creates_and_is_idempotent(self, tmp_path, company, segment):
         from apps.ap.models import SupplierType

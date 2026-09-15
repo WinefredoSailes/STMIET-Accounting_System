@@ -15,7 +15,8 @@
   </form>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="Trial Balance" subtitle=tb_subtitle actions=run_controls %}
-  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True print_url_name="ui:trial_balance_print" %}
+  {% capture as tb_export_url %}{% url 'ui:trial_balance_export' %}?as_of={{ as_of }}{% endcapture %}
+  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True export_url=tb_export_url print_url_name="ui:trial_balance_print" %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[1300px]">

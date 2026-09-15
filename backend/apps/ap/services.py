@@ -12,7 +12,7 @@ Rules enforced (ADR-018/019/020/022 + POSTING_RULES 7.2-7.4):
 """
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 import functools
 import time
 
@@ -32,6 +32,8 @@ from .models import (
     AdvanceToEmployee,
     CheckVoucher,
     CONSOBatch,
+    POLine,
+    PurchaseOrder,
     RFPDocument,
     RFPLine,
     Supplier,
@@ -62,9 +64,73 @@ def finally_approved(rfp) -> bool:
     return rfp.status == "fin_approved" and not coo_required(rfp)
 
 
+# --- Purchase Order helpers (ADR-0XX; same matrix as the RFP, ADR-020). ----
+PO_APPROVAL_STEPS = ["prepared", "checked", "acctg_approved", "fin_approved"]
+
+PO_ROLE_TO_FIELD = {
+    "prepared": "created_by",
+    "checked": "checked_by",
+    "acctg_approved": "approved_by_acctg",
+    "fin_approved": "approved_by_fin",
+}
+
+
+def po_coo_required(po) -> bool:
+    """CNR (COO) review on a PO is due under the same escalation gate as the
+    RFP: enabled AND above P100,000 (ADR-020)."""
+    if not settings.DOMAIN.get("COO_REVIEW_ENABLED", False):
+        return False
+    return po.amount > CNR_ESCALATION_THRESHOLD
+
+
+def po_pending_final_check(po) -> bool:
+    """A finance-approved PO still waiting on its last reviewer (the COO)."""
+    return po.status == "fin_approved" and po_coo_required(po)
+
+
+def po_finally_approved(po) -> bool:
+    """No approval step remains — the PO becomes bankable for RFPs."""
+    if po.status == "cnr_approved":
+        return True
+    return po.status == "fin_approved" and not po_coo_required(po)
+
+
+def validate_po_for_rfp(po, *, payee_id, amount):
+    """Gate an RFP (create/revise) against its master Purchase Order.
+
+    A PO must be active, finally approved (status 'approved'), belong to the
+    same supplier as the RFP's payee, and still hold enough available balance
+    for the RFP amount. The same check is re-run under a row lock when the RFP
+    reaches its final approval so two concurrent RFPs cannot over-commit one
+    PO (the PO's free balance is derived from its linked RFPs, not a counter).
+    """
+    if po is None:
+        return
+    if po.status != "approved":
+        raise ValidationError(
+            f"PO {po.po_number} must be approved before it can fund an RFP "
+            f"(status '{po.status}')."
+        )
+    if po.supplier_id != payee_id:
+        raise ValidationError(
+            "The RFP's payee must be the same supplier (vendor) as the PO's."
+        )
+    if amount > po.available_amount:
+        raise ValidationError(
+            f"RFP amount {amount} exceeds the available balance "
+            f"{po.available_amount} on PO {po.po_number} (total {po.amount} "
+            f"less reserved and already-billed RFPs)."
+        )
+
+
 def log_action(doc, action, *, actor=None, note=""):
-    """Append an immutable audit-trail entry for an RFP or Check Voucher."""
-    doc_type = ActionLog.DocType.CV if isinstance(doc, CheckVoucher) else ActionLog.DocType.RFP
+    """Append an immutable audit-trail entry for an RFP, Check Voucher or PO."""
+    if isinstance(doc, CheckVoucher):
+        doc_type = ActionLog.DocType.CV
+    elif isinstance(doc, PurchaseOrder):
+        doc_type = ActionLog.DocType.PO
+    else:
+        doc_type = ActionLog.DocType.RFP
     ActionLog.objects.create(
         doc_type=doc_type,
         doc_id=doc.id,
@@ -160,10 +226,13 @@ class RFPService:
         lines: list[dict],  # [{side, segment, account_code, amount, description}]
         last_ap: str = "",
         user=None,
+        po: PurchaseOrder | None = None,
     ) -> RFPDocument:
         """Create an RFP whose lines carry explicit Dr/Cr sides. The RFP amount
         is the total of the debit lines; debits must equal credits so the
-        posted JE balances, and must meet the P2,500 threshold (ADR-022)."""
+        posted JE balances, and must meet the P2,500 threshold (ADR-022). A
+        master Purchase Order (ADR-0XX) may authorize the disbursement: it
+        must be approved and hold enough available balance for this amount."""
         dr_total = Decimal("0.00")
         cr_total = Decimal("0.00")
         parsed = []
@@ -186,6 +255,8 @@ class RFPService:
                 f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
         particulars = lines[0].get("description", "") if lines else ""
+        if po is not None:
+            validate_po_for_rfp(po, payee_id=payee.id, amount=dr_total)
         rfp = RFPDocument.objects.create(
             ap_number=ap_number,
             last_ap=last_ap or (payee.last_ap if payee else ""),
@@ -197,6 +268,7 @@ class RFPService:
             amount=dr_total,
             status="prepared",
             created_by=user,
+            po=po,
         )
         for i, line in enumerate(lines, start=1):
             RFPLine.objects.create(
@@ -214,6 +286,36 @@ class RFPService:
             payee.save(update_fields=["last_ap", "updated_at"])
         log_action(rfp, "created", actor=user)
         return rfp
+
+    @classmethod
+    def _guard_po_balance(cls, rfp: RFPDocument) -> None:
+        """Confirm, under a PO row lock, that the RFP's master PO still has
+        room for it. Called at the moment the RFP enters its final approval
+        (fin_approved / cnr_approved), where the balance is reserved.
+
+        The lock serializes concurrent approvals of two RFPs on the same PO:
+        the second one re-derives the drawn balance from freshly-comitted
+        rows before it can claim the same free space (ADR-0XX partial billing).
+        """
+        if not rfp.po_id:
+            return
+        try:
+            po = PurchaseOrder.objects.select_for_update().get(pk=rfp.po_id)
+        except PurchaseOrder.DoesNotExist:
+            return
+        drawn = sum(
+            (
+                r.amount
+                for r in po.rfps.select_for_update().all()
+                if r.id != rfp.id and r.status in ("fin_approved", "cnr_approved", "posted")
+            ),
+            Decimal("0.00"),
+        )
+        if rfp.amount > po.amount - drawn:
+            raise ValidationError(
+                f"PO {po.po_number} no longer holds enough balance for RFP "
+                f"{rfp.ap_number}: {po.amount - drawn} remaining."
+            )
 
     @classmethod
     @retry_on_lock()
@@ -275,6 +377,11 @@ class RFPService:
         rfp.status = role
         rfp.save(update_fields=[field, "status", "updated_at"])
         log_action(rfp, role, actor=user)
+        # ADR-0XX: the instant the RFP is fully approved its amount is
+        # reserved against the linked PO (if any) — re-confirm the balance
+        # under a lock so concurrent RFPs cannot over-commit the PO.
+        if rfp.status in ("fin_approved", "cnr_approved"):
+            cls._guard_po_balance(rfp)
         return rfp
 
     @classmethod
@@ -335,6 +442,7 @@ class RFPService:
                 "The COO/CNR approval must come from a person who did not "
                 "handle the earlier steps of this RFP."
             )
+        cls._guard_po_balance(rfp)
         rfp.approved_by_cnr = user
         rfp.status = "cnr_approved"
         rfp.save(update_fields=["approved_by_cnr", "status", "updated_at"])
@@ -417,6 +525,8 @@ class RFPService:
             raise ValidationError(
                 f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
+        if rfp.po_id:
+            validate_po_for_rfp(rfp.po, payee_id=rfp.payee_id, amount=dr_total)
         rfp.lines.all().delete()
         rfp.amount = dr_total
         rfp.particulars = lines[0].get("description", "") if lines else ""
@@ -453,6 +563,349 @@ class RFPService:
             )
         log_action(rfp, "revised", actor=user)
         return rfp
+
+
+class PurchaseOrderService:
+    """Purchase Order lifecycle (ADR-0XX): prepared by the AP staff, committed
+    by the same head trio as the RFP with the optional COO gate, then closed by
+    the head. A PO is a commitment document only — it never posts to the GL;
+    the RFP it authorizes carries the journal entry through CONSO.
+
+    Billing is a header-level derivation from the RFPs that reference the PO
+    (never stored on the PO): reserved = approved-but-not-posted RFP amounts,
+    billed = posted RFP amounts, available = amount - reserved - billed.
+    """
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def create_po(
+        cls,
+        *,
+        po_number: str,
+        po_date: date,
+        supplier: Supplier,
+        segment,
+        particulars: str = "",
+        lines: list[dict],  # [{pr_number, qty, unit, description, unit_price}]
+        discount: Decimal = Decimal("0.00"),
+        vat_amount: Decimal = Decimal("0.00"),
+        other_charges: Decimal = Decimal("0.00"),
+        payment_terms: str = "",
+        contract_duration: str = "",
+        ship_to_company: str = "",
+        ship_to_address: str = "",
+        contact_person: str = "",
+        notes: str = "",
+        user=None,
+    ) -> PurchaseOrder:
+        """Create a PO. Grand total follows the template layout: the sum of the
+        line amounts (qty x unit price) is the subtotal, and the grand total is
+        subtotal - discount + VAT + other charges."""
+        subtotal = Decimal("0.00")
+        parsed = []
+        for line in lines:
+            qty = money(line["qty"])
+            price = money(line["unit_price"])
+            if qty <= 0 or price <= 0:
+                raise ValidationError("Each PO line needs a quantity and unit price greater than zero.")
+            desc = (line.get("description") or "").strip()
+            if not desc:
+                raise ValidationError("Each PO line needs a description.")
+            amt = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            parsed.append((qty, price, amt, line))
+            subtotal += amt
+        if not parsed:
+            raise ValidationError("A PO needs at least one line item.")
+        disc = money(discount)
+        vat = money(vat_amount)
+        other = money(other_charges)
+        total = subtotal - disc + vat + other
+        if total <= 0:
+            raise ValidationError("PO grand total must be greater than zero.")
+
+        po = PurchaseOrder.objects.create(
+            po_number=po_number,
+            po_date=po_date,
+            supplier=supplier,
+            segment=segment,
+            particulars=particulars,
+            subtotal=subtotal,
+            discount=disc,
+            vat_amount=vat,
+            other_charges=other,
+            amount=total,
+            payment_terms=(payment_terms or "").strip(),
+            contract_duration=(contract_duration or "").strip(),
+            ship_to_company=(ship_to_company or "").strip(),
+            ship_to_address=(ship_to_address or "").strip(),
+            contact_person=(contact_person or "").strip(),
+            notes=notes,
+            status="prepared",
+            created_by=user,
+        )
+        for i, (qty, price, amt, line) in enumerate(parsed, start=1):
+            POLine.objects.create(
+                po=po,
+                line_no=i,
+                pr_number=(line.get("pr_number") or "").strip(),
+                qty=qty,
+                unit=(line.get("unit") or "").strip(),
+                description=(line.get("description") or "").strip(),
+                unit_price=price,
+                amount=amt,
+            )
+        log_action(po, "created", actor=user)
+        return po
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def advance_step(cls, po: PurchaseOrder, *, role: str, user) -> PurchaseOrder:
+        """Move the PO forward one approval role (same matrix as the RFP,
+        ADR-020/0XX). 'prepared'/'submitted' -> checked -> acctg_approved ->
+        fin_approved; when no COO gate applies the final click marks the PO
+        'approved' (RFP-bankable)."""
+        if po.status in ("approved", "cnr_approved", "fin_approved", "rejected", "closed"):
+            raise ValidationError(f"PO '{po.status}' cannot move forward.")
+
+        # ADR-036/0XX: the head legitimately holds the trio; nobody else may
+        # hold two steps, the preparer may not approve their own PO, and the
+        # COO (CNR) must stay a fresh hand.
+        prior_steps = [
+            s
+            for s, uid in (
+                ("checked", po.checked_by_id),
+                ("acctg_approved", po.approved_by_acctg_id),
+                ("fin_approved", po.approved_by_fin_id),
+            )
+            if uid and uid == user.id
+        ]
+        preparer_blocked = approval_role_of(user) != "head" and user.id == po.created_by_id
+        if preparer_blocked or user.id == po.approved_by_cnr_id:
+            raise ValidationError(
+                "The person who prepared a PO (or approved it as COO/CNR) cannot approve it again."
+            )
+        if role in prior_steps:
+            raise ValidationError("This user already recorded this approval step.")
+
+        current = "prepared" if po.status == "submitted" else po.status
+        try:
+            idx = PO_APPROVAL_STEPS.index(current)
+        except ValueError:
+            raise ValidationError(f"PO is in unexpected status '{po.status}'.")
+        role = PO_APPROVAL_STEPS[idx + 1]
+        field = PO_ROLE_TO_FIELD[role]
+
+        setattr(po, field, user)
+        if role == "fin_approved" and po_coo_required(po):
+            po.status = "fin_approved"  # awaiting the COO sign-off
+        else:
+            po.status = role
+        po.save(update_fields=[field, "status", "updated_at"])
+        log_action(po, role, actor=user)
+        if po_finally_approved(po):
+            po.status = "approved"
+            po.save(update_fields=["status", "updated_at"])
+            log_action(po, "approved", actor=user)
+        return po
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def approve_head(cls, po: PurchaseOrder, *, user) -> PurchaseOrder:
+        """One-click head approval: advance through every remaining head step
+        in a single action. When the CNR gate is enabled and the amount is
+        above the escalation threshold the PO stops at `fin_approved` so the
+        COO signs next; otherwise it is marked 'approved' (RFP-bankable)."""
+        if po.status in ("approved", "cnr_approved", "fin_approved", "rejected", "closed"):
+            raise ValidationError(f"PO '{po.status}' cannot be approved.")
+        current = "prepared" if po.status == "submitted" else po.status
+        try:
+            idx = PO_APPROVAL_STEPS.index(current)
+        except ValueError:
+            raise ValidationError(f"PO is in unexpected status '{po.status}'.")
+        out = po
+        moved = 0
+        for role in PO_APPROVAL_STEPS[idx + 1 :]:
+            out = cls.advance_step(out, role=role, user=user)
+            moved += 1
+            if out.status in ("fin_approved", "approved"):
+                break
+        if not moved:
+            raise ValidationError(f"No head approval step available from status '{po.status}'.")
+        return out
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def approve_cnr(cls, po: PurchaseOrder, *, user) -> PurchaseOrder:
+        if po.amount <= CNR_ESCALATION_THRESHOLD:
+            raise ValidationError("CNR approval is only required above P100,000.")
+        if po.status != "fin_approved":
+            raise ValidationError("CNR approval comes after finance approval.")
+        holders = [
+            po.created_by_id,
+            po.checked_by_id,
+            po.approved_by_acctg_id,
+            po.approved_by_fin_id,
+        ]
+        if user.id in [h for h in holders if h]:
+            raise ValidationError(
+                "The COO/CNR approval must come from a person who did not "
+                "handle the earlier steps of this PO."
+            )
+        po.approved_by_cnr = user
+        po.status = "approved"
+        po.save(update_fields=["approved_by_cnr", "status", "updated_at"])
+        log_action(po, "cnr_approved", actor=user)
+        log_action(po, "approved", actor=user)
+        return po
+
+    REJECTABLE_STATUSES = ("submitted", "checked", "acctg_approved")
+
+    @classmethod
+    def _rejectable(cls, po) -> bool:
+        """A PO can be rejected only while it is awaiting an approval step —
+        including the CNR step on an amount above P100k."""
+        if po.status in cls.REJECTABLE_STATUSES:
+            return True
+        return po_pending_final_check(po)
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def reject(cls, po: PurchaseOrder, *, user, note: str = "") -> PurchaseOrder:
+        """Return the PO to the preparer with a note (reject/revise cycle)."""
+        if po.status == "closed":
+            raise ValidationError("Closed POs cannot be rejected.")
+        if not cls._rejectable(po):
+            raise ValidationError(
+                f"PO '{po.status}' is not awaiting an approval step; it cannot be rejected."
+            )
+        if not (note or "").strip():
+            raise ValidationError("Enter a note explaining why the PO is being rejected.")
+        po.status = "rejected"
+        po.rejected_by = user
+        po.rejected_at = timezone.now()
+        po.rejection_note = note.strip()
+        po.save(update_fields=["status", "rejected_by", "rejected_at", "rejection_note", "updated_at"])
+        log_action(po, "rejected", actor=user, note=note)
+        return po
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def revise(
+        cls,
+        po: PurchaseOrder,
+        *,
+        user,
+        lines: list[dict] | None = None,
+        particulars: str = "",
+        discount: Decimal | None = None,
+        vat_amount: Decimal | None = None,
+        other_charges: Decimal | None = None,
+        payment_terms: str = "",
+        contract_duration: str = "",
+        ship_to_company: str = "",
+        ship_to_address: str = "",
+        contact_person: str = "",
+        notes: str = "",
+    ) -> PurchaseOrder:
+        """The preparer corrects a rejected PO and resubmits it (mirror of RFP
+        revise). Lines are replaced wholesale; rejection context is cleared;
+        the PO re-enters the chain at 'submitted' with voided approval records
+        so the same approvers can re-run the steps."""
+        if po.status != "rejected":
+            raise ValidationError("Only rejected POs can be revised and resubmitted.")
+        if user.id != po.created_by_id:
+            raise ValidationError(
+                f"PO {po.po_number} was prepared by another user; only the preparer may revise it."
+            )
+
+        if lines is not None:
+            subtotal = Decimal("0.00")
+            parsed = []
+            for line in lines:
+                qty = money(line["qty"])
+                price = money(line["unit_price"])
+                if qty <= 0 or price <= 0:
+                    raise ValidationError("Each PO line needs a quantity and unit price greater than zero.")
+                desc = (line.get("description") or "").strip()
+                if not desc:
+                    raise ValidationError("Each PO line needs a description.")
+                amt = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                parsed.append((qty, price, amt, line))
+                subtotal += amt
+            if not parsed:
+                raise ValidationError("A PO needs at least one line item.")
+            po.lines.all().delete()
+            po.subtotal = subtotal
+            for i, (qty, price, amt, line) in enumerate(parsed, start=1):
+                POLine.objects.create(
+                    po=po,
+                    line_no=i,
+                    pr_number=(line.get("pr_number") or "").strip(),
+                    qty=qty,
+                    unit=(line.get("unit") or "").strip(),
+                    description=(line.get("description") or "").strip(),
+                    unit_price=price,
+                    amount=amt,
+                )
+        if discount is not None:
+            po.discount = money(discount)
+        if vat_amount is not None:
+            po.vat_amount = money(vat_amount)
+        if other_charges is not None:
+            po.other_charges = money(other_charges)
+        total = po.subtotal - po.discount + po.vat_amount + po.other_charges
+        if total <= 0:
+            raise ValidationError("PO grand total must be greater than zero.")
+        po.amount = total
+        po.particulars = particulars
+        po.payment_terms = (payment_terms or "").strip()
+        po.contract_duration = (contract_duration or "").strip()
+        po.ship_to_company = (ship_to_company or "").strip()
+        po.ship_to_address = (ship_to_address or "").strip()
+        po.contact_person = (contact_person or "").strip()
+        po.notes = notes
+        po.status = "submitted"
+        po.rejected_by = None
+        po.rejected_at = None
+        po.rejection_note = ""
+        po.revision_count += 1
+        po.checked_by = None
+        po.approved_by_acctg = None
+        po.approved_by_fin = None
+        po.approved_by_cnr = None
+        po.save(update_fields=[
+            "subtotal", "discount", "vat_amount", "other_charges", "amount",
+            "particulars", "payment_terms", "contract_duration",
+            "ship_to_company", "ship_to_address", "contact_person", "notes",
+            "status", "rejected_by", "rejected_at", "rejection_note",
+            "revision_count", "checked_by", "approved_by_acctg",
+            "approved_by_fin", "approved_by_cnr", "updated_at",
+        ])
+        log_action(po, "revised", actor=user)
+        return po
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def close_po(cls, po: PurchaseOrder, *, user) -> PurchaseOrder:
+        """Manually close an approved PO (head-only): forbids further RFP
+        references without voiding reservations already made."""
+        if approval_role_of(user) != "head":
+            raise ValidationError("Only the Accounting & Finance Head can close a Purchase Order.")
+        if po.status not in ("approved", "fin_approved", "cnr_approved"):
+            raise ValidationError(f"Only an approved PO can be closed (status '{po.status}').")
+        po.status = "closed"
+        po.closed_by = user
+        po.closed_at = timezone.now()
+        po.save(update_fields=["status", "closed_by", "closed_at", "updated_at"])
+        log_action(po, "closed", actor=user)
+        return po
 
 
 class CONSOService:

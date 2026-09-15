@@ -15,7 +15,8 @@
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=st_title subtitle="Generated from posted GL. Per-segment columns + GRAND." actions=gen_controls %}
   {% capture as st_print_href %}{% url 'ui:statement_print' statement_type %}{% endcapture %}
-  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True print_href=st_print_href %}
+  {% capture as st_export_url %}{% url 'ui:statement_export' statement_type %}{% endcapture %}
+  {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True export_url=st_export_url print_href=st_print_href %}
 
   {% if statement %}
   <div class="mt-4 flex items-center gap-3 text-sm">

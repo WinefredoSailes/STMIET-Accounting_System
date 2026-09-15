@@ -4,6 +4,8 @@ from .models import (
     AdvanceToEmployee,
     CheckVoucher,
     CONSOBatch,
+    POLine,
+    PurchaseOrder,
     RFPDocument,
     RFPLine,
     Supplier,
@@ -42,9 +44,30 @@ class RFPDocumentSerializer(serializers.ModelSerializer):
             "id", "ap_number", "last_ap", "rfp_date", "payee", "particulars", "purpose",
             "segment", "amount", "status",
             "conso", "conso_line_no", "journal_entry", "created_by", "checked_by",
-            "approved_by_acctg", "approved_by_fin", "approved_by_cnr", "lines",
+            "approved_by_acctg", "approved_by_fin", "approved_by_cnr", "po", "lines",
         )
         read_only_fields = ("journal_entry",)
+
+
+class POLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = POLine
+        fields = ("id", "line_no", "pr_number", "qty", "unit", "description", "unit_price", "amount")
+
+
+class PurchaseOrderSerializer(serializers.ModelSerializer):
+    lines = POLineSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = PurchaseOrder
+        fields = (
+            "id", "po_number", "po_date", "supplier", "segment", "particulars",
+            "subtotal", "discount", "vat_amount", "other_charges", "amount",
+            "payment_terms", "contract_duration", "ship_to_company", "ship_to_address",
+            "contact_person", "notes", "status",
+            "billed_amount", "reserved_amount", "available_amount", "lines",
+        )
+        read_only_fields = ("billed_amount", "reserved_amount", "available_amount")
 
 
 class CONSOBatchSerializer(serializers.ModelSerializer):

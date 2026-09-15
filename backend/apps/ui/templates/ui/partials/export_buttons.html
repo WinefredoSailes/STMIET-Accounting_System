@@ -1,0 +1,13 @@
+{% comment %}
+Export format dropdown + button for list/register screens (Engine A).
+Params: export_url (required) — dispatch endpoint; base.js appends
+?format=<ext>. label (optional) — button text, default "Export".
+{% endcomment %}
+<div class="flex items-center gap-2">
+  <select name="format" data-format-redirect data-export-url="{{ export_url }}" aria-label="Export format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+    <option value="xlsx">XLSX</option>
+    <option value="csv">CSV</option>
+    <option value="pdf">PDF</option>
+  </select>
+  <a href="{{ export_url }}{% if '?' in export_url %}&{% else %}?{% endif %}format=xlsx" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">{{ label|default:"Export" }}</a>
+</div>

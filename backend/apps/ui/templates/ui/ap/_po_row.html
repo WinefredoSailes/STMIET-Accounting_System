@@ -1,0 +1,59 @@
+{% load ui_filters %}
+{% comment %}
+Single PO row for the on-screen list. Rendered twice:
+  * full page (ui/ap/po_list.html)
+  * HTMX row swap (po_approve returns exactly this partial)
+
+po.approval_info (set in views.po_list / po_approve) decides whether an
+inline Approve/Check action is shown: only for the role the PO is waiting on.
+{% endcomment %}
+<tr id="po-row-{{ po.id }}" class="hover:bg-slate-50">
+  <td class="px-4 py-2.5 font-mono text-xs">
+    <a href="{% url 'ui:po_detail' po.id %}" class="font-semibold text-indigo-600 hover:text-indigo-800">{{ po.po_number }}</a>
+  </td>
+  <td class="px-4 py-2.5">{{ po.po_date|date:"M d, Y" }}</td>
+  <td class="px-4 py-2.5 font-medium">{{ po.supplier.name }}</td>
+  <td class="px-4 py-2.5">
+    <span class="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{{ po.segment.code }}</span>
+  </td>
+  <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ po.particulars }}</td>
+  <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ po.amount|money }}</td>
+  <td class="px-4 py-2.5">
+    <div class="flex items-center gap-2 justify-end">
+      <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium
+        {% if po.status == 'approved' %}bg-emerald-100 text-emerald-800
+        {% elif po.status == 'closed' %}bg-slate-200 text-slate-700
+        {% elif po.status == 'rejected' %}bg-red-100 text-red-700
+        {% elif po.status == 'cnr_approved' %}bg-violet-100 text-violet-700
+        {% elif po.status == 'fin_approved' %}bg-violet-100 text-violet-700
+        {% elif po.status == 'acctg_approved' %}bg-blue-100 text-blue-700
+        {% elif po.status == 'checked' %}bg-blue-100 text-blue-700
+        {% else %}bg-slate-100 text-slate-600{% endif %}">
+        {% if po.status == 'approved' %}Approved
+        {% elif po.status == 'closed' %}Closed
+        {% elif po.status == 'rejected' %}Rejected
+        {% elif po.status == 'cnr_approved' %}Approved (CNR)
+        {% elif po.status == 'fin_approved' %}Approved (Fin)
+        {% elif po.status == 'acctg_approved' %}Approved (Acctg)
+        {% elif po.status == 'checked' %}Checked
+        {% elif po.status == 'submitted' %}Submitted
+        {% else %}Prepared{% endif %}
+      </span>
+      {% if po.approval_info.has_action %}
+      <form
+        hx-post="{% url 'ui:po_approve' po.id %}"
+        hx-target="#po-row-{{ po.id }}"
+        hx-swap="outerHTML"
+        hx-indicator="#po-row-{{ po.id }}"
+        class="inline-flex"
+      >
+        {% csrf_token %}
+        <button type="submit"
+          class="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+          {{ po.approval_info.label }}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </td>
+</tr>

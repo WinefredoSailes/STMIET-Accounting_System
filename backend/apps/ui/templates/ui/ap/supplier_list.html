@@ -3,6 +3,7 @@
 {% block title %}Suppliers{% endblock %}
 {% block content %}
 {% capture as actions %}
+{% url 'ui:supplier_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
 {% if can_create_master %}
 <a href="{% url 'ui:supplier_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New supplier</a>
 {% endif %}

@@ -193,6 +193,58 @@ class TestEndToEndWorkflow:
         rfp.refresh_from_db()
         assert rfp.status == "cnr_approved"
 
+        # 4e. Master PO workflow: create -> submit -> approve -> an RFP that
+        # bills part of it through the UI (reservation -> billed on CONSO).
+        from apps.ap.models import PurchaseOrder
+
+        resp = client.post(
+            "/ap/pos/new/",
+            {"supplier": supplier.id, "segment": segment.id, "po_date": "2026-01-08",
+             "particulars": "PO-authorized diesel",
+             "line_pr_no": ["2026-PO1"],
+             "line_qty": ["1"], "line_unit": ["UNIT"],
+             "line_description": ["DIESEL E2E"], "line_unit_price": ["180000.00"],
+             "discount": "0.00", "vat_amount": "0.00", "other_charges": "0.00",
+             "payment_terms": "30 days",
+             },
+        )
+        assert resp.status_code == 302
+        po = PurchaseOrder.objects.get()
+        assert po.po_number.startswith("2026-")
+        assert po.status == "prepared"
+        assert po.available_amount == Decimal("180000.00")
+        client.force_login(roles["staff"])
+        client.post(f"/ap/pos/{po.id}/submit/")
+        po.refresh_from_db()
+        assert po.status == "submitted"
+        client.force_login(roles["head"])
+        client.post(f"/ap/pos/{po.id}/approve/")
+        po.refresh_from_db()
+        assert po.status == "approved"
+
+        # The RFP must reference only an approved PO of the same vendor.
+        resp = client.post(
+            "/ap/rfps/new/",
+            {"payee": supplier.id, "segment": segment.id, "po": po.id, "rfp_date": "2026-01-08",
+             "purpose": "purchase",
+             "line_segment": [segment.id, segment.id],
+             "line_account": ["61100", "20000"],
+             "line_debit": ["80000.00", ""],
+             "line_credit": ["", "80000.00"],
+             "line_description": ["PO-authorized purchase", "AP - E2E Fuel Depot"],
+             },
+        )
+        assert resp.status_code == 302
+        po_rfp = RFPDocument.objects.get(payee=supplier, particulars="PO-authorized purchase")
+        assert po_rfp.po_id == po.id
+        client.force_login(roles["head"])
+        client.post(f"/ap/rfps/{po_rfp.id}/approve/")
+        po_rfp.refresh_from_db()
+        assert po_rfp.status == "fin_approved"  # 80k is under the CNR gate
+        po.refresh_from_db()
+        assert po.reserved_amount == Decimal("80000.00")
+        assert po.available_amount == Decimal("100000.00")
+
         # 5. CONSO batch: open -> add RFP -> post -----------------------------
         client.force_login(roles["head"])
         resp = client.post("/ap/conso/new/", {"conso_date": "2026-01-16"})
@@ -201,6 +253,7 @@ class TestEndToEndWorkflow:
 
         batch = CONSOBatch.objects.get()
         client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": rfp.id})
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": po_rfp.id})
         resp = client.post(f"/ap/conso/{batch.id}/post/")
         assert resp.status_code == 302
         batch.refresh_from_db()
@@ -208,6 +261,12 @@ class TestEndToEndWorkflow:
         assert batch.status == "posted"
         assert rfp.status == "posted"
         assert rfp.journal_entry.status == PostingStatus.POSTED
+        # the PO-authorized RFP is now billed against the PO
+        po_rfp.refresh_from_db()
+        po.refresh_from_db()
+        assert po_rfp.status == "posted"
+        assert po.billed_amount == Decimal("80000.00")
+        assert po.available_amount == Decimal("100000.00")
 
         # 6. CV lifecycle through the UI --------------------------------------
         client.force_login(roles["staff"])

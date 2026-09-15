@@ -10,6 +10,9 @@
   {% endcapture %}
   {% capture as conso_actions %}
   {% include "ui/partials/status_badge.html" with status=batch.status color=conso_badge_color %}
+  <a href="{% url 'ui:conso_export' batch.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+  <a href="{% url 'ui:conso_export' batch.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+  <a href="{% url 'ui:conso_export' batch.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=batch.batch_no back_url_name="ui:conso_list" back_label="CONSO batches" actions=conso_actions %}
   <p class="text-sm text-slate-500 mt-1">{{ batch.conso_date|date:"M d, Y" }} · {{ members|length }} RFP(s) · {{ pcf_members|length }} PCF(s) · Total ₱{{ total|money }}</p>

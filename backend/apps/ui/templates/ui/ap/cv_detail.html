@@ -4,7 +4,7 @@
 {% block content %}
 <div class="p-6">
   {% capture as doc_title %}CV {{ cv.cv_number }}{% endcapture %}
-  {% capture as actions %}<a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>{% endcapture %}
+  {% capture as actions %}<a href="{% url 'ui:cv_export' cv.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a><a href="{% url 'ui:cv_export' cv.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a><a href="{% url 'ui:cv_export' cv.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a><a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>{% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:cv_list" back_label="Check vouchers" actions=actions %}
 
   {% capture as shell_meta %}

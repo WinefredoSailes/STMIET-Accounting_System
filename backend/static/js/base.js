@@ -416,10 +416,18 @@ var searchObserver = new MutationObserver(function () {
 searchObserver.observe(document.body, { childList: true, subtree: true });
 
 // ---- Report format dropdown (ui/partials/report_toolbar.html): on change,
-// reload the current URL with ?format=<ext> preserving the base action. ----
+// reload the current URL with ?format=<ext> preserving the base action. When
+// the select carries data-export-url, that endpoint is used as the base so
+// the screen's export buttons point at the dedicated export view. ----
 function tryFormatRedirect(select) {
-  var form = select.closest('form');
-  var base = form ? form.action : window.location.pathname;
+  var exportUrl = select.getAttribute('data-export-url');
+  var base;
+  if (exportUrl) {
+    base = exportUrl;
+  } else {
+    var form = select.closest('form');
+    base = form ? form.action : window.location.pathname;
+  }
   var url = base + (base.indexOf('?') === -1 ? '?' : '&') + 'format=' + encodeURIComponent(select.value);
   window.location.href = url;
 }

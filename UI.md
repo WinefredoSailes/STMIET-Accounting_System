@@ -127,14 +127,30 @@ the database, never from hardcoded strings.
     segment, and a distribution-charges line grid (account, segment,
     description, amount) with a running total; the P20,000 advance credit
     defaults and the total amount is validated against the lines (min
-    ₱2,500; advance &lt; total).
+    ₱2,500; advance &lt; total). An optional **Master Purchase Order** picker
+    (scoped to the chosen vendor, only approved POs with remaining balance)
+    links the disbursement to its committing order (ADR-042).
   - **Detail** (`/ap/rfps/<id>/`) — document view with distribution table,
     TOTAL AMOUNT / ADVANCE CREDIT foot, and the ADR-020 approval chain:
     **Requested by → Checked / Recommending → Accounting Manager →
     Finance Manager → CNR (over ₱100k only)**. Buttons appear per status:
     Submit, then one approve button per role. Different users must hold each
-    role (same-person rule, ADR-020). After finance approval the RFP is
+    role (same-person rule, ADR-020). A linked PO renders as a chip linking
+    back to the PO detail page. After finance approval the RFP is
     ready for the CONSO batch via the API.
+- **Purchase Orders** (`/ap/pos/`) — `YYYY-SEQ` commitment documents
+  (PO_LIMDON layout, ADR-042): vendor, PO date, particulars, and the
+  PR/QTY/UNIT/DESCRIPTION/PRICE/AMOUNT line grid with
+  DISCOUNT / SUBTOTAL / VAT / OTHER / TOTAL foot.
+  - **+ New PO** (`/ap/pos/new/`) — vendor, date, line grid, totals, payment
+    terms & contract duration, deliver-to block; saved as **prepared**.
+  - **Detail** (`/ap/pos/<id>/`) — document view with VENDOR / GRAND TOTAL /
+    BILLED / AVAILABLE (amount − reserved − billed) and the approval chain
+    (same matrix as the RFP). Submit → head approve (one-click fast-path) →
+    optional CNR above ₱100k → **approved**; Head can **Close** an approved PO
+    to stop further RFP references. Rejected POs return for **Revise**.
+  - **Print** (`/ap/pos/<id>/print/`) — the template layout (header block,
+    line table, totals, terms / deliver-to, signature lines) for PDF.
 - **Check Vouchers** (`/ap/cv/`) — CV-YYYY-#### (ACCTG-FOR-010 layout:
   payee info, date of request, check issued & no, distribution charges
   table, gross / WHT / net, signature blocks).
@@ -212,6 +228,37 @@ the database, never from hardcoded strings.
   acquisition date, cost / residual / fees, funding source (cash / AP /
   loan). Saving assigns FA-YYYY-#### and posts the 9.1 acquisition JE.
 
+### 8. Exporting data (every register & every document)
+
+Every register / list screen (COA, customers, suppliers, RFP, CV, POs,
+CONSO, advances, banks, cycles, aging AR/AP, reconciliations, cash short,
+transfers, collections summary, COLLECTIBLES, assets, fleet fuel, tax
+VAT/WHT/calendar/provisions, month-end close, general journal, TB,
+statements, cash flow) carries an **Export** dropdown — **XLSX / CSV /
+PDF** — rendered by the shared
+`apps/ui/templates/ui/partials/export_buttons.html`. The button keeps the
+screen's current filters (date ranges, segment, cycle, aging `as_of`,
+tax period) so the download matches exactly what the user sees.
+
+Document detail screens go one step further with per-document downloads:
+RFP (**ACCTG-FOR-012**), CV (**ACCTG-FOR-010**), PCF vouchers
+(**ACCTG-FOR-002**), JE, CONSO, fixed assets, and AR receipt each offer
+form-faithful **PDF** plus **XLSX / CSV**. PDFs default to A5 for the
+voucher forms (A4 for the JE / CONSO / workpapers) and honor `?paper=`.
+
+All formats flow through the single export engine in
+`apps/core/exports.py` (`table_export` + `csv_response` / `pdf_response`):
+- **XLSX** — real numeric cells for `money_cols` (signed amounts, no text),
+  frozen header, title row, and a **totals row** where the report has one
+  (aging, collections, advances, journal).
+- **CSV** — RFC 4180 with the same column set.
+- **PDF** — landscape table layout with wrapping cells, so wide registers
+  (collections summary, 23-column PCF workpaper) never clip.
+
+Both the dropdown (`?format=xlsx`) and the per-document
+`/…/<id>/export/<fmt>/` routes return RFC-munged filenames with the
+`Content-Disposition: attachment` header.
+
 ## How it works (for developers)
 
 - Long registers (general journal, COA, aging, advances, transfers) are
@@ -236,9 +283,9 @@ the database, never from hardcoded strings.
 - **Reusable partials** in `apps/ui/templates/ui/partials/` (ADR-039):
   `page_header`, `list_card`, `form_card`, `status_badge`, `document_shell`,
   `workflow_actions` (+ `workflow/rfp_actions.html`, `workflow/cv_actions.html`),
-  `report_toolbar`, `audit_trail`. Screens compose these via a custom `{% capture %}`
-  tag (`templatetags/ui_filters.py`) that renders a block into a context var for the
-  partial's `…_html` parameter.
+  `report_toolbar`, `export_buttons`, `audit_trail`. Screens compose these
+  via a custom `{% capture %}` tag (`templatetags/ui_filters.py`) that renders
+  a block into a context var for the partial's `…_html` parameter.
 - **Static JS modules** in `backend/static/js/`: `base.js` (sidebar, CSRF,
   toast, searchable combobox, report-format redirect, onafterprint close),
   `line-grid.js` (JE/RFP/PCV line totals), `gross-net-calc.js` (gross − WHT = net),
@@ -252,7 +299,7 @@ the database, never from hardcoded strings.
 
 ```powershell
 cd backend
-python -m pytest -q    # 172 tests: API contracts + UI smoke tests + E2E workflow
+python -m pytest -q    # 600+ tests: API contracts + UI smoke tests + E2E workflow
 python manage.py check
 ```
 
@@ -273,6 +320,12 @@ lifecycle → transfer → advance liquidation → weekly cycles → COLLECTIBLE
 → cash flow statement → renders every register screen (general journal,
 cash flow, collectibles, aging, advances, transfers, COA) and re-checks
 posted-entry immutability.
+
+`apps/ui/test_exports_matrix.py` is the export matrix: every document and
+register export × {pdf, xlsx, csv} asserting 200, the right Content-Type,
+real magic bytes, `attachment` filenames, and for XLSX that numbers land in
+numeric cells — including the empty-database register smoke so a fresh
+install can never ship a broken download.
 
 ## Tailwind content sources
 - `backend/frontend/tailwind.config.js` scans BOTH `apps/**/templates/**/*.html`

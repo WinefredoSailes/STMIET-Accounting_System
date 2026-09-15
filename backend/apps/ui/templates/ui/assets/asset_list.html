@@ -8,7 +8,10 @@
       <h1 class="text-xl font-semibold text-slate-900">Fixed Assets</h1>
       <p class="text-sm text-slate-500 mt-1">FA-YYYY-#### register; depreciation per category schedule (ADR-031).</p>
     </div>
+    <div class="flex items-center gap-3">
+    {% url 'ui:assets_list_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
     <a href="{% url 'ui:asset_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New asset</a>
+  </div>
   </div>
 
   <div class="mt-4 bg-white rounded-xl border border-slate-200 p-4">

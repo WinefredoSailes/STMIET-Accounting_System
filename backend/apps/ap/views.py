@@ -10,6 +10,7 @@ from .models import (
     AdvanceToEmployee,
     CheckVoucher,
     CONSOBatch,
+    PurchaseOrder,
     RFPDocument,
     Supplier,
 )
@@ -17,6 +18,7 @@ from .serializers import (
     AdvanceToEmployeeSerializer,
     CheckVoucherSerializer,
     CONSOBatchSerializer,
+    PurchaseOrderSerializer,
     RFPDocumentSerializer,
     SupplierSerializer,
 )
@@ -24,6 +26,7 @@ from .services import (
     AdvanceService,
     CONSOService,
     CVPaymentService,
+    PurchaseOrderService,
     RFPService,
 )
 
@@ -50,6 +53,9 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
         segment = Segment.objects.get(pk=data.get("segment"))
         payee = Supplier.objects.get(pk=data.get("payee"))
         lines = data.get("lines", [])
+        po = None
+        if data.get("po"):
+            po = PurchaseOrder.objects.get(pk=data.get("po"))
 
         ap_number = data.get("ap_number") or DocumentSequence.next_number(
             company=payee.default_segment.company if payee.default_segment else segment.company,
@@ -64,6 +70,7 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
             purpose=data.get("purpose", ""),
             lines=lines,
             user=request.user,
+            po=po,
         )
         out = self.get_serializer(rfp)
         return Response(out.data, status=status.HTTP_201_CREATED)
@@ -104,6 +111,103 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(rfp).data)
+
+
+class PurchaseOrderViewSet(viewsets.ModelViewSet):
+    """Purchase Orders (ADR-0XX): auto-numbered {YYYY}-{SEQ}, approval chain
+    mirrors the RFP (head trio + optional CNR/COO), manually closed by head."""
+
+    queryset = PurchaseOrder.objects.prefetch_related("lines")
+    serializer_class = PurchaseOrderSerializer
+    search_fields = ["po_number", "supplier__name", "particulars"]
+    filterset_fields = ["status", "segment"]
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        from apps.foundation.models import Segment
+        from apps.sequences.models import DocumentSequence
+
+        segment = Segment.objects.get(pk=data.get("segment"))
+        supplier = Supplier.objects.get(pk=data.get("supplier"))
+        company = segment.company or (supplier.default_segment.company if supplier.default_segment else None)
+        try:
+            year = int(str(data.get("po_date"))[:4])
+        except (TypeError, ValueError):
+            year = date.today().year
+
+        po_number = data.get("po_number") or DocumentSequence.next_number(
+            company=company, form_code="PO", year=year, pattern="{YYYY}-{SEQ:05d}",
+        )
+
+        po = PurchaseOrderService.create_po(
+            po_number=po_number,
+            po_date=data.get("po_date"),
+            supplier=supplier,
+            segment=segment,
+            particulars=data.get("particulars", ""),
+            lines=data.get("lines", []),
+            discount=data.get("discount", "0.00"),
+            vat_amount=data.get("vat_amount", "0.00"),
+            other_charges=data.get("other_charges", "0.00"),
+            payment_terms=data.get("payment_terms", ""),
+            contract_duration=data.get("contract_duration", ""),
+            ship_to_company=data.get("ship_to_company", ""),
+            ship_to_address=data.get("ship_to_address", ""),
+            contact_person=data.get("contact_person", ""),
+            notes=data.get("notes", ""),
+            user=request.user,
+        )
+        out = self.get_serializer(po)
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        po = self.get_object()
+        if po.status != "prepared":
+            return Response({"detail": "Only prepared POs can be submitted."}, status=status.HTTP_400_BAD_REQUEST)
+        po.status = "submitted"
+        po.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(po).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """Advance approval step: checked -> acctg_approved -> fin_approved."""
+        po = self.get_object()
+        step = request.data.get("step")  # checked / acctg_approved / fin_approved
+        if not step:
+            return Response({"detail": "step required"}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.core.approvals import require_approval_role
+
+        try:
+            require_approval_role(request.user, step)
+            po = PurchaseOrderService.advance_step(po, role=step, user=request.user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(po).data)
+
+    @action(detail=True, methods=["post"])
+    def approve_cnr(self, request, pk=None):
+        po = self.get_object()
+        from apps.core.approvals import require_approval_role
+
+        try:
+            require_approval_role(request.user, "coo")
+            po = PurchaseOrderService.approve_cnr(po, user=request.user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(po).data)
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        po = self.get_object()
+        from apps.core.approvals import require_approval_role
+
+        try:
+            require_approval_role(request.user, "head")
+            po = PurchaseOrderService.close_po(po, user=request.user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(po).data)
 
 
 class CONSOBatchViewSet(viewsets.ModelViewSet):

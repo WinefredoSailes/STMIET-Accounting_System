@@ -348,25 +348,60 @@ class PurchaseRequestItem(models.Model):
 
 ### 3.3 PurchaseOrder
 ```python
-class PurchaseOrder(models.Model):
-    po_number = models.CharField(max_length=50, unique=True)
-    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
-    segment = models.ForeignKey(Segment, on_delete=models.PROTECT)
-    order_date = models.DateField()
-    delivery_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=20, default='DRAFT')  # DRAFT, APPROVED, PARTIAL, RECEIVED, CLOSED
-    total_amount = models.DecimalField(max_digits=16, decimal_places=2, default=0)
-    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+class PurchaseOrder(AuditableModel):
+    """Commitment document (ADR-042). Never posts to the GL — the RFP it
+    authorizes carries the JE through CONSO. Billing is header-level and
+    DERIVED from the linked RFPs: available = amount - reserved - billed."""
+    po_number = models.CharField(max_length=16, unique=True)  # {YYYY}-{SEQ:05d}
+    po_date = models.DateField(db_index=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="pos")
+    segment = models.ForeignKey(Segment, on_delete=models.PROTECT, related_name="pos")
+    particulars = models.CharField(max_length=500, blank=True)
+    # Template footer fields.
+    payment_terms = models.CharField(max_length=255, blank=True)
+    contract_duration = models.CharField(max_length=255, blank=True)
+    ship_to_company = models.CharField(max_length=255, blank=True)
+    ship_to_address = models.CharField(max_length=255, blank=True)
+    contact_person = models.CharField(max_length=255, blank=True)
+    notes = models.TextField(blank=True)
+    # Grand total = subtotal - discount + vat_amount + other_charges.
+    subtotal = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    discount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    vat_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    other_charges = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)  # grand total
+    # Lifecycle mirrors the RFP (ADR-020): prepared -> submitted -> checked ->
+    # acctg_approved -> fin_approved -> [cnr_approved] -> approved; rejected
+    # returns for revision; closed is an operational head stop.
+    status = models.CharField(max_length=24, default='prepared', db_index=True)
+    checked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    approved_by_acctg = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    approved_by_fin = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    approved_by_cnr = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    closed_at = models.DateTimeField(null=True, blank=True)
+    # Reject/revise cycle (same as RFP).
+    rejected_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    revision_count = models.PositiveSmallIntegerField(default=0)
 
-class PurchaseOrderItem(models.Model):
-    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True)
+    @property
+    def billed_amount(self):  # sum of linked RFPs with status == 'posted'
+    @property
+    def reserved_amount(self):  # sum of linked RFPs fin_approved/cnr_approved
+    @property
+    def available_amount(self):  # amount - billed - reserved
+
+class POLine(models.Model):
+    po = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='lines')
+    line_no = models.PositiveIntegerField()
+    pr_number = models.CharField(max_length=32, blank=True)  # source PR no.
+    qty = models.DecimalField(max_digits=18, decimal_places=2)
+    unit = models.CharField(max_length=32, blank=True)
     description = models.CharField(max_length=255)
-    quantity = models.DecimalField(max_digits=12, decimal_places=2)
-    unit_price = models.DecimalField(max_digits=16, decimal_places=2)
-    amount = models.DecimalField(max_digits=16, decimal_places=2)
-    account = models.ForeignKey(Account, on_delete=models.PROTECT)
-    quantity_received = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    unit_price = models.DecimalField(max_digits=18, decimal_places=2)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)  # qty * price
 ```
 
 ### 3.4 ReceivingReport

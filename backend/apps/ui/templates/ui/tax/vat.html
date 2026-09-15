@@ -13,6 +13,9 @@
       <span class="text-slate-400">to</span>
       <input type="date" name="period_end" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Extract</button>
+      {% if period_start and period_end %}
+      {% include "ui/partials/export_buttons.html" with export_url=export_url %}
+      {% endif %}
     </form>
   </div>
 

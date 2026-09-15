@@ -14,6 +14,9 @@
       </option>
       {% endfor %}
     </select>
+    {% if cycle %}
+    {% include "ui/partials/export_buttons.html" with export_url=export_url %}
+    {% endif %}
   </form>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="DAILY COLLECTIONS JOURNAL ENTRIES SUMMARY" subtitle="Per weekly cycle, one row per AR receipt (cashier worksheet format)." actions=cycle_picker %}

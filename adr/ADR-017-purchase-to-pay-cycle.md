@@ -121,7 +121,7 @@ procurement documents are recorded for later consideration, not yet built:
 | Document | Built in UI? | Notes |
 |----------|:---:|-------|
 | PR | No | Out of scope — dept requisition entry, not yet wired |
-| PO | No | Out of scope — no purchase-order screen |
+| PO | **Yes** | Master Purchase Order (ADR-042): PO_LIMDON layout, RFP-mirror approval chain, authorizes RFP billings |
 | RR / Goods Received | No | Out of scope — goods receipt, ties to inventory |
 | Supplier Invoice | No | Out of scope — invoice data enters via the RFP form |
 | RFP | **Yes** | Central AP doc; carries the JE and approval chain |

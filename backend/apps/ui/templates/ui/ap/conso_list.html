@@ -3,6 +3,7 @@
 {% block title %}CONSO Batches{% endblock %}
 {% block content %}
 {% capture as actions %}
+{% url 'ui:conso_list_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
 <a href="{% url 'ui:rfp_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← RFPs</a>
 <a href="{% url 'ui:conso_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New batch</a>
 {% endcapture %}

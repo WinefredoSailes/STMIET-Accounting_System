@@ -8,6 +8,7 @@ service functions the DRF API uses, so the UI and the API can never drift.
 from datetime import date, timedelta
 from decimal import Decimal
 import json
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout
@@ -53,11 +54,14 @@ from .services import (
     list_entries,
     list_pcf_funds,
     list_pcf_replenishments,
+    list_pos,
     list_receipts,
     list_recons,
     list_rfps,
     list_suppliers,
     month_end_close_context,
+    po_summary,
+    po_timeline,
     rfp_summary,
     rfp_timeline,
     transfers_context,
@@ -76,6 +80,7 @@ AUDIT_ACTION_LABELS = {
     "posted": "Posted to GL (CONSO)",
     "approved": "Approved",
     "cleared": "Cleared — JE posted to GL",
+    "closed": "Closed",
 }
 
 
@@ -98,6 +103,14 @@ def _parse_int(value, fallback=None):
         return int(value)
     except (ValueError, TypeError):
         return fallback
+
+
+def _export_url(view_name, **params):
+    """Export endpoint for a screen, carrying its current filter state so a
+    download always matches what the user sees."""
+    query = urlencode({k: v for k, v in params.items() if v not in (None, "")})
+    url = reverse(view_name)
+    return f"{url}?{query}" if query else url
 
 
 def _audit_trail(doc_type, doc_id):
@@ -837,8 +850,18 @@ def trial_balance_export(request):
     company = Company.objects.first()
     year = _parse_int(request.GET.get("year"), date.today().year) or date.today().year
 
+    # as_of wins when provided (screens export with it); the legacy ?year=
+    # form means the whole year through 12-31.
+    today = date.today()
+    as_of = request.GET.get("as_of")
+    if as_of:
+        as_of_date = _parse_date(as_of, today)
+    else:
+        as_of_date = date(year, 12, 31)
+    as_of_iso = as_of_date.isoformat()
+
     from apps.ui.services import TrialBalanceService
-    rows, (debit, credit) = TrialBalanceService.rows(as_of=f"{year}-12-31")
+    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of_iso)
 
     from apps.reporting.exports import csv_response, pdf_response
 
@@ -877,8 +900,9 @@ def trial_balance_print(request):
 
 @login_required
 def statement_export(request, statement_type):
-    """Download a financial statement (sfp/soce/cos/te) as XLSX / CSV / PDF."""
+    """Download a financial statement (is/sfp/soce/cos/te) as XLSX / CSV / PDF."""
     from apps.reporting.excel_export import (
+        build_income_statement,
         build_statement_of_changes_in_equity,
         build_statement_of_cost_of_sales,
         build_statement_of_financial_position,
@@ -892,10 +916,29 @@ def statement_export(request, statement_type):
     StatementTemplateService.seed_defaults()
     fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
-    period_start = date.fromisoformat(request.GET.get("period_start") or f"{date.today().year - 1}-01-01")
-    period_end = date.fromisoformat(request.GET.get("period_end") or date.today().replace(month=12, day=31))
+
+    # Period defaults: fall back to the latest generated statement for this
+    # company/type so the export URL never 500s without full params.
+    if request.GET.get("period_start") and request.GET.get("period_end"):
+        period_start = date.fromisoformat(request.GET["period_start"])
+        period_end = date.fromisoformat(request.GET["period_end"])
+    else:
+        from apps.reporting.models import FinancialStatement
+        latest = (
+            FinancialStatement.objects.filter(
+                statement_type=statement_type, company=company, segment=None
+            )
+            .order_by("-period_end")
+            .first()
+        )
+        if latest:
+            period_start, period_end = latest.period_start, latest.period_end
+        else:
+            period_start = date.fromisoformat(f"{date.today().year - 1}-01-01")
+            period_end = date.fromisoformat(date.today().replace(month=12, day=31))
 
     builders = {
+        "is": ("INCOME-STATEMENT", build_income_statement),
         "sfp": ("STATEMENT-OF-FINANCIAL-POSITION", build_statement_of_financial_position),
         "soce": ("STATEMENT-OF-CHANGES-IN-EQUITY", build_statement_of_changes_in_equity),
         "cos": ("STATEMENT-OF-COST-OF-SALES", build_statement_of_cost_of_sales),
@@ -906,7 +949,6 @@ def statement_export(request, statement_type):
 
     if fmt == "csv":
         stem, builder = builders[statement_type]
-        wb = builder(company, period_start, period_end)
         from apps.reporting.services import FinancialStatementService
         StatementTemplateService.seed_defaults()
         fs = FinancialStatementService.generate(
@@ -929,7 +971,6 @@ def statement_export(request, statement_type):
 
     if fmt == "pdf":
         stem, builder = builders[statement_type]
-        wb = builder(company, period_start, period_end)
         from apps.reporting.services import FinancialStatementService
         StatementTemplateService.seed_defaults()
         fs = FinancialStatementService.generate(
@@ -988,37 +1029,92 @@ def statement_print(request, statement_type):
 
 
 @login_required
-def month_end_close(request):
-    """Print‑optimized page for the trial balance (browser print dialog)."""
-    as_of = request.GET.get("as_of") or date.today().isoformat()
-    segment = request.GET.get("segment") or ""
-    from apps.ui.services import TrialBalanceService
-
-    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
-    ctx = {
-        "rows": rows,
-        "debit": debit,
-        "credit": credit,
-        "as_of": as_of,
-        "segment": segment,
-        "segments": ...,  # placeholder; template only uses rows/debit/credit
-    }
-    return render(request, "ui/reporting/trial_balance_print.html", ctx)
-
-
-@login_required
 def cash_flow_export(request):
-    """Download STATEMENT-OF-CASH-FLOW.xlsx CF mirror for a cycle period."""
-    from apps.foundation.models import Company
-    from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
+    """Download the cash flow statement as XLSX / CSV / PDF.
 
-    company = Company.objects.get(pk=request.GET.get("company"))
-    period_start = date.fromisoformat(request.GET.get("period_start"))
-    period_end = date.fromisoformat(request.GET.get("period_end"))
-    wb = build_cash_flow_statement(company, period_start, period_end)
-    return xlsx_response(
-        wb, f"STATEMENT-OF-CASH-FLOW-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
+    Mirrors the cash_flow screen — same month/year period, same line items —
+    so the download can never disagree with what the user sees. The XLSX
+    format reproduces the STATEMENT-OF-CASH-FLOW.xlsx workbook layout.
+    """
+    from apps.cash.models import CashFlowStatement
+    from apps.cash.services import CashFlowService
+    from apps.foundation.models import Company
+
+    fmt = request.GET.get("format", "xlsx")
+    company = Company.objects.first()
+    if company is None:
+        return HttpResponse("No company configured.", status=400)
+
+    year = _parse_int(request.GET.get("year"), date.today().year)
+    month = _parse_int(request.GET.get("month"), date.today().month)
+
+    latest = None
+    if company:
+        try:
+            if request.GET.get("period_start") and request.GET.get("period_end"):
+                latest = CashFlowService.generate(
+                    period_start=date.fromisoformat(request.GET["period_start"]),
+                    period_end=date.fromisoformat(request.GET["period_end"]),
+                    company=company,
+                )
+            else:
+                latest = CashFlowService.generate_month(company, year, month)
+        except (ValueError, AccountingError):
+            latest = CashFlowStatement.objects.order_by("-period_end").first()
+    if latest is None:
+        return HttpResponse("No cash flow statement available yet.", status=404)
+
+    stem = (
+        f"STATEMENT-OF-CASH-FLOW-{latest.period_start:%Y%m%d}-{latest.period_end:%Y%m%d}"
     )
+
+    if fmt == "xlsx":
+        from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
+
+        wb = build_cash_flow_statement(company, latest.period_start, latest.period_end)
+        return xlsx_response(wb, f"{stem}.xlsx")
+
+    rows = [
+        ("OPERATING ACTIVITIES", ""),
+        ("Collections (Distribution + Other)", latest.collections),
+        ("Payments to Depot / Outflows", -latest.payments_to_depot),
+        ("Net Cash from Operating Activities", latest.collections - latest.payments_to_depot),
+        ("INVESTING ACTIVITIES", ""),
+        ("Asset Acquisitions (CAPEX)", -latest.asset_acquisitions),
+        ("FINANCING ACTIVITIES", ""),
+        ("Loans Proceeds (Borrowed)", latest.loan_proceeds),
+        ("Loan / Fuel Checks Cleared", -latest.loan_repayments),
+        ("NET CHANGE IN CASH", latest.net_change),
+        ("Cash - Beginning", latest.beginning_cash),
+        ("Cash - End (less ADB maintained)", latest.ending_cash),
+        ("ADB Adjustments (reporting, not a cash movement)", latest.adb_adjustments),
+    ]
+
+    if fmt == "csv":
+        import csv as csv_module
+        from io import StringIO
+
+        buffer = StringIO()
+        writer = csv_module.writer(buffer)
+        writer.writerow(["Period Start", latest.period_start.isoformat()])
+        writer.writerow(["Period End", latest.period_end.isoformat()])
+        writer.writerow(["Line Item", "Amount"])
+        for label, amount in rows:
+            writer.writerow([label, "" if amount in (None, "") else str(amount)])
+        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{stem}.csv"'
+        return response
+
+    from apps.core.exports import Column, TableSpec, pdf_spec_response
+
+    spec = TableSpec(
+        title="CASH FLOW STATEMENT",
+        columns=[Column("Line Item"), Column("Amount", money=True)],
+        rows=[[label, amount] for label, amount in rows],
+        page="portrait",
+        sheet_title="CASH FLOW",
+    )
+    return pdf_spec_response(spec, f"{stem}.pdf")
 
 
 @login_required
@@ -1093,6 +1189,44 @@ def customer_list(request):
 @login_required
 def receipt_list(request):
     return render(request, "ui/ar/receipt_list.html", {"page_obj": _page(request, list_receipts(limit=None))})
+
+
+@login_required
+def ar_receipts_export(request, fmt):
+    """AR receipts register export (the screen's columns)."""
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.core.exports import Column, TableSpec, table_export
+
+    qs = AcknowledgmentReceipt.objects.select_related("customer", "segment", "applied_to").order_by(
+        "-transaction_date", "-receipt_no"
+    )
+    rows = [
+        [
+            r.receipt_no,
+            r.transaction_date.isoformat(),
+            r.customer.name,
+            r.segment.code,
+            r.get_payment_method_display(),
+            r.amount,
+            r.check_no or "",
+            r.applied_to.invoice_no if r.applied_to else "",
+        ]
+        for r in qs
+    ]
+    total = sum((r.amount for r in qs), Decimal("0.00"))
+    spec = TableSpec(
+        title="Acknowledgment Receipts (ACCTG-FOR-005)",
+        columns=[
+            Column("Receipt No"), Column("Date"), Column("Customer", width_cm=6),
+            Column("Segment"), Column("Method"), Column("Amount", money=True),
+            Column("Check No"), Column("Applied To Invoice"),
+        ],
+        rows=rows,
+        totals_row=["", "", "", "", "TOTAL", total, "", ""],
+        sheet_title="AR RECEIPTS",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"AR_receipts.{fmt}")
 
 
 @login_required
@@ -1370,7 +1504,7 @@ def _supplier_contacts_from_post(post):
 
 @login_required
 def rfp_create(request):
-    from apps.ap.models import Supplier
+    from apps.ap.models import PurchaseOrder, Supplier
     from apps.ap.services import RFPService
     from apps.sequences.models import DocumentSequence
 
@@ -1381,6 +1515,10 @@ def rfp_create(request):
             rfp_date = request.POST.get("rfp_date", "")
             if not rfp_date:
                 raise ValidationError("Enter the date of request.")
+            po = None
+            po_pk = (request.POST.get("po") or "").strip()
+            if po_pk:
+                po = get_object_or_404(PurchaseOrder, pk=po_pk)
             ap_number = DocumentSequence.next_number(
                 company=payee.default_segment.company if payee.default_segment else segment.company,
                 form_code="RFP",
@@ -1397,6 +1535,7 @@ def rfp_create(request):
                 purpose=request.POST.get("purpose", ""),
                 lines=lines,
                 user=request.user,
+                po=po,
             )
             messages.success(request, f"RFP {rfp.ap_number} created (prepared).")
             return redirect("ui:rfp_detail", pk=rfp.id)
@@ -1494,6 +1633,55 @@ def rfp_print(request, pk):
             "approved_fin": _name(rfp.approved_by_fin),
         },
     )
+
+
+@login_required
+def rfp_export(request, pk, fmt):
+    """RFP export: PDF renders the ACCTG-FOR-012 form; XLSX/CSV the lines."""
+    from apps.ap.models import RFPDocument
+    from apps.core.exports import Column, TableSpec, table_export
+    from .pdf import build_rfp_pdf
+
+    rfp = get_object_or_404(
+        RFPDocument.objects.select_related("payee", "segment"), pk=pk,
+    )
+    if (fmt or "").lower() == "pdf":
+        data = build_rfp_pdf(rfp, paper="a5")
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="RFP_{rfp.ap_number}.pdf"'
+        return response
+
+    lines = list(rfp.lines.select_related("account", "segment").order_by("line_no"))
+    total = sum((line.amount for line in lines if line.side == "dr"), Decimal("0.00")) or rfp.amount
+    spec = TableSpec(
+        title=f"RFP {rfp.ap_number} — Request for Payment (ACCTG-FOR-012)",
+        columns=[
+            Column("#"), Column("Side"), Column("COA"),
+            Column("Account Name", width_cm=6), Column("Segment"),
+            Column("Cost Center", width_cm=3.5), Column("Description", width_cm=6),
+            Column("Amount", money=True),
+        ],
+        preamble=[
+            ["Payee", rfp.payee.name],
+            ["Date", rfp.rfp_date.isoformat()],
+            ["Vendor No", rfp.payee.code],
+            ["Department/Address", rfp.payee.address
+             or f"{rfp.segment.name} ({rfp.segment.code})"],
+            ["Status", rfp.status],
+        ],
+        rows=[
+            [
+                line.line_no, line.side.upper(), line.account.code,
+                line.account.name, line.segment.code, line.cost_center or "",
+                line.description or rfp.particulars, line.amount,
+            ]
+            for line in lines
+        ],
+        totals_row=["", "", "", "TOTAL", "", "", "", total],
+        sheet_title=f"RFP_{rfp.ap_number}",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"RFP_{rfp.ap_number}.{fmt}")
 
 
 @login_required
@@ -1628,6 +1816,11 @@ def rfp_revise(request, pk):
             lines = _rfp_lines_from_form(request)
             if not lines:
                 raise ValidationError("Add at least one charge line.")
+            po_pk = (request.POST.get("po") or "").strip()
+            if po_pk and rfp.po_id != int(po_pk):
+                from apps.ap.models import PurchaseOrder
+
+                rfp.po = get_object_or_404(PurchaseOrder, pk=po_pk)
             rfp = RFPService.revise(
                 rfp,
                 user=request.user,
@@ -1648,6 +1841,391 @@ def rfp_revise(request, pk):
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# AP — Purchase Orders (ADR-0XX)
+# ---------------------------------------------------------------------------
+
+
+def _po_lines_from_form(request):
+    """Parse the PO line grid (parallel arrays) into line dicts.
+
+    Every completed row contributes one POLine — PR no. / qty / unit /
+    description / unit price. Rows without a description are skipped; the
+    service recomputes each line's amount (qty x unit price).
+    """
+    pr_nos = request.POST.getlist("line_pr_no")
+    qtys = request.POST.getlist("line_qty")
+    units = request.POST.getlist("line_unit")
+    descs = request.POST.getlist("line_description")
+    prices = request.POST.getlist("line_unit_price")
+    lines = []
+    for i, desc in enumerate(descs):
+        desc = (desc or "").strip()
+        if not desc:
+            continue
+        if i >= len(qtys) or i >= len(prices):
+            raise ValidationError(f"Line {i + 1}: quantity and unit price are required.")
+        try:
+            qty = money(qtys[i] or 0)
+            price = money(prices[i] or 0)
+        except ValidationError:
+            raise ValidationError(f"Line {i + 1}: quantity and unit price must be amounts.")
+        lines.append(
+            {
+                "pr_number": (pr_nos[i] if i < len(pr_nos) else "").strip(),
+                "qty": qty,
+                "unit": (units[i] if i < len(units) else "").strip(),
+                "description": desc,
+                "unit_price": price,
+            }
+        )
+    return lines
+
+
+def _po_approval_info(po, role):
+    """Inline-approval facts for one PO row (HTMX row swap). Mirror of
+    apps.core.approvals.PO_NEXT_ROLE / po_queue."""
+    from apps.core.approvals import PO_NEXT_ROLE
+    from apps.ap.services import po_coo_required
+
+    next_role = PO_NEXT_ROLE.get(po.status)
+    if po.status == "fin_approved" and po_coo_required(po):
+        next_role = "coo"
+    can_act = bool(next_role) and role == next_role
+    label = "Check" if po.status in ("prepared", "submitted") else "Approve"
+    return {
+        "has_action": can_act,
+        "next_role": next_role,
+        "label": label,
+    }
+
+
+@login_required
+def po_list(request):
+    from apps.core.approvals import approval_role_of
+
+    role = approval_role_of(request.user)
+    page = _page(request, list_pos(limit=None))
+    for po in page.object_list:
+        po.approval_info = _po_approval_info(po, role)
+    return render(
+        request,
+        "ui/ap/po_list.html",
+        {"page_obj": page, "summary": po_summary()},
+    )
+
+
+@login_required
+def po_create(request):
+    from apps.ap.models import Supplier
+    from apps.ap.services import PurchaseOrderService
+
+    if request.method == "POST":
+        try:
+            supplier = Supplier.objects.get(pk=request.POST["supplier"])
+            segment = Segment.objects.get(pk=request.POST["segment"])
+            po_date = request.POST.get("po_date", "")
+            if not po_date:
+                raise ValidationError("Enter the date of the purchase order.")
+            lines = _po_lines_from_form(request)
+            if not lines:
+                raise ValueError("Add at least one line item.")
+            po = PurchaseOrderService.create_po(
+                po_number=DocumentSequence.next_number(
+                    company=supplier.default_segment.company if supplier.default_segment else segment.company,
+                    form_code="PO",
+                    year=int(po_date[:4]),
+                    pattern="{YYYY}-{SEQ:05d}",
+                ),
+                po_date=date.fromisoformat(po_date),
+                supplier=supplier,
+                segment=segment,
+                particulars=request.POST.get("particulars", ""),
+                lines=lines,
+                discount=request.POST.get("discount") or "0.00",
+                vat_amount=request.POST.get("vat_amount") or "0.00",
+                other_charges=request.POST.get("other_charges") or "0.00",
+                payment_terms=request.POST.get("payment_terms", ""),
+                contract_duration=request.POST.get("contract_duration", ""),
+                ship_to_company=request.POST.get("ship_to_company", ""),
+                ship_to_address=request.POST.get("ship_to_address", ""),
+                contact_person=request.POST.get("contact_person", ""),
+                notes=request.POST.get("notes", ""),
+                user=request.user,
+            )
+            messages.success(request, f"PO {po.po_number} created (prepared).")
+            return redirect("ui:po_detail", pk=po.id)
+        except (AccountingError, ValueError) as exc:
+            messages.error(request, str(exc))
+        except ObjectDoesNotExist as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ap/po_form.html",
+        {"segments": Segment.objects.order_by("code")},
+    )
+
+
+@login_required
+def po_detail(request, pk):
+    from apps.ap.models import PurchaseOrder
+    from apps.core.approvals import (
+        approval_role_of,
+        role_assignee,
+        ROLE_LABELS,
+        PO_NEXT_ROLE,
+    )
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.prefetch_related("lines", "rfps"), pk=pk
+    )
+    awaiting = None
+    from apps.ap.services import po_pending_final_check
+
+    role = PO_NEXT_ROLE.get(po.status)
+    if po_pending_final_check(po):
+        role = "coo"
+    if role:
+        awaiting = {
+            "role": role,
+            "label": ROLE_LABELS[role],
+            "assignee": role_assignee(role),
+            "you_hold": approval_role_of(request.user) == role,
+        }
+    return render(
+        request,
+        "ui/ap/po_detail.html",
+        {
+            "po": po,
+            "timeline": po_timeline(po),
+            "awaiting": awaiting,
+            "is_head": approval_role_of(request.user) == "head",
+            "audit_trail": _audit_trail("po", po.id),
+        },
+    )
+
+
+@login_required
+def po_print(request, pk):
+    """Print-optimized Purchase Order matching the LIMDON template layout:
+    PO# / date / vendor (name, address, TIN) / item grid with the
+    discount→subtotal→VAT→others→total block / delivery block / AADB + CNR
+    signature lines."""
+    from apps.ap.models import PurchaseOrder
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.select_related("supplier", "segment", "created_by"),
+        pk=pk,
+    )
+    lines = list(po.lines.order_by("line_no"))
+    return render(
+        request,
+        "ui/ap/po_print.html",
+        {
+            "po": po,
+            "lines": lines,
+            "contact_no": po.supplier.contact_no or "",
+        },
+    )
+
+
+@login_required
+@require_POST
+def po_submit(request, pk):
+    from apps.ap.models import PurchaseOrder
+
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    try:
+        if po.status != "prepared":
+            raise ValueError("Only prepared POs can be submitted.")
+        po.status = "submitted"
+        po.save(update_fields=["status", "updated_at"])
+        from apps.ap.services import log_action
+
+        log_action(po, "submitted", actor=request.user)
+        messages.success(request, f"PO {po.po_number} submitted.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:po_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def po_approve(request, pk):
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+    from apps.core.approvals import approval_role_of, require_approval_role
+
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    is_hx = bool(request.headers.get("HX-Request"))
+    try:
+        require_approval_role(request.user, "head")
+        po = PurchaseOrderService.approve_head(po, user=request.user)
+        msg = f"PO {po.po_number} approved."
+        messages.success(request, msg)
+    except (AccountingError, ValueError) as exc:
+        msg = str(exc)
+        messages.error(request, msg)
+    if is_hx:
+        po.approval_info = _po_approval_info(po, approval_role_of(request.user))
+        response = render(request, "ui/ap/_po_row.html", {"po": po})
+        response["HX-Trigger"] = json.dumps({"showToast": msg})
+        return response
+    return redirect("ui:po_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def po_approve_cnr(request, pk):
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+    from apps.core.approvals import require_approval_role
+
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    try:
+        require_approval_role(request.user, "coo")
+        po = PurchaseOrderService.approve_cnr(po, user=request.user)
+        messages.success(request, f"PO {po.po_number} approved by CNR.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:po_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def po_reject(request, pk):
+    """An approver returns the PO to the preparer with a note (ADR-0XX
+    reject/revise cycle)."""
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+    from apps.core.approvals import PO_NEXT_ROLE, require_approval_role
+
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    from apps.ap.services import po_pending_final_check
+
+    role = PO_NEXT_ROLE.get(po.status)
+    if po_pending_final_check(po):
+        role = "coo"
+    note = request.POST.get("note", "")
+    try:
+        if role:
+            require_approval_role(request.user, role)
+        po = PurchaseOrderService.reject(po, user=request.user, note=note)
+        messages.success(request, f"PO {po.po_number} rejected and returned to {po.created_by}.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:po_detail", pk=pk)
+
+
+@login_required
+def po_revise(request, pk):
+    """The preparer revises a rejected PO and resubmits it. GET shows a
+    prefilled edit form; POST runs PurchaseOrderService.revise (preparer-only)."""
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.select_related("supplier").prefetch_related("lines"), pk=pk
+    )
+    if request.user.id != po.created_by_id:
+        messages.error(request, "Only the preparer may revise this PO.")
+        return redirect("ui:po_detail", pk=pk)
+
+    if request.method == "POST":
+        try:
+            lines = _po_lines_from_form(request)
+            if not lines:
+                raise ValidationError("Add at least one line item.")
+            po = PurchaseOrderService.revise(
+                po,
+                user=request.user,
+                lines=lines,
+                particulars=request.POST.get("particulars", ""),
+                discount=request.POST.get("discount") or None,
+                vat_amount=request.POST.get("vat_amount") or None,
+                other_charges=request.POST.get("other_charges") or None,
+                payment_terms=request.POST.get("payment_terms", ""),
+                contract_duration=request.POST.get("contract_duration", ""),
+                ship_to_company=request.POST.get("ship_to_company", ""),
+                ship_to_address=request.POST.get("ship_to_address", ""),
+                contact_person=request.POST.get("contact_person", ""),
+                notes=request.POST.get("notes", ""),
+            )
+            messages.success(request, f"PO {po.po_number} revised and resubmitted.")
+            return redirect("ui:po_detail", pk=pk)
+        except (AccountingError, ValidationError) as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/ap/po_form.html",
+        {"editing": po, "segments": Segment.objects.order_by("code")},
+    )
+
+
+@login_required
+@require_POST
+def po_close(request, pk):
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+    from apps.core.approvals import require_approval_role
+
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        po = PurchaseOrderService.close_po(po, user=request.user)
+        messages.success(request, f"PO {po.po_number} closed.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:po_detail", pk=pk)
+
+
+@login_required
+def po_options(request):
+    """Type-ahead source for the RFP form's Purchase Order picker.
+
+    Lists approved POs that still hold available balance (total less reserved
+    and already-billed RFPs), optionally narrowed to the RFP's supplier via
+    ``?supplier=<pk|code>``. ``?selected=<po id>`` keeps a stable selection
+    when editing an RFP, even if the PO is no longer billable.
+    """
+    from apps.ap.models import PurchaseOrder
+
+    q = request.GET.get("q", "").strip()
+    supplier = request.GET.get("supplier", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    qs = (
+        PurchaseOrder.objects.filter(status="approved")
+        .select_related("supplier")
+        .order_by("-po_number")
+    )
+    if supplier:
+        if supplier.isdigit():
+            qs = qs.filter(supplier_id=int(supplier))
+        else:
+            qs = qs.filter(supplier__code=supplier)
+    if q:
+        qs = qs.filter(Q(po_number__icontains=q) | Q(supplier__name__icontains=q))
+    rows = [po for po in qs[:40] if po.available_amount > 0]
+    if selected and selected not in {str(po.id) for po in rows}:
+        keep = PurchaseOrder.objects.filter(pk=selected).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {
+                "id": po.id,
+                "code": po.po_number,
+                "text": f"{po.po_number} — {po.supplier.name}",
+                "tin": po.supplier.tin,
+                "available": str(po.available_amount),
+            }
+            for po in rows
+        ],
+        safe=False,
     )
 
 
@@ -1784,6 +2362,52 @@ def asset_detail(request, pk):
 
     asset = get_object_or_404(Asset.objects.select_related("category", "segment"), pk=pk)
     return render(request, "ui/assets/asset_detail.html", asset_context(asset))
+
+
+@login_required
+def asset_export(request, pk, fmt):
+    """Fixed Asset card export: header facts + depreciation schedule."""
+    from apps.assets.models import Asset
+    from apps.core.exports import Column, TableSpec, table_export
+
+    asset = get_object_or_404(
+        Asset.objects.select_related("category", "segment", "asset_account"), pk=pk,
+    )
+    schedule = list(asset.depreciation_schedule.select_related("journal_entry").order_by("period_start"))
+    rows = [
+        [
+            row.period_start.isoformat(),
+            row.amount,
+            row.status,
+            row.journal_entry.entry_no if row.journal_entry else "",
+        ]
+        for row in schedule
+    ]
+    spec = TableSpec(
+        title=f"Fixed Asset Card — {asset.asset_no} {asset.name}",
+        columns=[
+            Column("Period Start"), Column("Amount", money=True),
+            Column("Status"), Column("Journal Entry"),
+        ],
+        preamble=[
+            ["Category", asset.category.name],
+            ["Segment", asset.segment.code],
+            ["Acquisition Date", asset.acquisition_date.isoformat()],
+            ["Cost", asset.cost],
+            ["Residual Value", asset.residual_value],
+            ["Depreciable Base", asset.depreciable_base],
+            ["Monthly Depreciation", asset.monthly_depreciation],
+            ["Accumulated Depreciation", asset.accumulated_depreciation],
+            ["Net Book Value", asset.net_book_value],
+            ["Funding Source", asset.funding_source],
+            ["Status", asset.status],
+        ],
+        rows=rows,
+        totals_row=["TOTAL", sum((row.amount for row in schedule), Decimal("0.00")), "", ""],
+        sheet_title=f"ASSET {asset.asset_no}",
+        page="landscape",
+    )
+    return table_export(spec, fmt, f"Asset_{asset.asset_no}.{fmt}")
 
 
 @login_required
@@ -2032,6 +2656,57 @@ def cv_print(request, pk):
             "date_of_request": date_of_request,
         },
     )
+
+
+@login_required
+def cv_export(request, pk, fmt):
+    """Check Voucher export: PDF renders the ACCTG-FOR-010 form; XLSX/CSV lines."""
+    from apps.ap.models import CheckVoucher
+    from apps.core.exports import Column, TableSpec, table_export
+    from .pdf import build_cv_pdf
+
+    cv = get_object_or_404(
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"), pk=pk,
+    )
+    if (fmt or "").lower() == "pdf":
+        data = build_cv_pdf(cv, paper="a5")
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="CV_{cv.cv_number}.pdf"'
+        return response
+
+    rfp = cv.rfp
+    lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
+    total = sum((line.amount for line in lines if line.side == "dr"), Decimal("0.00"))
+    spec = TableSpec(
+        title=f"CV {cv.cv_number} — Check Voucher (ACCTG-FOR-010)",
+        columns=[
+            Column("#"), Column("Side"), Column("COA"),
+            Column("Account Name", width_cm=6), Column("Segment"),
+            Column("Cost Center", width_cm=3.5), Column("Description", width_cm=6),
+            Column("Amount", money=True),
+        ],
+        preamble=[
+            ["Payee", cv.payee.name],
+            ["Date", cv.cv_date.isoformat()],
+            ["Check No", cv.check_no or ""],
+            ["Gross Amount", cv.gross_amount],
+            ["Withheld Tax", cv.withheld_tax],
+            ["Net Amount", cv.net_amount],
+            ["Status", cv.status],
+        ],
+        rows=[
+            [
+                line.line_no, line.side.upper(), line.account.code,
+                line.account.name, line.segment.code, line.cost_center or "",
+                line.description or (rfp.particulars if rfp else ""), line.amount,
+            ]
+            for line in lines
+        ],
+        totals_row=["", "", "", "TOTAL", "", "", "", total],
+        sheet_title=f"CV_{cv.cv_number}",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"CV_{cv.cv_number}.{fmt}")
 
 
 @login_required
@@ -2305,6 +2980,71 @@ def pcf_replenishment_print(request, pk):
 
 
 @login_required
+def pcf_replenishment_export(request, pk, fmt):
+    """PCF replenishment export: PDF is the 23-col workpaper; XLSX/CSV the
+    detail-screen columns (business name, TIN, description, segment, cost
+    center, GL account, debit, credit)."""
+    from apps.cash.models import PCFReplenishment
+    from apps.core.exports import Column, TableSpec, table_export
+    from .pdf import build_pcf_replenishment_pdf
+
+    replen = get_object_or_404(
+        PCFReplenishment.objects.select_related("fund__custodian", "fund__company"),
+        pk=pk,
+    )
+    voucher_label = replen.voucher_no or str(replen.id)
+    if (fmt or "").lower() == "pdf":
+        data = build_pcf_replenishment_pdf(replen)
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="PCF_{voucher_label}.pdf"'
+        return response
+
+    rows = []
+    dr_sum = Decimal("0.00")
+    cr_sum = Decimal("0.00")
+    for exp in replen.expenses or []:
+        amount = Decimal(str(exp.get("amount", 0)))
+        side = str(exp.get("side", "dr")).lower()
+        if side == "cr":
+            cr_sum += amount
+        else:
+            dr_sum += amount
+        rows.append(
+            [
+                exp.get("business_name", ""),
+                exp.get("tin", ""),
+                exp.get("description", ""),
+                exp.get("segment", ""),
+                exp.get("cost_center", ""),
+                exp.get("account_code", ""),
+                amount if side != "cr" else "",
+                amount if side == "cr" else "",
+            ]
+        )
+    spec = TableSpec(
+        title=f"PCF Replenishment {voucher_label}",
+        columns=[
+            Column("Business Name", width_cm=5), Column("TIN", width_cm=3),
+            Column("Description", width_cm=6), Column("Segment", width_cm=2.5),
+            Column("Cost Center", width_cm=2.5), Column("GL Account", width_cm=3),
+            Column("Debit", money=True), Column("Credit", money=True),
+        ],
+        preamble=[
+            ["Fund", replen.fund.name or replen.fund.fund_code],
+            ["Request Date", replen.request_date.isoformat()],
+            ["Payee", replen.payee_name or ""],
+            ["Reference", replen.reference or ""],
+            ["Status", replen.status],
+        ],
+        rows=rows,
+        totals_row=["", "", "", "", "", "TOTAL", dr_sum, cr_sum],
+        sheet_title=f"PCF_{voucher_label}",
+        page="landscape",
+    )
+    return table_export(spec, fmt, f"PCF_{voucher_label}.{fmt}")
+
+
+@login_required
 @require_POST
 def pcf_replenishment_post(request, pk):
     """Post the head-approved voucher to the GL. Same gate as RFP/CV steps:
@@ -2449,6 +3189,42 @@ def conso_detail(request, pk):
     ctx = conso_context(batch)
     ctx["available"] = unassigned_approved_rfps()
     return render(request, "ui/ap/conso_detail.html", ctx)
+
+
+@login_required
+def conso_export(request, pk, fmt):
+    """CONSO batch export: every member (RFP / PCF replenishment) + total."""
+    from apps.ap.models import CONSOBatch
+    from apps.core.exports import Column, TableSpec, table_export
+
+    batch = get_object_or_404(CONSOBatch, pk=pk)
+    ctx = conso_context(batch)
+    rows = [
+        ["RFP", m.ap_number, m.rfp_date.isoformat(), m.payee.name, m.amount, m.status]
+        for m in ctx["members"]
+    ] + [
+        ["PCF", r.payee_name or r.id, r.request_date.isoformat(),
+         r.fund.name or r.fund.fund_code, r.amount, r.status]
+        for r in ctx["pcf_members"]
+    ]
+    spec = TableSpec(
+        title=f"CONSO {batch.batch_no}",
+        columns=[
+            Column("Type"), Column("Doc No"), Column("Date"),
+            Column("Payee / Fund", width_cm=6), Column("Amount", money=True),
+            Column("Status"),
+        ],
+        preamble=[
+            ["CONSO Date", batch.conso_date.isoformat()],
+            ["Members", len(rows)],
+            ["Status", batch.status],
+        ],
+        rows=rows,
+        totals_row=["", "", "", "TOTAL", ctx["total"], ""],
+        sheet_title=f"CONSO {batch.batch_no}",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"CONSO_{batch.batch_no}.{fmt}")
 
 
 @login_required
@@ -2607,6 +3383,7 @@ def collections_summary(request):
     context = {"cycles": cycles}
     if cycle:
         context.update(daily_collections(cycle))
+    context["export_url"] = _export_url("ui:collections_export", cycle=cycle.pk if cycle else "")
     return render(request, "ui/cash/collections_summary.html", context)
 
 
@@ -2633,75 +3410,46 @@ def general_journal(request):
     return render(request, "ui/reporting/general_journal.html", ctx)
 
 
-def _table_workbook(title, header, rows, sheet_title="SHEET"):
-    """Minimal styled workbook: title row + bold header + data rows."""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font
+def _table_response(
+    title,
+    header,
+    rows,
+    fmt,
+    stem,
+    sheet_title="SHEET",
+    money_cols=(),
+    page="landscape",
+    totals_row=None,
+):
+    """Render a plain table to xlsx/csv/pdf via the shared table engine."""
+    from apps.core.exports import Column, TableSpec, table_export
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = (sheet_title or "SHEET")[:31]
-    ws.append([title])
-    ws.append([h for h in header])
-    for i, cell in enumerate(ws[2], start=1):
-        cell.font = Font(bold=True)
-    for row in rows:
-        ws.append([("" if v is None else str(v)) for v in row])
-    return wb
-
-
-def _wide_pdf_response(title, column_labels, data, filename):
-    """Landscape PDF table whose columns share the page width evenly."""
-    from io import BytesIO
-
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import LETTER, landscape
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-
-    buffer = BytesIO()
-    page = landscape(LETTER)
-    doc = SimpleDocTemplate(
-        buffer, pagesize=page, leftMargin=0.4 * inch, rightMargin=0.4 * inch,
-        topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+    columns = [Column(h, money=(i in money_cols)) for i, h in enumerate(header)]
+    spec = TableSpec(
+        title=title,
+        columns=columns,
+        rows=rows,
+        totals_row=totals_row,
+        sheet_title=sheet_title,
+        page=page,
     )
-    usable = page[0] - 0.8 * inch
-    col_width = usable / max(len(column_labels), 1)
-    table = Table(
-        [column_labels] + data,
-        colWidths=[col_width] * len(column_labels),
-        repeatRows=1,
-    )
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f0f0")]),
-            ]
-        )
-    )
-    doc.build([table])
-    response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return table_export(spec, fmt, f"{stem}.{fmt}")
 
 
 @login_required
 def je_xlsx_export(request, pk):
-    """Export a single journal entry as an Excel (.xlsx) download."""
-    from apps.reporting.excel_export import xlsx_response
+    """Export a single journal entry as an Excel (.xlsx) download.
+
+    Same block layout as the old workbook: ENTRY INFORMATION meta rows, then
+    the ACCOUNT DISTRIBUTION table with Debit/Credit as real numeric cells.
+    """
+    from apps.core.exports import Column, TableSpec, table_export
 
     entry = get_object_or_404(
         JournalEntry.objects.prefetch_related("lines__account", "lines__segment"),
         pk=pk,
     )
-    rows = [
+    preamble = [
         ["Voucher Ref #", entry.entry_no],
         ["Date", entry.transaction_date.isoformat()],
         ["Source Type", entry.source_doc_type or ""],
@@ -2711,39 +3459,47 @@ def je_xlsx_export(request, pk):
         ["REF #", entry.ref_number or ""],
         ["Segment", entry.segment.code if entry.segment else ""],
     ]
-    for line in entry.lines.order_by("line_no"):
-        rows.append(
-            [
-                line.account.code or "",
-                line.account.name or "",
-                line.segment.code if line.segment else "",
-                line.cost_center or "",
-                line.description or "",
-                line.debit,
-                line.credit,
-            ]
-        )
-    rows.append(["TOTALS", "", "", "", "", entry.total_debit, entry.total_credit])
-    wb = _table_workbook(
-        f"JOURNAL ENTRY {entry.entry_no}",
-        ["COA", "Account Name", "Segment", "Cost Center", "Description", "Debit", "Credit"],
-        rows,
+    rows = [
+        [
+            line.account.code or "",
+            line.account.name or "",
+            line.segment.code if line.segment else "",
+            line.cost_center or "",
+            line.description or "",
+            line.debit,
+            line.credit,
+        ]
+        for line in entry.lines.order_by("line_no")
+    ]
+    spec = TableSpec(
+        title=f"JOURNAL ENTRY {entry.entry_no}",
+        preamble=preamble,
+        columns=[
+            Column("COA"),
+            Column("Account Name"),
+            Column("Segment"),
+            Column("Cost Center"),
+            Column("Description"),
+            Column("Debit", money=True),
+            Column("Credit", money=True),
+        ],
+        rows=rows,
+        totals_row=["TOTALS", "", "", "", "", entry.total_debit, entry.total_credit],
         sheet_title="JE",
     )
-    return xlsx_response(wb, f"JE_{entry.entry_no}.xlsx")
+    return table_export(spec, "xlsx", f"JE_{entry.entry_no}.xlsx")
 
 
 @login_required
 def je_list_export(request):
     """Download the whole journal entries list as XLSX / CSV / PDF."""
-    from apps.core.approvals import display_name
-    from apps.reporting.excel_export import xlsx_response
-    from apps.reporting.exports import csv_response
-
     from .services import list_entries
 
     fmt = request.GET.get("format", "xlsx")
     entries = list_entries(limit=None)
+
+    from apps.core.approvals import display_name
+
     header = ["Entry No.", "Date", "Description", "Segment", "Debit", "Credit", "Status", "Prepared By"]
     rows = [
         [
@@ -2751,21 +3507,18 @@ def je_list_export(request):
             e.transaction_date.isoformat(),
             e.description,
             e.segment.code if e.segment else "",
-            str(e.total_debit),
-            str(e.total_credit),
+            e.total_debit,
+            e.total_credit,
             e.get_status_display(),
             display_name(e.created_by),
         ]
         for e in entries
     ]
-    stem = "JOURNAL-ENTRIES"
-
-    if fmt == "csv":
-        return csv_response(rows, f"{stem}.csv", header=header)
-    if fmt == "pdf":
-        return _wide_pdf_response("Journal Entries", header, rows, f"{stem}.pdf")
-    wb = _table_workbook("JOURNAL ENTRIES", header, rows, sheet_title="JE LIST")
-    return xlsx_response(wb, f"{stem}.xlsx")
+    return _table_response(
+        "JOURNAL ENTRIES", header, rows, fmt, "JOURNAL-ENTRIES",
+        sheet_title="JE LIST", money_cols=(4, 5), totals_row=None,
+        page="landscape",
+    )
 
 
 @login_required
@@ -2774,9 +3527,6 @@ def general_journal_export(request):
 
     Honors the same date/segment filters as the screen, so the download can
     never disagree with what the user sees."""
-    from apps.reporting.excel_export import xlsx_response
-    from apps.reporting.exports import csv_response
-
     from .services import general_journal as gj
 
     fmt = request.GET.get("format", "xlsx")
@@ -2800,19 +3550,25 @@ def general_journal_export(request):
             r["coa"],
             r["account_name"],
             r["cost_center"],
-            str(r["debit"]),
-            str(r["credit"]),
+            r["debit"],
+            r["credit"],
         ]
         for r in data["rows"]
     ]
-    stem = "GENERAL-JOURNAL"
-
-    if fmt == "csv":
-        return csv_response(rows, f"{stem}.csv", header=header)
-    if fmt == "pdf":
-        return _wide_pdf_response("General Journal", header, rows, f"{stem}.pdf")
-    wb = _table_workbook("GENERAL JOURNAL", header, rows, sheet_title="GJ")
-    return xlsx_response(wb, f"{stem}.xlsx")
+    return _table_response(
+        "GENERAL JOURNAL",
+        header,
+        rows,
+        fmt,
+        "GENERAL-JOURNAL",
+        sheet_title="GJ",
+        money_cols=(9, 10),
+        totals_row=[
+            "TOTALS", "", "", "", "", "", "", "", "",
+            data["total_debit"], data["total_credit"],
+        ],
+        page="landscape",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -3104,72 +3860,19 @@ def coa_update(request, pk):
 @login_required
 def cash_flow(request):
     """Cash Flow Statement (ADR-031) — monthly cadence by default; a custom
-    period_start/period_end still works (legacy GET form / API e2e uses it)."""
+    period_start/period_end still works (legacy GET form / API e2e uses it).
+
+    Export downloads live on the /reports/cash-flow/export/ endpoint; this
+    screen generates + renders. The format select redirects there via the
+    export toolbar URL."""
     from apps.cash.models import CashFlowStatement, WeeklyCashCycle
     from apps.cash.services import CashFlowService
     from apps.foundation.models import Company
 
-    fmt = request.GET.get("format", "xlsx")
     company = Company.objects.first()
     latest = CashFlowStatement.objects.order_by("-period_end").first()
     year = int(request.GET.get("year") or date.today().year)
     month = int(request.GET.get("month") or date.today().month)
-
-    if fmt == "csv" and latest:
-        # CSV export of the cash flow snapshot
-        import csv
-        from io import StringIO
-        buffer = StringIO()
-        writer = csv.writer(buffer)
-        writer.writerow(["Period Start", latest.period_start.isoformat()])
-        writer.writerow(["Period End", latest.period_end.isoformat()])
-        writer.writerow(["Collections", latest.collections])
-        writer.writerow(["Payments to Depot", latest.payments_to_depot])
-        writer.writerow(["Net Operating", nets["operating"] if (nets := {"operating": latest.collections - latest.payments_to_depot}) else "0.00"])
-        writer.writerow(["Investing (CAPEX)", latest.asset_acquisitions])
-        writer.writerow(["Financing (Net)", latest.loan_proceeds - latest.loan_repayments])
-        writer.writerow(["Net Change in Cash", latest.net_change])
-        writer.writerow(["Beginning Cash", latest.beginning_cash])
-        writer.writerow(["Ending Cash (less ADB)", latest.ending_cash])
-        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="CASH_FLOW.csv"'
-        return response
-
-    if fmt == "pdf" and latest:
-        from reportlab.lib.pagesizes import LETTER
-        from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-        from reportlab.lib import colors
-
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=LETTER, leftMargin=0.6*inch, rightMargin=0.6*inch, topMargin=0.6*inch, bottomMargin=0.6*inch)
-        elements = []
-        data = [
-            ["Period Start", latest.period_start.isoformat()],
-            ["Period End", latest.period_end.isoformat()],
-            ["Collections", latest.collections],
-            ["Payments to Depot", latest.payments_to_depot],
-            ["Net Operating", nets["operating"] if (nets := {"operating": latest.collections - latest.payments_to_depot}) else "0.00"],
-            ["Investing (CAPEX)", latest.asset_acquisitions],
-            ["Financing (Net)", latest.loan_proceeds - latest.loan_repayments],
-            ["Net Change in Cash", latest.net_change],
-            ["Beginning Cash", latest.beginning_cash],
-            ["Ending Cash (less ADB)", latest.ending_cash],
-        ]
-        table = Table(data, colWidths=[2.5*inch, 2.5*inch])
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f0f0")]),
-        ]))
-        elements.append(table)
-        doc.build(elements)
-
-        response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
-        response["Content-Disposition"] = 'attachment; filename="CASH_FLOW.pdf"'
-        return response
 
     if company:
         try:
@@ -3193,24 +3896,47 @@ def cash_flow(request):
             "investing": -latest.asset_acquisitions,
             "financing": latest.loan_proceeds - latest.loan_repayments,
         }
-    ctx.update({"latest": latest, "nets": nets, "year": year, "month": month})
+    ctx.update(
+        {
+            "latest": latest,
+            "nets": nets,
+            "year": year,
+            "month": month,
+            "format": request.GET.get("format", "xlsx"),
+        }
+    )
     return render(request, "ui/cash/cash_flow.html", ctx)
 
 
 @login_required
 def cash_flow_print(request):
     """Print‑optimized page for the cash flow statement (browser print dialog)."""
-    as_of = request.GET.get("as_of") or date.today().isoformat()
-    segment = request.GET.get("segment") or ""
-    from apps.ui.services import TrialBalanceService
+    from apps.cash.models import CashFlowStatement, WeeklyCashCycle
+    from apps.cash.services import CashFlowService
+    from apps.foundation.models import Company
 
-    rows, (debit, credit) = TrialBalanceService.rows(as_of=as_of, segment=segment or None)
+    company = Company.objects.first()
+    year = int(request.GET.get("year") or date.today().year)
+    month = int(request.GET.get("month") or date.today().month)
+    latest = CashFlowStatement.objects.order_by("-period_end").first()
+    if company:
+        try:
+            if request.GET.get("month"):
+                latest = CashFlowService.generate_month(company, year, month)
+        except (ValueError, AccountingError):
+            pass
+    nets = None
+    if latest:
+        nets = {
+            "operating": latest.collections - latest.payments_to_depot,
+            "investing": -latest.asset_acquisitions,
+            "financing": latest.loan_proceeds - latest.loan_repayments,
+        }
     ctx = {
-        "rows": rows,
-        "debit": debit,
-        "credit": credit,
-        "as_of": as_of,
-        "segment": segment,
+        "latest": latest,
+        "nets": nets,
+        "year": year,
+        "month": month,
     }
     return render(request, "ui/cash/cash_flow_print.html", ctx)
 
@@ -3239,7 +3965,13 @@ def collectibles(request):
             rows = []
     else:
         rows = []
-    return render(request, "ui/cash/collectibles.html", {"cycles": cycles, "cycle": cycle, "rows": rows})
+    return render(
+        request, "ui/cash/collectibles.html",
+        {
+            "cycles": cycles, "cycle": cycle, "rows": rows,
+            "export_url": _export_url("ui:collectibles_export", cycle=cycle.pk if cycle else ""),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -3254,6 +3986,7 @@ def aging(request):
 
     as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
     ctx = aging_context(as_of)
+    ctx["export_url"] = _export_url("ui:aging_export", as_of=as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
     return render(request, "ui/ar/aging.html", ctx)
 
@@ -3265,6 +3998,7 @@ def ap_aging(request):
 
     as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
     ctx = ap_aging_context(as_of)
+    ctx["export_url"] = _export_url("ui:ap_aging_export", as_of=as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
     return render(request, "ui/ap/aging.html", ctx)
 
@@ -3306,6 +4040,9 @@ def fleet_fuel(request):
             "start": start or "",
             "end": end or "",
             "segment_sel": segment or "",
+            "export_url": _export_url(
+                "ui:fleet_fuel_export", start=start, end=end, segment=segment
+            ),
         }
     )
     ctx["page_obj"] = _page(request, ctx.pop("rows"))
@@ -3350,7 +4087,10 @@ def tax_vat(request):
     return render(
         request, "ui/tax/vat.html",
         {"computations": computations, "summary": summary,
-         "period_start": period_start or "", "period_end": period_end or ""},
+         "period_start": period_start or "", "period_end": period_end or "",
+         "export_url": _export_url(
+             "ui:tax_vat_export", period_start=period_start, period_end=period_end
+         )},
     )
 
 
@@ -3370,7 +4110,11 @@ def tax_wht(request):
     return render(
         request, "ui/tax/wht.html",
         {"rows": rows, "cert_type": cert_type,
-         "period_start": period_start or "", "period_end": period_end or ""},
+         "period_start": period_start or "", "period_end": period_end or "",
+         "export_url": _export_url(
+             "ui:tax_wht_export",
+             cert_type=cert_type, period_start=period_start, period_end=period_end,
+         )},
     )
 
 
@@ -3798,9 +4542,6 @@ def ledger_account_print(request, pk):
 @login_required
 def ledger_export(request):
     """Download the ledger index as XLSX / CSV / PDF (filters honored)."""
-    from apps.reporting.excel_export import xlsx_response
-    from apps.reporting.exports import csv_response
-
     from .services import ledger_index as ledger_index_data
 
     fmt = request.GET.get("format", "xlsx")
@@ -3821,30 +4562,25 @@ def ledger_export(request):
                         r["code"],
                         r["name"],
                         r["classification"],
-                        str(r["opening"]),
-                        str(r["debit"]),
-                        str(r["credit"]),
-                        str(r["closing"]),
+                        r["opening"],
+                        r["debit"],
+                        r["credit"],
+                        r["closing"],
                     ]
                 )
-    rows.append(["", "TOTALS", "", "", str(data["total_debit"]), str(data["total_credit"]), ""])
     stem = "LEDGER-INDEX"
     win_label = win["month"] or f"{win['start'] or ''}_{win['end'] or ''}".strip("_")
-
-    if fmt == "csv":
-        return csv_response(rows, f"{stem}-{win_label}.csv", header=header)
-    if fmt == "pdf":
-        return _wide_pdf_response("Ledger Index", header, rows, f"{stem}-{win_label}.pdf")
-    wb = _table_workbook("LEDGER INDEX", header, rows, sheet_title="LEDGER")
-    return xlsx_response(wb, f"{stem}-{win_label}.xlsx")
+    return _table_response(
+        "LEDGER INDEX", header, rows, fmt, f"{stem}-{win_label}", sheet_title="LEDGER",
+        money_cols=(3, 4, 5, 6),
+        totals_row=["", "TOTALS", "", "", data["total_debit"], data["total_credit"], ""],
+        page="landscape",
+    )
 
 
 @login_required
 def ledger_account_export(request, pk):
     """Download a per-account register as XLSX / CSV / PDF."""
-    from apps.reporting.excel_export import xlsx_response
-    from apps.reporting.exports import csv_response
-
     from .services import ledger_account as account_reg
 
     fmt = request.GET.get("format", "xlsx")
@@ -3859,7 +4595,7 @@ def ledger_account_export(request, pk):
     )
     header = ["Date", "Ref #", "Source", "Particulars", "Cost Center", "Debit", "Credit", "Balance"]
     rows = [
-        [win["start"] or "", "Balance B/f", "", "Opening balance", "", "", "", str(reg["opening"])]
+        [win["start"] or "", "Balance B/f", "", "Opening balance", "", "", "", reg["opening"]]
     ]
     for r in reg["rows"]:
         rows.append(
@@ -3869,18 +4605,730 @@ def ledger_account_export(request, pk):
                 f"{r['source_type']} {r['source_doc_no']}".strip(),
                 r["particulars"],
                 r["cost_center"],
-                str(r["debit"]),
-                str(r["credit"]),
-                str(r["balance"]),
+                r["debit"],
+                r["credit"],
+                r["balance"],
             ]
         )
-    rows.append([win["end"] or "", "TOTALS", "", f"Period movement", "", str(reg["period_debit"]), str(reg["period_credit"]), str(reg["closing"])])
     stem = f"LEDGER-{account.code}"
     win_label = win["month"] or f"{win['start'] or ''}_{win['end'] or ''}".strip("_")
+    return _table_response(
+        f"LEDGER — {account.code} {account.name}", header, rows, fmt,
+        f"{stem}-{win_label}", sheet_title="LEDGER",
+        money_cols=(5, 6, 7),
+        totals_row=[
+            win["end"] or "", "TOTALS", "", "Period movement", "",
+            reg["period_debit"], reg["period_credit"], reg["closing"],
+        ],
+        page="landscape",
+    )
 
-    if fmt == "csv":
-        return csv_response(rows, f"{stem}-{win_label}.csv", header=header)
-    if fmt == "pdf":
-        return _wide_pdf_response(account.name, header, rows, f"{stem}-{win_label}.pdf")
-    wb = _table_workbook(f"LEDGER — {account.code} {account.name}", header, rows, sheet_title="LEDGER")
-    return xlsx_response(wb, f"{stem}-{win_label}.xlsx")
+
+# ---------------------------------------------------------------------------
+# Phase 3 — register/list exports (Engine A + screen-parity rows)
+# ---------------------------------------------------------------------------
+
+
+def _cycle_label(cycle):
+    return f"{cycle.cycle_start.isoformat()} to {cycle.cycle_end.isoformat()}"
+
+
+@login_required
+def aging_export(request):
+    """AR aging register (open invoice balances as-of the screen's date)."""
+    fmt = request.GET.get("format", "xlsx")
+    as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
+    ctx = aging_context(as_of)
+    rows = [
+        [
+            r["invoice_no"],
+            r["customer"],
+            r["date"].isoformat(),
+            r["segment"],
+            r["status"],
+            r["age_days"] if r["age_days"] is not None else "",
+            r["balance"],
+        ]
+        for r in ctx["register"] + ctx["not_yet_due"]
+    ]
+    return _table_response(
+        f"AR AGING & REGISTER AS OF {as_of.isoformat()}",
+        ["Invoice #", "Customer", "Date", "Segment", "Status", "Age (days)", "Balance"],
+        rows,
+        fmt,
+        "AR_AGING",
+        sheet_title="AR AGING",
+        money_cols=(6,),
+        page="landscape",
+        totals_row=["", "TOTAL OUTSTANDING", "", "", "", "",
+                    ctx["register_total"] + ctx["not_yet_due_total"]],
+    )
+
+
+@login_required
+def ap_aging_export(request):
+    """AP aging register (open posted-RFP balances as-of the screen's date)."""
+    from .services import ap_aging_context
+
+    fmt = request.GET.get("format", "xlsx")
+    as_of = date.fromisoformat(request.GET["as_of"]) if request.GET.get("as_of") else date.today()
+    ctx = ap_aging_context(as_of)
+    rows = [
+        [
+            r["ap_number"],
+            r["payee"],
+            r["date"].isoformat(),
+            r["segment"],
+            r["status"],
+            r["age_days"] if r["age_days"] is not None else "",
+            r["balance"],
+        ]
+        for r in ctx["register"] + ctx["not_yet_due"]
+    ]
+    return _table_response(
+        f"AP AGING & REGISTER AS OF {as_of.isoformat()}",
+        ["AP #", "Payee", "Date", "Segment", "Status", "Age (days)", "Open Balance"],
+        rows,
+        fmt,
+        "AP_AGING",
+        sheet_title="AP AGING",
+        money_cols=(6,),
+        page="landscape",
+        totals_row=["", "TOTAL OPEN PAYABLES", "", "", "", "",
+                    ctx["register_total"] + ctx["not_yet_due_total"]],
+    )
+
+
+@login_required
+def customer_export(request):
+    """Customer master export (superset of the customers screen columns)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = [
+        [
+            c.code,
+            c.name,
+            c.owner_name or "",
+            c.contact_no or "",
+            c.tin or "",
+            c.segment.code if c.segment else "",
+            c.group,
+            c.pricing_tier,
+            c.address or "",
+            c.notes or "",
+        ]
+        for c in list_customers()
+    ]
+    return _table_response(
+        "CUSTOMERS MASTER",
+        ["Code", "Business Name", "Owner", "Contact", "TIN", "Segment",
+         "Group", "Pricing Tier", "Address", "Notes"],
+        rows,
+        fmt,
+        "CUSTOMERS",
+        sheet_title="CUSTOMERS",
+        page="landscape",
+    )
+
+
+@login_required
+def supplier_export(request):
+    """Supplier master export (superset of the suppliers screen columns)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = []
+    for s in list_suppliers():
+        contacts = ", ".join(
+            f"{c.name}{' — ' + c.phone if c.phone else ''}" for c in s.contacts.all()
+        ) or s.contact_no or ""
+        rows.append(
+            [
+                s.code,
+                s.name,
+                s.owner_name or "",
+                s.tin or "",
+                s.email or "",
+                contacts,
+                "Yes" if s.attachments_required else "—",
+            ]
+        )
+    return _table_response(
+        "SUPPLIERS MASTER",
+        ["Code", "Business Name", "Owner/Rep", "TIN", "Email", "Contact", "Attachments"],
+        rows,
+        fmt,
+        "SUPPLIERS",
+        sheet_title="SUPPLIERS",
+        page="landscape",
+    )
+
+
+@login_required
+def coa_export(request):
+    """Chart of Accounts export honoring the screen's filters."""
+    fmt = request.GET.get("format", "xlsx")
+    from .services import coa_rows
+
+    rows = [
+        [
+            a.code,
+            a.name,
+            a.segment or "",
+            a.classification or "",
+            a.category or "",
+            a.sub_accounts or "",
+            a.major_accounts or "",
+            a.behavior or "",
+            a.traceability or "",
+            a.controllability or "",
+        ]
+        for a in coa_rows(
+            q=request.GET.get("q", "").strip(),
+            segment=request.GET.get("segment", "").strip(),
+            account_type=request.GET.get("account_type", "").strip(),
+        )
+    ]
+    return _table_response(
+        "CHART OF ACCOUNTS",
+        ["Code", "Account Name", "Segment", "Classification", "Category",
+         "Sub-Accounts", "Major Accounts", "Behavior", "Traceability", "Controllability"],
+        rows,
+        fmt,
+        "CHART_OF_ACCOUNTS",
+        sheet_title="COA",
+        page="landscape",
+    )
+
+
+@login_required
+def assets_list_export(request):
+    """Fixed assets register export honoring the screen's filters."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = [
+        [
+            a.asset_no,
+            a.name,
+            a.category.name if a.category else "",
+            a.segment.code if a.segment else "",
+            a.acquisition_date.isoformat(),
+            a.cost,
+            a.status,
+        ]
+        for a in list_assets(
+            limit=None,
+            q=request.GET.get("q", "").strip(),
+            category=request.GET.get("category", "").strip(),
+            segment=request.GET.get("segment", "").strip(),
+            status=request.GET.get("status", "").strip(),
+        )
+    ]
+    return _table_response(
+        "FIXED ASSETS REGISTER",
+        ["Asset No", "Name", "Category", "Segment", "Acquired", "Cost", "Status"],
+        rows,
+        fmt,
+        "ASSET-REGISTER",
+        sheet_title="ASSETS",
+        money_cols=(5,),
+        page="landscape",
+    )
+
+
+@login_required
+def transfers_export(request):
+    """Inter-account transfer register (ADR-030)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = []
+    for t in transfers_context()["transfers"]:
+        rows.append(
+            [
+                t.transfer_date.isoformat(),
+                t.from_account.code,
+                t.to_account.code,
+                t.amount,
+                t.purpose,
+                t.journal_entry.entry_no if t.journal_entry else "",
+            ]
+        )
+    return _table_response(
+        "INTER-ACCOUNT TRANSFERS",
+        ["Date", "From (Credit)", "To (Debit)", "Amount", "Purpose", "JE"],
+        rows,
+        fmt,
+        "TRANSFERS",
+        sheet_title="TRANSFERS",
+        money_cols=(3,),
+        page="landscape",
+    )
+
+
+@login_required
+def recon_export(request):
+    """Bank reconciliation register (ADR-026)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = []
+    for r in list_recons(limit=None):
+        rows.append(
+            [
+                _cycle_label(r.cycle),
+                r.bank_account.code,
+                r.book_balance,
+                r.bank_statement_balance,
+                r.difference,
+                r.status,
+                r.reconciled_by.username if r.reconciled_by else "",
+            ]
+        )
+    return _table_response(
+        "BANK RECONCILIATIONS",
+        ["Cycle", "Bank", "Book", "Bank statement", "Difference", "Status", "Reconciled by"],
+        rows,
+        fmt,
+        "RECONCILIATIONS",
+        sheet_title="RECON",
+        money_cols=(2, 3, 4),
+        page="landscape",
+    )
+
+
+@login_required
+def cash_short_export(request):
+    """Cash short / excess worksheet register (ADR-029/030)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = [
+        [
+            _cycle_label(ws.cycle),
+            ws.segment.code if ws.segment else "",
+            ws.expected_cash,
+            ws.actual_cash,
+            ws.variance,
+            ws.cause,
+            ws.status,
+        ]
+        for ws in list_cash_shorts(limit=None)
+    ]
+    return _table_response(
+        "CASH SHORT / EXCESS WORKSHEET",
+        ["Cycle", "Segment", "Expected", "Actual", "Variance", "Cause", "Status"],
+        rows,
+        fmt,
+        "CASH-SHORT",
+        sheet_title="CASH SHORT",
+        money_cols=(2, 3, 4),
+        page="landscape",
+    )
+
+
+@login_required
+def cycles_export(request):
+    """Weekly cash cycle register (ADR-013/028)."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = []
+    for c in list_cycles(limit=None):
+        rows.append(
+            [
+                c.cycle_start.isoformat(),
+                c.cycle_end.isoformat(),
+                c.segment.code,
+                c.closing_balance,
+                c.status,
+                c.reconciled_by.username if c.reconciled_by else "",
+                c.notes or "",
+            ]
+        )
+    return _table_response(
+        "WEEKLY CASH CYCLES",
+        ["Cycle start", "Cycle end", "Segment", "Closing balance", "Status", "Reconciled by", "Notes"],
+        rows,
+        fmt,
+        "CYCLES",
+        sheet_title="CYCLES",
+        money_cols=(3,),
+        page="landscape",
+    )
+
+
+@login_required
+def banks_export(request):
+    """Bank account / cash-fund master list."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = [
+        [
+            b.code,
+            b.bank_name,
+            b.get_account_type_display(),
+            b.account_number or "",
+            b.branch or "",
+            b.gl_account.code if b.gl_account else "",
+            b.company.code,
+            "Active" if b.is_active else "Inactive",
+        ]
+        for b in list_banks()
+    ]
+    return _table_response(
+        "BANKS / CASH FUNDS",
+        ["Code", "Bank", "Account type", "Account no.", "Branch", "GL account", "Company", "Status"],
+        rows,
+        fmt,
+        "BANKS",
+        sheet_title="BANKS",
+        page="landscape",
+    )
+
+
+@login_required
+def collections_export(request):
+    """Daily Collections JE Summary for a cycle (cashier worksheet columns)."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.cash.models import WeeklyCashCycle
+
+    cycles = list(list_cycles())
+    cycle = None
+    if request.GET.get("cycle"):
+        cycle = WeeklyCashCycle.objects.filter(pk=request.GET["cycle"]).first()
+    if cycle is None and cycles:
+        cycle = cycles[0]
+    if cycle is None:
+        header = ["DATE", "AR/SI #", "OUTLET'S NAME", "REMARKS"]
+        return _table_response(
+            "DAILY COLLECTIONS JE SUMMARY",
+            header, [], fmt, "DAILY-COLLECTIONS", sheet_title="COLLECTIONS",
+            page="landscape",
+        )
+    ctx = daily_collections(cycle)
+    nb = len(ctx["bank_cols"])
+    header = [
+        "DATE", "AR/SI #", "OUTLET'S NAME", "PARTICULARS", "PO NUMBER",
+        "CASH ON HAND (DR)", "CASH ON HAND (CR)",
+        *ctx["bank_cols"],
+        "AR (DR)", "AR (CR)", "AP (DR)", "AP (CR)",
+        "TOTAL COLLECTIONS", "REMARKS",
+    ]
+    rows = [
+        [
+            r["date"].isoformat(),
+            r["ar_no"],
+            r["outlet"],
+            r["particulars"],
+            r["po_number"],
+            r["cash_debit"],
+            r["cash_credit"],
+            *r["bank_amounts"],
+            r["ar_debit"],
+            r["ar_credit"],
+            r["ap_debit"],
+            r["ap_credit"],
+            r["total"],
+            r["remarks"],
+        ]
+        for r in ctx["rows"]
+    ]
+    totals = ctx["totals"]
+    totals_row = [
+        "", "", "", "", "",
+        totals["cash_debit"], totals["cash_credit"],
+        *ctx["bank_totals"],
+        totals["ar_debit"], totals["ar_credit"],
+        totals["ap_debit"], totals["ap_credit"],
+        totals["total"], "",
+    ]
+    money_cols = list(range(5, 7 + nb)) + list(range(7 + nb, 12 + nb))
+    return _table_response(
+        f"DAILY COLLECTIONS JE SUMMARY — CYCLE {_cycle_label(cycle)}",
+        header, rows, fmt, "DAILY-COLLECTIONS",
+        sheet_title="COLLECTIONS", money_cols=tuple(money_cols),
+        page="landscape", totals_row=totals_row,
+    )
+
+
+@login_required
+def collectibles_export(request):
+    """COLLECTIBLES worksheet for a cycle (ADR-029)."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.cash.models import CollectiblesWorksheet, WeeklyCashCycle
+    from apps.cash.services import CollectiblesService
+
+    cycle = None
+    if request.GET.get("cycle"):
+        cycle = WeeklyCashCycle.objects.filter(pk=request.GET["cycle"]).first()
+    if cycle is None:
+        return _table_response(
+            "COLLECTIBLES WORKSHEET",
+            ["Department", "Client Paid", "Depot Paid", "Gross Mark-Up"],
+            [], fmt, "COLLECTIBLES", sheet_title="COLLECTIBLES",
+            money_cols=(1, 2, 3),
+        )
+    try:
+        CollectiblesService.generate(cycle)
+        rows = [
+            [
+                w.department,
+                w.client_paid,
+                w.depot_paid,
+                w.gross_markup,
+            ]
+            for w in CollectiblesWorksheet.objects.filter(cycle=cycle).order_by("department")
+        ]
+    except AccountingError:
+        rows = []
+    return _table_response(
+        f"COLLECTIBLES WORKSHEET — CYCLE {_cycle_label(cycle)}",
+        ["Department", "Client Paid (Collections)", "Depot Paid (Outflows)", "Gross Mark-Up / Net Position"],
+        rows, fmt, "COLLECTIBLES", sheet_title="COLLECTIBLES",
+        money_cols=(1, 2, 3),
+    )
+
+
+@login_required
+def advances_export(request):
+    """Advances to employees ledger (ADR-021)."""
+    fmt = request.GET.get("format", "xlsx")
+    ctx = advances_context()
+    rows = [
+        [
+            r["advance"].employee_name,
+            r["kind"],
+            r["segment_code"],
+            r["advance"].granted_date.isoformat(),
+            r["advance"].amount,
+            r["advance"].liquidated_amount,
+            r["outstanding"],
+            r["status_label"],
+        ]
+        for r in ctx["rows"]
+    ]
+    return _table_response(
+        "ADVANCES TO EMPLOYEES",
+        ["Employee", "Kind", "Segment", "Granted", "Amount", "Liquidated", "Outstanding", "Status"],
+        rows,
+        fmt,
+        "ADVANCES",
+        sheet_title="ADVANCES",
+        money_cols=(4, 5, 6),
+        page="landscape",
+        totals_row=["", "", "", "", "", "", ctx["total_outstanding"], ""],
+    )
+
+
+@login_required
+def conso_list_export(request):
+    """CONSO batch register."""
+    fmt = request.GET.get("format", "xlsx")
+    rows = [
+        [
+            b.batch_no,
+            b.conso_date.isoformat(),
+            b.rfps.count(),
+            b.total_amount,
+            b.status,
+        ]
+        for b in list_conso(limit=None)
+    ]
+    return _table_response(
+        "CONSO BATCHES",
+        ["Batch No", "Date", "Members", "Total", "Status"],
+        rows,
+        fmt,
+        "CONSO-REGISTER",
+        sheet_title="CONSO",
+        money_cols=(3,),
+        page="landscape",
+    )
+
+
+@login_required
+def fleet_fuel_export(request):
+    """Fleet fuel register (per-log rows honoring the screen's filters)."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.fleet.services import fleet_fuel_summary
+
+    rows = [
+        [
+            log.logged_at.isoformat(),
+            log.vehicle.plate_no,
+            log.segment.code if log.segment else "",
+            log.liters,
+            log.cost_amount,
+            log.notes or "",
+        ]
+        for log in fleet_fuel_summary(
+            start=request.GET.get("start") or None,
+            end=request.GET.get("end") or None,
+            segment=request.GET.get("segment") or None,
+        )["rows"]
+    ]
+    return _table_response(
+        "FLEET FUEL REGISTER",
+        ["Date", "Vehicle", "Segment", "Liters", "Cost", "Notes"],
+        rows,
+        fmt,
+        "FLEET-FUEL",
+        sheet_title="FLEET FUEL",
+        money_cols=(4,),
+        page="landscape",
+    )
+
+
+@login_required
+def tax_vat_export(request):
+    """VAT extraction at SI level for a period (2550Q prep)."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.tax.models import VATComputation
+    from apps.tax.services import VATService
+
+    computations = []
+    period_start = request.GET.get("period_start")
+    period_end = request.GET.get("period_end")
+    if period_start and period_end:
+        company = Company.objects.first()
+        if company:
+            computations = VATService.extract_for_period(
+                company, date.fromisoformat(period_start), date.fromisoformat(period_end)
+            )
+    rows = [
+        [
+            c.invoice.invoice_no,
+            c.invoice.transaction_date.isoformat(),
+            c.segment.code,
+            c.gross_amount,
+            c.net_amount,
+            c.output_vat,
+            "OK" if c.is_balanced else "NOT",
+        ]
+        for c in computations
+    ]
+    return _table_response(
+        "VAT EXTRACTION (SI LEVEL)",
+        ["Invoice", "Date", "Segment", "Gross", "Net", "Output VAT", "Balanced"],
+        rows,
+        fmt,
+        "VAT",
+        sheet_title="VAT",
+        money_cols=(3, 4, 5),
+        page="landscape",
+    )
+
+
+@login_required
+def tax_wht_export(request):
+    """Withholding certificates (2307 / 2306) from posted CVs."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.tax.services import WithholdingService
+
+    cert_type = request.GET.get("cert_type", "2307")
+    period_start = request.GET.get("period_start") or None
+    period_end = request.GET.get("period_end") or None
+    rows = [
+        [
+            r["cv_number"],
+            r["payee"].name,
+            r["tin"] or "",
+            r["segment"].code,
+            r["gross_amount"],
+            r["tax_amount"],
+        ]
+        for r in WithholdingService.build_certificates(
+            cert_type=cert_type,
+            period_start=date.fromisoformat(period_start) if period_start else None,
+            period_end=date.fromisoformat(period_end) if period_end else None,
+        )
+    ]
+    return _table_response(
+        f"WITHHOLDING CERTIFICATES ({cert_type})",
+        ["CV No", "Payee", "TIN", "Segment", "Gross", "Tax Withheld"],
+        rows,
+        fmt,
+        f"WHT-{cert_type}",
+        sheet_title="WHT",
+        money_cols=(4, 5),
+        page="landscape",
+    )
+
+
+@login_required
+def tax_provision_export(request):
+    """Income tax provisions booked (dashboard table)."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.tax.models import IncomeTaxProvision
+
+    rows = [
+        [
+            p.segment.code,
+            p.filing_period,
+            p.taxable_income,
+            f"{p.tax_rate:.4f}",
+            p.tax_amount,
+            p.journal_entry.entry_no if p.journal_entry else "",
+        ]
+        for p in IncomeTaxProvision.objects.select_related("segment", "journal_entry").order_by("-filing_period")
+    ]
+    return _table_response(
+        "INCOME TAX PROVISIONS",
+        ["Segment", "Period", "Taxable income", "Rate", "Tax", "Reference"],
+        rows,
+        fmt,
+        "TAX-PROVISION",
+        sheet_title="TAX PROVISION",
+        money_cols=(2, 4),
+        page="landscape",
+    )
+
+
+@login_required
+def tax_calendar_export(request):
+    """Tax filing calendar register."""
+    fmt = request.GET.get("format", "xlsx")
+    from apps.tax.models import TaxCalendar
+
+    company = Company.objects.first()
+    qs = TaxCalendar.objects.filter(company=company).order_by("due_date", "form") if company else TaxCalendar.objects.none()
+    rows = [
+        [
+            c.form,
+            c.filing_period,
+            c.due_date.isoformat(),
+            c.amount_due,
+            c.status,
+            c.filed_date.isoformat() if c.filed_date else "",
+            c.paid_date.isoformat() if c.paid_date else "",
+        ]
+        for c in qs
+    ]
+    return _table_response(
+        "TAX FILING CALENDAR",
+        ["Form", "Period", "Due date", "Amount", "Status", "Filed", "Paid"],
+        rows,
+        fmt,
+        "TAX-CALENDAR",
+        sheet_title="TAX CALENDAR",
+        money_cols=(3,),
+        page="landscape",
+    )
+
+
+@login_required
+def month_end_close_export(request):
+    """Month-end close status: step checklist + posted closing entries."""
+    fmt = request.GET.get("format", "xlsx")
+    close = month_end_close_context()
+    rows = []
+    if close is None:
+        rows = [["No open fiscal period found", ""]]
+    else:
+        fp = close.fiscal_period
+        rows.append(["Period", f"{fp.period_no} — {fp.start_date} to {fp.end_date}"])
+        rows.append(["Status", close.status])
+        for step, state in close.steps.items():
+            rows.append([f"Step: {step}", state])
+        if close.revenue_close_entry:
+            rows.append(["Revenue close", f"{close.revenue_close_entry.entry_no} ({close.revenue_close_entry.status})"])
+        if close.expense_close_entry:
+            rows.append(["Expense close", f"{close.expense_close_entry.entry_no} ({close.expense_close_entry.status})"])
+        if close.appropriation_entry:
+            rows.append(["Appropriation", f"{close.appropriation_entry.entry_no} ({close.appropriation_entry.status})"])
+    return _table_response(
+        "MONTH-END CLOSE STATUS",
+        ["Item", "Value"],
+        rows,
+        fmt,
+        "MONTH-END-CLOSE",
+        sheet_title="MONTH-END CLOSE",
+    )

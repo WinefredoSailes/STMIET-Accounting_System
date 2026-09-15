@@ -3,7 +3,10 @@
 {% block title %}Month-End Close{% endblock %}
 {% block content %}
 <div class="p-6">
-  {% include "ui/partials/page_header.html" with title="Month-End Close" subtitle="accruals → recon → close → appropriations. Closing locks the fiscal period (no back-posting)." %}
+  {% capture as actions %}
+  {% url 'ui:month_end_close_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="Month-End Close" subtitle="accruals → recon → close → appropriations. Closing locks the fiscal period (no back-posting)." actions=actions %}
 
   {% if close %}
   <div class="mt-6 bg-white rounded-xl border border-slate-200 p-6">

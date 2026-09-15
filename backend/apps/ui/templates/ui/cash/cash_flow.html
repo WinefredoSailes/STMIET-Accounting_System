@@ -19,7 +19,7 @@
         <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
         {% endfor %}
       </select>
-      <select name="format" data-format-redirect class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+      <select name="format" data-format-redirect data-export-url="{% url 'ui:cash_flow_export' %}?year={{ year }}&month={{ month }}" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
         <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
         <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
         <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>

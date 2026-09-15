@@ -8,6 +8,7 @@
       <h1 class="text-xl font-semibold text-slate-900">INTER-ACCOUNT TRANSFERS</h1>
       <p class="text-sm text-slate-500 mt-1">Dr Cash-To | Cr Cash-From; purpose required (ADR-030). Posted immediately — cash-to-cash has no P&amp;L impact.</p>
     </div>
+    {% url 'ui:transfers_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
   </div>
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">

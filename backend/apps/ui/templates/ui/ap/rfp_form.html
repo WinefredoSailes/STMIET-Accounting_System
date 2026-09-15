@@ -29,6 +29,13 @@
                value="{% if editing %}{{ editing.rfp_date|date:"Y-m-d" }}{% endif %}"
                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
       </div>
+      <div class="w-full md:max-w-lg">
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_po">Master Purchase Order (optional)</label>
+        <select name="po" id="id_po" data-searchable data-search-value="id" data-search-placeholder="Search PO number or vendor…" data-search-url="{% url 'ui:po_options' %}{% if editing and editing.po %}?supplier={{ editing.payee_id }}&selected={{ editing.po_id }}{% endif %}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          {% if editing and editing.po %}<option value="{{ editing.po_id }}" selected>{{ editing.po.po_number }} — {{ editing.po.supplier.name }} (available ₱{{ editing.po.available_amount }})</option>{% else %}<option value="" selected>— no PO —</option>{% endif %}
+        </select>
+        <p class="text-xs text-slate-500 mt-1">Pick an approved PO from the same vendor to authorize this disbursement. The remaining balance is enforced when the RFP is approved.</p>
+      </div>
     </div>
     <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
 
@@ -145,6 +152,20 @@
       if (e.target && e.target.matches && e.target.matches('select[name="line_segment"]')) syncSegment();
     });
     syncSegment();
+
+    // The PO picker is scoped to the chosen vendor: refresh its search URL
+    // whenever the payee changes, and drop a picked PO from another vendor.
+    var payee = document.getElementById("id_payee");
+    var poSel = document.getElementById("id_po");
+    var poBase = "{% url 'ui:po_options' %}";
+    if (payee && poSel) {
+      document.addEventListener("change", function (e) {
+        if (!e.target || e.target.id !== "id_payee") return;
+        var url = new URL(poBase, window.location.origin);
+        if (payee.value) url.searchParams.set("supplier", payee.value);
+        poSel.dataset.searchUrl = url.toString();
+      });
+    }
   })();
 </script>
 {% endblock %}
