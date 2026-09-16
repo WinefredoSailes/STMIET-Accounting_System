@@ -1192,7 +1192,7 @@ def customer_detail(request, pk: int):
     from datetime import date as _d
     from decimal import Decimal as _D
 
-    from apps.ar.models import AcknowledgmentReceipt, ARInvoice
+    from apps.ar.models import AcknowledgmentReceipt, ARInvoice, Customer
     from apps.foundation.models import Segment
 
     customer = get_object_or_404(Customer, pk=pk)
