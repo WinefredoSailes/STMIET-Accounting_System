@@ -7,6 +7,7 @@ as the DRF API does.
 
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from django.db.models import Q, Sum
 from django.utils import timezone
@@ -545,6 +546,7 @@ def daily_collections(cycle):
         row = {
             "date": r.transaction_date,
             "ar_no": r.receipt_no,
+            "transaction_no": r.transaction_no or "",
             "outlet": r.customer.name,
             "particulars": particulars,
             "po_number": "",
@@ -814,6 +816,74 @@ def aging_context(as_of: date) -> dict:
         "as_of": as_of,
         "buckets": buckets,
         "bucket_total": sum(b["amount"] for b in buckets),
+        "register": register,
+        "register_total": sum(r["balance"] for r in register),
+        "not_yet_due": not_yet_due,
+        "not_yet_due_total": sum(r["balance"] for r in not_yet_due),
+    }
+
+
+def customer_aging_context(customer: Any, as_of: date) -> dict:
+    """AR aging buckets + per-invoice register for a specific customer and as-of date."""
+
+    from django.db.models import Q
+    from apps.ar.models import ARInvoice
+
+    buckets = {"0-30": Decimal("0.00"), "31-60": Decimal("0.00"),
+               "61-90": Decimal("0.00"), "91-120": Decimal("0.00"),
+               "120+": Decimal("0.00")}
+    register = []
+    not_yet_due = []
+    invoices = ARInvoice.objects.filter(
+        customer=customer,
+        status__in=("open", "partially_paid"),
+        transaction_date__lte=as_of,
+    )
+    for inv in invoices:
+        balance = inv.balance
+        if balance <= 0:
+            continue
+        age_days = (as_of - inv.transaction_date).days
+        if age_days <= 30:
+            buckets["0-30"] += balance
+        elif age_days <= 60:
+            buckets["31-60"] += balance
+        elif age_days <= 90:
+            buckets["61-90"] += balance
+        elif age_days <= 120:
+            buckets["91-120"] += balance
+        else:
+            buckets["120+"] += balance
+        register.append(
+            {
+                "invoice_no": inv.invoice_no,
+                "customer": inv.customer.name,
+                "date": inv.transaction_date,
+                "segment": inv.segment.code,
+                "status": inv.status.replace("_", " ").title(),
+                "balance": balance,
+                "age_days": age_days,
+            }
+        )
+    not_yet_due_invoices = ARInvoice.objects.filter(
+        customer=customer,
+        transaction_date__gt=as_of,
+    )
+    for inv in not_yet_due_invoices:
+        not_yet_due.append(
+            {
+                "invoice_no": inv.invoice_no,
+                "customer": inv.customer.name,
+                "date": inv.transaction_date,
+                "segment": inv.segment.code,
+                "status": inv.status.replace("_", " ").title(),
+                "balance": inv.balance,
+            }
+        )
+    return {
+        "as_of": as_of,
+        "buckets": buckets,
+        "bucket_total": sum(buckets.values()),
         "register": register,
         "register_total": sum(r["balance"] for r in register),
         "not_yet_due": not_yet_due,
