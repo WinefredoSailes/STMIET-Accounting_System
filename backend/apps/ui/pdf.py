@@ -912,7 +912,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     payable = rfp_payable(rfp) if rfp else total
     position = cv.payee.position or cv.payee.get_supplier_type_display()
-    date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
+    date_of_request = rfp.rfp_date if rfp and rfp.rfp_date else None
     from apps.cash.models import CheckDisbursement
 
     disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
@@ -993,9 +993,11 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Payee Information", GREEN),
         _payee_table(colw, [
-            ("NAME:", cv.payee.name, "DATE OF REQUEST:", date_of_request.strftime("%m/%d/%Y")),
+            ("NAME:", cv.payee.name, "DATE OF REQUEST:",
+             date_of_request.strftime("%m/%d/%Y") if date_of_request else ""),
             ("POSITION:", position, "CHECK ISSUED & NO.:", cv.check_no or ""),
-            ("CV NO.:", cv.cv_number, "DATE CLEARED:", cleared_at.strftime("%m/%d/%Y") if cleared_at else ""),
+            ("CV NO.:", cv.cv_number, "DATE OF CV:", cv.cv_date.strftime("%m/%d/%Y")),
+            ("DATE CLEARED:", cleared_at.strftime("%m/%d/%Y") if cleared_at else "", "", ""),
         ]),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Distribution Charges", GREEN),
@@ -1018,11 +1020,77 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
             [3, 3, 3, 3, 2],
         ),
     ]
+buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4), leftMargin=margin, rightMargin=margin,
+        topMargin=margin, bottomMargin=margin,
+        title=f"Petty Cash Replenishment {replen.voucher_no or replen.id}", author="Accounting System",
+    )
+    doc.build(story)
+    return buf.getvalue()
+
+
+def build_ar_receipt_pdf(receipt, *, paper="a5") -> bytes:
+    """Acknowledgment Receipt (ACCTG-FOR-005) reproduced from receipt_print.html.
+
+    `paper` is "a5" (default, half-bond) or "a4".
+    """
+    from apps.ar.models import AcknowledgmentReceipt
+
+    receipt = receipt if isinstance(receipt, AcknowledgmentReceipt) else \
+        AcknowledgmentReceipt.objects.get(pk=int(receipt))
+    customer = receipt.customer
+    rfp = getattr(customer, "segment", None) and getattr(customer.segment, "company", None)
+    company_name = (rfp.name if rfp else "") or COMPANY_FALLBACK
+
+    pagesize = A4 if paper == "a4" else A5
+    margin = 1.0 * cm
+    colw = (pagesize[0] - 2 * margin) / GRID
+
+    cell = _style_cell()
+    cell_right = _style_cell_right()
+
+    # Header band
+    story = [_form_header(colw, company_name, "ACKNOWLEDGMENT RECEIPT", ORANGE,
+                          "ACCTG-FOR-005", transaction_date.isoformat(), "")]
+
+    # Receipt details
+    story.append(Spacer(1, 0.15 * cm))
+    detail_rows = [
+        [Paragraph("Receipt No.", _style_hdr()), Paragraph(receipt.receipt_no, cell),
+         Paragraph("Date", _style_hdr()), Paragraph(receipt.transaction_date.strftime("%m/%d/%Y"), cell),
+         Paragraph("Customer", _style_hdr()), Paragraph(f"{customer.code} {customer.name}", cell)],
+        [Paragraph("Amount", _style_hdr()), Paragraph(_money(receipt.amount), cell_right),
+         Paragraph("Payment Method", _style_hdr()), Paragraph(receipt.get_payment_method_display(), cell)],
+        [Paragraph("Cash Account", _style_hdr()), Paragraph(_t(receipt.cash_account.code), cell),
+         Paragraph("Segment", _style_hdr()), Paragraph(_t(receipt.segment.code), cell)],
+    ]
+    if receipt.check_no:
+        detail_rows.append([Paragraph("Check No.", _style_hdr()), Paragraph(receipt.check_no, cell),
+                           Paragraph("Transaction No.", _style_hdr()), Paragraph(_t(receipt.transaction_no or ""), cell),
+                           Paragraph("Ref. PO No.", _style_hdr()), Paragraph(_t(receipt.ref_po_no or ""), cell)])
+
+    detail_tbl = Table(detail_rows, colWidths=[c * colw for c in (3, 3, 3, 3, 3, 3)], repeatRows=1)
+    detail_tbl.setStyle(TableStyle(_base_style() + [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0"))
+    ]))
+    story.append(detail_tbl)
+
+    # Signature block
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(_signature_block(
+        colw,
+        [
+            ("Collected By:", customer.name, "Print Name/Sign/Date"),
+        ],
+        [2, 2, 2],
+    ))
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=pagesize, leftMargin=margin, rightMargin=margin,
         topMargin=margin, bottomMargin=margin,
-        title=f"Check Voucher {cv.cv_number}", author="Accounting System",
+        title=f"Acknowledgment Receipt {receipt.receipt_no}", author="Accounting System",
     )
     doc.build(story)
     return buf.getvalue()

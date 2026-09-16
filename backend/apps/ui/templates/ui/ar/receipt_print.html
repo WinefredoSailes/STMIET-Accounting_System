@@ -1,0 +1,87 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Print — AR Receipt {{ receipt.receipt_no }}{% endblock %}
+{% block content %}
+<div class="p-6">
+  {% include "ui/partials/page_header.html" with title=f"Print Receipt — {receipt.receipt_no}" subtitle="ACCTG-FOR-005 · Acknowledgment Receipt" actions="" %}
+
+  <div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div>
+      <p class="text-sm text-slate-500">Customer: {{ receipt.customer.code }} {{ receipt.customer.name }}</p>
+      <p class="text-sm text-slate-500">TIN: {{ receipt.customer.tin|default:"—" }}</p>
+      <p class="text-sm text-slate-500">Segment: {{ receipt.segment.code }}</p>
+      <p class="text-sm text-slate-500">Cash Account: {{ receipt.cash_account.code }}</p>
+    </div>
+    <div class="flex items-end">
+      <p class="text-sm text-slate-700">Date: {{ receipt.transaction_date|date:"M d, Y" }}</p>
+      <p class="text-sm text-slate-700">Amount: ₱{{ receipt.amount|money }}</p>
+      <p class="text-sm text-slate-700">Payment Method: {{ receipt.get_payment_method_display }}</p>
+    </div>
+  </div>
+
+  <div class="mt-6">
+    <p class="text-sm text-slate-700">Check No.: {{ receipt.check_no|default:"—" }}</p>
+    <p class="text-sm text-slate-700">Transaction No.: {{ receipt.transaction_no|default:"—" }}</p>
+    <p class="text-sm text-slate-700">Ref. PO No.: {{ receipt.ref_po_no|default:"—" }}</p>
+  </div>
+
+  <div class="mt-6">
+    <h2 class="text-xs uppercase tracking-wider text-slate-500">Receipt Details</h2>
+    <table class="w-full text-sm mt-4 border border-slate-200 rounded-lg overflow-hidden">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Description</th>
+          <th class="px-4 py-3 text-right">Value</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-medium">Receipt No.</td>
+          <td class="px-4 py-2 text-right font-mono">₱{{ receipt.receipt_no }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Date of AR</td>
+          <td class="px-4 py-2 text-right">₱{{ receipt.transaction_date|date:"M d, Y" }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Customer</td>
+          <td class="px-4 py-2 text-right">{{ receipt.customer.code }} {{ receipt.customer.name }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Segment</td>
+          <td class="px-4 py-2 text-right">{{ receipt.segment.code }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Cash Account (Dr)</td>
+          <td class="px-4 py-2 text-right">{{ receipt.cash_account.code }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Amount</td>
+          <td class="px-4 py-2 text-right">₱{{ receipt.amount|money }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Payment Method</td>
+          <td class="px-4 py-2 text-right">{{ receipt.get_payment_method_display }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Check No.</td>
+          <td class="px-4 py-2 text-right">{{ receipt.check_no|default:"—" }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Transaction No.</td>
+          <td class="px-4 py-2 text-right">{{ receipt.transaction_no|default:"—" }}</td>
+        </tr>
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2">Ref. PO No.</td>
+          <td class="px-4 py-2 text-right">{{ receipt.ref_po_no|default:"—" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-6 flex justify-end gap-3">
+    <button onclick="window.print()" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Print HTML →</button>
+    <a href="{% url 'ui:ar_receipt_print' receipt.id %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Download PDF →</a>
+  </div>
+</div>
+{% endblock %}

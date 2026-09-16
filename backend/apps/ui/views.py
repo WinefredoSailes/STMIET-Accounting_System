@@ -1187,6 +1187,36 @@ def customer_list(request):
 
 
 @login_required
+def customer_detail(request, pk: int):
+    """Customer ledger / history screen: customer info + receipts + invoices + aging."""
+    from datetime import date as _d
+    from decimal import Decimal as _D
+
+    from apps.ar.models import AcknowledgmentReceipt, ARInvoice
+    from apps.foundation.models import Segment
+
+    customer = get_object_or_404(Customer, pk=pk)
+    as_of = request.GET.get("as_of", _d.today())
+
+    aging = customer_aging_context(customer, as_of=as_of)
+
+    receipts = AcknowledgmentReceipt.objects.filter(
+        customer=customer
+    ).select_related("cash_account", "segment").order_by("-transaction_date", "-receipt_no")
+
+    return render(
+        request,
+        "ui/ar/customer_detail.html",
+        {
+            "customer": customer,
+            "as_of": as_of,
+            "aging": aging,
+            "receipts": receipts,
+        },
+    )
+
+
+@login_required
 def receipt_list(request):
     return render(request, "ui/ar/receipt_list.html", {"page_obj": _page(request, list_receipts(limit=None))})
 
@@ -1209,6 +1239,8 @@ def ar_receipts_export(request, fmt):
             r.get_payment_method_display(),
             r.amount,
             r.check_no or "",
+            r.transaction_no or "",
+            r.ref_po_no or "",
             r.applied_to.invoice_no if r.applied_to else "",
         ]
         for r in qs
@@ -1219,14 +1251,69 @@ def ar_receipts_export(request, fmt):
         columns=[
             Column("Receipt No"), Column("Date"), Column("Customer", width_cm=6),
             Column("Segment"), Column("Method"), Column("Amount", money=True),
-            Column("Check No"), Column("Applied To Invoice"),
+            Column("Check No"), Column("Transaction No"), Column("Ref. PO No."),
+            Column("Applied To Invoice"),
         ],
         rows=rows,
-        totals_row=["", "", "", "", "TOTAL", total, "", ""],
+        totals_row=["", "", "", "", "TOTAL", total, "", "", "",""],
         sheet_title="AR RECEIPTS",
         page="portrait",
     )
     return table_export(spec, fmt, f"AR_receipts.{fmt}")
+
+
+@login_required
+def ar_receipt_print(request, pk: int):
+    """Physical AR form (ACCTG-FOR-005, A5) — prints one receipt."""
+    from apps.ar.models import AcknowledgmentReceipt
+    from decimal import Decimal as _D
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    pdf_bytes = build_ar_receipt_pdf(receipt, paper="a5")
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="AR_{receipt.receipt_no}.pdf"'
+    return response
+
+
+@login_required
+def ar_receipt_export(request, pk: int, fmt: str):
+    """AR receipt single-record export (pdf/xlsx/csv)."""
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.core.exports import Column, TableSpec, table_export
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    qs = AcknowledgmentReceipt.objects.filter(pk=receipt.pk).select_related(
+        "customer", "segment", "applied_to"
+    )
+    rows = [
+        [
+            receipt.receipt_no,
+            receipt.transaction_date.isoformat(),
+            receipt.customer.name,
+            receipt.segment.code,
+            receipt.get_payment_method_display(),
+            receipt.amount,
+            receipt.check_no or "",
+            receipt.transaction_no or "",
+            receipt.ref_po_no or "",
+            receipt.applied_to.invoice_no if receipt.applied_to else "",
+        ]
+    ]
+    total = receipt.amount
+    spec = TableSpec(
+        title=f"Acknowledgment Receipt — {receipt.receipt_no}",
+        columns=[
+            Column("Receipt No"), Column("Date"), Column("Customer", width_cm=6),
+            Column("Segment"), Column("Method"), Column("Amount", money=True),
+            Column("Check No"), Column("Transaction No"), Column("Ref. PO No."),
+            Column("Applied To Invoice"),
+        ],
+        rows=rows,
+        totals_row=["", "", "", "", "TOTAL", total, "", "", "",""],
+        sheet_title="AR RECEIPT",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"AR_receipt_{receipt.receipt_no}.{fmt}")
 
 
 @login_required
@@ -1400,6 +1487,7 @@ def receipt_create(request):
                 cash_account=cash_account,
                 payment_method=request.POST["payment_method"],
                 check_no=request.POST.get("check_no", ""),
+                transaction_no=request.POST.get("transaction_no", ""),
                 user=request.user,
             )
             messages.success(request, f"Receipt {receipt.receipt_no} posted.")
@@ -2700,7 +2788,7 @@ def cv_print(request, pk):
     dr_lines = [line for line in lines if line.side == "dr"]
     total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     position = cv.payee.position or cv.payee.get_supplier_type_display()
-    date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
+    date_of_request = rfp.rfp_date if rfp and rfp.rfp_date else None
     from apps.ap.services import rfp_payable
 
     payable = money(rfp_payable(rfp)) if rfp else money(total)
@@ -3727,6 +3815,43 @@ def supplier_options(request):
                 "tin": a.tin,
             }
             for a in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
+def customer_options(request):
+    """Type-ahead source for searchable customer pickers (server-side).
+
+    Returns the first ~30 active customers matching the query by code or name,
+    plus the currently-selected customer (when editing) so the picker keeps a
+    stable selection. ``?selected=`` accepts a customer code or id.
+    """
+    from apps.ar.models import Customer
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    qs = Customer.objects.order_by("code")
+    if q:
+        qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    rows = list(qs[:30])
+    if selected and selected not in {c.code for c in rows}:
+        lookup = Q(code=selected)
+        if selected.isdigit():
+            lookup |= Q(pk=selected)
+        keep = Customer.objects.filter(lookup).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {
+                "id": c.id,
+                "code": c.code,
+                "text": f"{c.code} — {c.name}",
+                "tin": c.tin,
+            }
+            for c in rows
         ],
         safe=False,
     )
@@ -5165,7 +5290,7 @@ def collections_export(request):
     ctx = daily_collections(cycle)
     nb = len(ctx["bank_cols"])
     header = [
-        "DATE", "AR/SI #", "OUTLET'S NAME", "PARTICULARS", "PO NUMBER",
+        "DATE", "AR/SI #", "TR NO", "OUTLET'S NAME", "PARTICULARS", "PO NUMBER",
         "CASH ON HAND (DR)", "CASH ON HAND (CR)",
         *ctx["bank_cols"],
         "AR (DR)", "AR (CR)", "AP (DR)", "AP (CR)",
@@ -5175,6 +5300,7 @@ def collections_export(request):
         [
             r["date"].isoformat(),
             r["ar_no"],
+            r["transaction_no"],
             r["outlet"],
             r["particulars"],
             r["po_number"],
@@ -5192,14 +5318,14 @@ def collections_export(request):
     ]
     totals = ctx["totals"]
     totals_row = [
-        "", "", "", "", "",
+        "", "", "", "", "", "",
         totals["cash_debit"], totals["cash_credit"],
         *ctx["bank_totals"],
         totals["ar_debit"], totals["ar_credit"],
         totals["ap_debit"], totals["ap_credit"],
         totals["total"], "",
     ]
-    money_cols = list(range(5, 7 + nb)) + list(range(7 + nb, 12 + nb))
+    money_cols = list(range(6, 8 + nb)) + list(range(8 + nb, 13 + nb))
     return _table_response(
         f"DAILY COLLECTIONS JE SUMMARY — CYCLE {_cycle_label(cycle)}",
         header, rows, fmt, "DAILY-COLLECTIONS",
