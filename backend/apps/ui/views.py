@@ -4307,23 +4307,74 @@ def transfers(request):
 @login_required
 @require_POST
 def transfer_create(request):
+    """Post one or more inter-account transfers from the batch grid (ADR-030).
+
+    Every non-blank row becomes its own transfer + JE (Dr Cash-To | Cr
+    Cash-From). The batch is atomic: one invalid line rejects every leg.
+    """
+    from django.db import transaction
+
     from apps.cash.models import BankAccount
     from apps.cash.services import TransferService
 
-    try:
-        from_account = BankAccount.objects.get(pk=request.POST["from_account"])
-        to_account = BankAccount.objects.get(pk=request.POST["to_account"])
-        transfer = TransferService.transfer(
-            from_account=from_account,
-            to_account=to_account,
-            amount=request.POST["amount"],
-            purpose=request.POST["purpose"],
-            transfer_date=date.fromisoformat(request.POST["transfer_date"]) if request.POST.get("transfer_date") else None,
-            user=request.user,
+    from_ids = request.POST.getlist("line_from")
+    to_ids = request.POST.getlist("line_to")
+    amounts = request.POST.getlist("line_amount")
+    purposes = request.POST.getlist("line_purpose")
+
+    # Backward-compatible single-leg POST (old inline form).
+    if not from_ids and {"from_account", "to_account", "amount"} <= set(request.POST):
+        from_ids, to_ids, amounts, purposes = (
+            [request.POST["from_account"]],
+            [request.POST["to_account"]],
+            [request.POST["amount"]],
+            [request.POST.get("purpose", "")],
         )
-        messages.success(request, f"Transfer {transfer.transfer_date} posted ({from_account.code} → {to_account.code}).")
-    except (BankAccount.DoesNotExist, ValueError, AccountingError) as exc:
+
+    transfer_date = date.fromisoformat(request.POST["transfer_date"]) if request.POST.get("transfer_date") else None
+    bank_ids = {x for pair in (from_ids, to_ids) for x in pair if x}
+    banks = {b.id: b for b in BankAccount.objects.filter(id__in=bank_ids)}
+
+    def bank(pk):
+        if not pk:
+            raise AccountingError("Every transfer line needs both a From and a To account.")
+        try:
+            b = banks.get(int(pk))
+        except (TypeError, ValueError):
+            b = None
+        if not b:
+            raise AccountingError("Unknown bank account on a transfer line.")
+        return b
+
+    posted = []
+    try:
+        with transaction.atomic():
+            for f_id, t_id, amt, purp in zip(from_ids, to_ids, amounts, purposes):
+                if not (f_id or t_id or amt.strip()):
+                    continue  # blank template row
+                f = bank(f_id)
+                t = bank(t_id)
+                purpose = (purp or "").strip() or f"Fund transfer to {t.code} ({t.bank_name})"
+                posted.append(
+                    TransferService.transfer(
+                        from_account=f,
+                        to_account=t,
+                        amount=amt,
+                        purpose=purpose,
+                        transfer_date=transfer_date,
+                        user=request.user,
+                    )
+                )
+            if not posted:
+                raise AccountingError("Add at least one transfer line before posting.")
+    except AccountingError as exc:
         messages.error(request, str(exc))
+        return redirect("ui:transfers")
+    messages.success(
+        request,
+        f"Posted {len(posted)} transfer(s) on "
+        f"{transfer_date.strftime('%Y-%m-%d') if transfer_date else 'today'}.",
+    )
     return redirect("ui:transfers")
 
 

@@ -202,8 +202,9 @@ def test_ftv_pdf_export_downloads_real_pdf(client, banks, role_users):
     assert b"Inter-Bank Transfer" in text
 
 
-def test_transfers_form_page_unchanged(client, company, segment, accounts, role_users):
-    """The HTML form keeps its ERP design — no voucher markup leaks in."""
+def test_transfers_form_page_is_batch_grid(client, company, segment, accounts, role_users):
+    """The live entry form is a batch line grid (From/To/Amount/Purpose) — no
+    voucher markup leaks in, and the new-transfer grid renders."""
     bank_from = BankAccount.objects.create(
         code="1VB-CHK", name="First Valley Bank",
         account_type="checking", bank_name="First Valley Bank", bank_code="1VB",
@@ -223,11 +224,14 @@ def test_transfers_form_page_unchanged(client, company, segment, accounts, role_
     resp = client.get("/cash/transfers/")
     assert resp.status_code == 200
     body = resp.content.decode()
-    # The live entry form is untouched.
-    assert 'name="from_account"' in body
-    assert 'name="to_account"' in body
-    assert 'name="amount"' in body
-    assert 'name="purpose"' in body
+    # The batch grid posts named line fields, one full transfer leg per row.
+    assert 'name="line_from"' in body
+    assert 'name="line_to"' in body
+    assert 'name="line_amount"' in body
+    assert 'name="line_purpose"' in body
+    assert 'data-line-grid="transfer"' in body
+    assert 'data-add-row' in body
+    assert 'data-remove-row' in body
     assert "FUND TRANSFER VOUCHER (FTV)" not in body
     # Print/PDF links (the voucher layer) are available per row.
     assert f'href="/cash/transfers/{transfer.id}/print/"' in body

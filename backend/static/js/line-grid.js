@@ -1,15 +1,17 @@
 /*
  * line-grid.js — generic line-item grids.
- * Supports the three line grids in the codebase:
- *   je  — debit/credit pair columns (.amount-debit / .amount-credit)
- *   rfp — debit/credit pair columns (.amount-dr / .amount-cr)
- *   pcv — expense rows (input[name="exp_amount"]) with total only
+ * Supports the four line grids in the codebase:
+ *   je       — debit/credit pair columns (.amount-debit / .amount-credit)
+ *   rfp      — debit/credit pair columns (.amount-dr / .amount-cr)
+ *   pcv      — expense rows (input[name="exp_amount"]) with total only
+ *   transfer — transfer legs (input[name="line_amount"]) with total only
  *
  * The grid tbody declares behaviour via data attributes:
  *   data-line-grid="<variant>"
  *   variant je: data-total-debit / data-total-credit / data-hint
  *   variant rfp: data-total-dr / data-total-cr / data-hint
  *   variant pcv: data-total
+ *   variant transfer: data-total
  * All selectors are CSS selectors resolved in document scope, the add button is
  * any [data-add-row] inside the grid's <table>, row removal is any
  * [data-remove-row] inside the tbody (one per row — every row, template or
@@ -125,6 +127,15 @@
     if (sync) sync.textContent = fmtMoney(t);
   }
 
+  function recalcTransfer(grid) {
+    var t = 0;
+    grid.querySelectorAll('tr').forEach(function (tr) {
+      t += num(tr.querySelector('[name="line_amount"]'));
+    });
+    var total = docSel(grid.dataset.total);
+    if (total) total.textContent = fmtMoney(t);
+  }
+
   function renumberLines(grid) {
     grid.querySelectorAll('tr').forEach(function (tr, i) {
       var no = tr.querySelector('.line-no');
@@ -136,8 +147,8 @@
     if (grid.dataset.lineGridBound) return;
     grid.dataset.lineGridBound = '1';
     var variant = grid.dataset.lineGrid;
-    var recalc = { je: recalcJe, rfp: recalcRfp, pcv: recalcPcv }[variant];
-    var resetSelects = variant === 'rfp' || variant === 'je';
+    var recalc = { je: recalcJe, rfp: recalcRfp, pcv: recalcPcv, transfer: recalcTransfer }[variant];
+    var resetSelects = variant === 'rfp' || variant === 'je' || variant === 'transfer';
     if (!recalc) return;
 
     var addBtn = grid.closest('table').querySelector('[data-add-row]');
