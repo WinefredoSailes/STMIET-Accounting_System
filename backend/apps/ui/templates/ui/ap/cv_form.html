@@ -24,6 +24,9 @@
           <div class="md:col-span-2">
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_rfp">RFP to pay (approved)</label>
             <select name="rfp" id="id_rfp" required
+                    data-searchable data-search-value="id"
+                    data-search-placeholder="Type RFP no. or payee name…"
+                    data-search-url="{% url 'ui:rfp_options' %}{% if selected_rfp %}?selected={{ selected_rfp.id }}{% endif %}"
                     onchange="if(this.value) location.href='?rfp='+this.value"
                     class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
               <option value="">— select approved RFP —</option>

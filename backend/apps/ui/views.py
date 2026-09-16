@@ -3697,6 +3697,48 @@ def supplier_options(request):
 
 
 @login_required
+def approved_rfp_options(request):
+    """Type-ahead source for the CV form's "RFP to pay" (payee) picker.
+
+    Mirrors the GL account picker contract: returns the first ~30 payable
+    RFPs (posted + not yet paid — the same set the form dropdown lists)
+    matching the query by RFP number, payee name or payee code, plus the
+    currently-selected RFP so the picker keeps a stable selection while the
+    user types. ``?q=`` filters; ``?selected=`` accepts an RFP id or number.
+    """
+    from django.db.models import Q
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    qs = approved_rfps()
+    if q:
+        qs = qs.filter(
+            Q(ap_number__icontains=q)
+            | Q(payee__name__icontains=q)
+            | Q(payee__code__icontains=q)
+        )
+    rows = list(qs[:30])
+    if selected and not any(str(r.id) == selected or r.ap_number == selected for r in rows):
+        lookup = Q(ap_number=selected)
+        if selected.isdigit():
+            lookup |= Q(pk=selected)
+        keep = approved_rfps().filter(lookup).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {
+                "id": r.id,
+                "code": r.ap_number,
+                "text": f"{r.ap_number} — {r.payee.name} — ₱{r.amount:,.2f}",
+            }
+            for r in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
 def party_options(request):
     """Type-ahead source for the Journal Voucher Supplier/Customer picker.
 

@@ -3224,6 +3224,77 @@ class TestSearchablePickers:
         assert 'name="bank_account"' in body
         assert "data-searchable" in body
 
+    def test_cv_form_rfp_combobox_searchable(self, client, company, accounts):
+        """The CV 'RFP to pay' dropdown (the payee picker) is a server-driven
+        type-ahead like the RFP GL account search."""
+        body = client.get("/ap/cv/new/").content.decode()
+        assert 'name="rfp"' in body
+        assert "data-searchable" in body
+        assert 'data-search-value="id"' in body
+        assert "/ap/rfp-options/" in body
+        assert "Type RFP no" in body
+
+    def test_rfp_options_search_by_payee_number_and_code(
+        self, client, company, segment, accounts, user
+    ):
+        from apps.ap.models import Supplier
+        from apps.ap.services import RFPService
+
+        supplier = Supplier.objects.create(
+            code="S010", name="Searchable Fuel Ltd", supplier_type="equipment",
+            default_segment=segment,
+        )
+        rfp = RFPService.create_rfp(
+            ap_number="A9101",
+            rfp_date=date(2026, 2, 10),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "posted"
+        rfp.save(update_fields=["status", "updated_at"])
+
+        # A draft RFP must never surface in the CV payee picker.
+        RFPService.create_rfp(
+            ap_number="A9009",
+            rfp_date=date(2026, 2, 11),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "1000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "1000.00"},
+            ],
+            user=user,
+        )
+
+        def ids(payload):
+            return [r["id"] for r in payload]
+
+        # by payee name fragment
+        resp = client.get("/ap/rfp-options/", {"q": "searchable"})
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert ids(rows) == [rfp.id]
+        assert "A9101" in rows[0]["text"]
+        assert "Searchable Fuel Ltd" in rows[0]["text"]
+
+        # by RFP number fragment
+        resp = client.get("/ap/rfp-options/", {"q": "910"})
+        assert ids(resp.json()) == [rfp.id]
+
+        # draft is hidden
+        resp = client.get("/ap/rfp-options/", {"q": "9009"})
+        assert resp.json() == []
+
+        # ?selected= re-attaches the current RFP to the result set
+        resp = client.get("/ap/rfp-options/", {"selected": str(rfp.id)})
+        rows = resp.json()
+        assert rows[0]["id"] == rfp.id
+
     def test_rfp_form_account_picker_is_server_driven(self, client, company, accounts):
         body = client.get("/ap/rfps/new/").content.decode()
         # The line-grid account picker fetches from the server as you type.
