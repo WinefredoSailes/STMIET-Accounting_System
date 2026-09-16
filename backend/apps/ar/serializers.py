@@ -48,8 +48,8 @@ class AcknowledgmentReceiptSerializer(serializers.ModelSerializer):
         model = AcknowledgmentReceipt
         fields = (
             "id", "receipt_no", "customer", "transaction_date", "amount",
-            "payment_method", "cash_account", "check_no", "segment",
-            "applied_to", "journal_entry",
+            "payment_method", "cash_account", "check_no", "transaction_no", "ref_po_no",
+            "segment", "applied_to", "journal_entry",
         )
         read_only_fields = ("journal_entry",)
 

@@ -99,6 +99,13 @@ class AcknowledgmentReceipt(AuditableModel):
         "foundation.Account", on_delete=models.PROTECT, related_name="ar_receipts", limit_choices_to={"code__startswith": "100"}
     )
     check_no = models.CharField(max_length=32, blank=True)
+    # Optional manual payment/transaction reference (legacy monitoring-sheet
+    # "TR No"). A free-text cross-reference only — NEVER routed through the
+    # DocumentSequence registry, so it cannot collide with generated AR#/CV#/
+    # RFP#/JE# numbers. Non-unique: it may repeat across clients/companies.
+    transaction_no = models.CharField("Transaction No.", max_length=64, blank=True)
+    # Reference PO number (manually entered; not linked to the PO system).
+    ref_po_no = models.CharField("Ref. PO No.", max_length=64, blank=True)
     collected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL)
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="ar_receipts")
     # The journal entry produced by this collection (filled on post).
