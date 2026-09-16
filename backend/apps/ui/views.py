@@ -1257,12 +1257,15 @@ def _rfp_approval_info(rfp, role):
 
 @login_required
 def rfp_list(request):
+    from apps.ap.services import ap_payable_map, rfp_payable
     from apps.core.approvals import approval_role_of
 
     role = approval_role_of(request.user)
+    ap_map = ap_payable_map()
     page = _page(request, list_rfps(limit=None))
     for rfp in page.object_list:
         rfp.approval_info = _rfp_approval_info(rfp, role)
+        rfp.payable_amount = rfp_payable(rfp, ap_segment_map=ap_map)
     return render(
         request,
         "ui/ap/rfp_list.html",
@@ -1566,6 +1569,9 @@ def rfp_detail(request, pk):
         RFPDocument.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
     )
     cr_total = sum((l.amount for l in rfp.lines.all() if l.side == "cr"), Decimal("0.00"))
+    from apps.ap.services import rfp_payable
+
+    payable = rfp_payable(rfp)
 
     awaiting = None
     from apps.ap.services import pending_final_check
@@ -1586,6 +1592,7 @@ def rfp_detail(request, pk):
             "rfp": rfp,
             "timeline": rfp_timeline(rfp),
             "cr_total": cr_total,
+            "payable": money(payable),
             "awaiting": awaiting,
             "audit_trail": _audit_trail("rfp", rfp.id),
         },
@@ -1615,6 +1622,9 @@ def rfp_print(request, pk):
     dr_lines = [line for line in lines if line.side == "dr"]
     cr_lines = [line for line in lines if line.side == "cr"]
     total = sum((line.amount for line in dr_lines), Decimal("0.00")) or rfp.amount
+    from apps.ap.services import rfp_payable
+
+    payable = money(rfp_payable(rfp))
     return render(
         request,
         "ui/ap/rfp_print.html",
@@ -1624,6 +1634,7 @@ def rfp_print(request, pk):
             "dr_lines": dr_lines,
             "cr_lines": cr_lines,
             "total": total,
+            "payable": payable,
             "position": rfp.payee.position or "",
             "contact_no": rfp.payee.contact_no or "",
             "address": rfp.payee.address or f"{rfp.segment.name} ({rfp.segment.code})",
@@ -1722,7 +1733,10 @@ def rfp_approve(request, pk):
         msg = str(exc)
         messages.error(request, msg)
     if is_hx:
+        from apps.ap.services import rfp_payable
+
         rfp.approval_info = _rfp_approval_info(rfp, approval_role_of(request.user))
+        rfp.payable_amount = rfp_payable(rfp)
         response = render(request, "ui/ap/_rfp_row.html", {"rfp": rfp})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
@@ -2566,7 +2580,7 @@ def cv_list(request):
 @login_required
 def cv_create(request):
     from apps.ap.models import RFPDocument
-    from apps.ap.services import CVPaymentService
+    from apps.ap.services import CVPaymentService, rfp_payable
 
     if request.method == "POST":
         try:
@@ -2594,6 +2608,7 @@ def cv_create(request):
         except (AccountingError, ValueError, KeyError) as exc:
             messages.error(request, str(exc))
     selected_rfp = None
+    payable = None
     rfp_id = request.GET.get("rfp")
     if rfp_id:
         from django.db.models import Prefetch
@@ -2607,6 +2622,7 @@ def cv_create(request):
                     queryset=RFPLine.objects.select_related("account", "segment"),
                 )
             ).get()
+            payable = money(rfp_payable(selected_rfp))
         except (ValueError, RFPDocument.DoesNotExist):
             messages.error(request, "Selected RFP not found.")
     return render(
@@ -2616,6 +2632,7 @@ def cv_create(request):
             "rfps": approved_rfps(),
             "today": date.today(),
             "selected_rfp": selected_rfp,
+            "payable": payable,
         },
     )
 
@@ -2636,6 +2653,9 @@ def cv_detail(request, pk):
     if cv.rfp_id:
         list(cv.rfp.lines.select_related("account", "segment"))
     rfp = cv.rfp
+    from apps.ap.services import rfp_payable
+
+    payable = money(rfp_payable(rfp)) if rfp else None
     # Same 5 signatory cells as the print layout (ACCTG-FOR-010): prepared by
     # is whoever issued the CV, requested by is the RFP creator, checked by is
     # the RFP checker, approved by is the COO role holder, and the payee signs
@@ -2649,6 +2669,7 @@ def cv_detail(request, pk):
     }
     return render(request, "ui/ap/cv_detail.html", {
         "cv": cv,
+        "payable": payable,
         "signatories": signatories,
         "audit_trail": _audit_trail("cv", cv.id),
     })
@@ -2675,6 +2696,9 @@ def cv_print(request, pk):
     total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     position = cv.payee.position or cv.payee.get_supplier_type_display()
     date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
+    from apps.ap.services import rfp_payable
+
+    payable = money(rfp_payable(rfp)) if rfp else money(total)
     signatories = {
         "prepared": _name(cv.created_by),
         "requested": _name(rfp.created_by) if rfp else "",
@@ -2691,6 +2715,7 @@ def cv_print(request, pk):
             "lines": lines,
             "dr_lines": dr_lines,
             "total": total,
+            "payable": payable,
             "position": position,
             "signatories": signatories,
             "date_of_request": date_of_request,
@@ -2827,7 +2852,7 @@ def cv_revise(request, pk):
     """The issuer corrects a rejected CV and resubmits it. GET shows a
     prefilled correction form; POST runs CVPaymentService.revise (issuer-only)."""
     from apps.ap.models import CheckVoucher
-    from apps.ap.services import CVPaymentService
+    from apps.ap.services import CVPaymentService, rfp_payable
 
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "rfp", "bank_account"), pk=pk
@@ -2857,6 +2882,7 @@ def cv_revise(request, pk):
         "ui/ap/cv_revise_form.html",
         {
             "cv": cv,
+            "payable": money(rfp_payable(cv.rfp)) if cv.rfp_id else None,
             "rfps": approved_rfps(),
             "today": date.today(),
         },

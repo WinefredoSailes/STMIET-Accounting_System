@@ -61,8 +61,17 @@
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_gross_amount">Gross amount (₱)</label>
             <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="gross_amount" id="id_gross_amount" required
-                   value="{{ selected_rfp.amount|default:"" }}"
+                   value="{% if payable %}{{ payable }}{% else %}{{ selected_rfp.amount|default:"" }}{% endif %}"
                    class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+            {% if payable %}
+            <div class="mt-1 text-xs text-slate-500">
+              Total Payable (A/P):
+              <span class="font-semibold tabular-nums">₱ {{ payable|money }}</span>
+              {% if payable != selected_rfp.amount %}
+              · gross ₱{{ selected_rfp.amount|money }}
+              {% endif %}
+            </div>
+            {% endif %}
           </div>
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1" for="id_withheld_tax">Withholding tax (₱)</label>
@@ -72,7 +81,7 @@
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">Net amount</label>
             <div id="id_net_amount" class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-right tabular-nums">
-              {{ selected_rfp.amount|money|default:"0.00" }}
+              {% if payable %}{{ payable|money }}{% else %}{{ selected_rfp.amount|money|default:"0.00" }}{% endif %}
             </div>
           </div>
         </div>

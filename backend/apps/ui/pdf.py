@@ -740,13 +740,15 @@ def _rfp_distribution_table(colw, dr_lines, rfp):
     return grid
 
 
-def _rfp_coa_table(colw, lines, total):
-    """CHART OF ACCOUNTS — Dr./Cr. sides, VAT and Net Invoice rows."""
+def _rfp_coa_table(colw, lines, total, payable=None):
+    """CHART OF ACCOUNTS — Dr./Cr. sides, VAT, Net Invoice and (optionally)
+    the Total Payable (A/P) rows."""
     cell = _style_cell()
     cell_right = _style_cell_right()
     bold = _style_bold()
     bold_right = _style_bold_right()
-    data = [[None] * GRID for _ in range(3 + len(lines))]
+    extra = 1 if payable is not None else 0
+    data = [[None] * GRID for _ in range(3 + len(lines) + extra)]
     spans = []
 
     data[0][0] = Paragraph("CHART OF ACCOUNTS:", bold)
@@ -763,6 +765,10 @@ def _rfp_coa_table(colw, lines, total):
     data[last][12] = Paragraph(_money(0), cell_right)
     data[last + 1][9] = Paragraph("Net Invoice:", bold)
     data[last + 1][12] = Paragraph(_money(total), bold_right)
+    if payable is not None:
+        payable_r = last + 2
+        data[payable_r][9] = Paragraph("Total Payable (A/P):", bold)
+        data[payable_r][12] = Paragraph(_money(payable), bold_right)
 
     spans = [
         ("SPAN", (0, 0), (2, 0)), ("SPAN", (3, 0), (8, 0)),
@@ -773,7 +779,9 @@ def _rfp_coa_table(colw, lines, total):
             ("SPAN", (0, r), (2, r)), ("SPAN", (3, r), (8, r)),
             ("SPAN", (9, r), (11, r)), ("SPAN", (12, r), (13, r)),
         ]
-    for r in (last, last + 1):
+    for r in (last, last + 1, last + 2 if payable is not None else -1):
+        if r < 0:
+            continue
         spans += [
             ("SPAN", (0, r), (8, r)), ("SPAN", (9, r), (11, r)),
             ("SPAN", (12, r), (13, r)),
@@ -828,12 +836,14 @@ def build_rfp_pdf(rfp, *, paper="a5") -> bytes:
     `paper` is "a5" (default, half-bond) or "a4" — matching the print toolbar.
     """
     from apps.ap.models import RFPDocument
+    from apps.ap.services import rfp_payable
     from apps.foundation.models import Segment
 
     rfp = rfp if isinstance(rfp, RFPDocument) else RFPDocument.objects.get(pk=int(rfp))
     lines = list(rfp.lines.select_related("account", "segment").order_by("line_no"))
     dr_lines = [line for line in lines if line.side == "dr"]
     total = sum((line.amount for line in dr_lines), Decimal("0.00")) or rfp.amount
+    payable = rfp_payable(rfp)
 
     pagesize = A4 if paper == "a4" else A5
     margin = 0.9 * cm
@@ -858,7 +868,7 @@ def build_rfp_pdf(rfp, *, paper="a5") -> bytes:
         _rfp_distribution_table(colw, dr_lines, rfp),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Chart of Accounts"),
-        _rfp_coa_table(colw, lines, total),
+        _rfp_coa_table(colw, lines, total, payable=payable),
         Spacer(1, 0.25 * cm),
         _signature_block(
             colw,
@@ -893,12 +903,14 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     `paper` is "a5" (default, half-bond) or "a4".
     """
     from apps.ap.models import CheckVoucher
+    from apps.ap.services import rfp_payable
 
     cv = cv if isinstance(cv, CheckVoucher) else CheckVoucher.objects.get(pk=int(cv))
     rfp = getattr(cv, "rfp", None)
     lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
     dr_lines = [line for line in lines if line.side == "dr"]
     total = sum((line.amount for line in dr_lines), Decimal("0.00"))
+    payable = rfp_payable(rfp) if rfp else total
     position = cv.payee.position or cv.payee.get_supplier_type_display()
     date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
 
@@ -947,10 +959,19 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     total_data[0][0] = Paragraph(remarks, _style_cell())
     total_data[0][9] = Paragraph("Total Amount", _style_bold())
     total_data[0][12] = Paragraph(_money(total), _style_bold_right())
-    total_tbl = Table(total_data, colWidths=[colw] * GRID)
-    total_tbl.setStyle(TableStyle(_base_style() + [
+    styles = [
         ("SPAN", (0, 0), (8, 0)), ("SPAN", (9, 0), (11, 0)), ("SPAN", (12, 0), (13, 0))
-    ]))
+    ]
+    if payable != total:
+        total_data.append([None] * GRID)
+        total_data[1][9] = Paragraph("Total Payable (A/P)", _style_bold())
+        total_data[1][12] = Paragraph(_money(payable), _style_bold_right())
+        styles += [
+            ("SPAN", (0, 1), (8, 1)), ("SPAN", (9, 1), (11, 1)), ("SPAN", (12, 1), (13, 1)),
+            ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#fff2cc")),
+        ]
+    total_tbl = Table(total_data, colWidths=[colw] * GRID)
+    total_tbl.setStyle(TableStyle(_base_style() + styles))
 
     disclaimer = Table(
         [[Paragraph(

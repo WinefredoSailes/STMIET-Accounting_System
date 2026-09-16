@@ -191,25 +191,44 @@ def list_suppliers():
 def list_rfps(*, limit=100):
     from apps.ap.models import RFPDocument
 
-    return RFPDocument.objects.select_related("payee", "segment").order_by("-created_at")[:limit]
+    return RFPDocument.objects.select_related("payee", "segment").prefetch_related(
+        "lines"
+    ).order_by("-created_at")[:limit]
 
 
 def rfp_summary():
-    """Counts/amounts by stage for the RFP list stat cards."""
-    from django.db.models import Sum
+    """Counts and payable amounts by stage for the RFP list stat cards.
 
+    Amounts reflect the true A/P payable (AP-role credit lines, gross minus
+    WHT) rather than the RFP's gross debit total — matching what the aging and
+    CV prefill now use. RFPs without an AP line keep their gross amount.
+    """
     from apps.ap.models import RFPDocument
+    from apps.ap.services import ap_payable_map, rfp_payable
 
-    pending_qs = RFPDocument.objects.exclude(status__in=["posted", "rejected"])
-    approved_qs = RFPDocument.objects.filter(status__in=["fin_approved", "cnr_approved"])
+    ap_map = ap_payable_map()
+    total = pending = approved = posted = Decimal("0.00")
+    total_n = pending_n = approved_n = 0
+    for rfp in RFPDocument.objects.prefetch_related("lines"):
+        payable = rfp_payable(rfp, ap_segment_map=ap_map)
+        total += payable
+        total_n += 1
+        if rfp.status == "posted":
+            posted += payable
+        elif rfp.status in ("fin_approved", "cnr_approved"):
+            approved += payable
+            approved_n += 1
+        elif rfp.status != "rejected":
+            pending += payable
+            pending_n += 1
     return {
-        "total": RFPDocument.objects.count(),
-        "total_amount": RFPDocument.objects.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
-        "pending": pending_qs.count(),
-        "pending_amount": pending_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
-        "approved": approved_qs.count(),
-        "approved_amount": approved_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
-        "posted_amount": RFPDocument.objects.filter(status="posted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "total": total_n,
+        "total_amount": total,
+        "pending": pending_n,
+        "pending_amount": pending,
+        "approved": approved_n,
+        "approved_amount": approved,
+        "posted_amount": posted,
     }
 
 
@@ -805,14 +824,19 @@ def aging_context(as_of: date) -> dict:
 def ap_aging_context(as_of: date) -> dict:
     """AP aging buckets + per-RFP open-payable register for an as-of date.
 
-    Open AP = the RFP's gross amount minus the gross of check vouchers that
-    actually posted their clearing JEs (POSTING_RULES 7.4: Dr AP gross | Cr
-    Cash net + Cr WHT). Buckets 30/60/90/120+ by RFP date.
+    Open AP = the RFP's true payable (AP-role credit lines: gross minus WHT and
+    other non-AP credits) minus the gross of check vouchers that actually
+    posted their clearing JEs (POSTING_RULES 7.4). Buckets 30/60/90/120+ by
+    RFP date. It reconciles with the GL A/P account because both sides derive
+    from the same two inputs: payable booked at the RFP and CV gross at clear.
 
     Only RFPs dated on or before as_of are included in aging buckets.
     Future-dated RFPs are listed separately as "not_yet_due".
     """
     from apps.ap.models import CheckVoucher, RFPDocument
+    from apps.ap.services import ap_payable_map, rfp_payable
+
+    ap_map = ap_payable_map()
 
     cleared = {
         row["rfp_id"]: row["paid"] or Decimal("0.00")
@@ -836,10 +860,12 @@ def ap_aging_context(as_of: date) -> dict:
     for rfp in (
         RFPDocument.objects.filter(status="posted")
         .select_related("payee", "segment")
+        .prefetch_related("lines")
         .order_by("rfp_date")
     ):
+        payable = rfp_payable(rfp, ap_segment_map=ap_map)
         paid = cleared.get(rfp.id, Decimal("0.00"))
-        balance = rfp.amount - paid
+        balance = payable - paid
         if balance <= 0:
             continue
         if rfp.rfp_date > as_of:
@@ -850,7 +876,7 @@ def ap_aging_context(as_of: date) -> dict:
                     "date": rfp.rfp_date,
                     "segment": rfp.segment.code,
                     "status": rfp.status.replace("_", " ").title(),
-                    "amount": rfp.amount,
+                    "amount": payable,
                     "paid": paid,
                     "balance": balance,
                     "age_days": None,
@@ -873,7 +899,7 @@ def ap_aging_context(as_of: date) -> dict:
                 "date": rfp.rfp_date,
                 "segment": rfp.segment.code,
                 "status": rfp.status.replace("_", " ").title(),
-                "amount": rfp.amount,
+                "amount": payable,
                 "paid": paid,
                 "balance": balance,
                 "age_days": age_days,

@@ -4195,3 +4195,297 @@ class TestRFPPurchaseOrderScreen:
         assert resp.status_code == 400
         resp = client.get("/ap/po-pre/999999/")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# True A/P payables: RFP payable = AP-role credit lines (gross minus WHT).
+# ---------------------------------------------------------------------------
+
+
+def _make_rfp_with_lines(segment, accounts, user, *, ap_number, lines, rfp_date=None,
+                         status="posted"):
+    from apps.ap.models import Supplier
+    from apps.ap.services import RFPService
+
+    supplier = Supplier.objects.create(
+        code=f"S-{ap_number}", name=f"Payee {ap_number}",
+        supplier_type="other", default_segment=segment,
+    )
+    rfp = RFPService.create_rfp(
+        ap_number=ap_number,
+        rfp_date=rfp_date or date(2026, 1, 15),
+        payee=supplier,
+        segment=segment,
+        lines=[
+            {"side": side, "segment": segment, "account_code": code, "amount": amount}
+            for side, code, amount in lines
+        ],
+        user=user,
+    )
+    rfp.status = status
+    rfp.save(update_fields=["status", "updated_at"])
+    return rfp
+
+
+def _wht_split_rfp(segment, accounts, user, *, ap_number, gross="9489.00",
+                   wht="750.00", status="posted"):
+    from apps.core.money import money
+
+    payable = money(Decimal(gross) - Decimal(wht))
+    return _make_rfp_with_lines(
+        segment, accounts, user,
+        ap_number=ap_number,
+        status=status,
+        lines=[
+            ("dr", "61100", gross),
+            ("cr", "64110", wht),
+            ("cr", "20000", str(payable)),
+        ],
+    ), payable
+
+
+class TestRFPPayableHelper:
+    def test_wht_split_payable_is_ap_credit(self, segment, accounts, user,
+                                            segment_account_map):
+        from apps.ap.services import rfp_payable
+
+        rfp, payable = _wht_split_rfp(segment, accounts, user, ap_number="A2002")
+        assert rfp.amount == Decimal("9489.00")
+        assert rfp_payable(rfp) == Decimal("8739.00")
+        assert payable == Decimal("8739.00")
+
+    def test_multiple_ap_credit_lines_sum(self, segment, accounts, user,
+                                          segment_account_map):
+        from apps.ap.services import rfp_payable
+
+        rfp = _make_rfp_with_lines(
+            segment, accounts, user, ap_number="A2003",
+            lines=[
+                ("dr", "61100", "10000.00"),
+                ("cr", "20000", "4000.00"),
+                ("cr", "20000", "6000.00"),
+            ],
+        )
+        assert rfp_payable(rfp) == Decimal("10000.00")
+
+    def test_flat_rfp_falls_back_to_gross(self, segment, accounts, user,
+                                          segment_account_map):
+        from apps.ap.services import rfp_payable
+
+        rfp = _make_rfp_with_lines(
+            segment, accounts, user, ap_number="A2004",
+            lines=[
+                ("dr", "61100", "20000.00"),
+                ("cr", "20000", "20000.00"),
+            ],
+        )
+        assert rfp_payable(rfp) == Decimal("20000.00")
+
+    def test_no_ap_credit_falls_back_to_gross(self, segment, accounts, user,
+                                              segment_account_map):
+        from apps.ap.services import rfp_payable
+
+        rfp = _make_rfp_with_lines(
+            segment, accounts, user, ap_number="A2005",
+            lines=[
+                ("dr", "61100", "5000.00"),
+                ("cr", "64110", "5000.00"),  # fully withheld, no A/P line
+            ],
+        )
+        assert rfp_payable(rfp) == Decimal("5000.00")
+
+    def test_ap_payable_map_resolves_per_segment(self, segment, accounts, user,
+                                                 segment_account_map):
+        from apps.ap.services import ap_payable_map, rfp_payable
+
+        ap_map = ap_payable_map()
+        assert ap_map.get(segment.id) == accounts["20000"].id
+        rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2006")
+        assert rfp_payable(rfp, ap_segment_map=ap_map) == Decimal("8739.00")
+
+
+class TestRFPPayableScreens:
+    def test_rfp_list_shows_payable_and_gross_hint(self, client, company, segment,
+                                                   accounts, user, segment_account_map):
+        from apps.ap.services import rfp_payable
+
+        wht_rfp, payable = _wht_split_rfp(segment, accounts, user, ap_number="A2010")
+        flat_rfp = _make_rfp_with_lines(
+            segment, accounts, user, ap_number="A2011",
+            lines=[("dr", "61100", "20000.00"), ("cr", "20000", "20000.00")],
+        )
+        resp = client.get("/ap/rfps/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "8,739.00" in body
+        assert "gross 9,489.00" in body
+        assert "20,000.00" in body
+        assert rfp_payable(wht_rfp) == Decimal("8739.00")
+        assert rfp_payable(flat_rfp) == Decimal("20000.00")
+
+    def test_rfp_summary_cards_are_payable_based(self, company, segment, accounts,
+                                                 user, segment_account_map):
+        from apps.ui.services import rfp_summary
+
+        _wht_split_rfp(segment, accounts, user, ap_number="A2012", status="posted")
+        _make_rfp_with_lines(
+            segment, accounts, user, ap_number="A2013",
+            lines=[("dr", "61100", "20000.00"), ("cr", "20000", "20000.00")],
+        )
+        _wht_split_rfp(segment, accounts, user, ap_number="A2014", status="submitted")
+        summary = rfp_summary()
+        assert summary["posted_amount"] == Decimal("28739.00")  # 8,739 + 20,000
+        assert summary["pending_amount"] == Decimal("8739.00")
+        assert summary["pending"] == 1
+        assert summary["approved"] == 0
+
+    def test_cv_form_prefills_gross_at_payable(self, client, company, segment,
+                                               accounts, user, segment_account_map):
+        wht_rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2015")
+        resp = client.get(f"/ap/cv/new/?rfp={wht_rfp.id}")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert 'value="8739.00"' in body
+        assert "Total Payable (A/P)" in body
+        assert "8,739.00" in body
+        assert "gross ₱9,489.00" in body
+
+    def test_rfp_detail_shows_total_payable(self, client, company, segment, accounts,
+                                            user, segment_account_map):
+        wht_rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2016")
+        resp = client.get(f"/ap/rfps/{wht_rfp.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "TOTAL PAYABLE (A/P)" in body
+        assert "8,739.00" in body
+
+    def test_rfp_print_includes_total_payable(self, client, company, segment, accounts,
+                                              user, segment_account_map):
+        wht_rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2017")
+        resp = client.get(f"/ap/rfps/{wht_rfp.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Total Payable (A/P)" in body
+        assert "8,739.00" in body
+
+    def test_cv_print_includes_total_payable(self, client, company, segment, accounts,
+                                             user, segment_account_map):
+        from apps.ap.models import CheckVoucher
+        from apps.ap.services import CVPaymentService
+        from apps.ap.services import rfp_payable
+
+        wht_rfp, _ = _wht_split_rfp(segment, accounts, user,
+                                    ap_number="A2018", status="fin_approved")
+        supplier = wht_rfp.payee
+        from apps.ap.models import CONSOBatch
+        from apps.ap.services import CONSOService
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-02", conso_date=date(2026, 1, 18))
+        wht_rfp.conso = batch
+        wht_rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=user)
+        wht_rfp.refresh_from_db()
+        assert wht_rfp.status == "posted"
+        assert rfp_payable(wht_rfp) == Decimal("8739.00")
+
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0099",
+            cv_date=date(2026, 1, 20),
+            payee=supplier,
+            bank_account=accounts["10110"],
+            gross_amount="8739.00",
+            rfp=wht_rfp,
+            user=user,
+        )
+        resp = client.get(f"/ap/cv/{cv.id}/print/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "8,739.00" in body
+
+
+class TestAgingPayableReconciliation:
+    def _posted_wht_rfp(self, company, segment, accounts, user, ap_number="A2501"):
+        from apps.ap.models import CONSOBatch, Supplier
+        from apps.ap.services import CONSOService, RFPService
+
+        supplier = Supplier.objects.create(
+            code=f"S-{ap_number}", name="Tanker Driver",
+            supplier_type="other", default_segment=segment,
+        )
+        payable = Decimal("8739.00")
+        rfp = RFPService.create_rfp(
+            ap_number=ap_number,
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "9489.00"},
+                {"side": "cr", "segment": segment, "account_code": "64110", "amount": "750.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "8739.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "fin_approved"
+        rfp.checked_by = user
+        rfp.approved_by_acctg = user
+        rfp.approved_by_fin = user
+        rfp.save()
+        batch = CONSOBatch.objects.create(batch_no=f"CONSO-{ap_number}", conso_date=date(2026, 1, 18))
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        CONSOService.post_batch(batch, user=user)
+        rfp.refresh_from_db()
+        assert rfp.status == "posted"
+        return rfp, payable
+
+    @staticmethod
+    def _ap_gl_balance(accounts):
+        from django.db.models import Sum
+        from apps.posting.models import JournalEntryLine, PostingStatus
+
+        agg = JournalEntryLine.objects.filter(
+            account=accounts["20000"], entry__status=PostingStatus.POSTED
+        ).aggregate(d=Sum("debit"), c=Sum("credit"))
+        return (agg["c"] or Decimal("0.00")) - (agg["d"] or Decimal("0.00"))
+
+    def test_aging_register_reconciles_with_gl_ap(self, client, company, segment,
+                                                  accounts, fiscal_period, user,
+                                                  segment_account_map):
+        from apps.ui.services import ap_aging_context
+
+        rfp, payable = self._posted_wht_rfp(company, segment, accounts, user)
+        as_of = date(2026, 1, 31)
+
+        ctx = ap_aging_context(as_of)
+        assert ctx["register_total"] == payable
+        assert any(r["ap_number"] == rfp.ap_number and r["amount"] == payable
+                   and r["balance"] == payable for r in ctx["register"])
+        assert self._ap_gl_balance(accounts) == payable
+
+    def test_full_payment_clears_aging_and_gl(self, client, company, segment,
+                                              accounts, fiscal_period, user,
+                                              role_users, segment_account_map):
+        from apps.ap.models import CheckVoucher
+        from apps.ap.services import CVPaymentService
+        from apps.ui.services import ap_aging_context
+
+        rfp, payable = self._posted_wht_rfp(company, segment, accounts, user)
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0100",
+            cv_date=date(2026, 1, 20),
+            payee=rfp.payee,
+            bank_account=accounts["10110"],
+            gross_amount=str(payable),
+            withheld_tax="0.00",
+            rfp=rfp,
+            user=user,
+        )
+        client.force_login(role_users["head"])
+        client.post(f"/ap/cv/{cv.id}/approve/")
+        client.post(f"/ap/cv/{cv.id}/clear/")
+        cv.refresh_from_db()
+        assert cv.status == "cleared"
+
+        ctx = ap_aging_context(date(2026, 1, 31))
+        assert ctx["register_total"] == Decimal("0.00")
+        assert self._ap_gl_balance(accounts) == Decimal("0.00")

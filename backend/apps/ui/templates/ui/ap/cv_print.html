@@ -136,6 +136,13 @@
         <td colspan="2" style="text-align:center; text-transform:uppercase">Total Amount</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
       </tr>
+      {% if payable and payable != total %}
+      <tr style="font-size:10px; font-weight:600; background:#fff2cc">
+        <td colspan="11"></td>
+        <td colspan="2" style="text-align:center; text-transform:uppercase">Total Payable (A/P)</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ payable|money }}</td>
+      </tr>
+      {% endif %}
 
       <!-- ═══ DISCLAIMER  12 full span ═══ -->
       <tr>

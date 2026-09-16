@@ -167,6 +167,12 @@
         <td colspan="3" style="text-transform:uppercase">Net Invoice:</td>
         <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
       </tr>
+      <!-- Total Payable (A/P) row: 8+2+2=12 -->
+      <tr style="font-size:10px; font-weight:600; background:#fff2cc">
+        <td colspan="9"></td>
+        <td colspan="3" style="text-transform:uppercase">Total Payable (A/P):</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">{{ payable|money }}</td>
+      </tr>
 
       <!-- ═══ SIGNATURE SECTION  ═══ -->
       <!-- Labels: 2+5+5=12 -->

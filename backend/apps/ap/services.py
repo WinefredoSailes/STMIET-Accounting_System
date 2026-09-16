@@ -64,6 +64,43 @@ def finally_approved(rfp) -> bool:
     return rfp.status == "fin_approved" and not coo_required(rfp)
 
 
+def ap_payable_map() -> dict:
+    """segment_id -> AP account_id from active role-'ap' SegmentAccountMap rows.
+
+    Callers that resolve payable for many RFPs (list, summary, aging) build the
+    map once and pass it through, avoiding one query per RFP.
+    """
+    return {
+        m.segment_id: m.account_id
+        for m in SegmentAccountMap.objects.filter(
+            role=SegmentAccountMap.ROLE_AP, is_active=True
+        )
+    }
+
+
+def rfp_payable(rfp, ap_segment_map=None) -> Decimal:
+    """The true A/P payable for an RFP — the sum of its credit lines booked to
+    the segment-level Accounts Payable account (SegmentAccountMap role 'ap').
+
+    - An RFP with an AP credit line returns that line-sum: gross minus WHT and
+      any other non-AP credits (9,489 gross -> 8,739 when 750 is withheld).
+    - An RFP with no AP credit line at all falls back to the RFP amount
+      (gross): flat RFPs credit the full amount to AP, and even an RFP whose
+      credits never touch AP is still owed — keeping its current aging row.
+    """
+    if ap_segment_map is None:
+        ap_segment_map = ap_payable_map()
+    payable = Decimal("0.00")
+    ap_found = False
+    for line in rfp.lines.all():
+        if line.side != "cr":
+            continue
+        if ap_segment_map.get(line.segment_id) == line.account_id:
+            ap_found = True
+            payable += line.amount
+    return money(payable) if ap_found else money(rfp.amount)
+
+
 # --- Purchase Order helpers (ADR-0XX; same matrix as the RFP, ADR-020). ----
 PO_APPROVAL_STEPS = ["prepared", "checked", "acctg_approved", "fin_approved"]
 

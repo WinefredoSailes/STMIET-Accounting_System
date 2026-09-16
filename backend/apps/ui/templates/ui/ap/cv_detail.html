@@ -67,6 +67,9 @@
         <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td></tr>
         <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td></tr>
         <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|money }}</td></tr>
+      {% if payable %}
+        <tr class="font-semibold text-indigo-700"><td class="px-3 py-2 text-right">TOTAL PAYABLE (A/P)</td><td class="px-3 py-2 text-right tabular-nums">{{ payable|money }}</td></tr>
+      {% endif %}
       </tbody>
     </table>
   </div>
