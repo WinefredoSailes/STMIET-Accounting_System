@@ -253,6 +253,14 @@ class InterAccountTransfer(AuditableModel):
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="transfers"
     )
     initiated_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    status = models.CharField(
+        max_length=16, default="requested",
+        choices=[("requested", "Requested"), ("approved", "Approved"), ("completed", "Completed")]
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_transfers"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-transfer_date"]

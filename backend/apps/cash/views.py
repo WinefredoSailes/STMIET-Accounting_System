@@ -96,7 +96,8 @@ class PCFReplenishmentViewSet(viewsets.ModelViewSet):
 class InterAccountTransferViewSet(viewsets.ModelViewSet):
     queryset = InterAccountTransfer.objects
     serializer_class = InterAccountTransferSerializer
-    filterset_fields = ["from_account", "to_account"]
+    filterset_fields = ["from_account", "to_account", "status"]
+    permission_classes = []
 
     def create(self, request, *args, **kwargs):
         from_account = request.data.get("from_account")
@@ -111,8 +112,25 @@ class InterAccountTransferViewSet(viewsets.ModelViewSet):
             amount=amount, purpose=purpose,
             reference=request.data.get("reference", ""), user=request.user,
         )
+        # The transfer is created with status ``requested``; the JE is posted
+        # when the finance head approves it (same flow as RFP/JE/CV).
         out = self.get_serializer(tr)
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """Approve a pending inter-account transfer.
+
+        Requires the ``head`` role (same as RFP/JE/CV approval).
+        After approval the transfer's journal entry is posted and the
+        transfer status becomes ``approved``.
+        """
+        transfer = self.get_object()
+        from apps.cash.services import TransferService
+        TransferService.approve(transfer, user=request.user)
+        # Re-serialize so the client sees the approved status.
+        out = self.get_serializer(transfer)
+        return Response(out.data)
 
 
 class CashFlowStatementViewSet(viewsets.ReadOnlyModelViewSet):

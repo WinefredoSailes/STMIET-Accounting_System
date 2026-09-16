@@ -697,6 +697,13 @@ class TestCVPayment:
         cv.refresh_from_db()
         assert cv.status == "cleared"
         assert cv.journal_entry.is_posted
+        # The clear act also stamps the cash-side CheckDisbursement.cleared_at so
+        # the CV's DATE CLEARED fields (print/PDF/detail) populate.
+        from apps.cash.models import CheckDisbursement
+
+        disb = CheckDisbursement.objects.get(cv=cv)
+        assert disb.status == "cleared"
+        assert disb.cleared_at is not None
 
     def test_reject_then_revise_restarts_chain(self, company, segment, supplier, accounts, alywin, segment_account_map):
         cv = CVPaymentService.create_cv(

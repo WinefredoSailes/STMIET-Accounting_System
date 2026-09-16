@@ -464,6 +464,26 @@ class TransferService:
                 pattern="FTV-{YYYY}-{SEQ:04d}",
             )
             transfer.save(update_fields=["voucher_no", "updated_at"])
+        return transfer
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
+        """Approve a pending inter-account transfer.
+
+        Only transfers with status ``requested`` can be approved.
+        After approval the transfer's journal entry is posted and the
+        transfer status is set to ``approved``.
+        """
+        if transfer.status != "requested":
+            raise ValidationError("Only requested transfers can be approved.")
+        # Post the journal entry that was created during transfer creation.
+        from apps.posting.services import PostingService
+        PostingService.post(transfer.journal_entry, user=user)
+        transfer.approved_by = user
+        transfer.approved_at = timezone.now()
+        transfer.status = "approved"
+        transfer.save(update_fields=["approved_by", "approved_at", "status", "updated_at"])
         return transfer.voucher_no
 
 
