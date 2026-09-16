@@ -5,7 +5,7 @@
 <div class="p-6">
   <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
     <div>
-      {% include "ui/partials/page_header.html" with title=f"Customer Ledger — {{ customer.code }} {{ customer.name }}" subtitle=customer.group|default:"" actions="" %}
+      {% include "ui/partials/page_header.html" with title="Customer Ledger — {{ customer.code }} {{ customer.name }}" subtitle=customer.group|default:"" actions="" %}
       <p class="mt-2 text-sm text-slate-500">TIN: {{ customer.tin|default:"—" }} | Segment: {{ customer.segment.code|default:"—" }}</p>
     </div>
     <div class="flex items-end">
