@@ -24,11 +24,9 @@
   <td class="px-4 py-2 font-medium">{{ c.name }}</td>
   <td class="px-4 py-2 text-xs">{{ c.owner_name|default:"—" }}</td>
   <td class="px-4 py-2 text-xs text-slate-500">{{ c.contact_no|default:"—" }}</td>
-  {% if can_edit_master %}
   <td class="px-4 py-2">
-    <a href="{% url 'ui:customer_update' c.pk %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+    <a href="{% url 'ui:customer_detail' c.pk %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">View</a>
   </td>
-  {% endif %}
 </tr>
 {% empty %}
 <tr><td colspan="{% if can_edit_master %}5{% else %}4{% endif %}" class="px-4 py-8 text-center text-slate-400">No customers yet.</td></tr>
