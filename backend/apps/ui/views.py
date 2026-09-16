@@ -2656,6 +2656,10 @@ def cv_detail(request, pk):
     from apps.ap.services import rfp_payable
 
     payable = money(rfp_payable(rfp)) if rfp else None
+    from apps.cash.models import CheckDisbursement
+
+    disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
+    cleared_at = disb["cleared_at"] if disb else None
     # Same 5 signatory cells as the print layout (ACCTG-FOR-010): prepared by
     # is whoever issued the CV, requested by is the RFP creator, checked by is
     # the RFP checker, approved by is the COO role holder, and the payee signs
@@ -2670,6 +2674,7 @@ def cv_detail(request, pk):
     return render(request, "ui/ap/cv_detail.html", {
         "cv": cv,
         "payable": payable,
+        "cleared_at": cleared_at,
         "signatories": signatories,
         "audit_trail": _audit_trail("cv", cv.id),
     })
@@ -2699,6 +2704,10 @@ def cv_print(request, pk):
     from apps.ap.services import rfp_payable
 
     payable = money(rfp_payable(rfp)) if rfp else money(total)
+    from apps.cash.models import CheckDisbursement
+
+    disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
+    cleared_at = disb["cleared_at"] if disb else None
     signatories = {
         "prepared": _name(cv.created_by),
         "requested": _name(rfp.created_by) if rfp else "",
@@ -2716,6 +2725,7 @@ def cv_print(request, pk):
             "dr_lines": dr_lines,
             "total": total,
             "payable": payable,
+            "cleared_at": cleared_at,
             "position": position,
             "signatories": signatories,
             "date_of_request": date_of_request,

@@ -6,7 +6,7 @@ so these tests are mostly 200/redirect checks rather than business logic
 re-tests.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from calendar import monthrange
 import re
@@ -18,6 +18,7 @@ from django.test import Client
 from apps.foundation.models import Account, FiscalPeriod, FiscalYear, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
 from apps.posting.services import PostingService
+from django.utils.timezone import make_aware
 
 pytestmark = pytest.mark.django_db
 
@@ -2044,7 +2045,10 @@ class TestCheckVoucherScreen:
         body = resp.content.decode()
         assert "CHECK VOUCHER" in body
         assert "ACCTG-FOR-010" in body
-        assert "CV-2026-0099" in body          # SN
+        assert "CV-2026-0099" in body          # CV NO field (was title-only before)
+        assert "CV NO.:" in body              # SN label
+        assert "DATE CLEARED:" in body
+        assert "—" in body                     # not cleared yet -> dash
         assert "CHK-9021" in body              # CHECK ISSUED & NO
         assert approved_rfp.payee.name in body  # NAME
         assert "20,000.00" in body             # distribution total (dr 61100)
@@ -2057,6 +2061,21 @@ class TestCheckVoucherScreen:
         assert "stmiet-trans-logo.png" in body
         assert "ENTITY" not in body
         assert "STMIET" not in body
+
+        # Once the check is cleared, DATE CLEARED renders on the print body and detail page.
+        from apps.cash.models import CheckDisbursement
+
+        CheckDisbursement.objects.create(
+            cv=cv, cleared_at=make_aware(datetime(2026, 1, 25, 10, 30)), status="cleared"
+        )
+        body = client.get(f"/ap/cv/{cv.id}/print/").content.decode()
+        assert "DATE CLEARED:" in body
+        assert "01/25/2026" in body
+        detail = client.get(f"/ap/cv/{cv.id}/").content.decode()
+        assert "DATE CLEARED" in detail
+        assert "Jan 25, 2026" in detail
+        assert "CV NUMBER" in detail
+        assert "CV-2026-0099" in detail
 
     def test_cv_print_prepared_by_shows_creator_full_name(
         self, client, company, segment, accounts, fiscal_period, approved_rfp, segment_account_map

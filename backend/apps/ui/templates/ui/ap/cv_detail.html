@@ -14,9 +14,11 @@
   {% endcapture %}
   {% capture as shell_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-slate-500">CV NUMBER</div><div class="mt-0.5 font-mono font-medium">{{ cv.cv_number }}</div></div>
     <div><div class="text-xs text-slate-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
     <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
     <div><div class="text-xs text-slate-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
     <div><div class="text-xs text-slate-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
   </div>
 

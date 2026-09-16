@@ -913,6 +913,10 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     payable = rfp_payable(rfp) if rfp else total
     position = cv.payee.position or cv.payee.get_supplier_type_display()
     date_of_request = (rfp.rfp_date if rfp and rfp.rfp_date else cv.cv_date) if rfp else cv.cv_date
+    from apps.cash.models import CheckDisbursement
+
+    disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
+    cleared_at = disb["cleared_at"] if disb else None
 
     pagesize = A4 if paper == "a4" else A5
     margin = 0.9 * cm
@@ -991,6 +995,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
         _payee_table(colw, [
             ("NAME:", cv.payee.name, "DATE OF REQUEST:", date_of_request.strftime("%m/%d/%Y")),
             ("POSITION:", position, "CHECK ISSUED & NO.:", cv.check_no or ""),
+            ("CV NO.:", cv.cv_number, "DATE CLEARED:", cleared_at.strftime("%m/%d/%Y") if cleared_at else ""),
         ]),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Distribution Charges", GREEN),
