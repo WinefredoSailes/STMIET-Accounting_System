@@ -226,7 +226,7 @@ class TestPCF:
 
 
 class TestTransfers:
-    def test_transfer_posts_je(self, segment, bank_account, accounts):
+    def test_transfer_requests_then_head_approves_and_posts(self, segment, bank_account, accounts):
         to_acc = BankAccount.objects.create(
             code="PNB-DHPP", name="PNB DHPP", account_type="checking",
             bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], company=segment.company,
@@ -235,10 +235,30 @@ class TestTransfers:
             from_account=bank_account, to_account=to_acc,
             amount="5000.00", purpose="Fund transfer", user=None,
         )
+        # Request stage: DRAFT JE, nothing in the GL yet — no threshold bypass.
+        assert tr.status == "requested"
+        assert tr.journal_entry.status == PostingStatus.DRAFT
         assert tr.journal_entry.is_balanced
         lines = {l.line_no: l for l in tr.journal_entry.lines.all()}
         assert lines[1].credit == Decimal("5000.00")  # Cr from
         assert lines[2].debit == Decimal("5000.00")  # Dr to
+        # Head approval posts the JE whatever the amount (threshold removed).
+        tr = TransferService.approve(tr, user=None)
+        assert tr.status == "approved"
+        assert tr.journal_entry.status == PostingStatus.POSTED
+
+    def test_transfer_approve_requires_requested(self, segment, bank_account, accounts):
+        to_acc = BankAccount.objects.create(
+            code="PNB-DHPP2", name="PNB DHPP 2", account_type="checking",
+            bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], company=segment.company,
+        )
+        tr = TransferService.transfer(
+            from_account=bank_account, to_account=to_acc,
+            amount="5000.00", purpose="Fund transfer", user=None,
+        )
+        TransferService.approve(tr, user=None)
+        with pytest.raises(ValidationError, match="requested"):
+            TransferService.approve(tr, user=None)
 
     def test_transfer_same_account_rejected(self, bank_account):
         with pytest.raises(ValidationError):
@@ -291,11 +311,12 @@ class TestCashFlow:
             bank_name="PNB", bank_code="PNB", gl_account=accounts["10110"], company=segment.company,
         )
         CashCycleService.generate_cycle(segment, date(2026, 1, 13))
-        TransferService.transfer(
+        tr = TransferService.transfer(
             from_account=bank_account, to_account=to_acc,
             amount="5000.00", purpose="Fund transfer",
             transfer_date=date(2026, 1, 15), user=None,
         )
+        TransferService.approve(tr, user=None)
         cycle = CashCycleService.generate_cycle(segment, date(2026, 1, 13))
         acts = {a.activity_type: a.amount for a in cycle.activities.all()}
         # Both transfer legs land in the same activity row (5k out + 5k in).

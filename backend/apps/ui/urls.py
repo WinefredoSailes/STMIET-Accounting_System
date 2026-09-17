@@ -165,6 +165,7 @@ urlpatterns = [
     path("cash/transfers/", views.transfers, name="transfers"),
     path("cash/transfers/export/", views.transfers_export, name="transfers_export"),
     path("cash/transfers/new/", views.transfer_create, name="transfer_create"),
+    path("cash/transfers/<int:pk>/approve/", views.transfer_approve, name="transfer_approve"),
     path("cash/transfers/<int:pk>/print/", views.ftv_print, name="ftv_print"),
     path("cash/transfers/<int:pk>/pdf/", views.ftv_pdf_export, name="ftv_pdf_export"),
     # Assets

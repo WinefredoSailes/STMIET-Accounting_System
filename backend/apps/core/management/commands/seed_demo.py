@@ -319,7 +319,7 @@ class Command(BaseCommand):
 
         if banks["BDO-CHK"].transfers_out.exists():
             return
-        TransferService.transfer(
+        transfer = TransferService.transfer(
             from_account=banks["BDO-CHK"],
             to_account=banks["PNB-CHK"],
             amount="25000.00",
@@ -327,7 +327,8 @@ class Command(BaseCommand):
             transfer_date=date(2026, 1, 14),
             user=self._user("alywin"),
         )
-        self.stdout.write("transfer BDO-CHK -> PNB-CHK 25,000 posted")
+        TransferService.approve(transfer, user=self._user("alywin"))
+        self.stdout.write("transfer BDO-CHK -> PNB-CHK 25,000 approved/posted")
 
     def _advances(self, segs):
         from decimal import Decimal

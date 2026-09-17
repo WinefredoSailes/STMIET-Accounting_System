@@ -1,8 +1,9 @@
 """Inter-account transfer batch grid tests (add/remove lines, ADR-030).
 
 The transfers screen is a line grid where each added row is a full transfer
-leg (From → To → Amount → optional Purpose). Every non-blank row posts its own
-transfer + JE; the batch is atomic — one invalid line rejects all legs.
+leg (From → To → Amount → optional Purpose). Every non-blank row requests its
+own transfer + DRAFT JE; nothing posts until the head approves each transfer.
+The batch is atomic — one invalid line rejects all legs.
 """
 
 from datetime import date
@@ -42,7 +43,7 @@ def banks(db, company, segment, accounts):
     }
 
 
-def test_batch_posts_one_transfer_and_je_per_line(client, banks):
+def test_batch_requests_one_transfer_and_draft_je_per_line(client, banks):
     resp = client.post("/cash/transfers/new/", {
         "transfer_date": "2026-09-15",
         "line_from": [banks["b1"].id, banks["b2"].id],
@@ -58,9 +59,36 @@ def test_batch_posts_one_transfer_and_je_per_line(client, banks):
     assert transfers[0].from_account_id == banks["b1"].id
     assert transfers[0].to_account_id == banks["b2"].id
     assert all(t.journal_entry_id for t in transfers)
+    # Requested, not posted: DRAFT JE awaits head approval (no threshold).
+    from apps.posting.models import PostingStatus
+
+    assert all(t.status == "requested" for t in transfers)
+    assert all(t.journal_entry.status == PostingStatus.DRAFT for t in transfers)
     assert transfers[0].voucher_no.startswith("FTV-2026-")
     assert transfers[1].voucher_no.startswith("FTV-2026-")
     assert transfers[0].voucher_no != transfers[1].voucher_no
+
+
+def test_head_approve_posts_batch_transfer(client, banks, role_users):
+    from apps.cash.services import TransferService
+
+    client.post("/cash/transfers/new/", {
+        "transfer_date": "2026-09-15",
+        "line_from": [banks["b1"].id],
+        "line_to": [banks["b2"].id],
+        "line_amount": ["10,000.00"],
+        "line_purpose": ["sweep"],
+    })
+    transfer = InterAccountTransfer.objects.get()
+    client.force_login(role_users["head"])
+    resp = client.post(f"/cash/transfers/{transfer.id}/approve/")
+    assert resp.status_code == 302
+    transfer.refresh_from_db()
+    assert transfer.status == "approved"
+    assert transfer.approved_by_id == role_users["head"].id
+    from apps.posting.models import PostingStatus
+
+    assert transfer.journal_entry.status == PostingStatus.POSTED
 
 
 def test_batch_skips_blank_template_row(client, banks):

@@ -312,6 +312,12 @@ class TestEndToEndWorkflow:
         )
         assert resp.status_code == 302
         transfer = InterAccountTransfer.objects.get()
+        assert transfer.status == "requested"
+        # Head approval posts the transfer JE (no amount threshold).
+        resp = client.post(f"/cash/transfers/{transfer.id}/approve/")
+        assert resp.status_code == 302
+        transfer.refresh_from_db()
+        assert transfer.status == "approved"
         assert transfer.journal_entry.status == PostingStatus.POSTED
 
         # 8. Advance + liquidation --------------------------------------------

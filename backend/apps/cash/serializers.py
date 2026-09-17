@@ -58,7 +58,7 @@ class PCFReplenishmentSerializer(serializers.ModelSerializer):
 class InterAccountTransferSerializer(serializers.ModelSerializer):
     class Meta:
         model = InterAccountTransfer
-        fields = ("id", "transfer_date", "from_account", "to_account", "amount", "purpose", "reference", "journal_entry")
+        fields = ("id", "transfer_date", "voucher_no", "from_account", "to_account", "amount", "purpose", "reference", "journal_entry", "status", "initiated_by", "approved_by", "approved_at")
 
 
 class CashFlowStatementSerializer(serializers.ModelSerializer):

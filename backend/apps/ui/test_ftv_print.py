@@ -38,6 +38,8 @@ def banks(db, company, segment, accounts, role_users):
         segment=segment,
         user=role_users["staff"],
     )
+    # Voucher layer prints an approved transfer: head approval posts the JE.
+    transfer = TransferService.approve(transfer, user=role_users["head"])
     return bank_from, bank_to, transfer
 
 

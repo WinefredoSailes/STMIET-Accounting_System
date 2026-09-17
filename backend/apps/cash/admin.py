@@ -57,8 +57,9 @@ class PCFReplenishmentAdmin(admin.ModelAdmin):
 
 @admin.register(InterAccountTransfer)
 class InterAccountTransferAdmin(admin.ModelAdmin):
-    list_display = ("transfer_date", "from_account", "to_account", "amount", "purpose")
-    search_fields = ("purpose", "reference")
+    list_display = ("transfer_date", "voucher_no", "from_account", "to_account", "amount", "status", "purpose")
+    list_filter = ("status",)
+    search_fields = ("purpose", "reference", "voucher_no")
 
 
 @admin.register(CashFlowStatement)

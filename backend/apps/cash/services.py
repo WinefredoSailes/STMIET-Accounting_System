@@ -374,7 +374,13 @@ class PCFService:
 
 
 class TransferService:
-    """Inter-account transfer (ADR-030): Dr Cash-To | Cr Cash-From; purpose required."""
+    """Inter-account transfer (ADR-030): Dr Cash-To | Cr Cash-From; purpose required.
+
+    Full approval flow, same as RFP/JE/CV: every transfer is created
+    ``requested`` with a DRAFT JE and only posts to the GL when the finance
+    head approves it. There is no amount threshold — all transfers, large or
+    small, route through head approval.
+    """
 
     @classmethod
     @transaction.atomic
@@ -419,10 +425,10 @@ class TransferService:
             purpose=purpose,
             reference=reference,
             initiated_by=user,
+            status="requested",
         )
 
         from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
-        from apps.posting.services import PostingService
 
         seg = segment or from_account.company.segments.order_by("code").first()
         entry = JournalEntry.objects.create(
@@ -445,7 +451,9 @@ class TransferService:
             debit=amount, description=f"Transfer from {from_account.code}"
         )
         entry.recalc_totals()
-        PostingService.post(entry, user=user)
+        # Do NOT post here: the JE stays DRAFT until the finance head
+        # approves the transfer (approve() posts it). No amount threshold —
+        # every transfer requires head approval before hitting the GL.
         transfer.journal_entry = entry
         transfer.save(update_fields=["journal_entry", "updated_at"])
         return transfer
@@ -469,22 +477,31 @@ class TransferService:
     @classmethod
     @transaction.atomic
     def approve(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
-        """Approve a pending inter-account transfer.
+        """Approve a pending inter-account transfer (finance head).
 
-        Only transfers with status ``requested`` can be approved.
-        After approval the transfer's journal entry is posted and the
-        transfer status is set to ``approved``.
+        Only transfers with status ``requested`` can be approved. The head's
+        approval marks the DRAFT JE APPROVED and posts it to the GL — this is
+        what removes the amount threshold: every transfer, whatever the
+        amount, posts only through this gate.
         """
         if transfer.status != "requested":
             raise ValidationError("Only requested transfers can be approved.")
-        # Post the journal entry that was created during transfer creation.
+        from apps.posting.models import PostingStatus
         from apps.posting.services import PostingService
-        PostingService.post(transfer.journal_entry, user=user)
+
+        entry = transfer.journal_entry
+        if entry is None:
+            raise ValidationError("This transfer has no journal entry to post.")
+        if entry.status != PostingStatus.APPROVED:
+            entry.status = PostingStatus.APPROVED
+            entry.updated_by = user
+            entry.save(update_fields=["status", "updated_by", "updated_at"])
+        PostingService.post(entry, user=user)
         transfer.approved_by = user
         transfer.approved_at = timezone.now()
         transfer.status = "approved"
         transfer.save(update_fields=["approved_by", "approved_at", "status", "updated_at"])
-        return transfer.voucher_no
+        return transfer
 
 
 class CashFlowService:

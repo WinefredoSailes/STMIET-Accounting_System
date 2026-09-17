@@ -1,4 +1,5 @@
 from django.db import migrations
+from django.utils import timezone
 
 
 def forward(apps, schema_editor):

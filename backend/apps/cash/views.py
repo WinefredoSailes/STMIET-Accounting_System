@@ -119,12 +119,14 @@ class InterAccountTransferViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        """Approve a pending inter-account transfer.
+        """Approve a pending inter-account transfer (finance head only).
 
-        Requires the ``head`` role (same as RFP/JE/CV approval).
-        After approval the transfer's journal entry is posted and the
-        transfer status becomes ``approved``.
+        Same gate as RFP/JE/CV approval: only the head may approve, and
+        every transfer — whatever the amount — posts to the GL here.
         """
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
         transfer = self.get_object()
         from apps.cash.services import TransferService
         TransferService.approve(transfer, user=request.user)

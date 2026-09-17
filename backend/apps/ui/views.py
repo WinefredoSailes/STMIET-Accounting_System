@@ -4469,10 +4469,12 @@ def transfers(request):
 @login_required
 @require_POST
 def transfer_create(request):
-    """Post one or more inter-account transfers from the batch grid (ADR-030).
+    """Request one or more inter-account transfers from the batch grid (ADR-030).
 
-    Every non-blank row becomes its own transfer + JE (Dr Cash-To | Cr
-    Cash-From). The batch is atomic: one invalid line rejects every leg.
+    Every non-blank row becomes its own transfer + DRAFT JE (Dr Cash-To | Cr
+    Cash-From). Nothing posts here: each transfer stays ``requested`` until
+    the finance head approves it (transfer_approve), same flow as RFP/JE/CV.
+    The batch is atomic: one invalid line rejects every leg.
     """
     from django.db import transaction
 
@@ -4534,9 +4536,32 @@ def transfer_create(request):
         return redirect("ui:transfers")
     messages.success(
         request,
-        f"Posted {len(posted)} transfer(s) on "
-        f"{transfer_date.strftime('%Y-%m-%d') if transfer_date else 'today'}.",
+        f"Requested {len(posted)} transfer(s) on "
+        f"{transfer_date.strftime('%Y-%m-%d') if transfer_date else 'today'} — "
+        f"awaiting head approval before posting.",
     )
+    return redirect("ui:transfers")
+
+
+@login_required
+@require_POST
+def transfer_approve(request, pk):
+    """requested -> approved (finance head posts the transfer JE to the GL).
+
+    Same gate as RFP/JE/CV approval: only the head may approve, and every
+    transfer — whatever the amount (no threshold) — posts here.
+    """
+    from apps.cash.models import InterAccountTransfer
+    from apps.cash.services import TransferService
+    from apps.core.approvals import require_approval_role
+
+    transfer = get_object_or_404(InterAccountTransfer, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        transfer = TransferService.approve(transfer, user=request.user)
+        messages.success(request, f"Transfer {transfer.voucher_no} approved — entry in GL.")
+    except AccountingError as exc:
+        messages.error(request, str(exc))
     return redirect("ui:transfers")
 
 
@@ -4557,7 +4582,11 @@ def _ftv_context(transfer):
         transfer.initiated_by or (entry.created_by if entry else None)
     )
     checked_by = role_assignee("head")
-    approved_by = role_assignee("coo") or checked_by
+    approved_by = (
+        signatory_name(transfer.approved_by)
+        if transfer.approved_by
+        else (role_assignee("coo") or checked_by)
+    )
     return {
         "transfer": transfer,
         "voucher_no": TransferService.ensure_voucher_no(transfer),
@@ -5136,21 +5165,23 @@ def transfers_export(request):
         rows.append(
             [
                 t.transfer_date.isoformat(),
+                t.voucher_no or "",
                 t.from_account.code,
                 t.to_account.code,
                 t.amount,
                 t.purpose,
+                t.status,
                 t.journal_entry.entry_no if t.journal_entry else "",
             ]
         )
     return _table_response(
         "INTER-ACCOUNT TRANSFERS",
-        ["Date", "From (Credit)", "To (Debit)", "Amount", "Purpose", "JE"],
+        ["Date", "Voucher", "From (Credit)", "To (Debit)", "Amount", "Purpose", "Status", "JE"],
         rows,
         fmt,
         "TRANSFERS",
         sheet_title="TRANSFERS",
-        money_cols=(3,),
+        money_cols=(4,),
         page="landscape",
     )
 
