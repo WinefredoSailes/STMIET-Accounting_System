@@ -42,7 +42,7 @@
   <div class="sm:col-span-2">
     <label class="block text-sm font-medium text-slate-600 mb-1">Segment</label>
     <select name="segment" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      <option value="">—</option>
+      <option value="ALL" {% if account.segment == "ALL" %}selected{% endif %}>All segments</option>
       {% for seg in segments %}
         <option value="{{ seg.code }}" {% if account.segment == seg.code %}selected{% endif %}>
           {{ seg.code }} - {{ seg.name }}
