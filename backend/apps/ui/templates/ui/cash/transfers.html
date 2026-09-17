@@ -17,7 +17,7 @@
         <h2 class="text-sm font-semibold text-slate-700">New transfer(s)</h2>
         <div class="w-full sm:w-auto">
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Date (applies to all lines)</label>
-          <input type="date" name="transfer_date" class="w-full sm:w-44 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+          <input type="date" name="transfer_date" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
         </div>
       </div>
 
@@ -25,12 +25,13 @@
         {% csrf_token %}
         <div class="overflow-x-auto">
           <table class="line-table w-full text-sm" style="min-width: 1080px;">
-            <colgroup>
+<colgroup>
               <col style="width:40px"><!-- # -->
               <col style="width:250px"><!-- From -->
               <col style="width:250px"><!-- To -->
               <col style="width:170px"><!-- Amount -->
               <col style="width:330px"><!-- Purpose -->
+              <col style="width:140px"><!-- Check# -->
               <col style="width:36px"><!-- remove -->
             </colgroup>
             <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
@@ -40,6 +41,7 @@
                 <th class="py-2">To (Debit)</th>
                 <th class="py-2 text-right">Amount</th>
                 <th class="py-2">Purpose</th>
+                <th class="py-2">CHECK ISSUED & NO</th>
                 <th class="py-2"></th>
               </tr>
             </thead>
@@ -65,12 +67,13 @@
                 </td>
                 <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_amount" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
                 <td class="py-2"><textarea name="line_purpose" data-autogrow rows="1" maxlength="255" placeholder="e.g. fund transfer to PNB (optional)" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
+                <td class="py-2"><input type="text" name="line_check_no" maxlength="32" placeholder="e.g. 123456" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right"></td>
                 <td class="py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
               </tr>
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="3" class="py-2 text-right font-semibold">TOTAL</td>
+                <td colspan="4" class="py-2 text-right font-semibold">TOTAL</td>
                 <td id="transfer-total" class="py-2 text-right font-semibold tabular-nums">0.00</td>
                 <td colspan="2"></td>
               </tr>

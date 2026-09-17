@@ -261,6 +261,7 @@ class InterAccountTransfer(AuditableModel):
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_transfers"
     )
     approved_at = models.DateTimeField(null=True, blank=True)
+    check_no = models.CharField(max_length=32, blank=True, help_text="Check number (optional)")
 
     class Meta:
         ordering = ["-transfer_date"]
