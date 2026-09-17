@@ -1,3 +1,4 @@
 -r base.txt
 gunicorn>=22.0
 whitenoise>=6.6
+openpyxl>=3.1
