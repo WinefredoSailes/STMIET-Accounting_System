@@ -1192,6 +1192,14 @@ class CVPaymentService:
         PostingService.post(entry, user=user)
         cv.status = "cleared"
         cv.save(update_fields=["status", "updated_at"])
+        # Stamp the cash-side disbursement record so the CV's DATE CLEARED
+        # fields (print/PDF/detail) populate (ADR-038 §10).
+        from apps.cash.models import CheckDisbursement
+
+        disb, _ = CheckDisbursement.objects.get_or_create(cv=cv)
+        disb.cleared_at = timezone.now()
+        disb.status = "cleared"
+        disb.save(update_fields=["cleared_at", "status", "updated_at"])
         log_action(cv, "cleared", actor=user)
         return cv
 

@@ -472,7 +472,7 @@ class TransferService:
                 pattern="FTV-{YYYY}-{SEQ:04d}",
             )
             transfer.save(update_fields=["voucher_no", "updated_at"])
-        return transfer
+        return transfer.voucher_no
 
     @classmethod
     @transaction.atomic
