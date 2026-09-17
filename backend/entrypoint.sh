@@ -5,8 +5,8 @@
 
 set -e
 
-echo "==> Applying database migrations"
-python manage.py migrate --noinput
+echo "==> Applying database migrations (--run-sync)"
+python manage.py migrate --run-sync --noinput
 
 echo "==> Collecting static files"
 python manage.py collectstatic --noinput
