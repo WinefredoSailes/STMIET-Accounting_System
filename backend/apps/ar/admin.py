@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     AcknowledgmentReceipt,
+    AcknowledgmentReceiptLine,
     ARInvoice,
     ARInvoiceLine,
     CashShortExcess,
@@ -37,17 +38,23 @@ class ARInvoiceAdmin(admin.ModelAdmin):
     inlines = [ARInvoiceLineInline]
 
 
+class AcknowledgmentReceiptLineInline(admin.TabularInline):
+    model = AcknowledgmentReceiptLine
+    extra = 1
+
+
 @admin.register(AcknowledgmentReceipt)
 class AcknowledgmentReceiptAdmin(admin.ModelAdmin):
-    list_display = ("receipt_no", "customer", "transaction_date", "amount", "payment_method", "applied_to")
-    list_filter = ("payment_method", "segment")
+    list_display = ("receipt_no", "customer", "transaction_date", "amount", "payment_method", "status", "applied_to")
+    list_filter = ("payment_method", "status", "segment")
     search_fields = ("receipt_no", "customer__name")
+    inlines = [AcknowledgmentReceiptLineInline]
 
 
 @admin.register(Deposit)
 class DepositAdmin(admin.ModelAdmin):
-    list_display = ("transaction_date", "bank_account", "amount", "reference")
-    search_fields = ("reference",)
+    list_display = ("deposit_no", "transaction_date", "bank_account", "amount", "reference")
+    search_fields = ("reference", "deposit_no")
 
 
 @admin.register(CashShortExcess)

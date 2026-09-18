@@ -617,7 +617,7 @@ def coa_rows(*, q="", segment="", account_type=""):
         rows = rows.filter(segment=segment)
     if account_type:
         rows = rows.filter(account_type=account_type)
-    return list(rows)
+    return rows
 
 
 # ---------------------------------------------------------------------------

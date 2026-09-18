@@ -3,7 +3,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.sequences.models import DocumentSequence
+from apps.core.exceptions import AccountingError
 
 from .models import AcknowledgmentReceipt, ARInvoice, Customer, Deposit, PriceSnapshot
 from .serializers import (
@@ -13,7 +13,7 @@ from .serializers import (
     DepositSerializer,
     PriceSnapshotSerializer,
 )
-from .services import CollectionService, CycleLedgerService
+from .services import CollectionService, CycleLedgerService, DepositService
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -42,41 +42,120 @@ class ARInvoiceViewSet(viewsets.ModelViewSet):
 
 
 class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
-    queryset = AcknowledgmentReceipt.objects.select_related("customer", "segment")
+    queryset = AcknowledgmentReceipt.objects.select_related(
+        "customer", "segment"
+    ).prefetch_related("lines__account", "lines__segment")
     serializer_class = AcknowledgmentReceiptSerializer
     search_fields = ["receipt_no"]
-    filterset_fields = ["customer", "segment", "payment_method"]
+    filterset_fields = ["customer", "segment", "payment_method", "status"]
 
     def create(self, request, *args, **kwargs):
-        """Record a collection: auto-number AR#, post the cash.collection JE."""
-        data = request.data.copy()
+        """Create a DRAFT receipt with its account distribution (no JE yet)."""
+        from apps.foundation.models import Account, Segment
+
+        data = request.data
         customer = get_object_or_404(Customer, pk=data.get("customer"))
-        cash_account = data.get("cash_account")
-        if not cash_account:
-            return Response({"detail": "cash_account is required."}, status=status.HTTP_400_BAD_REQUEST)
+        transaction_date = data.get("transaction_date")
+        if not transaction_date:
+            return Response(
+                {"detail": "transaction_date is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        from apps.foundation.models import Account
+        lines = data.get("lines")
+        cash_account = None
+        if data.get("cash_account"):
+            cash_account = Account.objects.get(pk=data["cash_account"])
 
-        cash_acct = Account.objects.get(pk=cash_account)
-        receipt = CollectionService.record_collection(
-            receipt_no=data.get("receipt_no") or DocumentSequence.next_number(
-                company=customer.segment.company, form_code="AR", year=request.data.get("year", 2026),
-                pattern="AR-{YYYY}-{SEQ:05d}",
-            ),
-            customer=customer,
-            transaction_date=data.get("transaction_date"),
-            amount=data.get("amount"),
-            cash_account=cash_acct,
-            payment_method=data.get("payment_method", "cash"),
-            check_no=data.get("check_no", ""),
-            applied_to=ARInvoice.objects.filter(pk=data["applied_to"]).first() if data.get("applied_to") else None,
-            user=request.user,
-        )
+        norm_lines = None
+        if lines:
+            norm_lines = []
+            for line in lines:
+                norm_lines.append(
+                    {
+                        "account": Account.objects.get(pk=line["account"]),
+                        "segment": Segment.objects.get(pk=line["segment"])
+                        if line.get("segment")
+                        else customer.segment,
+                        "cost_center": line.get("cost_center", ""),
+                        "description": line.get("description", ""),
+                        "debit": line.get("debit", 0),
+                        "credit": line.get("credit", 0),
+                    }
+                )
+        try:
+            receipt = CollectionService.create_receipt(
+                customer=customer,
+                transaction_date=transaction_date,
+                amount=data.get("amount"),
+                cash_account=cash_account,
+                payment_method=data.get("payment_method", "cash"),
+                check_no=data.get("check_no", ""),
+                transaction_no=data.get("transaction_no", ""),
+                ref_po_no=data.get("ref_po_no", ""),
+                applied_to=ARInvoice.objects.filter(pk=data["applied_to"]).first()
+                if data.get("applied_to")
+                else None,
+                lines=norm_lines,
+                created_by=request.user,
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         out = self.get_serializer(receipt)
         return Response(out.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        receipt = self.get_object()
+        try:
+            CollectionService.submit(receipt, user=request.user)
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        receipt = self.get_object()
+        try:
+            CollectionService.approve(receipt, user=request.user)
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        receipt = self.get_object()
+        try:
+            CollectionService.reject(
+                receipt, user=request.user, note=request.data.get("note", "")
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(receipt).data)
+
 
 class DepositViewSet(viewsets.ModelViewSet):
-    queryset = Deposit.objects
+    queryset = Deposit.objects.select_related("bank_account", "journal_entry")
     serializer_class = DepositSerializer
     filterset_fields = ["bank_account"]
+
+    def create(self, request, *args, **kwargs):
+        """Record a bank deposit over one or more posted receipts (posts JE)."""
+        from apps.foundation.models import Account
+
+        receipt_ids = request.data.get("receipts") or []
+        receipts = list(
+            AcknowledgmentReceipt.objects.filter(pk__in=receipt_ids).select_related("segment")
+        )
+        try:
+            deposit = DepositService.record_deposit(
+                receipts=receipts,
+                bank_account=Account.objects.get(pk=request.data.get("bank_account")),
+                transaction_date=request.data.get("transaction_date"),
+                reference=request.data.get("reference", ""),
+                user=request.user,
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(deposit).data, status=status.HTTP_201_CREATED)

@@ -7,55 +7,18 @@
       <h1 class="text-xl font-semibold text-slate-900">CHART OF ACCOUNTS</h1>
       <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s).</p>
     </div>
-<div class="flex items-center gap-2">
-       {% url 'ui:coa_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
-       <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
-       {% if can_create_master %}
-       <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
-       {% endif %}
-     </div>
-  </div>
+  <div class="flex items-center gap-2">
+     {% url 'ui:coa_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
+     <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+     {% if can_create_master %}
+     <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
+     {% endif %}
+   </div>
+ </div>
 
-  <div class="mt-4 bg-white rounded-xl border border-slate-200 p-4">
-    <form hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-swap="innerHTML" hx-push-url="true"
-          class="grid gap-3 md:grid-cols-4 items-end">
-      <div>
-        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_q">Search</label>
-        <input type="search" name="q" id="id_q" value="{{ q }}" placeholder="Code or account name…"
-               hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-swap="innerHTML" hx-push-url="true"
-               hx-trigger="input changed delay:300ms, search" hx-include="closest form"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_seg">Segment</label>
-        <select name="segment" id="id_seg"
-                hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-swap="innerHTML" hx-push-url="true"
-                hx-trigger="change" hx-include="closest form"
-                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <option value="">All segments</option>
-          {% for seg in segments %}<option value="{{ seg.code }}" {% if segment_sel == seg.code %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_type">Type</label>
-        <select name="account_type" id="id_type"
-                hx-get="{% url 'ui:coa_list' %}" hx-target="#coa-table" hx-swap="innerHTML" hx-push-url="true"
-                hx-trigger="change" hx-include="closest form"
-                class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <option value="">All types</option>
-          {% for value, label in types %}<option value="{{ value }}" {% if account_type_sel == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="flex gap-2">
-        <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Filter</button>
-        <a href="{% url 'ui:coa_list' %}" class="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">Clear</a>
-      </div>
-    </form>
-  </div>
-
+  {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#coa-table' filter_grid='md:grid-cols-4' %}
   <div id="coa-table">
     {% include "ui/foundation/_coa_rows.html" %}
   </div>
   {% include "ui/partials/pagination.html" %}
-</div>
 {% endblock %}

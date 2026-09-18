@@ -3,12 +3,14 @@
 Covers the customer ledger with the cumulative Over/(Short) cycle model
 (ADR-013), Acknowledgment Receipts (ACCTG-FOR-005 v3 — the company does NOT
 issue official receipts), three-tier pricing with per-cycle snapshots
-(ADR-014), deposits (state change, NO JE — ADR-016), and the cash
-short/excess worksheet (ADR-030).
+(ADR-014), bank deposits that post a real JE (supersedes ADR-016), and the
+cash short/excess worksheet (ADR-030).
 
-The single posting event is `cash.collection` (RESOLUTION #9):
-    Dr Cash 100xx | Cr Unearned 21000/21016/21023
-    (or Cr AR 12020-12030 when the payment is applied to prior AR).
+AR receipt lifecycle: draft -> submitted -> posted (Head approval). The
+collection posting event is `cash.collection` (RESOLUTION #9):
+    Dr segment Cash on Hand 10010/10013/10016 | Cr user credit lines
+    (or Cr AR 12020-12030 when the payment is applied to a prior AR invoice).
+The Head's Bank Deposit then posts Dr Cash in Bank | Cr segment Cash on Hand.
 """
 
 from decimal import Decimal
@@ -80,21 +82,41 @@ class PaymentMethod(models.TextChoices):
     OTHERS = "others", "Others"
 
 
+class ReceiptStatus(models.TextChoices):
+    """AR receipt lifecycle (ADR-015 / new approval workflow).
+
+    draft      -> prepared by staff, editable, no JE yet
+    submitted  -> awaiting the Accounting & Finance Head's review
+    posted     -> approved by the Head; the collection JE is posted to the GL
+    """
+
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted for approval"
+    POSTED = "posted", "Posted to GL"
+
+
 class AcknowledgmentReceipt(AuditableModel):
     """AR# (ACCTG-FOR-005 v3, pre-numbered YYYY-SEQ via the sequence registry).
 
-    Posting event `cash.collection`:
-        Dr Cash (bank/cash account) | Cr Unearned 210xx
-    When the payment is applied to a prior AR invoice:
-        Dr Cash | Cr AR 12020/12023/12026 (or 12030 fuel)
+    The Account Distribution grid (``AcknowledgmentReceiptLine``) carries the
+    debit/credit lines. The debit side is always the segment's Cash on Hand
+    (auto); the credit side is entered by the preparer.
+
+    Lifecycle (draft -> submitted -> posted):
+      - the collection JE is built and posted only when the Accounting &
+        Finance Head approves the submitted receipt (ADR-033 approval gate);
+      - the Head then records a Bank Deposit covering one or more posted
+        receipts, which posts Dr Cash in Bank | Cr segment Cash on Hand
+        (supersedes ADR-016 "deposit = no JE").
     """
 
     receipt_no = models.CharField(max_length=32, unique=True)  # AR-YYYY-SEQ
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="receipts")
     transaction_date = models.DateField(db_index=True)
-    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    # Derived total of the distribution lines (debit == credit).
+    amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     payment_method = models.CharField(max_length=8, choices=PaymentMethod.choices, default=PaymentMethod.CASH)
-    # Cash account from COA (100xx), e.g. PNB / BDO / cash-on-hand.
+    # The Cash on Hand account debited by the collection (auto = segment COH).
     cash_account = models.ForeignKey(
         "foundation.Account", on_delete=models.PROTECT, related_name="ar_receipts", limit_choices_to={"code__startswith": "100"}
     )
@@ -108,7 +130,7 @@ class AcknowledgmentReceipt(AuditableModel):
     ref_po_no = models.CharField("Ref. PO No.", max_length=64, blank=True)
     collected_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL)
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="ar_receipts")
-    # The journal entry produced by this collection (filled on post).
+    # The journal entry produced by this collection (filled on approval/post).
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="ar_receipts"
     )
@@ -117,11 +139,87 @@ class AcknowledgmentReceipt(AuditableModel):
         "ARInvoice", null=True, blank=True, on_delete=models.PROTECT, related_name="receipts"
     )
 
+    # --- approval workflow -------------------------------------------------
+    status = models.CharField(
+        max_length=16, choices=ReceiptStatus.choices, default=ReceiptStatus.DRAFT, db_index=True
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    # Proof of deposit / AR attachment the Head checks before approving.
+    attachment = models.FileField(upload_to="ar_attachments/", blank=True)
+    # The bank deposit this receipt was included in (set when the Head posts it).
+    deposit = models.ForeignKey(
+        "Deposit", null=True, blank=True, on_delete=models.PROTECT, related_name="receipts"
+    )
+
     class Meta:
         ordering = ["-transaction_date", "-receipt_no"]
 
     def __str__(self):
         return f"{self.receipt_no} {self.customer} {self.amount}"
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status == ReceiptStatus.DRAFT
+
+    @property
+    def debit_total(self):
+        return sum((l.debit for l in self.lines.all()), Decimal("0.00"))
+
+    @property
+    def credit_total(self):
+        return sum((l.credit for l in self.lines.all()), Decimal("0.00"))
+
+    @property
+    def is_balanced(self) -> bool:
+        return self.debit_total == self.credit_total
+
+    def recalc_totals(self) -> None:
+        """Refresh ``amount`` from the distribution lines (posting source)."""
+        totals = self.lines.aggregate(
+            debit=models.Sum("debit"), credit=models.Sum("credit")
+        )
+        self.amount = totals["debit"] or Decimal("0.00")
+        self.save(update_fields=["amount", "updated_at"])
+
+
+class AcknowledgmentReceiptLine(models.Model):
+    """One line of an AR receipt's Account Distribution grid.
+
+    The debit side is normally the segment Cash on Hand (auto-filled by the
+    service); credit lines are chosen by the preparer.
+    """
+
+    receipt = models.ForeignKey(
+        AcknowledgmentReceipt, on_delete=models.PROTECT, related_name="lines"
+    )
+    line_no = models.PositiveIntegerField()
+    account = models.ForeignKey(
+        "foundation.Account", on_delete=models.PROTECT, related_name="ar_receipt_lines"
+    )
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, related_name="ar_receipt_lines"
+    )
+    cost_center = models.CharField("Cost center", max_length=64, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["line_no"]
+        unique_together = ("receipt", "line_no")
+
+    def __str__(self):
+        side = "Dr" if self.debit else "Cr"
+        amount = self.debit or self.credit
+        return f"{self.receipt.receipt_no} #{self.line_no} {side} {self.account.code} {amount}"
 
 
 class ARInvoice(AuditableModel):
@@ -179,24 +277,46 @@ class ARInvoiceLine(models.Model):
 
 
 class Deposit(AuditableModel):
-    """Bank deposit (ADR-016). A STATE CHANGE, NOT a journal entry: the
-    collection JE already debited the cash account; depositing moves value
-    between cash-on-hand and the bank account balance for reconciliation."""
+    """Bank deposit covering one or more posted AR receipts.
 
-    # The cash account receiving the deposit (100xx bank account).
+    Corrected accounting (supersedes ADR-016's "deposit = state change, NO JE"):
+    depositing collections moves value from Cash on Hand to a bank account, so
+    the Head posts a real journal entry per deposit slip:
+
+        Dr Cash in Bank (bank_account) | Cr segment Cash on Hand
+
+    One deposit may cover many receipts (a single bank deposit slip). The
+    recipient bank is the deposit's ``bank_account`` (a 100xx bank GL account);
+    the source is each covered receipt's segment Cash on Hand account.
+    """
+
+    # The bank GL account receiving the deposit (100xx).
     bank_account = models.ForeignKey(
         "foundation.Account", on_delete=models.PROTECT, related_name="deposits", limit_choices_to={"code__startswith": "100"}
     )
     transaction_date = models.DateField(db_index=True)
-    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    # Optional generated slip number (BD-YYYY-SEQ).
+    deposit_no = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     reference = models.CharField(max_length=64, blank=True)
-    deposited_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL)
+    deposited_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # Deposit proof (deposit slip scan/photo).
+    attachment = models.FileField(upload_to="ar_deposits/", blank=True)
+    # The journal entry posted by this deposit (Dr Bank | Cr Cash on Hand).
+    journal_entry = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="ar_deposits"
+    )
+    created_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
-        ordering = ["-transaction_date"]
+        ordering = ["-transaction_date", "-id"]
 
     def __str__(self):
-        return f"Deposit {self.transaction_date} {self.bank_account} {self.amount}"
+        return f"Deposit {self.deposit_no or self.id} {self.bank_account} {self.amount}"
 
 
 class CashShortExcess(AuditableModel):

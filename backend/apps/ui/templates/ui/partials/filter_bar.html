@@ -1,0 +1,56 @@
+{% comment %}
+Reusable filter bar driven by an apps.ui.filtering.FilterSpec.
+
+Params:
+  filters       — list of rendered field dicts (spec.context(params, request))
+  filter_action — URL the HTMX GET posts to (default: current path)
+  filter_target — CSS selector of the swapped table wrapper (default #list-table)
+  filter_grid   — grid classes (default md:grid-cols-4)
+  filter_clear_url — URL for the Clear link (default: filter_action)
+The form carries hx-get/hx-target/hx-swap/hx-push-url; each control only needs
+hx-trigger + hx-include so it inherits the request from the form.
+{% endcomment %}
+<div class="mt-4 bg-white rounded-xl border border-slate-200 p-4">
+  <form hx-get="{{ filter_action|default:request.path }}"
+        hx-target="{{ filter_target|default:'#list-table' }}"
+        hx-swap="innerHTML" hx-push-url="true"
+        class="grid gap-3 items-end {{ filter_grid|default:'md:grid-cols-4' }}">
+    {% for f in filters %}
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1" for="id_{{ f.name }}">{{ f.label }}</label>
+        {% if f.kind == 'choice' %}
+          <select name="{{ f.name }}" id="id_{{ f.name }}"
+                  hx-trigger="change" hx-include="closest form"
+                  class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="">{{ f.empty_label }}</option>
+            {% for o in f.options %}
+              <option value="{{ o.value }}" {% if f.value == o.value %}selected{% endif %}>{{ o.label }}</option>
+            {% endfor %}
+          </select>
+        {% elif f.kind == 'date' %}
+          <input type="date" name="{{ f.name }}" id="id_{{ f.name }}" value="{{ f.value }}"
+                 hx-trigger="change" hx-include="closest form"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        {% elif f.kind == 'bool' %}
+          <select name="{{ f.name }}" id="id_{{ f.name }}"
+                  hx-trigger="change" hx-include="closest form"
+                  class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All</option>
+            <option value="1" {% if f.value == '1' %}selected{% endif %}>Yes</option>
+            <option value="0" {% if f.value == '0' %}selected{% endif %}>No</option>
+          </select>
+        {% else %}
+          <input type="search" name="{{ f.name }}" id="id_{{ f.name }}" value="{{ f.value }}"
+                 placeholder="{{ f.placeholder }}"
+                 hx-trigger="input changed delay:300ms, search" hx-include="closest form"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        {% endif %}
+      </div>
+    {% endfor %}
+    <div class="flex gap-2">
+      <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Filter</button>
+      <a href="{{ filter_clear_url|default:filter_action|default:request.path }}"
+         class="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">Clear</a>
+    </div>
+  </form>
+</div>

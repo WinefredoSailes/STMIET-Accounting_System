@@ -1468,31 +1468,36 @@ def customer_update(request, pk):
 def receipt_create(request):
     from apps.ar.models import Customer
     from apps.ar.services import CollectionService
-    from apps.sequences.models import DocumentSequence
+    from apps.foundation.models import Account
 
     if request.method == "POST":
         try:
             customer = Customer.objects.get(pk=request.POST["customer"])
             cash_account = Account.objects.get(pk=request.POST["cash_account"])
-            receipt_no = DocumentSequence.next_number(
-                company=customer.segment.company,
-                form_code="AR",
-                year=int(request.POST["transaction_date"][:4]),
-                pattern="AR-{YYYY}-{SEQ:05d}",
-            )
-            receipt = CollectionService.record_collection(
-                receipt_no=receipt_no,
+            transaction_date = request.POST["transaction_date"]
+
+            receipt = CollectionService.create_receipt(
                 customer=customer,
-                transaction_date=date.fromisoformat(request.POST["transaction_date"]),
-                amount=request.POST["amount"],
+                transaction_date=transaction_date,
+                amount=request.POST.get("amount"),
                 cash_account=cash_account,
-                payment_method=request.POST["payment_method"],
+                payment_method=request.POST.get("payment_method", "cash"),
                 check_no=request.POST.get("check_no", ""),
                 transaction_no=request.POST.get("transaction_no", ""),
-                user=request.user,
+                ref_po_no=request.POST.get("ref_po_no", ""),
+                applied_to=None,
+                lines=[{
+                    "account": cash_account.id,
+                    "segment": customer.segment.id,
+                    "cost_center": "",
+                    "description": request.POST.get("description", ""),
+                    "debit": float(request.POST.get("amount", "0")),
+                    "credit": 0.00,
+                }],
+                created_by=request.user,
             )
-            messages.success(request, f"Receipt {receipt.receipt_no} posted.")
-            return redirect("ui:receipt_list")
+            messages.success(request, f"Receipt {receipt.receipt_no} created as Draft. Submit for Head approval to post to GL.")
+            return redirect("ui:receipt_detail", pk=receipt.pk)
         except AccountingError as exc:
             messages.error(request, str(exc))
     return render(
@@ -1501,6 +1506,97 @@ def receipt_create(request):
         {
             "customers": list_customers(),
             "today": date.today(),
+        },
+    )
+
+
+@login_required
+def receipt_detail(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    return render(
+        request,
+        "ui/ar/receipt_detail.html",
+        {"receipt": receipt},
+    )
+
+
+@login_required
+def receipt_submit(request, pk: int):
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    try:
+        CollectionService.submit(receipt, user=request.user)
+        messages.success(request, f"Receipt {receipt.receipt_no} submitted for approval.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:receipt_detail", pk=pk)
+
+
+@login_required
+def receipt_approve(request, pk: int):
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    try:
+        CollectionService.approve(receipt, user=request.user)
+        messages.success(request, f"Receipt {receipt.receipt_no} approved and posted to GL.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:receipt_detail", pk=pk)
+
+
+@login_required
+def receipt_reject(request, pk: int):
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    note = request.POST.get("note", "")
+    try:
+        CollectionService.reject(receipt, user=request.user, note=note)
+        messages.success(request, f"Receipt {receipt.receipt_no} rejected. Returned to Draft.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:receipt_detail", pk=pk)
+
+
+@login_required
+def receipt_deposit(request, pk: int):
+    from apps.ar.services import DepositService
+    from apps.foundation.models import Account
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    bank_account = Account.objects.get(pk=request.POST.get("bank_account")) if request.method == "POST" else None
+
+    if request.method == "POST":
+        try:
+            # For now, create deposit with just this receipt; can be extended to multi-select
+            deposit = DepositService.record_deposit(
+                receipts=[receipt],
+                bank_account=bank_account,
+                transaction_date=request.POST.get("transaction_date"),
+                reference=request.POST.get("reference", ""),
+                user=request.user,
+            )
+            messages.success(request, f"Deposit {deposit.deposit_no} recorded and posted to GL.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect("ui:receipt_detail", pk=pk)
+
+    # GET: show deposit form with the receipt's segment and available bank accounts
+    from apps.ar.services import segment_choices as _seg_choices  # just to have segment list
+    from apps.foundation.models import Segment
+    segments = Segment.objects.order_by("code")
+    banks = Account.objects.filter(is_postable=True).order_by("code")
+    return render(
+        request,
+        "ui/ar/receipt_deposit.html",
+        {
+            "receipt": receipt,
+            "segments": segments,
+            "banks": banks,
         },
     )
 
@@ -4027,21 +4123,29 @@ def party_options(request):
     return JsonResponse(results[:30], safe=False)
 
 
+from .filter_specs import coa_filter_spec
+
+
 @login_required
 def coa_list(request):
     """Chart of Accounts — read-only listing with search + filters."""
     from .services import coa_rows
 
+    spec = coa_filter_spec()
+    qs = coa_rows(
+        q=request.GET.get("q", "").strip(),
+        segment=request.GET.get("segment", "").strip(),
+        account_type=request.GET.get("account_type", "").strip(),
+    )
+    # Note: spec.apply is omitted because coa_rows already applies q/segment/account_type.
+    # The filter bar still renders the spec's UI and preserves values via context.
     ctx = {
         "page_obj": _page(
             request,
-            coa_rows(
-                q=request.GET.get("q", "").strip(),
-                segment=request.GET.get("segment", "").strip(),
-                account_type=request.GET.get("account_type", "").strip(),
-            ),
+            qs,
             per_page=50,
         ),
+        "filters": spec.context(request.GET, request),
         "q": request.GET.get("q", "").strip(),
         "segment_sel": request.GET.get("segment", "").strip(),
         "account_type_sel": request.GET.get("account_type", "").strip(),
@@ -4061,14 +4165,16 @@ def coa_print(request):
     """Print-optimized Chart of Accounts report (browser print dialog)."""
     from .services import coa_rows
 
-    rows = coa_rows(
+    spec = coa_filter_spec()
+    qs = coa_rows(
         q=request.GET.get("q", "").strip(),
         segment=request.GET.get("segment", "").strip(),
         account_type=request.GET.get("account_type", "").strip(),
     )
+    qs = spec.apply(qs, request.GET)
     groups = []
     for value, label in AccountType.choices:
-        accounts = [a for a in rows if a.account_type == value]
+        accounts = [a for a in qs if a.account_type == value]
         if accounts:
             groups.append((label, accounts))
     return render(
@@ -4076,10 +4182,11 @@ def coa_print(request):
         "ui/foundation/coa_print.html",
         {
             "groups": groups,
-            "total": len(rows),
+            "total": len(qs),
+            "filter_context": spec.context(request.GET, request),
+            "q": request.GET.get("q", "").strip(),
             "segment_sel": request.GET.get("segment", "").strip(),
             "account_type_sel": request.GET.get("account_type", "").strip(),
-            "q": request.GET.get("q", "").strip(),
         },
     )
 
@@ -5149,9 +5256,11 @@ def supplier_export(request):
 @login_required
 def coa_export(request):
     """Chart of Accounts export honoring the screen's filters."""
-    fmt = request.GET.get("format", "xlsx")
+    from .filter_specs import coa_filter_spec
     from .services import coa_rows
 
+    spec = coa_filter_spec()
+    fmt = request.GET.get("format", "xlsx")
     rows = [
         [
             a.code,
@@ -5165,10 +5274,13 @@ def coa_export(request):
             a.traceability or "",
             a.controllability or "",
         ]
-        for a in coa_rows(
-            q=request.GET.get("q", "").strip(),
-            segment=request.GET.get("segment", "").strip(),
-            account_type=request.GET.get("account_type", "").strip(),
+        for a in spec.apply(
+            coa_rows(
+                q=request.GET.get("q", "").strip(),
+                segment=request.GET.get("segment", "").strip(),
+                account_type=request.GET.get("account_type", "").strip(),
+            ),
+request.GET,
         )
     ]
     return _table_response(

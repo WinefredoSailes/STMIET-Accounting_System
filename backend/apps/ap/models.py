@@ -417,6 +417,8 @@ class ActionLog(models.Model):
         RFP = "rfp", "RFP"
         CV = "cv", "Check Voucher"
         PO = "po", "Purchase Order"
+        AR = "ar", "Acknowledgment Receipt"
+        DEPOSIT = "dep", "Bank Deposit"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)
