@@ -489,18 +489,30 @@ class TransferService:
         from apps.posting.models import PostingStatus
         from apps.posting.services import PostingService
 
-        entry = transfer.journal_entry
-        if entry is None:
-            raise ValidationError("This transfer has no journal entry to post.")
-        if entry.status != PostingStatus.APPROVED:
-            entry.status = PostingStatus.APPROVED
-            entry.updated_by = user
-            entry.save(update_fields=["status", "updated_by", "updated_at"])
-        PostingService.post(entry, user=user)
+        try:
+            entry = transfer.journal_entry
+            if entry is None:
+                raise ValidationError("This transfer has no journal entry to post.")
+
+            if entry.status != PostingStatus.APPROVED:
+                entry.status = PostingStatus.APPROVED
+                entry.updated_by = user
+                entry.save(
+                    update_fields=["status", "updated_by", "updated_at"]
+                )
+
+            PostingService.post(entry, user=user)
+        except Exception as e:
+            from apps.core.exceptions import ValidationError as VE
+
+            raise VE(str(e))
+
         transfer.approved_by = user
         transfer.approved_at = timezone.now()
         transfer.status = "approved"
-        transfer.save(update_fields=["approved_by", "approved_at", "status", "updated_at"])
+        transfer.save(
+            update_fields=["approved_by", "approved_at", "status", "updated_at"]
+        )
         return transfer
 
 

@@ -4722,14 +4722,18 @@ def transfer_approve(request, pk):
     from apps.cash.models import InterAccountTransfer
     from apps.cash.services import TransferService
     from apps.core.approvals import require_approval_role
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     transfer = get_object_or_404(InterAccountTransfer, pk=pk)
     try:
         require_approval_role(request.user, "head")
         transfer = TransferService.approve(transfer, user=request.user)
         messages.success(request, f"Transfer {transfer.voucher_no} approved — entry in GL.")
-    except AccountingError as exc:
-        messages.error(request, str(exc))
+    except Exception as exc:
+        logger.error(f"Transfer approval error: {exc}")
+        messages.error(request, "An error occurred during approval. Please try again.")
     return redirect("ui:transfers")
 
 
