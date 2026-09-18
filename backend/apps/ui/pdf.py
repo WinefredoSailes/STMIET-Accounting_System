@@ -883,7 +883,7 @@ def build_rfp_pdf(rfp, *, paper="a5") -> bytes:
     ]
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4), leftMargin=margin, rightMargin=margin,
+        buf, pagesize=pagesize, leftMargin=margin, rightMargin=margin,
         topMargin=margin, bottomMargin=margin,
         title=f"Request for Payment {rfp.ap_number}", author="Accounting System",
     )
@@ -1022,7 +1022,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     ]
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=landscape(A4), leftMargin=margin, rightMargin=margin,
+        buf, pagesize=pagesize, leftMargin=margin, rightMargin=margin,
         topMargin=margin, bottomMargin=margin,
         title=f"Check Voucher {cv.cv_number}", author="Accounting System",
     )

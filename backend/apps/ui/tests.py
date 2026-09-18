@@ -4458,7 +4458,8 @@ class TestRFPPayableHelper:
         )
         assert rfp_payable(rfp) == Decimal("5000.00")
 
-def test_ap_payable_map_resolves_per_segment(self, segment, accounts, user,
+@pytest.mark.django_db
+def test_ap_payable_map_resolves_per_segment(segment, accounts, user,
                                              segment_account_map):
     from apps.ap.services import rfp_payable
 

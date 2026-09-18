@@ -905,6 +905,7 @@ def ap_aging_context(as_of: date) -> dict:
     Future-dated RFPs are listed separately as "not_yet_due".
     """
     from apps.ap.models import CheckVoucher, RFPDocument
+    from apps.ap.services import rfp_payable
 
     cleared = {
         row["rfp_id"]: row["paid"] or Decimal("0.00")
