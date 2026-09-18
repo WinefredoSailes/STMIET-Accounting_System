@@ -1,3 +1,4 @@
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from datetime import date
 from rest_framework import status, viewsets
@@ -43,6 +44,30 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = RFPDocumentSerializer
     search_fields = ["ap_number", "payee__name", "particulars"]
     filterset_fields = ["status", "segment"]
+
+    def _assert_can_edit(self, rfp):
+        """The preparer may edit an RFP only while it is still `prepared` —
+        after it leaves her desk (submitted or later) changes go through the
+        reject/revise cycle and no one may delete a document."""
+        if rfp.status != "prepared":
+            raise PermissionDenied("Only prepared RFPs can be edited.")
+        if self.request.user.id != rfp.created_by_id:
+            raise PermissionDenied("Only the preparer may edit this RFP.")
+
+    def update(self, request, *args, **kwargs):
+        rfp = self.get_object()
+        self._assert_can_edit(rfp)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        rfp = self.get_object()
+        self._assert_can_edit(rfp)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        rfp = self.get_object()
+        self._assert_can_edit(rfp)
+        return super().destroy(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         """Create RFP: auto-number A####, validate lines sum, set LAST AP."""

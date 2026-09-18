@@ -1556,6 +1556,151 @@ class TestRFPRejectCycle:
         assert rfp.ap_number in body
 
 
+class TestRFPEditPrepared:
+    """The preparer fixes a `prepared` RFP before submitting it (Edit button
+    on the detail action bar, UI relies on RFPService.edit_prepared)."""
+
+    @pytest.fixture
+    def supplier(self, db, segment):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S999", name="Shell Fuel Depot", default_segment=segment
+        )
+
+    @pytest.fixture
+    def staff(self, db, role_users):
+        return role_users["staff"]
+
+    def _make_rfp(self, segment, supplier, staff, ap_number):
+        from apps.ap.services import RFPService
+
+        return RFPService.create_rfp(
+            ap_number=ap_number,
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+            ],
+            user=staff,
+        )
+
+    def test_edit_button_shown_only_to_preparer_on_detail(self, client, company, segment,
+                                                          accounts, supplier, role_users, staff):
+        rfp = self._make_rfp(segment, supplier, staff, "A2201")
+
+        client.force_login(staff)
+        resp = client.get(f"/ap/rfps/{rfp.id}/")
+        assert resp.status_code == 200
+        assert f"/ap/rfps/{rfp.id}/edit/" in resp.content.decode()
+        assert "Submit for checking" in resp.content.decode()
+
+        client.force_login(role_users["head"])
+        resp = client.get(f"/ap/rfps/{rfp.id}/")
+        assert resp.status_code == 200
+        assert f"/ap/rfps/{rfp.id}/edit/" not in resp.content.decode()
+
+    def test_non_preparer_and_non_prepared_cannot_open_edit_form(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        rfp = self._make_rfp(segment, supplier, staff, "A2202")
+
+        # Non-preparer is bounced.
+        client.force_login(role_users["head"])
+        resp = client.get(f"/ap/rfps/{rfp.id}/edit/")
+        assert resp.status_code == 302
+
+        # Once submitted, even the preparer is bounced (reject/revise path instead).
+        client.force_login(staff)
+        resp = client.post(f"/ap/rfps/{rfp.id}/submit/")
+        assert resp.status_code == 302
+        resp = client.get(f"/ap/rfps/{rfp.id}/edit/")
+        assert resp.status_code == 302
+
+    def test_preparer_edits_prepared_rfp_and_stays_prepared(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        rfp = self._make_rfp(segment, supplier, staff, "A2203")
+        client.force_login(staff)
+
+        resp = client.get(f"/ap/rfps/{rfp.id}/edit/")
+        assert resp.status_code == 200
+        assert "Edit RFP" in resp.content.decode()
+
+        resp = client.post(f"/ap/rfps/{rfp.id}/edit/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "rfp_date": "2026-02-02",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_debit": ["12000.00", ""],
+            "line_credit": ["", "12000.00"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
+        })
+        assert resp.status_code == 302
+
+        rfp.refresh_from_db()
+        assert rfp.status == "prepared"  # still hers to submit
+        assert rfp.amount == Decimal("12000.00")
+        assert rfp.rfp_date == date(2026, 2, 2)
+        assert rfp.particulars == "Fuel purchase"
+        assert rfp.purpose == "GEN-FUEL"
+        assert rfp.lines.count() == 2
+
+    def test_edit_balances_are_revalidated(self, client, company, segment, accounts,
+                                           supplier, role_users, staff):
+        rfp = self._make_rfp(segment, supplier, staff, "A2204")
+        client.force_login(staff)
+        resp = client.post(f"/ap/rfps/{rfp.id}/edit/", {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "rfp_date": "2026-02-02",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_debit": ["30000.00", ""],
+            "line_credit": ["", "25000.00"],
+        })
+        rfp.refresh_from_db()
+        assert rfp.amount == Decimal("30000.00")  # unchanged on failure
+        assert rfp.status == "prepared"
+
+    def test_api_update_destroy_guarded(self, segment, accounts, supplier, role_users, staff):
+        """DRF API: only the preparer may PATCH/DELETE an RFP, and only while
+        it is still `prepared` (403 otherwise)."""
+        from rest_framework.test import APIClient
+
+        rfp = self._make_rfp(segment, supplier, staff, "A2205")
+        staff_api = APIClient()
+        staff_api.force_authenticate(user=staff)
+        head_api = APIClient()
+        head_api.force_authenticate(user=role_users["head"])
+
+        url = f"/api/v1/ap/rfps/{rfp.id}/"
+
+        # The head holds the approval step but is not the preparer -> blocked.
+        resp = head_api.patch(url, {"purpose": "HACK"}, format="json")
+        assert resp.status_code == 403
+        resp = head_api.delete(url)
+        assert resp.status_code == 403
+
+        # The preparer may adjust the header while the RFP is still prepared.
+        resp = staff_api.patch(url, {"purpose": "GEN-FUEL"}, format="json")
+        assert resp.status_code == 200
+        rfp.refresh_from_db()
+        assert rfp.purpose == "GEN-FUEL"
+
+        # After submission the document is locked to editing/deletion.
+        resp = staff_api.post(f"/api/v1/ap/rfps/{rfp.id}/submit/")
+        assert resp.status_code == 200
+        resp = staff_api.patch(url, {"purpose": "LATE"}, format="json")
+        assert resp.status_code == 403
+        resp = staff_api.delete(url)
+        assert resp.status_code == 403
+
+
 class TestAssetScreen:
     @pytest.fixture
     def category(self, db, accounts):

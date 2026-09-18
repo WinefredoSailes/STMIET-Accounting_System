@@ -596,6 +596,85 @@ class RFPService:
         log_action(rfp, "revised", actor=user)
         return rfp
 
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def edit_prepared(
+        cls,
+        rfp: RFPDocument,
+        *,
+        user,
+        rfp_date: date,
+        payee,
+        segment,
+        po,
+        purpose: str = "",
+        lines: list[dict],
+    ) -> RFPDocument:
+        """The preparer corrects a `prepared` RFP before submitting it.
+
+        Only the preparer may edit, and only while the RFP is still
+        `prepared` — nothing has left her desk yet. The full header (date,
+        payee, segment, PO, purpose) and the distribution lines are replaced
+        wholesale; validation mirrors create_rfp. The RFP stays `prepared`
+        (no rejection, no resubmission) so the preparer reviews her fix and
+        submits when ready.
+        """
+        if rfp.status != "prepared":
+            raise ValidationError("Only prepared RFPs can be edited.")
+        if user.id != rfp.created_by_id:
+            raise ValidationError(
+                f"RFP {rfp.ap_number} was prepared by another user; only the preparer may edit it."
+            )
+
+        dr_total = Decimal("0.00")
+        cr_total = Decimal("0.00")
+        for line in lines:
+            amt = money(line["amount"])
+            if amt <= 0:
+                raise ValidationError("Each charge line must have an amount greater than zero.")
+            side = str(line.get("side") or "dr").lower()
+            if side not in ("dr", "cr"):
+                raise ValidationError(f"Line side must be Dr or Cr, got '{side}'.")
+            if side == "dr":
+                dr_total += amt
+            else:
+                cr_total += amt
+        if dr_total <= 0:
+            raise ValidationError("An RFP needs at least one debit (Dr) line.")
+        if dr_total != cr_total:
+            raise ValidationError(
+                f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
+            )
+        if po is not None:
+            validate_po_for_rfp(po, payee_id=payee.id, amount=dr_total)
+
+        rfp.rfp_date = rfp_date
+        rfp.payee = payee
+        rfp.segment = segment
+        rfp.po = po
+        rfp.purpose = purpose
+        rfp.amount = dr_total
+        rfp.particulars = lines[0].get("description", "") if lines else ""
+        rfp.lines.all().delete()
+        rfp.save(update_fields=[
+            "rfp_date", "payee", "segment", "po", "purpose",
+            "amount", "particulars", "updated_at",
+        ])
+        for i, line in enumerate(lines, start=1):
+            RFPLine.objects.create(
+                rfp=rfp,
+                line_no=i,
+                side=str(line.get("side") or "dr").lower(),
+                segment=line["segment"],
+                account=_account(line["account_code"]),
+                amount=money(line["amount"]),
+                description=line.get("description", ""),
+                cost_center=line.get("cost_center", ""),
+            )
+        log_action(rfp, "edited", actor=user)
+        return rfp
+
 
 class PurchaseOrderService:
     """Purchase Order lifecycle (ADR-0XX): prepared by the AP staff, committed

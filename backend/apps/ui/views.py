@@ -1940,6 +1940,67 @@ def rfp_revise(request, pk):
         "ui/ap/rfp_form.html",
         {
             "editing": rfp,
+            "edit_mode": "revise",
+            "segments": Segment.objects.order_by("code"),
+            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        },
+    )
+
+
+@login_required
+def rfp_edit(request, pk):
+    """The preparer corrects a prepared RFP before submitting it. GET shows a
+    prefilled edit form; POST runs RFPService.edit_prepared (prepared +
+    preparer only)."""
+    from apps.ap.models import PurchaseOrder, RFPDocument, Supplier
+    from apps.ap.services import RFPService
+
+    rfp = get_object_or_404(
+        RFPDocument.objects.select_related("payee", "segment").prefetch_related("lines"), pk=pk
+    )
+    if rfp.status != "prepared":
+        messages.error(request, "Only prepared RFPs can be edited.")
+        return redirect("ui:rfp_detail", pk=pk)
+    if request.user.id != rfp.created_by_id:
+        messages.error(request, "Only the preparer may edit this RFP.")
+        return redirect("ui:rfp_detail", pk=pk)
+
+    if request.method == "POST":
+        try:
+            payee = get_object_or_404(Supplier, pk=request.POST["payee"])
+            segment = get_object_or_404(Segment, pk=request.POST["segment"])
+            rfp_date = request.POST.get("rfp_date", "")
+            if not rfp_date:
+                raise ValidationError("Enter the date of request.")
+            po = None
+            po_pk = (request.POST.get("po") or "").strip()
+            if po_pk:
+                po = get_object_or_404(PurchaseOrder, pk=po_pk)
+            lines = _rfp_lines_from_form(request)
+            if not lines:
+                raise ValidationError("Add at least one charge line.")
+            rfp = RFPService.edit_prepared(
+                rfp,
+                user=request.user,
+                rfp_date=date.fromisoformat(rfp_date),
+                payee=payee,
+                segment=segment,
+                po=po,
+                purpose=request.POST.get("purpose", ""),
+                lines=lines,
+            )
+            messages.success(request, f"RFP {rfp.ap_number} updated.")
+            return redirect("ui:rfp_detail", pk=pk)
+        except (AccountingError, ValidationError) as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/ap/rfp_form.html",
+        {
+            "editing": rfp,
+            "edit_mode": "edit",
             "segments": Segment.objects.order_by("code"),
             "accounts": Account.objects.filter(is_postable=True).order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),

@@ -371,6 +371,132 @@ class TestRFPApproval:
         ]
 
 
+class TestRFPEditPrepared:
+    """The preparer fixes a `prepared` RFP before submitting it: full header
+    + distribution lines, status stays `prepared`, preparer-only."""
+
+    def _create(self, segment, supplier, alywin, ap_number, amount="30000.00"):
+        return RFPService.create_rfp(
+            ap_number=ap_number, rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": amount},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": amount},
+            ],
+            user=alywin,
+        )
+
+    def test_preparer_edits_full_header_and_lines(
+        self, company, segment, supplier, alywin, accounts
+    ):
+        from django.contrib.auth import get_user_model
+
+        other = Supplier.objects.create(code="S007", name="Luzon Fuel Depot", default_segment=segment)
+        rfp = self._create(segment, supplier, alywin, "A0201")
+
+        rfp = RFPService.edit_prepared(
+            rfp,
+            user=alywin,
+            rfp_date=date(2026, 2, 2),
+            payee=other,
+            segment=segment,
+            po=None,
+            purpose="FUEL-RE",
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100",
+                 "amount": "12000.00", "description": "Replaced entry"},
+                {"side": "cr", "segment": segment, "account_code": "20000",
+                 "amount": "12000.00", "description": "AP - Luzon"},
+            ],
+        )
+
+        rfp.refresh_from_db()
+        assert rfp.status == "prepared"  # still in the preparer's hands
+        assert rfp.payee == other
+        assert rfp.rfp_date == date(2026, 2, 2)
+        assert rfp.purpose == "FUEL-RE"
+        assert rfp.particulars == "Replaced entry"
+        assert rfp.amount == Decimal("12000.00")
+        assert rfp.created_by == alywin
+        assert rfp.ap_number == "A0201"
+        assert rfp.revision_count == 0
+        sides = {l.side for l in rfp.lines.all()}
+        assert sides == {"dr", "cr"}
+        assert rfp.lines.count() == 2
+
+    def test_non_preparer_cannot_edit(self, company, segment, supplier, alywin, accounts):
+        from django.contrib.auth import get_user_model
+
+        head = get_user_model().objects.create_user(username="staff-x", password="x")
+        rfp = self._create(segment, supplier, alywin, "A0202")
+        with pytest.raises(ValidationError, match="prepared by another user"):
+            RFPService.edit_prepared(
+                rfp, user=head, rfp_date=date(2026, 1, 15), payee=supplier,
+                segment=segment, po=None, lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+                ],
+            )
+
+    def test_cannot_edit_after_submission(self, company, segment, supplier, alywin, accounts):
+        rfp = self._create(segment, supplier, alywin, "A0203")
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        with pytest.raises(ValidationError, match="Only prepared RFPs can be edited"):
+            RFPService.edit_prepared(
+                rfp, user=alywin, rfp_date=date(2026, 1, 15), payee=supplier,
+                segment=segment, po=None, lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+                ],
+            )
+
+    def test_cannot_edit_rejected(self, company, segment, supplier, alywin, accounts):
+        from django.contrib.auth import get_user_model
+
+        head = get_user_model().objects.create_user(username="head-x", password="x")
+        rfp = self._create(segment, supplier, alywin, "A0204")
+        rfp.status = "submitted"
+        rfp.save(update_fields=["status", "updated_at"])
+        rfp = RFPService.reject(rfp, user=head, note="Fix the amount.")
+        assert rfp.status == "rejected"
+        with pytest.raises(ValidationError, match="Only prepared RFPs can be edited"):
+            RFPService.edit_prepared(
+                rfp, user=alywin, rfp_date=date(2026, 1, 15), payee=supplier,
+                segment=segment, po=None, lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "30000.00"},
+                ],
+            )
+
+    def test_unbalanced_lines_rejected(self, company, segment, supplier, alywin, accounts):
+        rfp = self._create(segment, supplier, alywin, "A0205")
+        with pytest.raises(ValidationError, match="do not balance"):
+            RFPService.edit_prepared(
+                rfp, user=alywin, rfp_date=date(2026, 1, 15), payee=supplier,
+                segment=segment, po=None, lines=[
+                    {"side": "dr", "segment": segment, "account_code": "61100", "amount": "30000.00"},
+                    {"side": "cr", "segment": segment, "account_code": "20000", "amount": "25000.00"},
+                ],
+            )
+        rfp.refresh_from_db()
+        assert rfp.amount == Decimal("30000.00")  # unchanged on failure
+
+    def test_audit_trail_records_edited(self, company, segment, supplier, alywin, accounts):
+        rfp = self._create(segment, supplier, alywin, "A0206")
+        actions = lambda: list(ActionLog.objects.filter(
+            doc_type=ActionLog.DocType.RFP, doc_id=rfp.id
+        ).order_by("id").values_list("action", flat=True))
+        assert actions() == ["created"]
+        RFPService.edit_prepared(
+            rfp, user=alywin, rfp_date=date(2026, 1, 16), payee=supplier,
+            segment=segment, po=None, lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "40000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "40000.00"},
+            ],
+        )
+        assert actions() == ["created", "edited"]
+
+
 class TestCONSOPosting:
     def test_batch_posts_all_rfps(self, company, segment, supplier, rfp_lines, alywin, accounts):
         from django.contrib.auth import get_user_model

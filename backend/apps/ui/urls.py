@@ -104,6 +104,7 @@ urlpatterns = [
     path("ap/rfps/<int:pk>/approve-cnr/", views.rfp_approve_cnr, name="rfp_approve_cnr"),
     path("ap/rfps/<int:pk>/reject/", views.rfp_reject, name="rfp_reject"),
     path("ap/rfps/<int:pk>/revise/", views.rfp_revise, name="rfp_revise"),
+    path("ap/rfps/<int:pk>/edit/", views.rfp_edit, name="rfp_edit"),
     path("ap/pos/", views.po_list, name="po_list"),
     path("ap/pos/new/", views.po_create, name="po_create"),
     path("ap/po-options/", views.po_options, name="po_options"),

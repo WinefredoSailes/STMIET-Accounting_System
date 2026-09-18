@@ -1,11 +1,11 @@
 {% extends "ui/base.html" %}
 {% load static %}
-{% block title %}{% if editing %}Revise RFP {{ editing.ap_number }}{% else %}New RFP{% endif %}{% endblock %}
+{% block title %}{% if editing %}{% if edit_mode == 'edit' %}Edit RFP {{ editing.ap_number }}{% else %}Revise RFP {{ editing.ap_number }}{% endif %}{% else %}New RFP{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:rfp_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; RFPs</a>
   <div class="mt-1 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-slate-900">{% if editing %}Revise RFP {{ editing.ap_number }}{% else %}New Request for Payment{% endif %}</h1>
+    <h1 class="text-xl font-semibold text-slate-900">{% if editing %}{% if edit_mode == 'edit' %}Edit RFP {{ editing.ap_number }}{% else %}Revise RFP {{ editing.ap_number }}{% endif %}{% else %}New Request for Payment{% endif %}</h1>
     <span class="text-xs text-slate-400">ACCTG-FOR-012 · A#### auto-assigned</span>
   </div>
 
@@ -141,7 +141,7 @@
 
     <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
       <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        {% if editing %}Save & resubmit (revised){% else %}Create RFP (prepared){% endif %}
+        {% if editing %}{% if edit_mode == 'edit' %}Save changes{% else %}Save & resubmit (revised){% endif %}{% else %}Create RFP (prepared){% endif %}
       </button>
     </div>
   </form>

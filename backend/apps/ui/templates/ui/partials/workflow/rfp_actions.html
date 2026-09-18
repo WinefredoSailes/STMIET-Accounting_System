@@ -2,7 +2,10 @@
 Extracted verbatim from ap/rfp_detail.html; the reject-toggle/reject-form pair
 is wired by toggle-block.js on the host page.{% endcomment %}
 {% if rfp.status == "prepared" %}
-<div class="mt-4">
+<div class="mt-4 flex items-center gap-2">
+  {% if request.user.id == rfp.created_by_id %}
+  <a href="{% url 'ui:rfp_edit' rfp.id %}" class="inline-block rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Edit</a>
+  {% endif %}
   <form method="post" action="{% url 'ui:rfp_submit' rfp.id %}">
     {% csrf_token %}
     <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Submit for checking</button>
