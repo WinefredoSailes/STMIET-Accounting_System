@@ -58,7 +58,7 @@ running instance (postgres 17 present on this machine).
 
 ## Recent changes (as of UAT guide v2)
 
-All 341 tests passing after these session changes:
+All tests passing after these session changes:
 
 - **Print forms:** spacer rows removed from cv_print.html + rfp_print.html  
 - **RFP header:** refactored: 3-col grid Payee|Date of Request|Cost Center / Ref, hidden segment + sync JS  
@@ -67,5 +67,6 @@ All 341 tests passing after these session changes:
 - **CV lifecycle:** signed_by / released_by removed (migration 0009)  
 - **Tailwind:** rebuilt for new grid classes  
 - **Flags:** COO_REVIEW_ENABLED + CONSO_AUTO_ASSIGN both default False; flip at go-live  
+- **Cleanup:** removed unstaged experimental changes from earlier session (core/approvals.py, core/tests.py, related test artifacts) that caused test regressions; working tree now clean and focused on ₹100k threshold removal + PDF export objectives  
 
 Run `pytest --nomigrations -q` all green.
