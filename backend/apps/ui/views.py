@@ -1353,7 +1353,7 @@ def rfp_list(request):
     page = _page(request, list_rfps(limit=None))
     for rfp in page.object_list:
         rfp.approval_info = _rfp_approval_info(rfp, role)
-        rfp.payable_amount = rfp_payable(rfp, ap_segment_map=ap_map)
+        rfp.payable_amount = rfp_payable(rfp)
     return render(
         request,
         "ui/ap/rfp_list.html",

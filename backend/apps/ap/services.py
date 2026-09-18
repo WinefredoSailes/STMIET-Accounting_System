@@ -78,27 +78,22 @@ def ap_payable_map() -> dict:
     }
 
 
-def rfp_payable(rfp, ap_segment_map=None) -> Decimal:
-    """The true A/P payable for an RFP — the sum of its credit lines booked to
-    the segment-level Accounts Payable account (SegmentAccountMap role 'ap').
-
-    - An RFP with an AP credit line returns that line-sum: gross minus WHT and
-      any other non-AP credits (9,489 gross -> 8,739 when 750 is withheld).
-    - An RFP with no AP credit line at all falls back to the RFP amount
-      (gross): flat RFPs credit the full amount to AP, and even an RFP whose
-      credits never touch AP is still owed — keeping its current aging row.
+def rfp_payable(rfp) -> Decimal:
+    """Simplified A/P payable: only checks accounts 20000 and 21100.
+    
+    - If RFP has credit lines to account 20000 (A/Payables - Current) or
+      21100 (A/Payables - Other Current), returns sum of those lines
+    - If no match, falls back to rfp.amount (gross)
     """
-    if ap_segment_map is None:
-        ap_segment_map = ap_payable_map()
     payable = Decimal("0.00")
-    ap_found = False
+    found = False
     for line in rfp.lines.all():
         if line.side != "cr":
             continue
-        if ap_segment_map.get(line.segment_id) == line.account_id:
-            ap_found = True
+        if line.account.code in ("20000", "21100"):  # A/Payables - Current & Other Current
+            found = True
             payable += line.amount
-    return money(payable) if ap_found else money(rfp.amount)
+    return money(payable) if found else money(rfp.amount)
 
 
 # --- Purchase Order helpers (ADR-0XX; same matrix as the RFP, ADR-020). ----

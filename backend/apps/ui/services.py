@@ -205,18 +205,17 @@ def rfp_summary():
     CV prefill now use. RFPs without an AP line keep their gross amount.
     """
     from apps.ap.models import RFPDocument
-    from apps.ap.services import ap_payable_map, rfp_payable
+    from apps.ap.services import ap_payable_map, finally_approved, rfp_payable
 
-    ap_map = ap_payable_map()
     total = pending = approved = posted = Decimal("0.00")
     total_n = pending_n = approved_n = 0
     for rfp in RFPDocument.objects.prefetch_related("lines"):
-        payable = rfp_payable(rfp, ap_segment_map=ap_map)
+        payable = rfp_payable(rfp)
         total += payable
         total_n += 1
         if rfp.status == "posted":
             posted += payable
-        elif rfp.status in ("fin_approved", "cnr_approved"):
+        elif finally_approved(rfp):
             approved += payable
             approved_n += 1
         elif rfp.status != "rejected":
@@ -414,10 +413,12 @@ def approved_rfps():
 def unassigned_approved_rfps():
     """Approved RFPs not yet in a CONSO batch (for CONSO add)."""
     from apps.ap.models import RFPDocument
+    from apps.ap.services import finally_approved
 
-    return RFPDocument.objects.filter(
+    candidates = RFPDocument.objects.filter(
         status__in=["fin_approved", "cnr_approved"], conso__isnull=True
     ).select_related("payee", "segment")
+    return [rfp for rfp in candidates if finally_approved(rfp)]
 
 
 def list_conso(*, limit=50):
@@ -904,9 +905,6 @@ def ap_aging_context(as_of: date) -> dict:
     Future-dated RFPs are listed separately as "not_yet_due".
     """
     from apps.ap.models import CheckVoucher, RFPDocument
-    from apps.ap.services import ap_payable_map, rfp_payable
-
-    ap_map = ap_payable_map()
 
     cleared = {
         row["rfp_id"]: row["paid"] or Decimal("0.00")
@@ -933,7 +931,7 @@ def ap_aging_context(as_of: date) -> dict:
         .prefetch_related("lines")
         .order_by("rfp_date")
     ):
-        payable = rfp_payable(rfp, ap_segment_map=ap_map)
+        payable = rfp_payable(rfp)
         paid = cleared.get(rfp.id, Decimal("0.00"))
         balance = payable - paid
         if balance <= 0:

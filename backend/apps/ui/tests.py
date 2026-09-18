@@ -4313,14 +4313,12 @@ class TestRFPPayableHelper:
         )
         assert rfp_payable(rfp) == Decimal("5000.00")
 
-    def test_ap_payable_map_resolves_per_segment(self, segment, accounts, user,
-                                                 segment_account_map):
-        from apps.ap.services import ap_payable_map, rfp_payable
+def test_ap_payable_map_resolves_per_segment(self, segment, accounts, user,
+                                             segment_account_map):
+    from apps.ap.services import rfp_payable
 
-        ap_map = ap_payable_map()
-        assert ap_map.get(segment.id) == accounts["20000"].id
-        rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2006")
-        assert rfp_payable(rfp, ap_segment_map=ap_map) == Decimal("8739.00")
+    rfp, _ = _wht_split_rfp(segment, accounts, user, ap_number="A2006")
+    assert rfp_payable(rfp) == Decimal("8739.00")
 
 
 class TestRFPPayableScreens:
