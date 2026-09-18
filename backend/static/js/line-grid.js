@@ -36,6 +36,11 @@
   function num(el) {
     return window.AmountFormat.parse(el ? el.value : '');
   }
+  function cents(n) {
+    // Whole cents (integers are exact) so summed totals can be compared
+    // without floating-point noise (e.g. 27416.9 + 4513.2 !== 31930.1).
+    return Math.round((n || 0) * 100);
+  }
   function fmtMoney(n) {
     return window.AmountFormat.fmt(n);
   }
@@ -75,20 +80,20 @@
   function recalcJe(grid) {
     var d = 0, c = 0;
     grid.querySelectorAll('tr').forEach(function (tr) {
-      d += num(tr.querySelector('.amount-debit'));
-      c += num(tr.querySelector('.amount-credit'));
+      d += cents(num(tr.querySelector('.amount-debit')));
+      c += cents(num(tr.querySelector('.amount-credit')));
     });
     var td = docSel(grid.dataset.totalDebit);
     var tc = docSel(grid.dataset.totalCredit);
-    if (td) td.textContent = fmtMoney(d);
-    if (tc) tc.textContent = fmtMoney(c);
+    if (td) td.textContent = fmtMoney(d / 100);
+    if (tc) tc.textContent = fmtMoney(c / 100);
     var hint = docSel(grid.dataset.hint);
     if (hint) {
       if (d === c) {
         hint.textContent = 'Balanced';
         hint.className = grid.dataset.hintOk || 'text-sm text-emerald-600 font-medium';
       } else {
-        hint.textContent = 'Difference: ' + fmtMoney(Math.abs(d - c));
+        hint.textContent = 'Difference: ' + fmtMoney(Math.abs(d - c) / 100);
         hint.className = grid.dataset.hintBad || 'text-sm text-red-600 font-medium';
       }
     }
@@ -97,17 +102,17 @@
   function recalcRfp(grid) {
     var dr = 0, cr = 0;
     grid.querySelectorAll('tr').forEach(function (tr) {
-      dr += num(tr.querySelector('.amount-dr'));
-      cr += num(tr.querySelector('.amount-cr'));
+      dr += cents(num(tr.querySelector('.amount-dr')));
+      cr += cents(num(tr.querySelector('.amount-cr')));
     });
     var td = docSel(grid.dataset.totalDr);
     var tc = docSel(grid.dataset.totalCr);
-    if (td) td.textContent = fmtMoney(dr);
-    if (tc) tc.textContent = fmtMoney(cr);
+    if (td) td.textContent = fmtMoney(dr / 100);
+    if (tc) tc.textContent = fmtMoney(cr / 100);
     var hint = docSel(grid.dataset.hint);
     if (hint) {
       if (dr !== cr) {
-        hint.textContent = 'Debits and credits do not balance (Dr ' + fmtMoney(dr) + ' vs Cr ' + fmtMoney(cr) + ').';
+        hint.textContent = 'Debits and credits do not balance (Dr ' + fmtMoney(dr / 100) + ' vs Cr ' + fmtMoney(cr / 100) + ').';
         hint.className = grid.dataset.hintBad || 'mt-2 text-xs text-red-700 font-medium';
       } else {
         hint.textContent = 'Debits and credits balance.';
