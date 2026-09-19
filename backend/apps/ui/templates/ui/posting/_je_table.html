@@ -1,0 +1,46 @@
+{% load ui_filters %}
+{# Journal Entries table fragment — swapped by #je-table on HTMX filter updates. #}
+<div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <table class="w-full text-sm min-w-[900px]">
+    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <tr>
+        <th class="px-4 py-3">Entry no.</th>
+        <th class="px-4 py-3">Date</th>
+        <th class="px-4 py-3">Description</th>
+        <th class="px-4 py-3">Segment</th>
+        <th class="px-4 py-3 text-right">Debit</th>
+        <th class="px-4 py-3 text-right">Credit</th>
+        <th class="px-4 py-3">Status</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for je in page_obj %}
+      <tr class="hover:bg-slate-50">
+        <td class="px-4 py-2.5 font-mono text-xs"><a class="text-indigo-600 hover:underline" href="{% url 'ui:je_detail' je.id %}">{{ je.entry_no }}</a></td>
+        <td class="px-4 py-2.5">{{ je.transaction_date|date:"M d, Y" }}</td>
+        <td class="px-4 py-2.5 text-slate-600">{{ je.description|truncatechars:50 }}</td>
+        <td class="px-4 py-2.5">{{ je.segment.code }}</td>
+        <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_debit|money }}</td>
+        <td class="px-4 py-2.5 text-right tabular-nums">{{ je.total_credit|money }}</td>
+        <td class="px-4 py-2.5">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+            {% if je.status == 'posted' %}bg-emerald-100 text-emerald-800
+            {% elif je.status == 'draft' %}bg-slate-100 text-slate-700
+            {% elif je.status == 'approved' %}bg-blue-100 text-blue-800
+            {% elif je.status == 'submitted' %}bg-amber-100 text-amber-800
+            {% else %}bg-red-100 text-red-800{% endif %}">
+            {{ je.get_status_display }}
+          </span>
+        </td>
+        <td class="px-4 py-2.5 whitespace-nowrap">
+          <a href="{% url 'ui:je_print' je.id %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No journal entries match. Try clearing the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "ui/partials/pagination.html" %}

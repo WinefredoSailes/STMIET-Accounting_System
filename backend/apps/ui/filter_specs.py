@@ -1,156 +1,238 @@
-"""Per-screen filter specs so the shared partial can render + apply consistently."""
+"""Per-screen filter specs.
+
+One declarative :class:`~apps.ui.filtering.FilterSpec` per list screen. The
+shared engine in :mod:`apps.ui.filtering` does the applying and the
+``ui/partials/filter_bar.html`` partial does the rendering, so every list
+behaves the same way: same query-string params, same HTMX swap, same Clear.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable
+from .filtering import (
+    FilterField,
+    FilterSpec,
+    Option,
+    account_choices,
+    customer_choices,
+    segment_choices,
+    segment_pk_choices,
+    supplier_choices,
+)
 
-from apps.foundation.models import Account, AccountType, CostCenter, Segment
-from apps.ar.models import Customer
-from apps.ap.models import Supplier
-
-
-@dataclass
-class Option:
-    value: str
-    label: str
-
-
-def _normalize_options(raw) -> list[Option]:
-    out: list[Option] = []
-    for item in raw or []:
-        if isinstance(item, Option):
-            out.append(item)
-        elif isinstance(item, (tuple, list)):
-            value, label = item[0], item[1]
-            out.append(Option(str(value), str(label)))
-        else:
-            out.append(Option(str(item), str(item)))
-    return out
-
-
-@dataclass
-class FilterField:
-    """One filter control mapped to an ORM lookup.
-
-    ``kind``: text | choice | date | bool | number.
-    ``choices``: an iterable of (value, label) pairs, or a callable taking the
-    request and returning them (for DB-backed option lists).
-    ``lookup``: explicit ORM suffix (e.g. "gte", "lte"); defaults to
-    ``icontains`` for text and ``exact`` otherwise.
-    """
-
-    name: str
-    label: str
-    kind: str = "text"
-    choices: object = None
-    lookup: str = ""
-    placeholder: str = ""
-    empty_label: str = ""
-
-    def resolve_choices(self, request=None) -> list[Option]:
-        choices = self.choices
-        if callable(choices):
-            choices = choices(request)
-        return _normalize_options(choices)
-
-    def effective_lookup(self) -> str:
-        if self.lookup:
-            return self.lookup
-        if self.kind == "text":
-            return "icontains"
-        return "exact"
+__all__ = [
+    "FilterField",
+    "FilterSpec",
+    "Option",
+    "coa_filter_spec",
+    "customer_list_filter_spec",
+    "receipt_list_filter_spec",
+    "deposit_list_filter_spec",
+    "supplier_list_filter_spec",
+    "rfp_filter_spec",
+    "po_filter_spec",
+    "cv_filter_spec",
+    "je_filter_spec",
+]
 
 
-@dataclass
-class FilterSpec:
-    fields: list = field(default_factory=list)
-
-    def apply(self, qs, params):
-        for f in self.fields:
-            raw = params.get(f.name)
-            if raw in (None, ""):
-                continue
-            if f.kind == "bool":
-                value = str(raw).lower() in ("1", "true", "yes", "on")
-            else:
-                value = raw
-            qs = qs.filter(**{f"{f.name}__{f.effective_lookup()}": value})
-        return qs
-
-    def context(self, params, request=None):
-        out = []
-        for f in self.fields:
-            out.append(
-                {
-                    "name": f.name,
-                    "label": f.label,
-                    "kind": f.kind,
-                    "placeholder": f.placeholder,
-                    "empty_label": f.empty_label or f"All {f.label.lower()}",
-                    "value": params.get(f.name, ""),
-                    "options": f.resolve_choices(request),
-                }
-            )
-        return out
-
-
-def segment_choices(request=None):
-    from apps.foundation.models import Segment
-
-    return [(s.code, s.code) for s in Segment.objects.order_by("code")]
+# --- Foundation ------------------------------------------------------------
 
 
 def coa_filter_spec():
+    from apps.foundation.models import AccountType
+
     return FilterSpec(
         fields=[
-            FilterField("q", "Search", kind="text", placeholder="Code or name"),
+            FilterField(
+                "q", "Search", kind="text", placeholder="Code or name",
+                search_fields=("code", "name"),
+            ),
             FilterField("segment", "Segment", kind="choice", choices=segment_choices),
-            FilterField("account_type", "Type", kind="choice", choices=lambda req: AccountType.choices),
+            FilterField(
+                "account_type", "Type", kind="choice",
+                choices=lambda req: AccountType.choices,
+            ),
+        ]
+    )
+
+
+# --- AR --------------------------------------------------------------------
+
+
+def customer_list_filter_spec():
+    from apps.ar.models import CustomerGroup, PricingTier
+
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text", placeholder="Code or name",
+                search_fields=("code", "name", "owner_name"),
+            ),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "group", "Group", kind="choice",
+                choices=lambda req: CustomerGroup.choices,
+            ),
+            FilterField(
+                "pricing_tier", "Pricing Tier", kind="choice",
+                choices=lambda req: PricingTier.choices,
+            ),
         ]
     )
 
 
 def receipt_list_filter_spec():
-    from apps.ar.services import segment_choices as _seg_choices
+    from apps.ar.models import ReceiptStatus
+
     return FilterSpec(
         fields=[
-            FilterField("q", "Search", kind="text", placeholder="Receipt no or customer"),
-            FilterField("status", "Status", kind="choice", choices=lambda: [("draft", "Draft"), ("submitted", "Submitted"), ("posted", "Posted")]),
-            FilterField("customer", "Customer", kind="choice", choices=lambda req: [(str(c.id), c.name) for c in Customer.objects.order_by("name")]),
+            FilterField(
+                "q", "Search", kind="text", placeholder="Receipt no / customer",
+                search_fields=("receipt_no", "customer__name", "check_no", "transaction_no"),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: ReceiptStatus.choices,
+            ),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField("customer", "Customer", kind="choice", choices=customer_choices),
         ]
     )
 
 
 def deposit_list_filter_spec():
-    from apps.foundation.models import Account
-    from apps.ar.services import segment_choices as _seg_choices
     return FilterSpec(
         fields=[
-            FilterField("q", "Search", kind="text", placeholder="Reference"),
-            FilterField("status", "Status", kind="choice", choices=lambda req: [("posted", "Posted"), ("draft", "Draft")]),
-            FilterField("bank_account", "Bank Account", kind="choice", choices=lambda req: [(str(a.id), str(a.code)) for a in Account.objects.filter(is_postable=True).order_by("code")]),
+            FilterField(
+                "q", "Search", kind="text", placeholder="Slip no / reference",
+                search_fields=("deposit_no", "reference"),
+            ),
+            FilterField("bank_account", "Bank Account", kind="choice", choices=account_choices),
         ]
     )
 
 
-def customer_list_filter_spec():
-    from apps.ar.models import Customer
+# --- AP --------------------------------------------------------------------
+
+
+def supplier_list_filter_spec():
+    from apps.ap.models import SupplierType
+
     return FilterSpec(
         fields=[
-            FilterField("q", "Search", kind="text", placeholder="Name or group"),
-            FilterField("segment", "Segment", kind="choice", choices=lambda: [(s.code, s.code) for s in Customer._meta.get_field("segment").choices]),
-            FilterField("pricing_tier", "Pricing Tier", kind="choice", choices=lambda: [(t.value, t.label) for t in Customer._meta.get_field("pricing_tier").choices]),
+            FilterField(
+                "q", "Search", kind="text", placeholder="Code, name or TIN",
+                search_fields=("code", "name", "tin", "owner_name"),
+            ),
+            FilterField(
+                "supplier_type", "Type", kind="choice",
+                choices=lambda req: SupplierType.choices,
+            ),
+            FilterField("default_segment", "Segment", kind="choice", choices=segment_pk_choices),
         ]
     )
 
 
-def rfq_filter_spec():
-    from apps.ap.models import CheckVoucher
+# RFP statuses follow the ADR-018/020 chain.
+RFP_STATUS_CHOICES = [
+    ("draft", "Draft"),
+    ("submitted", "Submitted"),
+    ("checked", "Checked"),
+    ("acctg_approved", "Approved (Acctg)"),
+    ("fin_approved", "Approved (Fin)"),
+    ("cnr_approved", "Approved (CNR)"),
+    ("posted", "Posted"),
+    ("rejected", "Rejected"),
+]
+
+PO_STATUS_CHOICES = [
+    ("prepared", "Prepared"),
+    ("submitted", "Submitted"),
+    ("checked", "Checked"),
+    ("acctg_approved", "Approved (Acctg)"),
+    ("fin_approved", "Approved (Fin)"),
+    ("cnr_approved", "Approved (CNR)"),
+    ("approved", "Approved"),
+    ("closed", "Closed"),
+    ("rejected", "Rejected"),
+]
+
+CV_STATUS_CHOICES = [
+    ("created", "Created"),
+    ("approved", "Approved"),
+    ("cleared", "Cleared"),
+    ("rejected", "Rejected"),
+    ("void", "Void"),
+]
+
+
+def rfp_filter_spec():
     return FilterSpec(
         fields=[
-            FilterField("q", "Search", kind="text", placeholder="PO / CV number"),
-            FilterField("status", "Status", kind="choice", choices=lambda: [("draft", "Draft"), ("submitted", "Submitted"), ("posted", "Posted")]),
-            FilterField("payee", "Payee", kind="choice", choices=lambda req: [(str(p.id), p.name) for p in ...]),
+            FilterField(
+                "q", "Search", kind="text", placeholder="AP no, payee or particulars",
+                search_fields=("ap_number", "payee__name", "particulars"),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: RFP_STATUS_CHOICES,
+            ),
+            FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+        ]
+    )
+
+
+def po_filter_spec():
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text", placeholder="PO no, vendor or particulars",
+                search_fields=("po_number", "supplier__name", "particulars"),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: PO_STATUS_CHOICES,
+            ),
+            FilterField("supplier", "Vendor", kind="choice", choices=supplier_choices),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+        ]
+    )
+
+
+def cv_filter_spec():
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text", placeholder="CV no, payee or check no",
+                search_fields=("cv_number", "payee__name", "check_no"),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: CV_STATUS_CHOICES,
+            ),
+            FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
+            FilterField("bank_account", "Bank Account", kind="choice", choices=account_choices),
+        ]
+    )
+
+
+# --- Posting ---------------------------------------------------------------
+
+
+def je_filter_spec():
+    from apps.posting.models import PostingStatus
+
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text", placeholder="Entry no or description",
+                search_fields=("entry_no", "description", "source_doc_no"),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: PostingStatus.choices,
+            ),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
         ]
     )

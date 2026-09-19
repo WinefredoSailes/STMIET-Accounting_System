@@ -59,6 +59,10 @@ class FilterField:
     lookup: str = ""
     placeholder: str = ""
     empty_label: str = ""
+    # When set on a text field, the param value matches ANY of these ORM paths
+    # via icontains (OR-ed together). ``name`` stays the query-string key (``q``)
+    # while this lists the real model fields to search.
+    search_fields: tuple = ()
 
     def resolve_choices(self, request=None) -> list[Option]:
         choices = self.choices
@@ -88,7 +92,13 @@ class FilterSpec:
                 value = str(raw).lower() in ("1", "true", "yes", "on")
             else:
                 value = raw
-            qs = qs.filter(**{f"{f.name}__{f.effective_lookup()}": value})
+            if f.search_fields:
+                match = Q()
+                for field in f.search_fields:
+                    match |= Q(**{f"{field}__icontains": value})
+                qs = qs.filter(match)
+            else:
+                qs = qs.filter(**{f"{f.name}__{f.effective_lookup()}": value})
         return qs
 
     def context(self, params: dict, request=None) -> list[dict]:
@@ -126,11 +136,18 @@ def segment_choices(request=None):
     return [(s.code, s.code) for s in Segment.objects.order_by("code")]
 
 
+def segment_pk_choices(request=None):
+    """Segment options keyed by PK — for filters on a Segment foreign key."""
+    from apps.foundation.models import Segment
+
+    return [(str(s.id), s.code) for s in Segment.objects.order_by("code")]
+
+
 def account_choices(request=None):
     from apps.foundation.models import Account
 
     return [
-        (a.code, f"{a.code} — {a.name}")
+        (str(a.id), f"{a.code} — {a.name}")
         for a in Account.objects.filter(is_postable=True).order_by("code")
     ]
 

@@ -8,41 +8,9 @@
 <a href="{% url 'ui:supplier_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New supplier</a>
 {% endif %}
 {% endcapture %}
-{% capture as table_head %}
-<tr>
-  <th class="px-4 py-3">Code</th>
-  <th class="px-4 py-3">Business Name</th>
-  <th class="px-4 py-3">Owner/Rep</th>
-  <th class="px-4 py-3">TIN</th>
-  <th class="px-4 py-3">Email</th>
-  <th class="px-4 py-3">Contact</th>
-  <th class="px-4 py-3">Attachments</th>
-  {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
-</tr>
-{% endcapture %}
-{% capture as table_body %}
-{% for s in page_obj %}
-<tr class="hover:bg-slate-50">
-  <td class="px-4 py-2 font-mono text-xs">{{ s.code }}</td>
-  <td class="px-4 py-2 font-medium">{{ s.name }}</td>
-  <td class="px-4 py-2 text-xs">{{ s.owner_name|default:"—" }}</td>
-  <td class="px-4 py-2 text-xs">{{ s.tin|default:"—" }}</td>
-  <td class="px-4 py-2 text-xs text-slate-500">{{ s.email|default:"—" }}</td>
-  <td class="px-4 py-2 text-xs text-slate-500">
-    {% if s.contacts.all %}
-      {% for c in s.contacts.all %}<div>{{ c.name }}{% if c.phone %} — {{ c.phone }}{% endif %}</div>{% endfor %}
-    {% else %}{{ s.contact_no|default:"—" }}{% endif %}
-  </td>
-  <td class="px-4 py-2 text-xs">{% if s.attachments_required %}Yes{% else %}—{% endif %}</td>
-  {% if can_edit_master %}
-  <td class="px-4 py-2 text-xs">
-    <a href="{% url 'ui:supplier_update' s.pk %}" class="text-indigo-600 hover:text-indigo-800 text-xs">Edit</a>
-  </td>
-  {% endif %}
-</tr>
-{% empty %}
-<tr><td colspan="{% if can_edit_master %}8{% else %}7{% endif %}" class="px-4 py-8 text-center text-slate-400">No suppliers yet.</td></tr>
-{% endfor %}
-{% endcapture %}
-{% include "ui/partials/list_card.html" with title="Suppliers" subtitle="Vendor master for RFP → CONSO → CV workflows (ADR-008)." min_width="1100" link_url_name="ui:rfp_list" link_label="RFPs →" table_head=table_head table_body=table_body show_pagination=True actions=actions %}
+{% include "ui/partials/page_header.html" with title="Suppliers" subtitle="Vendor master for RFP → CONSO → CV workflows (ADR-008)." link_url_name="ui:rfp_list" link_label="RFPs →" actions=actions %}
+{% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#supplier-table' filter_grid='md:grid-cols-4' %}
+<div id="supplier-table">
+  {% include "ui/ap/_supplier_table.html" %}
+</div>
 {% endblock %}

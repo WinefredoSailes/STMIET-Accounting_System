@@ -242,7 +242,28 @@ def dashboard(request):
 
 @login_required
 def je_list(request):
-    return render(request, "ui/posting/je_list.html", {"page_obj": _page(request, list_entries(limit=None))})
+    """Journal Entries register — search + status/segment filters (HTMX)."""
+    from apps.posting.models import JournalEntry
+
+    from .filter_specs import je_filter_spec
+
+    spec = je_filter_spec()
+    qs = spec.apply(
+        JournalEntry.objects.select_related("company", "segment").order_by(
+            "-transaction_date", "-id"
+        ),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/posting/_je_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/posting/je_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -1184,7 +1205,23 @@ def month_end_complete(request):
 
 @login_required
 def customer_list(request):
-    return render(request, "ui/ar/customer_list.html", {"page_obj": _page(request, list_customers())})
+    """Customers master — search + segment/group/tier filters (HTMX)."""
+    from apps.ar.models import Customer
+
+    from .filter_specs import customer_list_filter_spec
+
+    spec = customer_list_filter_spec()
+    qs = spec.apply(Customer.objects.order_by("name"), request.GET)
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ar/_customer_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ar/customer_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -1219,7 +1256,28 @@ def customer_detail(request, pk: int):
 
 @login_required
 def receipt_list(request):
-    return render(request, "ui/ar/receipt_list.html", {"page_obj": _page(request, list_receipts(limit=None))})
+    """Acknowledgment Receipts — search + status/segment/customer filters (HTMX)."""
+    from apps.ar.models import AcknowledgmentReceipt
+
+    from .filter_specs import receipt_list_filter_spec
+
+    spec = receipt_list_filter_spec()
+    qs = spec.apply(
+        AcknowledgmentReceipt.objects.select_related("customer", "segment").order_by(
+            "-transaction_date", "-receipt_no"
+        ),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ar/_receipt_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ar/receipt_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -1319,7 +1377,23 @@ def ar_receipt_export(request, pk: int, fmt: str):
 
 @login_required
 def supplier_list(request):
-    return render(request, "ui/ap/supplier_list.html", {"page_obj": _page(request, list_suppliers())})
+    """Suppliers master — search + type/segment filters (HTMX)."""
+    from apps.ap.models import Supplier
+
+    from .filter_specs import supplier_list_filter_spec
+
+    spec = supplier_list_filter_spec()
+    qs = spec.apply(Supplier.objects.prefetch_related("contacts").order_by("name"), request.GET)
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ap/_supplier_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ap/supplier_list.html"
+    )
+    return render(request, template, ctx)
 
 
 def _rfp_approval_info(rfp, role):
@@ -1345,20 +1419,35 @@ def _rfp_approval_info(rfp, role):
 
 @login_required
 def rfp_list(request):
-    from apps.ap.services import ap_payable_map, rfp_payable
+    from apps.ap.models import RFPDocument
+    from apps.ap.services import rfp_payable
     from apps.core.approvals import approval_role_of
 
+    from .filter_specs import rfp_filter_spec
+
     role = approval_role_of(request.user)
-    ap_map = ap_payable_map()
-    page = _page(request, list_rfps(limit=None))
+    spec = rfp_filter_spec()
+    qs = spec.apply(
+        RFPDocument.objects.select_related("payee", "segment")
+        .prefetch_related("lines")
+        .order_by("-created_at"),
+        request.GET,
+    )
+    page = _page(request, qs)
     for rfp in page.object_list:
         rfp.approval_info = _rfp_approval_info(rfp, role)
         rfp.payable_amount = rfp_payable(rfp)
-    return render(
-        request,
-        "ui/ap/rfp_list.html",
-        {"page_obj": page, "summary": rfp_summary()},
+    ctx = {
+        "page_obj": page,
+        "summary": rfp_summary(),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ap/_rfp_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ap/rfp_list.html"
     )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -2167,17 +2256,33 @@ def _po_approval_info(po, role):
 
 @login_required
 def po_list(request):
+    from apps.ap.models import PurchaseOrder
     from apps.core.approvals import approval_role_of
 
+    from .filter_specs import po_filter_spec
+
     role = approval_role_of(request.user)
-    page = _page(request, list_pos(limit=None))
+    spec = po_filter_spec()
+    qs = spec.apply(
+        PurchaseOrder.objects.select_related("supplier", "segment").order_by(
+            "-po_date", "-po_number"
+        ),
+        request.GET,
+    )
+    page = _page(request, qs)
     for po in page.object_list:
         po.approval_info = _po_approval_info(po, role)
-    return render(
-        request,
-        "ui/ap/po_list.html",
-        {"page_obj": page, "summary": po_summary()},
+    ctx = {
+        "page_obj": page,
+        "summary": po_summary(),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ap/_po_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ap/po_list.html"
     )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -2820,7 +2925,26 @@ def asset_reverse(request, pk):
 
 @login_required
 def cv_list(request):
-    return render(request, "ui/ap/cv_list.html", {"page_obj": _page(request, list_cv(limit=None))})
+    """Check Vouchers — search + status/payee/bank filters (HTMX)."""
+    from apps.ap.models import CheckVoucher
+
+    from .filter_specs import cv_filter_spec
+
+    spec = cv_filter_spec()
+    qs = spec.apply(
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp").order_by("-cv_date"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/ap/_cv_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ap/cv_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required

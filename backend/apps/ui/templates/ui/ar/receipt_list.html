@@ -2,37 +2,14 @@
 {% load static ui_filters %}
 {% block title %}Receipts{% endblock %}
 {% block content %}
-{% capture as table_head %}
-<tr>
-  <th class="px-4 py-3">Receipt No</th>
-  <th class="px-4 py-3">Date</th>
-  <th class="px-4 py-3">Customer</th>
-  <th class="px-4 py-3">Segment</th>
-  <th class="px-4 py-3">Method</th>
-  <th class="px-4 py-3 text-right">Amount</th>
-</tr>
-{% endcapture %}
-{% capture as table_body %}
-{% for r in page_obj %}
-<tr class="hover:bg-slate-50">
-  <td class="px-4 py-2 font-mono text-xs">{{ r.receipt_no }}</td>
-  <td class="px-4 py-2">{{ r.transaction_date|date:"M d, Y" }}</td>
-  <td class="px-4 py-2">{{ r.customer.name }}</td>
-  <td class="px-4 py-2 text-xs">{{ r.segment.code }}</td>
-  <td class="px-4 py-2 text-xs">
-    {{ r.get_payment_method_display }}
-    {% if r.check_no %}<span class="text-slate-400">· {{ r.check_no }}</span>{% endif %}
-  </td>
-  <td class="px-4 py-2 text-right font-medium">{{ r.amount|money }}</td>
-</tr>
-{% empty %}
-<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No receipts yet.</td></tr>
-{% endfor %}
-{% endcapture %}
 {% capture as list_actions %}
 <a href="{% url 'ui:ar_receipts_export' 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
 <a href="{% url 'ui:ar_receipts_export' 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
 <a href="{% url 'ui:ar_receipts_export' 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
 {% endcapture %}
-{% include "ui/partials/list_card.html" with title="Acknowledgment Receipts" subtitle="AR-YYYY-SEQ numbered receipts that post on creation (ADR-007)." min_width="900" primary_url_name="ui:receipt_create" primary_label="+ New receipt" link_url_name="ui:customer_list" link_label="← Customers" table_head=table_head table_body=table_body show_pagination=True actions=list_actions %}
+{% include "ui/partials/page_header.html" with title="Acknowledgment Receipts" subtitle="AR-YYYY-SEQ numbered receipts that post on creation (ADR-007)." primary_url_name="ui:receipt_create" primary_label="+ New receipt" link_url_name="ui:customer_list" link_label="← Customers" actions=list_actions %}
+{% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#receipt-table' filter_grid='md:grid-cols-4' %}
+<div id="receipt-table">
+  {% include "ui/ar/_receipt_table.html" %}
+</div>
 {% endblock %}

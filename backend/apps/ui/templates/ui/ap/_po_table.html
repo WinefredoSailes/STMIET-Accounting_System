@@ -1,0 +1,37 @@
+{% load ui_filters %}
+{# Purchase Orders table fragment — swapped by #po-table on HTMX filter updates. #}
+<div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+  <table class="w-full text-sm min-w-[900px]">
+    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <tr>
+        <th class="px-4 py-3">PO No</th>
+        <th class="px-4 py-3">Date</th>
+        <th class="px-4 py-3">Vendor</th>
+        <th class="px-4 py-3">Segment</th>
+        <th class="px-4 py-3">Particulars</th>
+        <th class="px-4 py-3 text-right">Amount</th>
+        <th class="px-4 py-3">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for po in page_obj %}
+      {% include "ui/ap/_po_row.html" %}
+      {% empty %}
+      <tr>
+        <td colspan="7" class="px-6 py-14">
+          <div class="mx-auto max-w-sm text-center">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">📦</div>
+            <h2 class="mt-3 text-sm font-semibold text-slate-800">No purchase orders match</h2>
+            <p class="mt-1 text-xs text-slate-500">Try clearing the filters, or commit a purchase to a vendor ahead of the RFP.</p>
+            <div class="mt-4 flex items-center justify-center gap-2">
+              <a href="{% url 'ui:po_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ New PO</a>
+              <a href="{% url 'ui:supplier_create' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">Add a supplier</a>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "ui/partials/pagination.html" %}
