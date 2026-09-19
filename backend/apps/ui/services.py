@@ -1056,6 +1056,7 @@ def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
     Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance Dr | Balance Cr.
     """
     from decimal import Decimal
+    from datetime import datetime
     from django.db.models import Q
     from apps.ap.models import RFPDocument, CheckVoucher
     from apps.posting.models import PostingStatus, GeneralLedger
@@ -1108,21 +1109,37 @@ def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
             }
         )
 
-    # --- Merge and date-filter ---
+    # --- Merge and sort (before the date window so the opening balance below
+    # can reference all activity, not just the visible window) ---
     all_rows = credit_rows + debit_rows
     all_rows.sort(key=lambda r: (r["date"], r["ref_pk"]))
 
+    # Views pass raw ISO strings from request.GET; normalise once so the date
+    # comparisons below never mix date objects and strings.
+    def _as_date(value):
+        if isinstance(value, str) and value:
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+        return value
+
+    start_d = _as_date(start)
+    end_d = _as_date(end)
+
     # Date window filter
-    if start:
-        all_rows = [r for r in all_rows if r["date"] >= start]
-    if end:
-        all_rows = [r for r in all_rows if r["date"] <= end]
+    if start_d:
+        all_rows = [r for r in all_rows if r["date"] >= start_d]
+    if end_d:
+        all_rows = [r for r in all_rows if r["date"] <= end_d]
 
     # --- Running balance ---
-    # Opening balance = sum of (credit - debit) for rows before start
+    # Opening balance = sum of (credit - debit) for rows before the window start
     opening = Decimal("0.00")
-    if start:
-        opening = sum((r["credit"] - r["debit"]) for r in all_rows if r["date"] < start)
+    if start_d:
+        opening = sum(
+            (r["credit"] - r["debit"]) for r in credit_rows + debit_rows if r["date"] < start_d
+        )
 
     running = opening
     opening_dr = _balance_cell(opening, "credit", "debit") or Decimal("0.00")

@@ -3742,6 +3742,7 @@ def _table_response(
     money_cols=(),
     page="landscape",
     totals_row=None,
+    preamble=None,
 ):
     """Render a plain table to xlsx/csv/pdf via the shared table engine."""
     from apps.core.exports import Column, TableSpec, table_export
@@ -3755,6 +3756,8 @@ def _table_response(
         sheet_title=sheet_title,
         page=page,
     )
+    if preamble is not None:
+        spec.preamble = preamble
     return table_export(spec, fmt, f"{stem}.{fmt}")
 
 

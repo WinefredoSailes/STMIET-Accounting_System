@@ -1,6 +1,6 @@
 {% extends "ui/base.html" %}
 {% load ui_filters %}
-{% block title %}Statement of Account — {{ supplier.code }} {{ supplier.name }}{% endblock %}
+{% block title %}Statement of Account — {{ supplier.name }}{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6 max-w-7xl">
   {% capture as ledger_filters %}
@@ -11,8 +11,14 @@
     <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Apply Filter</button>
     {% if filter_qs %}<a href="?{{ filter_qs }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Clear filters</a>{% endif %}
   </form>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=xlsx{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=pdf{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=csv{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+    <a href="{% url 'ui:ap_supplier_ledger_print' supplier.pk %}{% if start or end or filter_qs %}?{% if start %}start={{ start }}&{% endif %}{% if end %}end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}{% endif %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  </div>
   {% endcapture %}
-  {% include "ui/partials/page_header.html" with title="STATEMENT OF ACCOUNT" subtitle="{{ supplier.code }} {{ supplier.name }}" actions=ledger_filters %}
+  {% include "ui/partials/page_header.html" with title="STATEMENT OF ACCOUNT" subtitle=supplier.name actions=ledger_filters %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm min-w-[1100px]">
