@@ -91,6 +91,11 @@ urlpatterns = [
     # AP
     path("ap/aging/", views.ap_aging, name="ap_aging"),
     path("ap/aging/export/", views.ap_aging_export, name="ap_aging_export"),
+    path("ap/ledger/", views.ap_ledger, name="ap_ledger"),
+    path("ap/ledger/export/", views.ap_ledger_export, name="ap_ledger_export"),
+    path("ap/ledger/<int:pk>/", views.ap_supplier_ledger, name="ap_supplier_ledger"),
+    path("ap/ledger/<int:pk>/export/", views.ap_supplier_ledger_export, name="ap_supplier_ledger_export"),
+    path("ap/ledger/<int:pk>/print/", views.ap_supplier_ledger_print, name="ap_supplier_ledger_print"),
     path("ap/suppliers/", views.supplier_list, name="supplier_list"),
     path("ap/suppliers/export/", views.supplier_export, name="supplier_export"),
     path("ap/suppliers/new/", views.supplier_create, name="supplier_create"),

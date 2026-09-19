@@ -4416,6 +4416,137 @@ def ap_aging(request):
 
 
 @login_required
+def ap_ledger(request):
+    """Supplier / Payee Ledger Summary.
+
+    Filter bar: text search (code / name), [All / With Outstanding Balance Only] dropdown,
+    Export dropdown. Table: Code | Supplier/Payee Name | Total Billed | Total Paid | Outstanding.
+    """
+    from .services import ap_supplier_summary
+
+    q = request.GET.get("q", "").strip()
+    outstanding_only = request.GET.get("filter", "") == "outstanding"
+    ctx = ap_supplier_summary(q=q, outstanding_only=outstanding_only)
+    ctx["export_url"] = _export_url("ui:ap_ledger_export", q=q, filter="outstanding" if outstanding_only else "")
+    ctx["page_obj"] = _page(request, ctx.pop("rows"))
+    ctx["filter_url"] = request.GET.urlencode()
+    return render(request, "ui/ap/ledger_summary.html", ctx)
+
+
+@login_required
+def ap_ledger_export(request):
+    """Export the supplier/payee ledger summary as XLSX / CSV / PDF."""
+    from .services import ap_supplier_summary
+
+    q = request.GET.get("q", "").strip()
+    outstanding_only = request.GET.get("filter", "") == "outstanding"
+    ctx = ap_supplier_summary(q=q, outstanding_only=outstanding_only)
+    rows = [
+        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"]]
+        for r in ctx["rows"]
+    ]
+    return _table_response(
+        "SUPPLIER / PAYEE LEDGER SUMMARY",
+        ["Code", "Supplier/Payee Name", "Total Billed", "Total Paid", "Outstanding Balance"],
+        rows,
+        request.GET.get("format", "xlsx"),
+        "SUPPLIER-LEDGER-SUMMARY",
+        sheet_title="SUPPLIER LEDGER SUMMARY",
+        money_cols=(2, 3, 4),
+        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"]],
+        page="landscape",
+    )
+
+
+@login_required
+def ap_supplier_ledger(request, pk):
+    """Supplier Statement of Account / AP Subsidiary Ledger."""
+    from .services import ap_supplier_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ap.models import Supplier
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    # preserve existing querystring for filter persistence
+    filter_qs = "&".join([f"{k}={v}" for k, v in request.GET.items() if k not in ("page", "start", "end")])
+    ctx = ap_supplier_ledger(supplier=supplier, start=start, end=end)
+    ctx["supplier"] = supplier
+    ctx["filter_qs"] = filter_qs
+    return render(request, "ui/ap/supplier_ledger.html", ctx)
+
+
+@login_required
+def ap_supplier_ledger_export(request, pk):
+    """Export the supplier subsidiary ledger as XLSX / CSV / PDF."""
+    from .services import ap_supplier_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ap.models import Supplier
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    ctx = ap_supplier_ledger(supplier=supplier, start=start, end=end)
+
+    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance Dr", "Balance Cr"]
+    rows = []
+    for r in ctx["rows"]:
+        rows.append([
+            r["date"],
+            r["ref"],
+            r["type"],
+            r["description"],
+            r["debit"],
+            r["credit"],
+            r["balance_dr"] if r["balance_dr"] is not None else "",
+            r["balance_cr"] if r["balance_cr"] is not None else "",
+        ])
+    # totals row
+    totals = [
+        ctx["start"] or "",
+        "",
+        "",
+        "Period Totals",
+        ctx["period_debit"],
+        ctx["period_credit"],
+        ctx["closing_dr"] if ctx["closing_dr"] is not None else "",
+        ctx["closing_cr"] if ctx["closing_cr"] is not None else "",
+    ]
+    # preamble with supplier / period info
+    preamble = [
+        [f"Supplier: {ctx['supplier'].code} — {ctx['supplier'].name}", ""],
+        [f"Period: {ctx['start'] or 'All Dates'}", ""],
+    ]
+    return _table_response(
+        f"STATEMENT OF ACCOUNT — {supplier.code} {supplier.name}",
+        header,
+        rows,
+        request.GET.get("format", "xlsx"),
+        f"LEDGER-{supplier.code}",
+        sheet_title="LEDGER",
+        money_cols=(4, 5, 6, 7),
+        totals_row=totals,
+        page="landscape",
+        preamble=preamble,
+    )
+
+
+@login_required
+def ap_supplier_ledger_print(request, pk):
+    """Print-optimized copy of the supplier ledger."""
+    from .services import ap_supplier_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ap.models import Supplier
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    ctx = ap_supplier_ledger(supplier=supplier, start=start, end=end)
+    ctx["supplier"] = supplier
+    return render(request, "ui/ap/supplier_ledger_print.html", ctx)
+
+
+@login_required
 def fleet_fuel(request):
     """Fleet fuel management report: per-vehicle consumption + register."""
     from apps.fleet.models import Vehicle

@@ -910,7 +910,7 @@ def ap_aging_context(as_of: date) -> dict:
     cleared = {
         row["rfp_id"]: row["paid"] or Decimal("0.00")
         for row in (
-            CheckVoucher.objects.filter(journal_entry__isnull=False)
+            CheckVoucher.objects.filter(journal_entry__status=PostingStatus.POSTED)
             .exclude(rfp__isnull=True)
             .values("rfp_id")
             .annotate(paid=Sum("gross_amount"))
@@ -985,7 +985,191 @@ def ap_aging_context(as_of: date) -> dict:
     }
 
 
-def advances_context():
+def ap_supplier_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
+    """Return rows for the Supplier / Payee Ledger Summary screen.
+
+    Columns: Code | Supplier/Payee Name | Total Billed | Total Paid | Outstanding Balance.
+    Billed = Σ RFP payables (posted, credit to 20000/21100).
+    Paid   = Σ cleared CVs (posted JE) gross.
+    """
+    from django.db.models import Q, Sum
+    from apps.ap.models import RFPDocument, CheckVoucher, Supplier
+    from apps.posting.models import PostingStatus
+
+    suppliers = Supplier.objects.order_by("name")
+    if q:
+        suppliers = suppliers.filter(Q(code__icontains=q) | Q(name__icontains=q))
+
+    # --- Billed: posted RFP AP payables per supplier ---
+    billed_by_supplier: dict = {}
+    for rfp in RFPDocument.objects.filter(status="posted").prefetch_related("payee", "lines"):
+        
+        payable = Decimal("0.00")
+        for line in rfp.lines.all():
+            if line.side != "cr":
+                continue
+            if line.account.code in ("20000", "21100"):
+                payable += line.amount
+        if payable:
+            billed_by_supplier[rfp.payee_id] = billed_by_supplier.get(rfp.payee_id, Decimal("0.00")) + payable
+
+    # --- Paid: cleared CVs (posted JE) per supplier ---
+    paid_by_supplier: dict = {}
+    for cv in CheckVoucher.objects.filter(journal_entry__status=PostingStatus.POSTED).select_related("payee"):
+        paid_by_supplier[cv.payee_id] = paid_by_supplier.get(cv.payee_id, Decimal("0.00")) + cv.gross_amount
+
+    rows = []
+    total_billed = Decimal("0.00")
+    total_paid = Decimal("0.00")
+    total_outstanding = Decimal("0.00")
+    for s in suppliers:
+        billed = billed_by_supplier.get(s.id, Decimal("0.00"))
+        paid = paid_by_supplier.get(s.id, Decimal("0.00"))
+        outstanding = billed - paid
+        if outstanding_only and outstanding <= 0:
+            continue
+        rows.append(
+            {
+                "pk": s.pk,
+                "code": s.code,
+                "name": s.name,
+                "billed": billed,
+                "paid": paid,
+                "outstanding": outstanding,
+            }
+        )
+        total_billed += billed
+        total_paid += paid
+        total_outstanding += outstanding
+
+    return {
+        "rows": rows,
+        "total_billed": total_billed,
+        "total_paid": total_paid,
+        "total_outstanding": total_outstanding,
+    }
+
+
+def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
+    """Return the per-supplier AP subsidiary ledger rows with running balance.
+
+    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance Dr | Balance Cr.
+    """
+    from decimal import Decimal
+    from django.db.models import Q
+    from apps.ap.models import RFPDocument, CheckVoucher
+    from apps.posting.models import PostingStatus, GeneralLedger
+    from apps.ui.services import _balance_cell
+
+    # --- Credit rows: posted RFPs ---
+    credit_rows = []
+    for rfp in RFPDocument.objects.filter(status="posted", payee=supplier).select_related("segment").prefetch_related("lines"):
+        payable = Decimal("0.00")
+        for line in rfp.lines.all():
+            if line.side == "cr" and line.account.code in ("20000", "21100"):
+                payable += line.amount
+        if payable == 0:
+            continue
+        credit_rows.append(
+            {
+                "date": rfp.rfp_date,
+                "ref": rfp.ap_number,
+                "ref_pk": rfp.id,
+                "ref_url": "ui:rfp_detail",
+                "type": "RFP (Payable)",
+                "description": rfp.particulars or rfp.purpose or "",
+                "debit": Decimal("0.00"),
+                "credit": payable,
+            }
+        )
+
+    # --- Debit rows: cleared CVs (posted JE) ---
+    debit_rows = []
+    for cv in CheckVoucher.objects.filter(journal_entry__status=PostingStatus.POSTED, payee=supplier).select_related("rfp"):
+        # Determine description: linked RFP particulars if available, else check payment text
+        desc = ""
+        if cv.rfp_id:
+            rfp_obj = cv.rfp
+            desc = rfp_obj.particulars or rfp_obj.purpose or ""
+        else:
+            desc = f"Check payment — {cv.check_no}" if cv.check_no else "Check payment"
+
+        # Determine reference link: cv_number → cv_detail
+        debit_rows.append(
+            {
+                "date": cv.cv_date,
+                "ref": cv.cv_number,
+                "ref_pk": cv.id,
+                "ref_url": "ui:cv_detail",
+                "type": "CV (Payment)",
+                "description": desc,
+                "debit": cv.gross_amount,
+                "credit": Decimal("0.00"),
+            }
+        )
+
+    # --- Merge and date-filter ---
+    all_rows = credit_rows + debit_rows
+    all_rows.sort(key=lambda r: (r["date"], r["ref_pk"]))
+
+    # Date window filter
+    if start:
+        all_rows = [r for r in all_rows if r["date"] >= start]
+    if end:
+        all_rows = [r for r in all_rows if r["date"] <= end]
+
+    # --- Running balance ---
+    # Opening balance = sum of (credit - debit) for rows before start
+    opening = Decimal("0.00")
+    if start:
+        opening = sum((r["credit"] - r["debit"]) for r in all_rows if r["date"] < start)
+
+    running = opening
+    opening_dr = _balance_cell(opening, "credit", "debit") or Decimal("0.00")
+    opening_cr = _balance_cell(opening, "credit", "credit") or Decimal("0.00")
+
+    rows = []
+    period_debit = Decimal("0.00")
+    period_credit = Decimal("0.00")
+    for r in all_rows:
+        period_debit += r["debit"]
+        period_credit += r["credit"]
+        running += r["credit"] - r["debit"]  # cumulative running balance
+        balance_dr = _balance_cell(running, "credit", "debit") or Decimal("0.00")
+        balance_cr = _balance_cell(running, "credit", "credit") or Decimal("0.00")
+        rows.append(
+            {
+                "date": r["date"].isoformat() if hasattr(r["date"], "isoformat") else str(r["date"]),
+                "ref": r["ref"],
+                "ref_pk": r["ref_pk"],
+                "ref_url": r["ref_url"],
+                "type": r["type"],
+                "description": r["description"],
+                "debit": r["debit"],
+                "credit": r["credit"],
+                "balance_dr": balance_dr,
+                "balance_cr": balance_cr,
+            }
+        )
+
+    closing = running
+    closing_dr = _balance_cell(closing, "credit", "debit")
+    closing_cr = _balance_cell(closing, "credit", "credit")
+
+    return {
+        "supplier": supplier,
+        "start": start,
+        "end": end,
+        "opening": opening,
+        "opening_dr": opening_dr,
+        "opening_cr": opening_cr,
+        "rows": rows,
+        "period_debit": period_debit,
+        "period_credit": period_credit,
+        "closing": closing,
+        "closing_dr": closing_dr,
+        "closing_cr": closing_cr,
+    }
     """AdvanceToEmployee ledger rows with outstanding balances."""
     from apps.ap.models import AdvanceToEmployee
 
@@ -1329,3 +1513,26 @@ def _balance_cell(balance, normal_balance, column):
     if column == side:
         return abs(balance)
     return None
+
+
+def advances_context():
+    """Legacy compatibility import — returns empty context; original impl lived
+    in this module before the Phase-3 AP services split."""
+    from apps.ap.models import AdvanceToEmployee
+
+    rows = []
+    for adv in AdvanceToEmployee.objects.select_related("segment", "rfp").order_by("-granted_date"):
+        rows.append(
+            {
+                "advance": adv,
+                "kind": adv.get_kind_display(),
+                "segment_code": adv.segment.code,
+                "outstanding": adv.outstanding,
+                "status_label": adv.status.replace("_", " ").title(),
+            }
+        )
+    return {
+        "rows": rows,
+        "total_outstanding": sum(r["outstanding"] for r in rows),
+        "segments": list(Segment.objects.order_by("code")),
+    }
