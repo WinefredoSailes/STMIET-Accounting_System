@@ -313,7 +313,10 @@ class TestEndToEndWorkflow:
         assert resp.status_code == 302
         transfer = InterAccountTransfer.objects.get()
         assert transfer.status == "requested"
-        # Head approval posts the transfer JE (no amount threshold).
+        # Preparer submits, then head approval posts the transfer JE.
+        from apps.cash.services import TransferService
+
+        TransferService.submit(transfer, user=roles["head"])
         resp = client.post(f"/cash/transfers/{transfer.id}/approve/")
         assert resp.status_code == 302
         transfer.refresh_from_db()

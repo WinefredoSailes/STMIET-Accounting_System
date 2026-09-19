@@ -1,0 +1,55 @@
+{% load ui_filters %}
+{# Inter-account transfers table fragment — swapped by #transfers-table on HTMX filter updates. #}
+<div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[860px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Voucher</th>
+          <th class="px-4 py-3">From (Credit)</th>
+          <th class="px-4 py-3">To (Debit)</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+          <th class="px-4 py-3">Purpose</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for t in page_obj %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 whitespace-nowrap">{{ t.transfer_date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2 whitespace-nowrap"><a href="{% url 'ui:transfer_detail' t.id %}" class="font-mono text-xs font-medium text-indigo-600 hover:underline">{{ t.voucher_no|default:t.id }}</a></td>
+          <td class="px-4 py-2">{{ t.from_account.code }} <span class="text-slate-400">({{ t.from_account.bank_name }})</span></td>
+          <td class="px-4 py-2">{{ t.to_account.code }} <span class="text-slate-400">({{ t.to_account.bank_name }})</span></td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ t.amount|money }}</td>
+          <td class="px-4 py-2 whitespace-normal break-words">{{ t.purpose }}</td>
+          <td class="px-4 py-2 whitespace-nowrap">
+            {% if t.status == "approved" %}<span class="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Approved</span>
+            {% elif t.status == "submitted" %}<span class="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">Submitted</span>
+            {% elif t.status == "rejected" %}<span class="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Rejected</span>
+            {% else %}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Requested</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 whitespace-nowrap">
+            <div class="flex items-center gap-2">
+              <a href="{% url 'ui:transfer_detail' t.id %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">View</a>
+              {% if t.status == "submitted" and request.user|approval_role_of == "head" %}
+              <form method="post" action="{% url 'ui:transfer_approve' t.id %}" class="inline">{% csrf_token %}
+                <button type="submit" class="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-emerald-700">Approve</button>
+              </form>
+              {% endif %}
+              {% if t.journal_entry %}
+              <a href="{% url 'ui:je_detail' t.journal_entry.pk %}" class="text-xs font-medium text-slate-500 hover:text-slate-700">{{ t.journal_entry.entry_no }}</a>
+              {% endif %}
+              <a href="{% url 'ui:ftv_print' t.id %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No transfers match. Try clearing the filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% include "ui/partials/pagination.html" %}

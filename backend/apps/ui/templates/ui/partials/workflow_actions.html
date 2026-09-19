@@ -10,4 +10,6 @@ only place a status -> action-button branch is defined.{% endcomment %}
 {% include "ui/partials/workflow/cv_actions.html" with cv=doc %}
 {% elif workflow_type == "je" %}
 {% include "ui/partials/workflow/je_actions.html" with entry=doc %}
+{% elif workflow_type == "transfer" %}
+{% include "ui/partials/workflow/transfer_actions.html" with transfer=doc %}
 {% endif %}

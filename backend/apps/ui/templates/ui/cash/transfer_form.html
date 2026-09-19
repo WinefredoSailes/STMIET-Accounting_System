@@ -1,0 +1,118 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}{% if editing %}Edit {{ editing.voucher_no }}{% else %}New Inter-Account Transfer{% endif %}{% endblock %}
+{% block content %}
+<div class="p-6">
+  <a href="{% url 'ui:transfers' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Inter-Account Transfers</a>
+  <div class="mt-1">
+    <h1 class="text-xl font-semibold text-slate-900">{% if editing %}Edit {{ editing.voucher_no }}{% else %}New Inter-Account Transfer(s){% endif %}</h1>
+    <p class="text-sm text-slate-500 mt-1">Dr Cash-To | Cr Cash-From, purpose required (ADR-030). Each line becomes its own transfer + DRAFT JE; nothing posts until the finance head approves the submitted transfer.</p>
+  </div>
+
+  <form method="post"
+        action="{% if editing %}{% url 'ui:transfer_edit' editing.id %}{% else %}{% url 'ui:transfer_create' %}{% endif %}"
+        class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    {% csrf_token %}
+    <div class="p-4 border-b border-slate-100">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1" for="id_transfer_date">Date (applies to all lines)</label>
+          <input type="date" name="transfer_date" id="id_transfer_date"
+                 value="{% if editing %}{{ editing.transfer_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
+                 class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1" for="id_reference">Reference (applies to all lines)</label>
+          <input type="text" name="reference" id="id_reference" maxlength="64"
+                 value="{% if editing %}{{ editing.reference }}{% endif %}"
+                 placeholder="e.g. bank ref / online transfer no."
+                 class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+        </div>
+      </div>
+
+      <div class="overflow-x-auto mt-3">
+        <table class="line-table w-full text-sm" style="min-width: 1080px;">
+          <colgroup>
+            <col style="width:40px"><!-- # -->
+            <col style="width:250px"><!-- From -->
+            <col style="width:250px"><!-- To -->
+            <col style="width:170px"><!-- Amount -->
+            <col style="width:330px"><!-- Purpose -->
+            <col style="width:140px"><!-- Check# -->
+            <col style="width:36px"><!-- remove -->
+          </colgroup>
+          <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="py-2">#</th>
+              <th class="py-2">From (Credit)</th>
+              <th class="py-2">To (Debit)</th>
+              <th class="py-2 text-right">Amount</th>
+              <th class="py-2">Purpose</th>
+              <th class="py-2">CHECK ISSUED &amp; NO</th>
+              <th class="py-2"></th>
+            </tr>
+          </thead>
+          <tbody id="transfer-lines" data-line-grid="transfer" data-total="#transfer-total"
+                 class="divide-y divide-slate-100">
+            <tr>
+              <td class="py-2 text-slate-400 line-no">1</td>
+              <td class="py-2">
+                <select name="line_from" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="" {% if not editing %}selected{% endif %}>— select —</option>
+                  {% for b in banks %}
+                  <option value="{{ b.id }}" {% if editing and editing.from_account_id == b.id %}selected{% endif %}>{{ b.code }} — {{ b.bank_name }} ({{ b.company.code }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="py-2">
+                <select name="line_to" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="" {% if not editing %}selected{% endif %}>— select —</option>
+                  {% for b in banks %}
+                  <option value="{{ b.id }}" {% if editing and editing.to_account_id == b.id %}selected{% endif %}>{{ b.code }} — {{ b.bank_name }} ({{ b.company.code }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_amount" required value="{% if editing %}{{ editing.amount }}{% endif %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
+              <td class="py-2"><textarea name="line_purpose" data-autogrow rows="1" maxlength="500" placeholder="e.g. fund transfer to PNB (optional)" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">{% if editing %}{{ editing.purpose }}{% endif %}</textarea></td>
+              <td class="py-2"><input type="text" name="line_check_no" maxlength="32" placeholder="e.g. 123456" value="{% if editing %}{{ editing.check_no }}{% endif %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right"></td>
+              <td class="py-2">{% if not editing %}<button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button>{% endif %}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="py-2 text-right font-semibold">TOTAL</td>
+              <td id="transfer-total" class="py-2 text-right font-semibold tabular-nums">{{ editing.amount|default:"0.00"|money }}</td>
+              <td colspan="2"></td>
+            </tr>
+            {% if not editing %}
+            <tr>
+              <td colspan="6" class="py-2">
+                <button type="button" id="add-line" data-add-row
+                        class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                  + Add line
+                </button>
+              </td>
+            </tr>
+            {% endif %}
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-xs text-slate-500">{% if editing %}Editing reopens this transfer for resubmission; the DRAFT JE is rebuilt. Once submitted and approved it is immutable.{% else %}Blank lines are skipped; if any line is invalid (same From and To bank, amount ≤ 0) the whole batch is rejected.{% endif %}</p>
+        <div class="flex items-center gap-2">
+          <a href="{% if editing %}{% url 'ui:transfer_detail' editing.id %}{% else %}{% url 'ui:transfers' %}{% endif %}"
+             class="rounded-md border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</a>
+          <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+            {% if editing %}Save changes{% else %}Request Transfer(s){% endif %}
+          </button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/line-grid.js' %}"></script>
+{% endblock %}

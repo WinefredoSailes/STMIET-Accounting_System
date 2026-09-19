@@ -164,6 +164,16 @@ def customer_choices(request=None):
     return [(str(c.id), c.name) for c in Customer.objects.order_by("name")]
 
 
+def bank_choices(request=None):
+    """Active bank accounts keyed by PK — for From/To transfer filters."""
+    from apps.cash.models import BankAccount
+
+    return [
+        (str(b.id), f"{b.code} — {b.bank_name or b.name}")
+        for b in BankAccount.objects.filter(is_active=True).order_by("code")
+    ]
+
+
 def supplier_choices(request=None):
     from apps.ap.models import Supplier
 

@@ -110,19 +110,29 @@ class InterAccountTransferViewSet(viewsets.ModelViewSet):
         tr = TransferService.transfer(
             from_account=from_acc, to_account=to_acc,
             amount=amount, purpose=purpose,
-            reference=request.data.get("reference", ""), user=request.user,
+            reference=request.data.get("reference", ""),
+            check_no=request.data.get("check_no", ""), user=request.user,
         )
-        # The transfer is created with status ``requested``; the JE is posted
-        # when the finance head approves it (same flow as RFP/JE/CV).
+        # The transfer is created with status ``requested``, then submitted by
+        # the preparer; the JE is posted when the head approves it.
         out = self.get_serializer(tr)
         return Response(out.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
-    def approve(self, request, pk=None):
-        """Approve a pending inter-account transfer (finance head only).
+    def submit(self, request, pk=None):
+        """requested/rejected -> submitted (preparer sends it to the head)."""
+        from apps.cash.services import TransferService
 
-        Same gate as RFP/JE/CV approval: only the head may approve, and
-        every transfer — whatever the amount — posts to the GL here.
+        transfer = self.get_object()
+        TransferService.submit(transfer, user=request.user)
+        return Response(self.get_serializer(transfer).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """submitted -> approved (finance head only; posts the JE to the GL).
+
+        Same gate as RFP/JE/CV approval: only the head may approve, and every
+        transfer — whatever the amount — posts to the GL here.
         """
         from apps.core.approvals import require_approval_role
 
@@ -133,6 +143,19 @@ class InterAccountTransferViewSet(viewsets.ModelViewSet):
         # Re-serialize so the client sees the approved status.
         out = self.get_serializer(transfer)
         return Response(out.data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """submitted -> rejected (finance head, note required)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        transfer = self.get_object()
+        from apps.cash.services import TransferService
+        TransferService.reject(
+            transfer, user=request.user, note=request.data.get("note", "")
+        )
+        return Response(self.get_serializer(transfer).data)
 
 
 class CashFlowStatementViewSet(viewsets.ReadOnlyModelViewSet):

@@ -66,6 +66,12 @@ AR_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Inter-account transfer status -> next approval role (ADR-030). Mirrors JE:
+# the preparer submits, the head approves (and the JE posts).
+TRANSFER_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 
 # Purchase Order status -> next approval role (ADR-0XX). Same matrix as the
 # RFP: the head checks and approves at every step; the COO only above P100k
@@ -314,6 +320,42 @@ def cash_short_queue(user_roles):
     return out
 
 
+def transfer_queue(user_roles):
+    """Inter-account transfers waiting on the head (ADR-030, no threshold).
+
+    Mirrors rfp_queue/cv_queue: a transfer appears in the head's inbox only
+    once the preparer has submitted it; the head's approval posts its JE.
+    """
+    if "head" not in user_roles:
+        return []
+    from apps.cash.models import InterAccountTransfer
+
+    out = []
+    docs = InterAccountTransfer.objects.filter(status="submitted").select_related(
+        "from_account", "to_account", "initiated_by"
+    )
+    for transfer in docs:
+        label = transfer.voucher_no or f"FTV#{transfer.id}"
+        out.append(
+            {
+                "kind": "transfer",
+                "role": "head",
+                "doc": transfer,
+                "number": label,
+                "title": (
+                    f"{transfer.from_account.code} -> {transfer.to_account.code} "
+                    f"· {transfer.purpose}"
+                ),
+                "date": transfer.transfer_date,
+                "amount": transfer.amount,
+                "detail": ("ui:transfer_detail", transfer.id),
+                "action": ("ui:transfer_approve", transfer.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def je_queue(user_roles):
     """Manual Journal Entries waiting on `user_roles` (head only)."""
     if "head" not in user_roles:
@@ -474,6 +516,7 @@ def pending_approval_queue(user):
         + po_queue({role})
         + cv_queue({role})
         + cash_short_queue({role})
+        + transfer_queue({role})
         + je_queue({role})
         + ar_receipt_queue({role})
     )

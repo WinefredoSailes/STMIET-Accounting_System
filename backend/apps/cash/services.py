@@ -102,6 +102,10 @@ class CashCycleService:
         # (source_doc_type, side) -> ADR-028 activity type.
         activity_map = {
             ("AR", "dr"): ActivityType.COLLECTION_DIST,
+            # FTV is the transfer's originating voucher (ADR-030); "TRANSFER"
+            # is kept for JEs written before the FTV source designation.
+            ("FTV", "dr"): ActivityType.INTERACCT_TRANSFER,
+            ("FTV", "cr"): ActivityType.INTERACCT_TRANSFER,
             ("TRANSFER", "dr"): ActivityType.INTERACCT_TRANSFER,
             ("TRANSFER", "cr"): ActivityType.INTERACCT_TRANSFER,
             ("RFP", "cr"): ActivityType.RFP_AP,
@@ -373,14 +377,46 @@ class PCFService:
         replen.save(update_fields=["journal_entry", "status", "updated_at"])
 
 
+def _log_transfer(transfer, action, *, actor=None, note=""):
+    """Append an immutable audit-trail entry for an inter-account transfer.
+
+    Mirrors apps.ap.log_action so transfer history survives reject/revise
+    cycles (the mutable status/approved_by/rejected_by fields reset, the log
+    never does)."""
+    from apps.ap.models import ActionLog
+
+    ActionLog.objects.create(
+        doc_type=ActionLog.DocType.TRANSFER,
+        doc_id=transfer.id,
+        action=action,
+        actor=actor,
+        note=(note or "").strip(),
+    )
+
+
 class TransferService:
     """Inter-account transfer (ADR-030): Dr Cash-To | Cr Cash-From; purpose required.
 
     Full approval flow, same as RFP/JE/CV: every transfer is created
-    ``requested`` with a DRAFT JE and only posts to the GL when the finance
-    head approves it. There is no amount threshold — all transfers, large or
-    small, route through head approval.
+    ``requested`` with a DRAFT JE, the preparer submits it, and only the head's
+    approval posts it to the GL. A rejected transfer is returned to the
+    preparer to revise and resubmit. There is no amount threshold — all
+    transfers, large or small, route through head approval.
     """
+
+    #: Statuses in which the preparer may still edit/resubmit the transfer.
+    EDITABLE = ("requested", "rejected")
+
+    @classmethod
+    def _validate_legs(cls, from_account, to_account, amount):
+        amount = money(amount)
+        if amount <= 0:
+            raise ValidationError("Transfer amount must be positive.")
+        if from_account == to_account:
+            raise ValidationError("From and to accounts must differ.")
+        if from_account.company_id != to_account.company_id:
+            raise ValidationError("Transfers are only allowed within one company.")
+        return amount
 
     @classmethod
     @transaction.atomic
@@ -392,17 +428,12 @@ class TransferService:
         amount,
         purpose: str,
         reference: str = "",
+        check_no: str = "",
         transfer_date: date | None = None,
         segment=None,
         user=None,
     ) -> InterAccountTransfer:
-        amount = money(amount)
-        if amount <= 0:
-            raise ValidationError("Transfer amount must be positive.")
-        if from_account == to_account:
-            raise ValidationError("From and to accounts must differ.")
-        if from_account.company_id != to_account.company_id:
-            raise ValidationError("Transfers are only allowed within one company.")
+        amount = cls._validate_legs(from_account, to_account, amount)
         if isinstance(transfer_date, str):
             transfer_date = date.fromisoformat(transfer_date)
 
@@ -424,6 +455,7 @@ class TransferService:
             amount=amount,
             purpose=purpose,
             reference=reference,
+            check_no=check_no or "",
             initiated_by=user,
             status="requested",
         )
@@ -437,18 +469,21 @@ class TransferService:
             segment=seg,
             transaction_date=transfer.transfer_date,
             status=PostingStatus.DRAFT,
-            description=f"Inter-account transfer: {purpose}",
-            source_doc_type="TRANSFER",
-            source_doc_no=str(transfer.id),
+            description=f"Fund transfer {voucher_no}: {purpose}",
+            # ADR-030: designate the originating FTV voucher (same convention as
+            # RFP/CV, whose JEs carry their document number as the source).
+            source_doc_type="FTV",
+            source_doc_no=voucher_no,
+            ref_number=reference or "",
             created_by=user,
         )
         JournalEntryLine.objects.create(
             entry=entry, line_no=1, account=from_account.gl_account,
-            credit=amount, description=f"Transfer to {to_account.code}"
+            credit=amount, description=purpose
         )
         JournalEntryLine.objects.create(
             entry=entry, line_no=2, account=to_account.gl_account,
-            debit=amount, description=f"Transfer from {from_account.code}"
+            debit=amount, description=purpose
         )
         entry.recalc_totals()
         # Do NOT post here: the JE stays DRAFT until the finance head
@@ -456,6 +491,78 @@ class TransferService:
         # every transfer requires head approval before hitting the GL.
         transfer.journal_entry = entry
         transfer.save(update_fields=["journal_entry", "updated_at"])
+        _log_transfer(transfer, "created", actor=user)
+        return transfer
+
+    @classmethod
+    @transaction.atomic
+    def update(
+        cls,
+        transfer: InterAccountTransfer,
+        *,
+        from_account: BankAccount,
+        to_account: BankAccount,
+        amount,
+        purpose: str,
+        reference: str = "",
+        check_no: str = "",
+        transfer_date: date | None = None,
+        user=None,
+    ) -> InterAccountTransfer:
+        """Edit a requested/rejected transfer and rebuild its DRAFT JE."""
+        if transfer.status not in cls.EDITABLE:
+            raise ValidationError("Only requested or rejected transfers can be edited.")
+        if not (purpose or "").strip():
+            raise ValidationError("Purpose is required.")
+        amount = cls._validate_legs(from_account, to_account, amount)
+        if isinstance(transfer_date, str):
+            transfer_date = date.fromisoformat(transfer_date)
+
+        transfer.transfer_date = transfer_date or transfer.transfer_date
+        transfer.from_account = from_account
+        transfer.to_account = to_account
+        transfer.amount = amount
+        transfer.purpose = purpose.strip()
+        transfer.reference = reference
+        transfer.check_no = check_no or ""
+        # Editing a rejected transfer reopens it for resubmission.
+        transfer.status = "requested"
+        transfer.rejected_by = None
+        transfer.rejected_at = None
+        transfer.rejection_note = ""
+        transfer.save(
+            update_fields=[
+                "transfer_date", "from_account", "to_account", "amount",
+                "purpose", "reference", "check_no", "status", "rejected_by",
+                "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+
+        entry = transfer.journal_entry
+        if entry is not None and not entry.is_posted:
+            from apps.posting.models import JournalEntryLine
+
+            entry.transaction_date = transfer.transfer_date
+            entry.description = f"Fund transfer {transfer.voucher_no}: {transfer.purpose}"
+            entry.ref_number = transfer.reference or ""
+            entry.updated_by = user
+            entry.save(
+                update_fields=[
+                    "transaction_date", "description", "ref_number",
+                    "updated_by", "updated_at",
+                ]
+            )
+            entry.lines.all().delete()
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=1, account=from_account.gl_account,
+                credit=amount, description=transfer.purpose,
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=2, account=to_account.gl_account,
+                debit=amount, description=transfer.purpose,
+            )
+            entry.recalc_totals()
+        _log_transfer(transfer, "revised", actor=user)
         return transfer
 
     @classmethod
@@ -476,10 +583,70 @@ class TransferService:
 
     @classmethod
     @transaction.atomic
-    def approve(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
-        """Approve a pending inter-account transfer (finance head).
+    def submit(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
+        """requested -> submitted: the preparer sends it to the head."""
+        if transfer.status not in cls.EDITABLE:
+            raise ValidationError("Only requested or rejected transfers can be submitted.")
+        if transfer.journal_entry_id is None:
+            raise ValidationError("This transfer has no journal entry to submit.")
+        transfer.status = "submitted"
+        transfer.rejected_by = None
+        transfer.rejected_at = None
+        transfer.rejection_note = ""
+        transfer.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        _log_transfer(transfer, "submitted", actor=user)
+        return transfer
 
-        Only transfers with status ``requested`` can be approved. The head's
+    @classmethod
+    @transaction.atomic
+    def reject(
+        cls, transfer: InterAccountTransfer, *, user, note: str
+    ) -> InterAccountTransfer:
+        """submitted -> rejected: the head returns it with a required note."""
+        if transfer.status != "submitted":
+            raise ValidationError("Only submitted transfers can be rejected.")
+        if not (note or "").strip():
+            raise ValidationError("A rejection note is required.")
+        transfer.status = "rejected"
+        transfer.rejected_by = user
+        transfer.rejected_at = timezone.now()
+        transfer.rejection_note = note.strip()
+        transfer.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        _log_transfer(transfer, "rejected", actor=user, note=note)
+        return transfer
+
+    @classmethod
+    @transaction.atomic
+    def revise(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
+        """rejected -> requested: reopen so the preparer can edit/resubmit."""
+        if transfer.status != "rejected":
+            raise ValidationError("Only rejected transfers can be revised.")
+        transfer.status = "requested"
+        transfer.rejected_by = None
+        transfer.rejected_at = None
+        transfer.rejection_note = ""
+        transfer.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        _log_transfer(transfer, "revised", actor=user)
+        return transfer
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, transfer: InterAccountTransfer, *, user) -> InterAccountTransfer:
+        """Approve a submitted inter-account transfer (finance head).
+
+        Only transfers with status ``submitted`` can be approved. The head's
         approval marks the DRAFT JE APPROVED and posts it to the GL — this is
         what removes the amount threshold: every transfer, whatever the
         amount, posts only through this gate.
@@ -488,8 +655,8 @@ class TransferService:
         out-of-band through the JE module), the transfer is caught up to
         ``approved`` without re-posting — re-posting must never happen.
         """
-        if transfer.status != "requested":
-            raise ValidationError("Only requested transfers can be approved.")
+        if transfer.status != "submitted":
+            raise ValidationError("Only submitted transfers can be approved.")
         from apps.posting.models import PostingStatus
         from apps.posting.services import PostingService
 
@@ -507,6 +674,7 @@ class TransferService:
                 transfer.save(
                     update_fields=["approved_by", "approved_at", "status", "updated_at"]
                 )
+                _log_transfer(transfer, "approved", actor=user)
                 return transfer
 
             if entry.status != PostingStatus.APPROVED:
@@ -528,6 +696,7 @@ class TransferService:
         transfer.save(
             update_fields=["approved_by", "approved_at", "status", "updated_at"]
         )
+        _log_transfer(transfer, "approved", actor=user)
         return transfer
 
 

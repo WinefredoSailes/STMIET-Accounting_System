@@ -53,27 +53,32 @@
 
       <!-- ═══════════════ HEADER ═══════════════ -->
       <tr>
-        <td rowspan="3" colspan="3" style="text-align:center; vertical-align:middle">
+        <td rowspan="5" colspan="3" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
         </td>
-        <td rowspan="3" colspan="11" style="text-align:center; vertical-align:middle">
+        <td rowspan="5" colspan="7" style="text-align:center; vertical-align:middle">
           <div style="font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#334155">{{ transfer.from_account.company.name|default:"SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING" }}</div>
           <div style="font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6; margin-top:2px">FUND TRANSFER VOUCHER (FTV)</div>
         </td>
-      </tr>
-
-      <!-- ═══════════════ DOCUMENT INFORMATION ═══════════════ -->
-      <tr style="font-size:10px">
-        <td colspan="3" style="font-weight:600">VOUCHER REF #:</td>
-        <td colspan="4" style="font-weight:700">{{ voucher_no|default:"—" }}</td>
-        <td colspan="3" style="font-weight:600">DATE:</td>
-        <td colspan="4" style="white-space:normal">{{ date_label|default:"—" }}</td>
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+          ACCOUNTING DEPARTMENT
+        </td>
       </tr>
       <tr style="font-size:10px">
-        <td colspan="3" style="font-weight:600">TRANSFER TYPE:</td>
-        <td colspan="4" style="white-space:normal">{{ transfer_type|default:"—" }}</td>
-        <td colspan="3" style="font-weight:600">PREPARED BY:</td>
-        <td colspan="4" style="white-space:normal">{{ prepared_by|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">VOUCHER REF #:</td>
+        <td colspan="2" style="font-weight:700; white-space:normal">{{ voucher_no|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">DATE:</td>
+        <td colspan="2" style="white-space:normal">{{ date_label|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">TRANSFER TYPE:</td>
+        <td colspan="2" style="white-space:normal">{{ transfer_type|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">PREPARED BY:</td>
+        <td colspan="2" style="white-space:normal">{{ prepared_by|default:"—" }}</td>
       </tr>
 
       <!-- ═══════════════ TRANSFER DETAILS ═══════════════ -->
@@ -111,17 +116,17 @@
       </tr>
       <!-- Column headers -->
       <tr style="font-size:10px; text-transform:uppercase; letter-spacing:.03em">
-        <th colspan="3" style="font-weight:700">COA</th>
-        <th colspan="4" style="font-weight:700">Account Name</th>
-        <th colspan="3" style="font-weight:700">Particulars</th>
+        <th colspan="2" style="font-weight:700">COA</th>
+        <th colspan="3" style="font-weight:700">Account Name</th>
+        <th colspan="5" style="font-weight:700">Particulars</th>
         <th colspan="2" style="font-weight:700; text-align:right">Debit</th>
         <th colspan="2" style="font-weight:700; text-align:right">Credit</th>
       </tr>
       {% for line in lines %}
       <tr style="font-size:10px; line-height:2;" class="line-row">
-        <td colspan="3" style="font-family:monospace; font-size:9px; white-space:normal">{{ line.account.code }}</td>
-        <td colspan="4" style="overflow:hidden; white-space:normal">{{ line.account.name }}</td>
-        <td colspan="3" style="overflow:hidden; white-space:normal">{{ line.description|default:"—" }}</td>
+        <td colspan="2" style="font-family:monospace; font-size:9px; white-space:normal">{{ line.account.code }}</td>
+        <td colspan="3" style="overflow:hidden; white-space:normal">{{ line.account.name }}</td>
+        <td colspan="5" style="overflow:hidden; white-space:normal">{{ line.description|default:"—" }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.debit|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.credit|money }}</td>
       </tr>

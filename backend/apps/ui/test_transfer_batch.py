@@ -80,6 +80,8 @@ def test_head_approve_posts_batch_transfer(client, banks, role_users):
         "line_purpose": ["sweep"],
     })
     transfer = InterAccountTransfer.objects.get()
+    # The head's inbox only shows submitted transfers; the preparer submits.
+    TransferService.submit(transfer, user=role_users["staff"])
     client.force_login(role_users["head"])
     resp = client.post(f"/cash/transfers/{transfer.id}/approve/")
     assert resp.status_code == 302
@@ -116,7 +118,7 @@ def test_batch_is_atomic_on_invalid_line(client, banks):
     # Nothing from the first (valid) leg was persisted either — batch is atomic.
     from apps.posting.models import JournalEntry
 
-    assert JournalEntry.objects.filter(source_doc_type="TRANSFER").count() == 0
+    assert JournalEntry.objects.filter(source_doc_type="FTV").count() == 0
 
 
 def test_batch_defaults_blank_purpose(client, banks):
@@ -163,6 +165,7 @@ def test_batch_keeps_full_purpose_text(client, banks):
 def test_approve_catches_up_already_posted_je(client, banks, role_users):
     """If a transfer's JE was already posted out-of-band, approving the
     transfer catches it up to approved without re-posting or duplicating GL."""
+    from apps.cash.services import TransferService
     from apps.posting.models import GeneralLedger, PostingStatus
     from apps.posting.services import PostingService
 
@@ -179,7 +182,8 @@ def test_approve_catches_up_already_posted_je(client, banks, role_users):
     transfer.journal_entry.refresh_from_db()
     assert transfer.journal_entry.status == PostingStatus.POSTED
     assert GeneralLedger.objects.filter(entry=transfer.journal_entry).count() == 2
-    assert transfer.status == "requested"
+    TransferService.submit(transfer, user=role_users["staff"])
+    assert transfer.status == "submitted"
 
     client.force_login(role_users["head"])
     resp = client.post(f"/cash/transfers/{transfer.id}/approve/")

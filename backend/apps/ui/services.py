@@ -1219,6 +1219,51 @@ def transfers_context():
     }
 
 
+def transfer_timeline(transfer):
+    """[(step, label, state, holder)] for the FTV document screen (ADR-030).
+
+    requested -> submitted -> approved; a rejected transfer is shown back at
+    the requested step (returned to the preparer)."""
+    holders = {
+        "requested": transfer.initiated_by,
+        "submitted": None,
+        "approved": transfer.approved_by,
+    }
+    labels = {
+        "requested": "Requested by",
+        "submitted": "Submitted",
+        "approved": "Approved (head) — JE posted",
+    }
+    order = ["requested", "submitted", "approved"]
+    if transfer.status == "rejected":
+        current = "requested"
+    else:
+        current = transfer.status if transfer.status in order else "requested"
+    current_idx = order.index(current)
+    approved = transfer.status == "approved"
+
+    out = []
+    for i, step in enumerate(order):
+        if approved:
+            state = "done"
+        elif i < current_idx:
+            state = "done"
+        elif i == current_idx:
+            state = "current"
+        else:
+            state = "todo"
+        holder = holders.get(step)
+        out.append(
+            {
+                "step": step,
+                "label": labels[step],
+                "state": state,
+                "holder": holder.get_full_name() if holder else "",
+            }
+        )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Tax & compliance (Phase 9)
 # ---------------------------------------------------------------------------

@@ -4878,71 +4878,116 @@ def advance_liquidate(request, pk):
 
 @login_required
 def transfers(request):
-    """Inter-account transfer screen (ADR-030): Dr Cash-To | Cr Cash-From."""
+    """Inter-account transfer screen (ADR-030): search + status/from/to filters."""
+    from .filter_specs import transfer_filter_spec
+
     ctx = transfers_context()
-    ctx["page_obj"] = _page(request, ctx.pop("transfers"))
-    return render(request, "ui/cash/transfers.html", ctx)
+    spec = transfer_filter_spec()
+    ctx["page_obj"] = _page(request, spec.apply(ctx.pop("transfers"), request.GET))
+    ctx["filters"] = spec.context(request.GET, request)
+
+    params = request.GET.copy()
+    for key in ("page", "format"):
+        params.pop(key, None)
+    filter_qs = params.urlencode()
+    ctx["filter_qs"] = filter_qs
+    ctx["export_url"] = reverse("ui:transfers_export") + (
+        f"?{filter_qs}" if filter_qs else ""
+    )
+
+    template = (
+        "ui/cash/_transfers_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/transfers.html"
+    )
+    return render(request, template, ctx)
+
+
+def _transfer_form_context(request, *, editing=None):
+    """Shared context for the create and edit transfer forms."""
+    from apps.cash.models import BankAccount
+
+    return {
+        "banks": BankAccount.objects.filter(is_active=True)
+        .select_related("company")
+        .order_by("code"),
+        "today": date.today(),
+        "editing": editing,
+    }
+
+
+def _resolve_bank(banks_by_id, pk):
+    """Resolve a bank account from the batch form, raising a loud error."""
+    if not pk:
+        raise AccountingError("Every transfer line needs both a From and a To account.")
+    try:
+        bank = banks_by_id.get(int(pk))
+    except (TypeError, ValueError):
+        bank = None
+    if not bank:
+        raise AccountingError("Unknown bank account on a transfer line.")
+    return bank
 
 
 @login_required
-@require_POST
 def transfer_create(request):
     """Request one or more inter-account transfers from the batch grid (ADR-030).
 
-    Every non-blank row becomes its own transfer + DRAFT JE (Dr Cash-To | Cr
-    Cash-From). Nothing posts here: each transfer stays ``requested`` until
-    the finance head approves it (transfer_approve), same flow as RFP/JE/CV.
-    The batch is atomic: one invalid line rejects every leg.
+    GET renders the dedicated batch form (moved off the register so the list
+    stays clean); POST creates one transfer + DRAFT JE (Dr Cash-To | Cr
+    Cash-From) per non-blank row, atomically. Nothing posts here: each
+    transfer stays ``requested`` until the preparer submits it and the finance
+    head approves (transfer_approve), same flow as RFP/JE/CV.
     """
     from django.db import transaction
 
     from apps.cash.models import BankAccount
     from apps.cash.services import TransferService
 
+    if request.method == "GET":
+        return render(request, "ui/cash/transfer_form.html", _transfer_form_context(request))
+
     from_ids = request.POST.getlist("line_from")
     to_ids = request.POST.getlist("line_to")
     amounts = request.POST.getlist("line_amount")
     purposes = request.POST.getlist("line_purpose")
+    check_nos = request.POST.getlist("line_check_no")
 
     # Backward-compatible single-leg POST (old inline form).
     if not from_ids and {"from_account", "to_account", "amount"} <= set(request.POST):
-        from_ids, to_ids, amounts, purposes = (
+        from_ids, to_ids, amounts, purposes, check_nos = (
             [request.POST["from_account"]],
             [request.POST["to_account"]],
             [request.POST["amount"]],
             [request.POST.get("purpose", "")],
+            [request.POST.get("check_no", "")],
         )
 
     transfer_date = date.fromisoformat(request.POST["transfer_date"]) if request.POST.get("transfer_date") else None
+    reference = request.POST.get("reference", "").strip()
     bank_ids = {x for pair in (from_ids, to_ids) for x in pair if x}
-    banks = {b.id: b for b in BankAccount.objects.filter(id__in=bank_ids)}
-
-    def bank(pk):
-        if not pk:
-            raise AccountingError("Every transfer line needs both a From and a To account.")
-        try:
-            b = banks.get(int(pk))
-        except (TypeError, ValueError):
-            b = None
-        if not b:
-            raise AccountingError("Unknown bank account on a transfer line.")
-        return b
+    banks_by_id = {b.id: b for b in BankAccount.objects.filter(id__in=bank_ids)}
 
     posted = []
     try:
         with transaction.atomic():
-            for f_id, t_id, amt, purp in zip(from_ids, to_ids, amounts, purposes):
+            for i, (f_id, t_id, amt, purp) in enumerate(
+                zip(from_ids, to_ids, amounts, purposes)
+            ):
                 if not (f_id or t_id or amt.strip()):
                     continue  # blank template row
-                f = bank(f_id)
-                t = bank(t_id)
+                f = _resolve_bank(banks_by_id, f_id)
+                t = _resolve_bank(banks_by_id, t_id)
                 purpose = (purp or "").strip() or f"Fund transfer to {t.code} ({t.bank_name})"
+                check_no = (check_nos[i] if i < len(check_nos) else "").strip()
                 posted.append(
                     TransferService.transfer(
                         from_account=f,
                         to_account=t,
                         amount=amt,
                         purpose=purpose,
+                        reference=reference,
+                        check_no=check_no,
                         transfer_date=transfer_date,
                         user=request.user,
                     )
@@ -4951,20 +4996,81 @@ def transfer_create(request):
                 raise AccountingError("Add at least one transfer line before posting.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-        return redirect("ui:transfers")
+        return redirect("ui:transfer_create")
     messages.success(
         request,
         f"Requested {len(posted)} transfer(s) on "
         f"{transfer_date.strftime('%Y-%m-%d') if transfer_date else 'today'} — "
-        f"awaiting head approval before posting.",
+        f"submit each for head approval before posting.",
     )
+    if len(posted) == 1:
+        return redirect("ui:transfer_detail", pk=posted[0].id)
     return redirect("ui:transfers")
+
+
+@login_required
+def transfer_edit(request, pk):
+    """Edit a requested/rejected transfer (preparer) and rebuild its DRAFT JE."""
+    from apps.cash.models import BankAccount, InterAccountTransfer
+    from apps.cash.services import TransferService
+    from apps.core.approvals import approval_role_of
+
+    transfer = _ftv_get(request, pk)
+    can_edit = transfer.status in TransferService.EDITABLE and (
+        request.user.id == transfer.initiated_by_id
+        or approval_role_of(request.user) == "head"
+    )
+    if not can_edit:
+        messages.error(request, "This transfer can no longer be edited.")
+        return redirect("ui:transfer_detail", pk=pk)
+
+    if request.method == "POST":
+        try:
+            f_id = request.POST.get("line_from", "")
+            t_id = request.POST.get("line_to", "")
+            banks_by_id = {b.id: b for b in BankAccount.objects.filter(id__in=[i for i in (f_id, t_id) if i])}
+            f = _resolve_bank(banks_by_id, f_id)
+            t = _resolve_bank(banks_by_id, t_id)
+            TransferService.update(
+                transfer,
+                from_account=f,
+                to_account=t,
+                amount=request.POST.get("line_amount", ""),
+                purpose=request.POST.get("line_purpose", ""),
+                reference=request.POST.get("reference", ""),
+                check_no=request.POST.get("line_check_no", ""),
+                transfer_date=request.POST.get("transfer_date") or None,
+                user=request.user,
+            )
+            messages.success(request, f"Transfer {transfer.voucher_no} updated.")
+            return redirect("ui:transfer_detail", pk=pk)
+        except (AccountingError, ValidationError) as exc:
+            messages.error(request, str(exc))
+
+    ctx = _transfer_form_context(request, editing=transfer)
+    return render(request, "ui/cash/transfer_form.html", ctx)
+
+
+@login_required
+@require_POST
+def transfer_submit(request, pk):
+    """requested/rejected -> submitted: the preparer sends it to the head."""
+    from apps.cash.models import InterAccountTransfer
+    from apps.cash.services import TransferService
+
+    transfer = get_object_or_404(InterAccountTransfer, pk=pk)
+    try:
+        TransferService.submit(transfer, user=request.user)
+        messages.success(request, f"Transfer {transfer.voucher_no} submitted for approval.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:transfer_detail", pk=pk)
 
 
 @login_required
 @require_POST
 def transfer_approve(request, pk):
-    """requested -> approved (finance head posts the transfer JE to the GL).
+    """submitted -> approved (finance head posts the transfer JE to the GL).
 
     Same gate as RFP/JE/CV approval: only the head may approve, and every
     transfer — whatever the amount (no threshold) — posts here.
@@ -4972,19 +5078,52 @@ def transfer_approve(request, pk):
     from apps.cash.models import InterAccountTransfer
     from apps.cash.services import TransferService
     from apps.core.approvals import require_approval_role
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     transfer = get_object_or_404(InterAccountTransfer, pk=pk)
     try:
         require_approval_role(request.user, "head")
-        transfer = TransferService.approve(transfer, user=request.user)
+        TransferService.approve(transfer, user=request.user)
         messages.success(request, f"Transfer {transfer.voucher_no} approved — entry in GL.")
-    except Exception as exc:
-        logger.error(f"Transfer approval error: {exc}")
-        messages.error(request, "An error occurred during approval. Please try again.")
-    return redirect("ui:transfers")
+    except (AccountingError, ValidationError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:transfer_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def transfer_reject(request, pk):
+    """submitted -> rejected: the head returns it with a required note."""
+    from apps.cash.models import InterAccountTransfer
+    from apps.cash.services import TransferService
+    from apps.core.approvals import require_approval_role
+
+    transfer = get_object_or_404(InterAccountTransfer, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        TransferService.reject(
+            transfer, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, f"Transfer {transfer.voucher_no} returned to the preparer.")
+    except (AccountingError, ValidationError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:transfer_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def transfer_revise(request, pk):
+    """rejected -> requested, then open the edit form for revision."""
+    from apps.cash.models import InterAccountTransfer
+    from apps.cash.services import TransferService
+
+    transfer = get_object_or_404(InterAccountTransfer, pk=pk)
+    try:
+        TransferService.revise(transfer, user=request.user)
+        messages.success(request, f"Transfer {transfer.voucher_no} reopened — revise and resubmit.")
+        return redirect("ui:transfer_edit", pk=pk)
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+        return redirect("ui:transfer_detail", pk=pk)
 
 
 def _transfer_type(transfer):
@@ -5038,6 +5177,50 @@ def _ftv_get(request, pk):
 
 
 @login_required
+def transfer_detail(request, pk):
+    """Inter-account transfer detail (mirrors rfp_detail/cv_detail/je_detail).
+
+    One transfer = one FTV voucher + one JE. The screen shows the voucher
+    header, the from/to designation, the distribution lines and the approval
+    action, with the same PDF/Excel/CSV/Print action set as RFP/CV.
+    """
+    from apps.core.approvals import (
+        ROLE_LABELS,
+        TRANSFER_NEXT_ROLE,
+        approval_role_of,
+        role_assignee,
+    )
+
+    from .services import transfer_timeline
+
+    transfer = _ftv_get(request, pk)
+    ctx = _ftv_context(transfer)
+
+    role = TRANSFER_NEXT_ROLE.get(transfer.status)
+    awaiting = None
+    if role:
+        awaiting = {
+            "role": role,
+            "label": ROLE_LABELS[role],
+            "assignee": role_assignee(role),
+            "you_hold": approval_role_of(request.user) == role,
+        }
+    ctx.update(
+        {
+            "timeline": transfer_timeline(transfer),
+            "awaiting": awaiting,
+            "audit_trail": _audit_trail("transfer", transfer.id),
+            "can_edit": transfer.status in ("requested", "rejected")
+            and (
+                request.user.id == transfer.initiated_by_id
+                or approval_role_of(request.user) == "head"
+            ),
+        }
+    )
+    return render(request, "ui/cash/transfer_detail.html", ctx)
+
+
+@login_required
 def ftv_print(request, pk):
     """Print-optimized Fund Transfer Voucher (FTV) — browser print dialog."""
     transfer = _ftv_get(request, pk)
@@ -5066,6 +5249,82 @@ def ftv_pdf_export(request, pk):
         f'attachment; filename="FTV_{ctx["voucher_no"]}.pdf"'
     )
     return response
+
+
+@login_required
+def transfer_export(request, pk, fmt):
+    """Per-transfer export: PDF renders the FTV form; XLSX/CSV the distribution.
+
+    Same contract as rfp_export/cv_export so a transfer can be downloaded in
+    the three formats the other vouchers support.
+    """
+    from apps.core.exports import Column, TableSpec, table_export
+    from .pdf import build_fund_transfer_voucher_pdf
+
+    transfer = _ftv_get(request, pk)
+    ctx = _ftv_context(transfer)
+    label = ctx["voucher_no"] or f"TRF-{transfer.id}"
+
+    if (fmt or "").lower() == "pdf":
+        data = build_fund_transfer_voucher_pdf(
+            transfer,
+            voucher_no=ctx["voucher_no"],
+            transfer_type=ctx["transfer_type"],
+            date_label=ctx["date_label"],
+            prepared_by=ctx["prepared_by"],
+            checked_by=ctx["checked_by"],
+            approved_by=ctx["approved_by"],
+        )
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="FTV_{label}.pdf"'
+        return response
+
+    entry = ctx["entry"]
+    lines = (
+        list(entry.lines.select_related("account", "segment").order_by("line_no"))
+        if entry
+        else []
+    )
+    total_dr = entry.total_debit if entry else transfer.amount
+    total_cr = entry.total_credit if entry else transfer.amount
+    spec = TableSpec(
+        title=f"FTV {label} — Fund Transfer Voucher (ADR-030)",
+        columns=[
+            Column("#"), Column("Side"), Column("COA"),
+            Column("Account Name", width_cm=6), Column("Segment"),
+            Column("Description", width_cm=8),
+            Column("Debit", money=True), Column("Credit", money=True),
+        ],
+        preamble=[
+            ["Voucher No", label],
+            ["Transfer Type", ctx["transfer_type"]],
+            ["Date", transfer.transfer_date.isoformat()],
+            ["From (Credit)", f"{transfer.from_account.code} — {transfer.from_account.bank_name or transfer.from_account.name}"],
+            ["To (Debit)", f"{transfer.to_account.code} — {transfer.to_account.bank_name or transfer.to_account.name}"],
+            ["Amount", transfer.amount],
+            ["Purpose", transfer.purpose],
+            ["Reference", transfer.reference or ""],
+            ["Check No", transfer.check_no or ""],
+            ["Status", transfer.status],
+        ],
+        rows=[
+            [
+                line.line_no,
+                "CR" if line.credit else "DR",
+                line.account.code,
+                line.account.name,
+                line.segment.code if line.segment else (entry.segment.code if entry else ""),
+                line.description or transfer.purpose,
+                line.debit,
+                line.credit,
+            ]
+            for line in lines
+        ],
+        totals_row=["", "", "", "TOTAL", "", "", total_dr, total_cr],
+        sheet_title=f"FTV_{label}",
+        page="portrait",
+    )
+    return table_export(spec, fmt, f"FTV_{label}.{fmt}")
 
 
 # ---------------------------------------------------------------------------
@@ -5585,10 +5844,13 @@ def assets_list_export(request):
 
 @login_required
 def transfers_export(request):
-    """Inter-account transfer register (ADR-030)."""
+    """Inter-account transfer register (ADR-030) — honours the on-screen filters."""
+    from .filter_specs import transfer_filter_spec
+
     fmt = request.GET.get("format", "xlsx")
+    qs = transfer_filter_spec().apply(transfers_context()["transfers"], request.GET)
     rows = []
-    for t in transfers_context()["transfers"]:
+    for t in qs:
         rows.append(
             [
                 t.transfer_date.isoformat(),

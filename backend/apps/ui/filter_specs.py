@@ -13,6 +13,7 @@ from .filtering import (
     FilterSpec,
     Option,
     account_choices,
+    bank_choices,
     customer_choices,
     segment_choices,
     segment_pk_choices,
@@ -32,6 +33,7 @@ __all__ = [
     "po_filter_spec",
     "cv_filter_spec",
     "je_filter_spec",
+    "transfer_filter_spec",
 ]
 
 
@@ -234,5 +236,43 @@ def je_filter_spec():
                 choices=lambda req: PostingStatus.choices,
             ),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+        ]
+    )
+
+
+# --- Cash ------------------------------------------------------------------
+
+TRANSFER_STATUS_CHOICES = [
+    ("requested", "Requested"),
+    ("submitted", "Submitted"),
+    ("approved", "Approved"),
+    ("rejected", "Rejected"),
+]
+
+
+def transfer_filter_spec():
+    """Inter-account transfer register filters (ADR-030)."""
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text",
+                placeholder="Voucher, bank, purpose or reference",
+                search_fields=(
+                    "voucher_no",
+                    "from_account__code",
+                    "from_account__bank_name",
+                    "to_account__code",
+                    "to_account__bank_name",
+                    "purpose",
+                    "reference",
+                    "check_no",
+                ),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: TRANSFER_STATUS_CHOICES,
+            ),
+            FilterField("from_account", "From (Credit)", kind="choice", choices=bank_choices),
+            FilterField("to_account", "To (Debit)", kind="choice", choices=bank_choices),
         ]
     )

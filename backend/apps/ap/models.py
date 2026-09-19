@@ -419,6 +419,7 @@ class ActionLog(models.Model):
         PO = "po", "Purchase Order"
         AR = "ar", "Acknowledgment Receipt"
         DEPOSIT = "dep", "Bank Deposit"
+        TRANSFER = "transfer", "Fund Transfer"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)

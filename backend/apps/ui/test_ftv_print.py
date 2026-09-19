@@ -38,7 +38,9 @@ def banks(db, company, segment, accounts, role_users):
         segment=segment,
         user=role_users["staff"],
     )
-    # Voucher layer prints an approved transfer: head approval posts the JE.
+    # Voucher layer prints an approved transfer: the preparer submits, head
+    # approval posts the JE.
+    TransferService.submit(transfer, user=role_users["staff"])
     transfer = TransferService.approve(transfer, user=role_users["head"])
     return bank_from, bank_to, transfer
 
@@ -104,8 +106,7 @@ def test_ftv_print_renders_voucher_sections(client, company, banks, named_staff)
     assert "Account Distribution" in body
     assert "COA" in body and "Account Name" in body and "Particulars" in body
     assert "10110" in body and "10010" in body
-    assert "Transfer to PNB-CHK" in body
-    assert "Transfer from 1VB-CHK" in body
+    assert "Fund transfer to PNB for payroll coverage" in body
     assert "TOTALS" in body
     # Totals appear once under Debit and once under Credit (balanced).
     assert body.count("25,000.00") >= 3
@@ -220,9 +221,71 @@ def test_ftv_pdf_export_downloads_real_pdf(client, banks, role_users):
     assert b"Inter-Bank Transfer" in text
 
 
-def test_transfers_form_page_is_batch_grid(client, company, segment, accounts, role_users):
-    """The live entry form is a batch line grid (From/To/Amount/Purpose) — no
-    voucher markup leaks in, and the new-transfer grid renders."""
+def test_transfer_form_page_is_batch_grid(client, company, segment, accounts, role_users):
+    """The dedicated new-transfer form is a batch line grid (From/To/Amount/
+    Purpose) — no voucher markup leaks in, and the grid renders."""
+    BankAccount.objects.create(
+        code="1VB-CHK", name="First Valley Bank",
+        account_type="checking", bank_name="First Valley Bank", bank_code="1VB",
+        gl_account=accounts["10110"], company=company,
+    )
+    BankAccount.objects.create(
+        code="PNB-CHK", name="Philippine National Bank",
+        account_type="checking", bank_name="Philippine National Bank",
+        bank_code="PNB", gl_account=accounts["10010"], company=company,
+    )
+    client.force_login(role_users["staff"])
+    resp = client.get("/cash/transfers/new/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    # The batch grid posts named line fields, one full transfer leg per row.
+    assert 'name="line_from"' in body
+    assert 'name="line_to"' in body
+    assert 'name="line_amount"' in body
+    assert 'name="line_purpose"' in body
+    assert 'data-line-grid="transfer"' in body
+    assert 'data-add-row' in body
+    assert 'data-remove-row' in body
+    assert "FUND TRANSFER VOUCHER (FTV)" not in body
+
+
+def _table_max_columns(body):
+    """Lay out the table row by row (honouring rowspan/colspan) and return the
+    widest column index reached — i.e. how many columns the browser builds."""
+    rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", body, re.S | re.I)
+    claimed = set()  # (row_index, column) occupied by a rowspan
+    max_cols = 0
+    for r, row in enumerate(rows):
+        col = 1
+        for attrs in re.findall(r"<t[dh]\b([^>]*)>", row, re.I):
+            cs = re.search(r'colspan="(\d+)"', attrs)
+            rs = re.search(r'rowspan="(\d+)"', attrs)
+            colspan = int(cs.group(1)) if cs else 1
+            rowspan = int(rs.group(1)) if rs else 1
+            while (r, col) in claimed:
+                col += 1
+            for k in range(colspan):
+                for rr in range(r, r + rowspan):
+                    claimed.add((rr, col + k))
+            col += colspan
+            max_cols = max(max_cols, col - 1)
+    return max_cols
+
+
+def test_ftv_print_every_row_sums_to_grid(client, banks, role_users):
+    """Regression: the FTV is a 14-column grid — no row may overflow it.
+
+    The old header used rowspan=3 on logo+title while the next two rows also
+    spanned all 14 columns, so the browser created a 28-column table and the
+    document info shifted right."""
+    _, _, transfer = banks
+    client.force_login(role_users["staff"])
+    body = client.get(f"/cash/transfers/{transfer.id}/print/").content.decode()
+    assert _table_max_columns(body) == 14
+
+
+def test_transfers_register_is_clean(client, company, segment, accounts, role_users):
+    """The register no longer carries the entry form — just the list + link."""
     bank_from = BankAccount.objects.create(
         code="1VB-CHK", name="First Valley Bank",
         account_type="checking", bank_name="First Valley Bank", bank_code="1VB",
@@ -242,15 +305,7 @@ def test_transfers_form_page_is_batch_grid(client, company, segment, accounts, r
     resp = client.get("/cash/transfers/")
     assert resp.status_code == 200
     body = resp.content.decode()
-    # The batch grid posts named line fields, one full transfer leg per row.
-    assert 'name="line_from"' in body
-    assert 'name="line_to"' in body
-    assert 'name="line_amount"' in body
-    assert 'name="line_purpose"' in body
-    assert 'data-line-grid="transfer"' in body
-    assert 'data-add-row' in body
-    assert 'data-remove-row' in body
-    assert "FUND TRANSFER VOUCHER (FTV)" not in body
-    # Print/PDF links (the voucher layer) are available per row.
-    assert f'href="/cash/transfers/{transfer.id}/print/"' in body
-    assert f'href="/cash/transfers/{transfer.id}/pdf/"' in body
+    assert 'name="line_from"' not in body
+    assert 'href="/cash/transfers/new/"' in body
+    assert f'href="/cash/transfers/{transfer.id}/"' in body
+    assert transfer.purpose in body

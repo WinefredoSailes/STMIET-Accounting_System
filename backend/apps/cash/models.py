@@ -253,14 +253,27 @@ class InterAccountTransfer(AuditableModel):
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="transfers"
     )
     initiated_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # ADR-030 lifecycle (same shape as JE/RFP/CV): requested (preparer, DRAFT
+    # JE) -> submitted (awaiting head) -> approved (JE posted to GL), with a
+    # rejected branch the preparer revises and resubmits.
     status = models.CharField(
         max_length=16, default="requested",
-        choices=[("requested", "Requested"), ("approved", "Approved"), ("completed", "Completed")]
+        choices=[
+            ("requested", "Requested"),
+            ("submitted", "Submitted"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
     )
     approved_by = models.ForeignKey(
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_transfers"
     )
     approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_transfers"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
     check_no = models.CharField(max_length=32, blank=True, help_text="Check number (optional)")
 
     class Meta:

@@ -8,144 +8,15 @@
       <h1 class="text-xl font-semibold text-slate-900">INTER-ACCOUNT TRANSFERS</h1>
       <p class="text-sm text-slate-500 mt-1">Dr Cash-To | Cr Cash-From; purpose required (ADR-030). Every transfer needs finance-head approval before posting — no amount threshold.</p>
     </div>
-    {% url 'ui:transfers_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
-  </div>
-
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-    <div class="p-4 border-b border-slate-100">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <h2 class="text-sm font-semibold text-slate-700">New transfer(s)</h2>
-        <div class="w-full sm:w-auto">
-          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Date (applies to all lines)</label>
-          <input type="date" name="transfer_date" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-        </div>
-      </div>
-
-      <form method="post" action="{% url 'ui:transfer_create' %}" class="mt-3">
-        {% csrf_token %}
-        <div class="overflow-x-auto">
-          <table class="line-table w-full text-sm" style="min-width: 1080px;">
-<colgroup>
-              <col style="width:40px"><!-- # -->
-              <col style="width:250px"><!-- From -->
-              <col style="width:250px"><!-- To -->
-              <col style="width:170px"><!-- Amount -->
-              <col style="width:330px"><!-- Purpose -->
-              <col style="width:140px"><!-- Check# -->
-              <col style="width:36px"><!-- remove -->
-            </colgroup>
-            <thead class="text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th class="py-2">#</th>
-                <th class="py-2">From (Credit)</th>
-                <th class="py-2">To (Debit)</th>
-                <th class="py-2 text-right">Amount</th>
-                <th class="py-2">Purpose</th>
-                <th class="py-2">CHECK ISSUED & NO</th>
-                <th class="py-2"></th>
-              </tr>
-            </thead>
-            <tbody id="transfer-lines" data-line-grid="transfer" data-total="#transfer-total"
-                   class="divide-y divide-slate-100">
-              <tr>
-                <td class="py-2 text-slate-400 line-no">1</td>
-                <td class="py-2">
-                  <select name="line_from" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                    <option value="" selected>— select —</option>
-                    {% for b in banks %}
-                    <option value="{{ b.id }}">{{ b.code }} — {{ b.bank_name }} ({{ b.company.code }})</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td class="py-2">
-                  <select name="line_to" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-                    <option value="" selected>— select —</option>
-                    {% for b in banks %}
-                    <option value="{{ b.id }}">{{ b.code }} — {{ b.bank_name }} ({{ b.company.code }})</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_amount" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
-                <td class="py-2"><textarea name="line_purpose" data-autogrow rows="1" maxlength="500" placeholder="e.g. fund transfer to PNB (optional)" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
-                <td class="py-2"><input type="text" name="line_check_no" maxlength="32" placeholder="e.g. 123456" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right"></td>
-                <td class="py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="4" class="py-2 text-right font-semibold">TOTAL</td>
-                <td id="transfer-total" class="py-2 text-right font-semibold tabular-nums">0.00</td>
-                <td colspan="2"></td>
-              </tr>
-              <tr>
-                <td colspan="6" class="py-2">
-                  <button type="button" id="add-line" data-add-row
-                          class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
-                    + Add line
-                  </button>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p class="text-xs text-slate-500">Each line requests its own transfer + DRAFT JE (Dr Cash-To | Cr Cash-From). Blank lines are skipped; if any line is invalid (same From and To bank, amount ≤ 0), the whole batch is rejected. Requested transfers post only after head approval below.</p>
-          <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Request Transfers</button>
-        </div>
-      </form>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm min-w-[760px]">
-        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-3">Date</th>
-            <th class="px-4 py-3">From (Credit)</th>
-            <th class="px-4 py-3">To (Debit)</th>
-            <th class="px-4 py-3 text-right">Amount</th>
-            <th class="px-4 py-3">Purpose</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3">JE</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% for t in page_obj %}
-          <tr class="hover:bg-slate-50">
-            <td class="px-4 py-2 whitespace-nowrap">{{ t.transfer_date|date:"Y-m-d" }}</td>
-            <td class="px-4 py-2">{{ t.from_account.code }} <span class="text-slate-400">({{ t.from_account.bank_name }})</span></td>
-            <td class="px-4 py-2">{{ t.to_account.code }} <span class="text-slate-400">({{ t.to_account.bank_name }})</span></td>
-            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ t.amount|money }}</td>
-            <td class="px-4 py-2 whitespace-normal break-words">{{ t.purpose }}</td>
-            <td class="px-4 py-2 whitespace-nowrap">
-              {% if t.status == "approved" %}<span class="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Approved</span>
-              {% else %}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Requested</span>{% endif %}
-              {% if t.status == "requested" and request.user|approval_role_of == "head" %}
-              <form method="post" action="{% url 'ui:transfer_approve' t.id %}" class="inline">{% csrf_token %}
-                <button type="submit" class="ml-2 rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-emerald-700">Approve</button>
-              </form>
-              {% endif %}
-            </td>
-            <td class="px-4 py-2 whitespace-nowrap">
-              <div class="flex items-center gap-2">
-                {% if t.journal_entry %}
-                <a href="{% url 'ui:je_detail' t.journal_entry.pk %}" class="text-indigo-600 hover:underline">{{ t.journal_entry.entry_no }}</a>
-                {% else %}<span class="text-slate-400">—</span>{% endif %}
-                <a href="{% url 'ui:ftv_print' t.id %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>
-                <a href="{% url 'ui:ftv_pdf_export' t.id %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">PDF</a>
-              </div>
-            </td>
-          </tr>
-          {% empty %}
-          <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No transfers yet — use the form above.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="flex items-center gap-2">
+      {% include "ui/partials/export_buttons.html" with export_url=export_url %}
+      <a href="{% url 'ui:transfer_create' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">New transfer(s)</a>
     </div>
   </div>
-  {% include "ui/partials/pagination.html" %}
+
+  {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#transfers-table' filter_grid='md:grid-cols-4' %}
+  <div id="transfers-table">
+    {% include "ui/cash/_transfers_table.html" %}
+  </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script src="{% static 'js/line-grid.js' %}"></script>
 {% endblock %}

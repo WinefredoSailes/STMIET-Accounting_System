@@ -1,0 +1,149 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}FTV {{ voucher_no }}{% endblock %}
+{% block content %}
+<div class="p-6">
+  {% capture as doc_title %}FTV {{ voucher_no }}{% endcapture %}
+  {% capture as badge_color %}{% if transfer.status == 'approved' %}bg-emerald-100 text-emerald-800{% elif transfer.status == 'submitted' %}bg-blue-100 text-blue-800{% elif transfer.status == 'rejected' %}bg-red-100 text-red-800{% else %}bg-amber-100 text-amber-800{% endif %}{% endcapture %}
+  {% capture as actions %}
+  <a href="{% url 'ui:transfer_export' transfer.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+  <a href="{% url 'ui:transfer_export' transfer.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+  <a href="{% url 'ui:transfer_export' transfer.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+  <a href="{% url 'ui:ftv_print' transfer.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print FTV</a>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=doc_title subtitle=transfer.purpose back_url_name="ui:transfers" back_label="Inter-Account Transfers" actions=actions %}
+
+  {% capture as shell_meta %}
+  {% include "ui/partials/status_badge.html" with status=transfer.status color=badge_color %}
+  <div class="text-xs text-slate-500 mt-1">Document No.: <span class="font-mono text-slate-800">ACCOUNTING DEPARTMENT</span></div>
+  {% endcapture %}
+  {% capture as shell_body %}
+  <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-slate-500">TRANSFER TYPE</div><div class="mt-0.5 font-medium">{{ transfer_type }}</div></div>
+    <div><div class="text-xs text-slate-500">DATE</div><div class="mt-0.5">{{ transfer.transfer_date|date:"M d, Y" }}</div></div>
+    <div><div class="text-xs text-slate-500">CYCLE</div><div class="mt-0.5">{{ transfer.transfer_date|cycle_label:transfer.from_account.company|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">AMOUNT</div><div class="mt-0.5 font-semibold tabular-nums">₱{{ transfer.amount|money }}</div></div>
+    <div><div class="text-xs text-slate-500">FROM (CREDIT)</div><div class="mt-0.5 font-medium">{{ transfer.from_account.code }} <span class="text-slate-400">({{ transfer.from_account.bank_name|default:transfer.from_account.name }})</span></div></div>
+    <div><div class="text-xs text-slate-500">TO (DEBIT)</div><div class="mt-0.5 font-medium">{{ transfer.to_account.code }} <span class="text-slate-400">({{ transfer.to_account.bank_name|default:transfer.to_account.name }})</span></div></div>
+    <div><div class="text-xs text-slate-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono text-xs">{{ transfer.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">REFERENCE</div><div class="mt-0.5">{{ transfer.reference|default:"—" }}</div></div>
+    <div><div class="text-xs text-slate-500">SOURCE</div><div class="mt-0.5 font-medium">{{ entry.source_doc_type|default:"—" }}{% if entry.source_doc_no %} {{ entry.source_doc_no }}{% endif %}</div></div>
+    <div><div class="text-xs text-slate-500">JOURNAL ENTRY</div><div class="mt-0.5 font-medium">{% if entry %}<a href="{% url 'ui:je_detail' entry.id %}" class="font-mono text-xs text-indigo-600 hover:underline">{{ entry.entry_no }}</a>{% else %}—{% endif %}</div></div>
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-slate-500">PURPOSE / PARTICULAR</div>
+      <div class="mt-0.5">{{ transfer.purpose }}</div>
+    </div>
+    <div><div class="text-xs text-slate-500">BALANCE</div><div class="mt-0.5 font-medium {% if total == total_credit %}text-emerald-700{% else %}text-red-700{% endif %} tabular-nums">{{ total|money }} = {{ total_credit|money }}</div></div>
+  </div>
+
+  <div class="px-6 pb-4">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Account distribution</div>
+    <table class="line-table w-full text-sm" style="min-width: 1210px;">
+      <colgroup>
+        <col style="width: 44px;"><!-- # -->
+        <col style="width: 80px;"><!-- COA -->
+        <col style="width: 226px;"><!-- Account Name -->
+        <col style="width: 90px;"><!-- Segment -->
+        <col style="width: 90px;"><!-- Cost Center -->
+        <col style="width: 340px;"><!-- Particulars -->
+        <col style="width: 170px;"><!-- Debit -->
+        <col style="width: 170px;"><!-- Credit -->
+      </colgroup>
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2.5">#</th>
+          <th class="px-3 py-2.5">COA</th>
+          <th class="px-3 py-2.5">Account Name</th>
+          <th class="px-3 py-2.5">Segment</th>
+          <th class="px-3 py-2.5">Cost Center</th>
+          <th class="px-3 py-2.5">Particulars</th>
+          <th class="px-3 py-2.5 text-right">Debit</th>
+          <th class="px-3 py-2.5 text-right">Credit</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for line in lines %}
+        <tr>
+          <td class="px-3 py-2.5 text-slate-400">{{ line.line_no }}</td>
+          <td class="px-3 py-2.5 font-mono text-xs">{{ line.account.code }}</td>
+          <td class="px-3 py-2.5 text-slate-700">{{ line.account.name }}</td>
+          <td class="px-3 py-2.5 text-slate-600">{% if line.segment %}{{ line.segment.code }}{% elif entry %}{{ entry.segment.code }}{% endif %}</td>
+          <td class="px-3 py-2.5 text-slate-600">{{ line.cost_center|default:"—" }}</td>
+          <td class="px-3 py-2.5 text-slate-600">{{ line.description|default:transfer.purpose }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.debit|money }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.credit|money }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400">No distribution lines.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="6" class="px-3 py-3 text-right font-bold uppercase tracking-wider text-slate-700">Totals</td>
+          <td class="px-3 py-3 text-right tabular-nums">{{ total|money }}</td>
+          <td class="px-3 py-3 text-right tabular-nums">{{ total_credit|money }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="px-6 pb-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+      <div class="bg-slate-50 rounded-lg border border-slate-200 px-4 py-3">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Prepared By</div>
+        <div class="mt-1 font-medium">{{ prepared_by|default:"—" }}</div>
+      </div>
+      <div class="bg-slate-50 rounded-lg border border-slate-200 px-4 py-3">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Checked By</div>
+        <div class="mt-1 font-medium">{{ checked_by|default:"—" }}</div>
+      </div>
+      <div class="bg-slate-50 rounded-lg border border-slate-200 px-4 py-3">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Approved By</div>
+        <div class="mt-1 font-medium">{{ approved_by|default:"—" }}</div>
+      </div>
+    </div>
+  </div>
+  {% endcapture %}
+  {% include "ui/partials/document_shell.html" with doc_title="FUND TRANSFER VOUCHER (FTV)" doc_form_id="ACCOUNTING DEPARTMENT" doc_meta_html=shell_meta doc_body_html=shell_body %}
+
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 p-6">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Approval flow (ADR-030)</div>
+    {% if awaiting %}
+    <div class="mb-4 flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+      <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+      <div class="text-sm">
+        <span class="font-semibold text-amber-900">Awaiting {{ awaiting.label }}</span>
+        {% if awaiting.assignee %}<span class="text-amber-800"> — {{ awaiting.assignee }}</span>{% endif %}
+        {% if awaiting.you_hold %}
+        <span class="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">this is your step</span>
+        {% else %}
+        <span class="ml-1 text-xs text-amber-700">(the approve button is shown to the assigned role only)</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <ol class="flex flex-wrap gap-2">
+      {% for step in timeline %}
+      <li class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
+        {% if step.state == 'done' %}border-emerald-200 bg-emerald-50
+        {% elif step.state == 'current' %}border-amber-300 bg-amber-50
+        {% else %}border-slate-200 bg-white{% endif %}">
+        <span class="w-2 h-2 rounded-full {% if step.state == 'done' %}bg-emerald-500{% elif step.state == 'current' %}bg-amber-500{% else %}bg-slate-300{% endif %}"></span>
+        <div>
+          <div class="font-medium">{{ step.label }}</div>
+          <div class="text-xs text-slate-500">{{ step.holder|default:"—" }}</div>
+        </div>
+      </li>
+      {% if not forloop.last %}<span class="text-slate-300 self-center">&rarr;</span>{% endif %}
+      {% endfor %}
+    </ol>
+
+    {% include "ui/partials/workflow_actions.html" with doc=transfer workflow_type="transfer" %}
+    {% include "ui/partials/audit_trail.html" %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/toggle-block.js' %}"></script>
+{% endblock %}

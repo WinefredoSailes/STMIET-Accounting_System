@@ -459,7 +459,7 @@ def _ftv_distribution_table(entry, fallback_amount):
 
     grid = Table(
         rows,
-        colWidths=[c * cm for c in (2.8, 4.6, 4.4, 2.4, 2.4)],
+        colWidths=[c * cm for c in (2.4, 3.6, 5.6, 2.4, 2.4)],
         repeatRows=1,
         splitByRow=1,
     )
@@ -565,13 +565,38 @@ def build_fund_transfer_voucher_pdf(
             ),
         ),
     ]
-    header_data = [[None] * GRID for _ in range(3)]
+    # 5-row header (same shape as ftv_print.html): logo + title rowspan,
+    # then the four dynamic document fields in the right rail (cols 10-13).
+    header_data = [[None] * GRID for _ in range(5)]
     header_spans = [
-        ("SPAN", (0, 0), (2, 2)),
-        ("SPAN", (3, 0), (13, 2)),
+        ("SPAN", (0, 0), (2, 4)),
+        ("SPAN", (3, 0), (9, 4)),
+        ("SPAN", (10, 0), (13, 0)),
     ]
     header_data[0][0] = logo if logo is not None else ""
     header_data[0][3] = title
+    header_data[0][10] = Paragraph(
+        "ACCOUNTING DEPARTMENT",
+        ParagraphStyle(
+            "acctDept", fontName="Helvetica-Bold", fontSize=6.5, leading=8,
+            alignment=TA_RIGHT, textColor=BAND_BORDER,
+        ),
+    )
+    _hcell = _style_cell()
+    _hbold = _style_bold()
+    for i, (label, value) in enumerate(
+        [
+            ("VOUCHER REF #:", voucher_no or "-"),
+            ("DATE:", date_label or "-"),
+            ("TRANSFER TYPE:", transfer_type or "-"),
+            ("PREPARED BY:", prepared_by or "-"),
+        ],
+        start=1,
+    ):
+        header_data[i][10] = Paragraph(label, _hbold)
+        header_data[i][12] = Paragraph(value, _hcell)
+        header_spans.append(("SPAN", (10, i), (11, i)))
+        header_spans.append(("SPAN", (12, i), (13, i)))
     header_tbl = Table(header_data, colWidths=[COLW] * GRID)
     header_tbl.setStyle(TableStyle(_base_style() + header_spans))
 
@@ -589,8 +614,6 @@ def build_fund_transfer_voucher_pdf(
 
     story = [
         header_tbl,
-        Spacer(1, 0.15 * cm),
-        _ftv_doc_info_table(voucher_no, transfer_type, date_label, prepared_by),
         Spacer(1, 0.15 * cm),
         _band_row("Transfer Details"),
         _ftv_transfer_details_table(transfer),
