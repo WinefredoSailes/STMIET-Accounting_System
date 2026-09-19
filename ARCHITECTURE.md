@@ -39,6 +39,43 @@ All modules share one database and one Django project. ERPs have extremely tight
 └─────────────────────────────────────────────────────────┘
 ```
 
+## 3.1 Unified Document Experience (ADR-043)
+
+Every approval-tracked document follows **one shape**. This is an
+architectural mandate (ADR-043), not a per-module choice: new documents copy
+the existing pattern instead of inventing a new one, and existing screens are
+converged opportunistically.
+
+```
+Service (apps/<ctx>/services.py)      create → submit → approve → reject → revise
+        │                                     │
+        │ head approval = the only GL gate    └─ ActionLog entry per transition
+        ▼
+approvals queue (apps/core/approvals)  document appears in "My Approvals"
+        │
+        ▼
+UI detail (ui/templates/.../*_detail.html)
+  document_shell.html + *_timeline() + workflow_actions.html + audit_trail.html
+        │
+        ├─ workflow/<type>_actions.html   (the ONLY status → action branch)
+        ├─ exports (PDF / XLSX / CSV via apps.core.exports.table_export)
+        └─ print (fixed-column voucher grid; every row fits the grid)
+        │
+        ▼
+List screens: apps.ui.filter_specs + filter_bar.html
+  (search box, choice filters, date-range where relevant, exports honour filters)
+```
+
+Reference implementations: RFP / PO / Check Voucher / Journal Entry (AP &
+posting), and **Inter-Account Transfer** (`TransferService`,
+`transfer_queue`, `ui/cash/transfer_detail.html`,
+`ui/partials/workflow/transfer_actions.html`) as the template outside AP.
+
+Uniformity targets tracked by ADR-043: forms, detail/voucher layouts, print
+payouts, dropdown search, filters/search, date-range filters, approval
+actions, audit trails, and export behaviour. Where a screen does not yet
+match, it is converged when next touched — tests must stay green throughout.
+
 ## 4. Module Architecture
 
 ### 4.1 Foundation Layer (Core)
