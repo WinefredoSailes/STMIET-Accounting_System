@@ -1563,9 +1563,9 @@ def receipt_create(request):
         try:
             customer = Customer.objects.get(pk=request.POST["customer"])
             cash_account = Account.objects.get(pk=request.POST["cash_account"])
-            transaction_date = request.POST["transaction_date"]
+            transaction_date = _parse_date(request.POST["transaction_date"])
 
-            receipt = CollectionService.create_receipt(
+            receipt = CollectionService.record_collection(
                 customer=customer,
                 transaction_date=transaction_date,
                 amount=request.POST.get("amount"),
@@ -1575,17 +1575,9 @@ def receipt_create(request):
                 transaction_no=request.POST.get("transaction_no", ""),
                 ref_po_no=request.POST.get("ref_po_no", ""),
                 applied_to=None,
-                lines=[{
-                    "account": cash_account.id,
-                    "segment": customer.segment.id,
-                    "cost_center": "",
-                    "description": request.POST.get("description", ""),
-                    "debit": money(request.POST.get("amount") or "0"),
-                    "credit": 0.00,
-                }],
-                created_by=request.user,
+                user=request.user,
             )
-            messages.success(request, f"Receipt {receipt.receipt_no} created as Draft. Submit for Head approval to post to GL.")
+            messages.success(request, f"Receipt {receipt.receipt_no} recorded and posted to GL.")
             return redirect("ui:receipt_detail", pk=receipt.pk)
         except AccountingError as exc:
             messages.error(request, str(exc))
@@ -1593,7 +1585,6 @@ def receipt_create(request):
         request,
         "ui/ar/receipt_form.html",
         {
-            "customers": list_customers(),
             "today": date.today(),
         },
     )
@@ -1613,6 +1604,7 @@ def receipt_detail(request, pk: int):
 
 @login_required
 def receipt_submit(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
     from apps.ar.services import CollectionService
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
@@ -1626,6 +1618,7 @@ def receipt_submit(request, pk: int):
 
 @login_required
 def receipt_approve(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
     from apps.ar.services import CollectionService
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
@@ -1639,6 +1632,7 @@ def receipt_approve(request, pk: int):
 
 @login_required
 def receipt_reject(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
     from apps.ar.services import CollectionService
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
@@ -1666,7 +1660,7 @@ def receipt_deposit(request, pk: int):
             deposit = DepositService.record_deposit(
                 receipts=[receipt],
                 bank_account=bank_account,
-                transaction_date=request.POST.get("transaction_date"),
+                transaction_date=_parse_date(request.POST.get("transaction_date")),
                 reference=request.POST.get("reference", ""),
                 user=request.user,
             )
@@ -1675,18 +1669,15 @@ def receipt_deposit(request, pk: int):
             messages.error(request, str(exc))
         return redirect("ui:receipt_detail", pk=pk)
 
-    # GET: show deposit form with the receipt's segment and available bank accounts
-    from apps.ar.services import segment_choices as _seg_choices  # just to have segment list
-    from apps.foundation.models import Segment
-    segments = Segment.objects.order_by("code")
+    # GET: show deposit form with the receipt and available bank accounts
     banks = Account.objects.filter(is_postable=True).order_by("code")
     return render(
         request,
         "ui/ar/receipt_deposit.html",
         {
             "receipt": receipt,
-            "segments": segments,
             "banks": banks,
+            "back_href": reverse("ui:receipt_detail", kwargs={"pk": receipt.pk}),
         },
     )
 

@@ -3,10 +3,12 @@ area. Params: title (req), subtitle, back_url_name, back_label, actions (raw
 HTML — preferred escape hatch that preserves button order/conditions 1:1),
 primary_url_name|primary_href + primary_label, link_url_name + link_label.
 Render order: actions, primary, link.{% endcomment %}
-{% if back_url_name %}
+{% if back_href %}
+<a href="{{ back_href }}" class="text-sm text-slate-500 hover:text-slate-700">&larr; {{ back_label }}</a>
+{% elif back_url_name %}
 <a href="{% url back_url_name %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; {{ back_label }}</a>
 {% endif %}
-<div class="flex items-center justify-between{% if back_url_name %} mt-1{% endif %}">
+<div class="flex items-center justify-between{% if back_url_name or back_href %} mt-1{% endif %}">
   <div>
     <h1 class="text-xl font-semibold text-slate-900">{{ title }}</h1>
     {% if subtitle %}<p class="text-sm text-slate-500 mt-1">{{ subtitle }}</p>{% endif %}

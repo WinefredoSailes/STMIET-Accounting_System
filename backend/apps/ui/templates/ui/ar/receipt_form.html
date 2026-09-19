@@ -8,8 +8,8 @@
   {% capture as form_fields %}
   <div class="md:col-span-2">
     <label class="block text-sm font-medium text-slate-700 mb-1" for="id_customer">Customer (TYPE CODING HERE)</label>
-    <select name="customer" id="id_customer" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      {% for c in customers %}<option value="{{ c.id }}">{{ c.code }} — {{ c.name }}</option>{% endfor %}
+    <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+      <option value="" selected>— select customer —</option>
     </select>
   </div>
   <div>

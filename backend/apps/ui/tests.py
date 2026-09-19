@@ -1074,54 +1074,52 @@ class TestEditPagesRender:
 
 
 class TestReceiptScreen:
-def test_receipt_create_posts(self, client, company, segment, accounts, fiscal_period, user):
-    client.force_login(user)
-    from apps.ar.models import Customer
+    def test_receipt_create_posts(self, client, company, segment, accounts, fiscal_period, user):
+        client.force_login(user)
+        from apps.ar.models import Customer
 
-    Customer.objects.create(
-        code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
-    )
-    resp = client.post("/ar/receipts/new/", {
-        "customer": Customer.objects.get(code="C001").id,
-        "transaction_date": "2026-01-15",
-        "amount": "15000.00",
-        "cash_account": accounts["10010"].id,
-        "payment_method": "cash",
-        "check_no": "",
-    })
-    assert resp.status_code == 302
-    from apps.ar.models import AcknowledgmentReceipt
+        Customer.objects.create(
+            code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
+        )
+        resp = client.post("/ar/receipts/new/", {
+            "customer": Customer.objects.get(code="C001").id,
+            "transaction_date": "2026-01-15",
+            "amount": "15000.00",
+            "cash_account": accounts["10010"].id,
+            "payment_method": "cash",
+            "check_no": "",
+        })
+        assert resp.status_code == 302
+        from apps.ar.models import AcknowledgmentReceipt
 
-    receipt = AcknowledgmentReceipt.objects.latest("id")
-    assert receipt.receipt_no == "AR-2026-00001"
-    assert receipt.status == "draft"
-    assert receipt.journal_entry is None
-    # redirect to receipt detail
-    assert "receipt_detail" in resp.url
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.receipt_no.startswith("AR-2026-")
+        assert receipt.status == "posted"
+        assert receipt.journal_entry is not None
+        assert receipt.journal_entry.status == PostingStatus.POSTED
+        # redirect to receipt detail
+        assert resp.url == f"/ar/receipts/{receipt.pk}/"
 
+    def test_receipt_submit(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import Customer, AcknowledgmentReceipt
 
-def test_receipt_submit(self, client, company, segment, accounts, fiscal_period, user):
-    from apps.ar.models import Customer, AcknowledgmentReceipt
-
-    client.force_login(user)
-    Customer.objects.create(
-        code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
-    )
-    resp = client.post("/ar/receipts/new/", {
-        "customer": Customer.objects.get(code="C001").id,
-        "transaction_date": "2026-01-15",
-        "amount": "15000.00",
-        "cash_account": accounts["10010"].id,
-        "payment_method": "cash",
-        "check_no": "",
-    })
-    assert resp.status_code == 302
-    receipt = AcknowledgmentReceipt.objects.latest("id")
-    # Submit the draft receipt for Head approval
-    resp = client.post(f"/ar/receipts/{receipt.pk}/submit/", {})
-    assert resp.status_code == 302
-    receipt.refresh_from_db()
-    assert receipt.status == "submitted"
+        client.force_login(user)
+        Customer.objects.create(
+            code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
+        )
+        resp = client.post("/ar/receipts/new/", {
+            "customer": Customer.objects.get(code="C001").id,
+            "transaction_date": "2026-01-15",
+            "amount": "15000.00",
+            "cash_account": accounts["10010"].id,
+            "payment_method": "cash",
+            "check_no": "",
+        })
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        # record_collection auto-posts: receipt is already posted
+        assert receipt.status == "posted"
+        assert receipt.journal_entry is not None
 
 
 class TestRFPScreen:
@@ -3197,7 +3195,7 @@ class TestAPAgingScreen:
         from apps.ap.services import CVPaymentService
 
         rfp, supplier = open_rfp
-        CVPaymentService.create_cv(
+        cv = CVPaymentService.create_cv(
             cv_number="CV-2026-0001",
             cv_date=date(2026, 2, 1),
             payee=supplier,
@@ -3207,6 +3205,8 @@ class TestAPAgingScreen:
             rfp=rfp,
             user=user,
         )
+        CVPaymentService.approve(cv, user=user)
+        CVPaymentService.clear(cv, user=user)
         resp = client.get("/ap/aging/?as_of=2026-03-31")
         body = resp.content.decode()
         assert "No open payables" in body

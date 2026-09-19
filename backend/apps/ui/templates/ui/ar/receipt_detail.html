@@ -18,11 +18,10 @@
   </form>
   <button type="button" onclick="openRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject</button>
   {% endif %}
-  {% elif receipt.status == 'posted' %}
-  <form method="post" action="{% url 'ui:receipt_deposit' receipt.id %}" class="inline">
-    {% csrf_token %}
-    <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Record Deposit</button>
-  </form>
+  {% elif receipt.status == 'posted' and not receipt.deposit %}
+  <a href="{% url 'ui:receipt_deposit' receipt.id %}" class="inline rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Record Deposit</a>
+  {% elif receipt.status == 'posted' and receipt.deposit %}
+  <span class="inline rounded-md bg-slate-400 px-4 py-2 text-sm font-medium text-white">Deposited</span>
   {% endif %}
   <a href="{% url 'ui:ar_receipt_export' receipt.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export PDF</a>
   <a href="{% url 'ui:ar_receipt_export' receipt.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>

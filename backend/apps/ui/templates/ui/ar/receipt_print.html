@@ -1,87 +1,214 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
-{% block title %}Print — AR Receipt {{ receipt.receipt_no }}{% endblock %}
+{% load static ui_filters %}
+{% block title %}AR Receipt {{ receipt.receipt_no }} — Print{% endblock %}
 {% block content %}
-<div class="p-6">
-  {% include "ui/partials/page_header.html" with title=receipt.receipt_no subtitle="ACCTG-FOR-005 · Acknowledgment Receipt" actions="" %}
+<style>
+  @page { size: A5 portrait; margin: 6mm; }
+  .print-a4 @page { size: A4 portrait; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .ar-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .ar-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .ar-paper td { padding: 1px 4px; }
+    tr, td { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
+  .print-toolbar button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .print-toolbar button:last-child:hover { background: #15803d; }
+  .ar-paper {
+    background: #fff; box-shadow: none;
+    margin: 0 auto; padding: 0; max-width: 148mm;
+  }
+  .ar-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .ar-paper td { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
+  .ar-paper *, .ar-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+</style>
 
-  <div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-    <div>
-      <p class="text-sm text-slate-500">Customer: {{ receipt.customer.code }} {{ receipt.customer.name }}</p>
-      <p class="text-sm text-slate-500">TIN: {{ receipt.customer.tin|default:"—" }}</p>
-      <p class="text-sm text-slate-500">Segment: {{ receipt.segment.code }}</p>
-      <p class="text-sm text-slate-500">Cash Account: {{ receipt.cash_account.code }}</p>
-    </div>
-    <div class="flex items-end">
-      <p class="text-sm text-slate-700">Date: {{ receipt.transaction_date|date:"M d, Y" }}</p>
-      <p class="text-sm text-slate-700">Amount: ₱{{ receipt.amount|money }}</p>
-      <p class="text-sm text-slate-700">Payment Method: {{ receipt.get_payment_method_display }}</p>
-    </div>
-  </div>
-
-  <div class="mt-6">
-    <p class="text-sm text-slate-700">Check No.: {{ receipt.check_no|default:"—" }}</p>
-    <p class="text-sm text-slate-700">Transaction No.: {{ receipt.transaction_no|default:"—" }}</p>
-    <p class="text-sm text-slate-700">Ref. PO No.: {{ receipt.ref_po_no|default:"—" }}</p>
-  </div>
-
-  <div class="mt-6">
-    <h2 class="text-xs uppercase tracking-wider text-slate-500">Receipt Details</h2>
-    <table class="w-full text-sm mt-4 border border-slate-200 rounded-lg overflow-hidden">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3">Description</th>
-          <th class="px-4 py-3 text-right">Value</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-medium">Receipt No.</td>
-          <td class="px-4 py-2 text-right font-mono">₱{{ receipt.receipt_no }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Date of AR</td>
-          <td class="px-4 py-2 text-right">₱{{ receipt.transaction_date|date:"M d, Y" }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Customer</td>
-          <td class="px-4 py-2 text-right">{{ receipt.customer.code }} {{ receipt.customer.name }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Segment</td>
-          <td class="px-4 py-2 text-right">{{ receipt.segment.code }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Cash Account (Dr)</td>
-          <td class="px-4 py-2 text-right">{{ receipt.cash_account.code }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Amount</td>
-          <td class="px-4 py-2 text-right">₱{{ receipt.amount|money }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Payment Method</td>
-          <td class="px-4 py-2 text-right">{{ receipt.get_payment_method_display }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Check No.</td>
-          <td class="px-4 py-2 text-right">{{ receipt.check_no|default:"—" }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Transaction No.</td>
-          <td class="px-4 py-2 text-right">{{ receipt.transaction_no|default:"—" }}</td>
-        </tr>
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2">Ref. PO No.</td>
-          <td class="px-4 py-2 text-right">{{ receipt.ref_po_no|default:"—" }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="mt-6 flex justify-end gap-3">
-    <button onclick="window.print()" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Print HTML →</button>
-    <a href="{% url 'ui:ar_receipt_export' receipt.id 'pdf' %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Download PDF →</a>
-  </div>
+<div class="no-print print-toolbar">
+  <button class="active" onclick="setPaper('a5')">A5 / Half-Bond</button>
+  <button onclick="setPaper('a4')">A4</button>
+  <button onclick="window.print()">Print</button>
 </div>
+
+<div class="ar-paper">
+  <table>
+    <colgroup>
+      <col><col><col><col><col><col><col><col><col><col><col><col><col><col>
+    </colgroup>
+    <tbody>
+
+      <!-- HEADER: 3 + 7 + 4 = 14 -->
+      <tr>
+        <td rowspan="4" colspan="3" style="text-align:center; vertical-align:middle">
+          <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
+        </td>
+        <td rowspan="4" colspan="7" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6">
+          ACKNOWLEDGMENT RECEIPT
+        </td>
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+          ACCOUNTING DEPARTMENT
+        </td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2">Document No.:</td>
+        <td colspan="2">{{ receipt.receipt_no }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2">Document Type:</td>
+        <td colspan="2">ACCTG-FOR-005</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2">Effective Date:</td>
+        <td colspan="2">{{ receipt.transaction_date|date:"m/d/Y" }}</td>
+      </tr>
+
+      <!-- CUSTOMER INFORMATION: 14 full span -->
+      <tr>
+        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Customer Information
+        </td>
+      </tr>
+      <!-- 2+6+2+4 = 14 -->
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">Customer:</td>
+        <td colspan="6">{{ receipt.customer.code }} {{ receipt.customer.name }}</td>
+        <td colspan="2" style="font-weight:600">Segment:</td>
+        <td colspan="4">{{ receipt.segment.code }}</td>
+      </tr>
+      <!-- 2+6+2+4 = 14 -->
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">TIN:</td>
+        <td colspan="6">{{ receipt.customer.tin|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">Cash Account:</td>
+        <td colspan="4">{{ receipt.cash_account.code }}</td>
+      </tr>
+
+      <!-- TRANSACTION DETAILS: 14 full span -->
+      <tr>
+        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Transaction Details
+        </td>
+      </tr>
+      <!-- 2+6+2+4 = 14 -->
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">Date:</td>
+        <td colspan="6">{{ receipt.transaction_date|date:"M d, Y" }}</td>
+        <td colspan="2" style="font-weight:600">Ref. PO No.:</td>
+        <td colspan="4">{{ receipt.ref_po_no|default:"—" }}</td>
+        
+      </tr>
+      <!-- 2+6+2+4 = 14 -->
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">Payment Method:</td>
+        <td colspan="6">{{ receipt.get_payment_method_display }}</td>
+        <td colspan="2" style="font-weight:600">Check No.:</td>
+        <td colspan="4">{{ receipt.check_no|default:"—" }}</td>
+      </tr>
+      <!-- 2+6+2+4 = 14 -->
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">Transaction No.:</td>
+        <td colspan="6">{{ receipt.transaction_no|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">Amount:</td>
+        <td colspan="4" style="font-weight:700; text-align:right">₱{{ receipt.amount|money }}</td>
+        
+      </tr>
+
+      <!-- RECEIPT DETAILS TABLE -->
+      <!-- <tr>
+        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Receipt Details
+        </td>
+      </tr>
+      <tr style="font-size:10px; text-transform:uppercase; letter-spacing:.03em">
+        <th colspan="7" style="font-weight:700; text-align:left; padding-left:8px">Description</th>
+        <th colspan="7" style="font-weight:700; text-align:right; padding-right:8px">Value</th>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Receipt No.</td>
+        <td colspan="7" class="text-right font-mono">{{ receipt.receipt_no }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Date of AR</td>
+        <td colspan="7" class="text-right">{{ receipt.transaction_date|date:"M d, Y" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Customer</td>
+        <td colspan="7" class="text-right">{{ receipt.customer.code }} {{ receipt.customer.name }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Segment</td>
+        <td colspan="7" class="text-right">{{ receipt.segment.code }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Cash Account (Dr)</td>
+        <td colspan="7" class="text-right">{{ receipt.cash_account.code }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Amount</td>
+        <td colspan="7" class="text-right font-semibold">₱{{ receipt.amount|money }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Payment Method</td>
+        <td colspan="7" class="text-right">{{ receipt.get_payment_method_display }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Check No.</td>
+        <td colspan="7" class="text-right">{{ receipt.check_no|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Transaction No.</td>
+        <td colspan="7" class="text-right">{{ receipt.transaction_no|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="7">Ref. PO No.</td>
+        <td colspan="7" class="text-right">{{ receipt.ref_po_no|default:"—" }}</td>
+      </tr>
+
+      <!-- TOTALS -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#fce4d6">
+        <td colspan="12" style="text-align:right">TOTALS</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">₱{{ receipt.amount|money }}</td>
+      </tr>
+
+      <!-- SIGNATURE: Prepared By | Acknowledged By -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="7" style="padding-top:24px; border-bottom:1px solid #000">Prepared By:</td>
+        <td colspan="7" style="padding-top:24px; border-bottom:1px solid #000">Acknowledged By:</td>
+      </tr>
+      <tr class="keep-together" style="font-size:10px">
+        <td colspan="7" style="padding-bottom:2px">{{ receipt.created_by.get_full_name|default:"—" }}</td>
+        <td colspan="7" style="padding-bottom:2px">{{ receipt.customer.name|default:"—" }}</td>
+      </tr>
+      <tr class="keep-together" style="font-size:8px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
+        <td colspan="7">Signature over Printed Name</td>
+        <td colspan="7">Customer Signature over Printed Name</td>
+      </tr>
+
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function setPaper(size) {
+    document.body.classList.toggle('print-a4', size === 'a4');
+    document.querySelectorAll('.print-toolbar button').forEach(function(btn, i) {
+      if (i < 2) btn.classList.toggle('active', (i === 0 && size === 'a5') || (i === 1 && size === 'a4'));
+    });
+  }
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>
 {% endblock %}
