@@ -483,6 +483,10 @@ class TransferService:
         approval marks the DRAFT JE APPROVED and posts it to the GL — this is
         what removes the amount threshold: every transfer, whatever the
         amount, posts only through this gate.
+
+        If the transfer's JE was already POSTED to the GL (e.g. posted
+        out-of-band through the JE module), the transfer is caught up to
+        ``approved`` without re-posting — re-posting must never happen.
         """
         if transfer.status != "requested":
             raise ValidationError("Only requested transfers can be approved.")
@@ -493,6 +497,17 @@ class TransferService:
             entry = transfer.journal_entry
             if entry is None:
                 raise ValidationError("This transfer has no journal entry to post.")
+
+            if entry.is_posted:
+                # JE already in the GL: the transfer is effectively complete.
+                # Mark approved and stop — never downgrade a POSTED entry.
+                transfer.approved_by = user
+                transfer.approved_at = timezone.now()
+                transfer.status = "approved"
+                transfer.save(
+                    update_fields=["approved_by", "approved_at", "status", "updated_at"]
+                )
+                return transfer
 
             if entry.status != PostingStatus.APPROVED:
                 entry.status = PostingStatus.APPROVED

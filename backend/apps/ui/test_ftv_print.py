@@ -168,7 +168,7 @@ def test_ftv_print_voucher_no_allocated_once_and_stable(client, banks, role_user
 
 def test_ftv_print_long_text_never_moves_columns(client, banks, role_users):
     _, _, transfer = banks
-    transfer.purpose = "P" * 255
+    transfer.purpose = "P" * 500
     transfer.save(update_fields=["purpose"])
     accounts = [transfer.journal_entry.lines.first()]
     acc = accounts[0].account
@@ -182,8 +182,24 @@ def test_ftv_print_long_text_never_moves_columns(client, banks, role_users):
     assert "table-layout: fixed" in body
     assert transfer.purpose in body
     assert acc.name in body
+    # Long/unbroken text wraps inside the fixed columns instead of clipping.
+    assert "overflow-wrap: anywhere" in body
+    assert "word-break: break-word" in body
     # Debit/Credit cells must stay right-aligned inside their fixed columns.
     assert 'text-align:right; font-variant-numeric:tabular-nums' in body
+
+
+def test_ftv_print_shows_full_purpose_with_spaces(client, banks, role_users):
+    """A spaced long purpose wraps and renders in full on the voucher."""
+    _, _, transfer = banks
+    purpose = ("Payroll coverage " * 28).strip()
+    assert 450 < len(purpose) <= 500
+    transfer.purpose = purpose
+    transfer.save(update_fields=["purpose"])
+    client.force_login(role_users["staff"])
+    resp = client.get(f"/cash/transfers/{transfer.id}/print/")
+    assert resp.status_code == 200
+    assert transfer.purpose in resp.content.decode()
 
 
 def test_ftv_pdf_export_downloads_real_pdf(client, banks, role_users):

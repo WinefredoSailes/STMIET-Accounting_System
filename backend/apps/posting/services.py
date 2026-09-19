@@ -156,23 +156,25 @@ class PostingService:
             entry.updated_by = user
             entry.save(update_fields=["status", "total_debit", "total_credit", "updated_by", "updated_at"])
 
-            # Rule 4: build GL projection inside the same transaction.
+            # Rule 4: build GL projection inside the same transaction. One row
+            # per JE line (line is a OneToOneField) — update_or_create keeps the
+            # projection idempotent so re-posting or a concurrent approval can
+            # never violate the unique line_id constraint.
             _lines = list(entry.lines.all().select_related("account", "segment"))
-            gl_rows = [
-                GeneralLedger(
-                    entry=entry,
+            for line in _lines:
+                GeneralLedger.objects.update_or_create(
                     line=line,
-                    account=line.account,
-                    company=entry.company,
-                    segment=line.segment or entry.segment,
-                    fiscal_period=entry.fiscal_period,
-                    transaction_date=entry.transaction_date,
-                    debit=line.debit,
-                    credit=line.credit,
+                    defaults=dict(
+                        entry=entry,
+                        account=line.account,
+                        company=entry.company,
+                        segment=line.segment or entry.segment,
+                        fiscal_period=entry.fiscal_period,
+                        transaction_date=entry.transaction_date,
+                        debit=line.debit,
+                        credit=line.credit,
+                    ),
                 )
-                for line in _lines
-            ]
-            GeneralLedger.objects.bulk_create(gl_rows)
 
         return entry
 

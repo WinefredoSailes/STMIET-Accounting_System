@@ -141,3 +141,51 @@ def test_batch_requires_one_line(client, banks):
     })
     assert resp.status_code == 302
     assert InterAccountTransfer.objects.count() == 0
+
+
+def test_batch_keeps_full_purpose_text(client, banks):
+    """Long purposes are stored in full (matches RFP/CV/JE 500-char behavior)."""
+    purpose = ("Payroll coverage " * 28).strip()  # ~475 chars
+    assert 450 < len(purpose) <= 500
+    resp = client.post("/cash/transfers/new/", {
+        "transfer_date": "2026-09-15",
+        "line_from": [banks["b1"].id],
+        "line_to": [banks["b2"].id],
+        "line_amount": ["10,000.00"],
+        "line_purpose": [purpose],
+    })
+    assert resp.status_code == 302
+    t = InterAccountTransfer.objects.get()
+    assert t.purpose == purpose
+    assert len(t.purpose) == len(purpose)
+
+
+def test_approve_catches_up_already_posted_je(client, banks, role_users):
+    """If a transfer's JE was already posted out-of-band, approving the
+    transfer catches it up to approved without re-posting or duplicating GL."""
+    from apps.posting.models import GeneralLedger, PostingStatus
+    from apps.posting.services import PostingService
+
+    client.post("/cash/transfers/new/", {
+        "transfer_date": "2026-09-15",
+        "line_from": [banks["b1"].id],
+        "line_to": [banks["b2"].id],
+        "line_amount": ["10,000.00"],
+        "line_purpose": ["sweep"],
+    })
+    transfer = InterAccountTransfer.objects.get()
+    # Out-of-band: the JE is posted directly (e.g. through the JE module).
+    PostingService.post(transfer.journal_entry)
+    transfer.journal_entry.refresh_from_db()
+    assert transfer.journal_entry.status == PostingStatus.POSTED
+    assert GeneralLedger.objects.filter(entry=transfer.journal_entry).count() == 2
+    assert transfer.status == "requested"
+
+    client.force_login(role_users["head"])
+    resp = client.post(f"/cash/transfers/{transfer.id}/approve/")
+    assert resp.status_code == 302
+    transfer.refresh_from_db()
+    assert transfer.status == "approved"
+    assert transfer.approved_by_id == role_users["head"].id
+    # The JE was NOT re-posted and the GL was NOT duplicated.
+    assert GeneralLedger.objects.filter(entry=transfer.journal_entry).count() == 2

@@ -62,7 +62,7 @@ class JournalEntry(AuditableModel):
     )
     rejected_at = models.DateTimeField(null=True, blank=True)
     rejection_note = models.TextField(blank=True)
-    description = models.CharField(max_length=500)
+    description = models.TextField()
     # References back to the originating document (voucher no., SI no., ...).
     source_doc_type = models.CharField(max_length=16, blank=True)
     source_doc_no = models.CharField(max_length=32, blank=True, db_index=True)

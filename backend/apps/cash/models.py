@@ -247,7 +247,7 @@ class InterAccountTransfer(AuditableModel):
     from_account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="transfers_out")
     to_account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="transfers_in")
     amount = models.DecimalField(max_digits=18, decimal_places=2)
-    purpose = models.CharField(max_length=255)
+    purpose = models.CharField(max_length=500)
     reference = models.CharField(max_length=64, blank=True)
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="transfers"

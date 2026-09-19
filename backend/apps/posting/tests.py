@@ -117,6 +117,41 @@ class TestPostingEngine:
         with pytest.raises(Exception):
             je.lines.first().delete()
 
+    def test_repost_posted_entry_raises(self, company, segment, fiscal_period, accounts):
+        je = _draft(company, segment, fiscal_period)
+        JournalEntryLine.objects.create(entry=je, line_no=1, account=accounts["10010"], debit="50.00")
+        JournalEntryLine.objects.create(entry=je, line_no=2, account=accounts["41010"], credit="50.00")
+        je.recalc_totals()
+        PostingService.post(je)
+
+        with pytest.raises(Exception, match="already posted"):
+            PostingService.post(je)
+
+    def test_repost_same_lines_does_not_duplicate_gl(self, company, segment, fiscal_period, accounts):
+        """GL projection is idempotent: re-posting an entry whose lines already
+        have GL rows updates instead of duplicating (no unique-constraint hit).
+
+        Mirrors the transfer-approval failure where an already-posted entry was
+        downgraded back to APPROVED and re-posted.
+        """
+        je = _draft(company, segment, fiscal_period)
+        JournalEntryLine.objects.create(entry=je, line_no=1, account=accounts["10010"], debit="100.00")
+        JournalEntryLine.objects.create(entry=je, line_no=2, account=accounts["41010"], credit="100.00")
+        je.recalc_totals()
+        PostingService.post(je)
+
+        # Simulate the downgrade that used to trigger the duplicate key error.
+        je.status = PostingStatus.APPROVED
+        je.save(update_fields=["status", "updated_at"])
+
+        PostingService.post(je)  # must not raise IntegrityError
+
+        je.refresh_from_db()
+        assert je.status == PostingStatus.POSTED
+        assert GeneralLedger.objects.filter(entry=je).count() == 2
+        gl = GeneralLedger.objects.get(entry=je, line__line_no=1)
+        assert gl.debit == money("100.00")
+
     def test_reverse_creates_mirror_and_links(self, company, segment, fiscal_period, accounts):
         je = _draft(company, segment, fiscal_period)
         JournalEntryLine.objects.create(entry=je, line_no=1, account=accounts["10010"], debit="250.00")

@@ -66,7 +66,7 @@
                   </select>
                 </td>
                 <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_amount" required class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
-                <td class="py-2"><textarea name="line_purpose" data-autogrow rows="1" maxlength="255" placeholder="e.g. fund transfer to PNB (optional)" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
+                <td class="py-2"><textarea name="line_purpose" data-autogrow rows="1" maxlength="500" placeholder="e.g. fund transfer to PNB (optional)" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
                 <td class="py-2"><input type="text" name="line_check_no" maxlength="32" placeholder="e.g. 123456" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right"></td>
                 <td class="py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
               </tr>
@@ -115,7 +115,7 @@
             <td class="px-4 py-2">{{ t.from_account.code }} <span class="text-slate-400">({{ t.from_account.bank_name }})</span></td>
             <td class="px-4 py-2">{{ t.to_account.code }} <span class="text-slate-400">({{ t.to_account.bank_name }})</span></td>
             <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ t.amount|money }}</td>
-            <td class="px-4 py-2">{{ t.purpose }}</td>
+            <td class="px-4 py-2 whitespace-normal break-words">{{ t.purpose }}</td>
             <td class="px-4 py-2 whitespace-nowrap">
               {% if t.status == "approved" %}<span class="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Approved</span>
               {% else %}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Requested</span>{% endif %}
