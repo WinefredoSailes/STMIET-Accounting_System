@@ -3,7 +3,7 @@
 {% block title %}Print — AR Receipt {{ receipt.receipt_no }}{% endblock %}
 {% block content %}
 <div class="p-6">
-  {% include "ui/partials/page_header.html" with title=f"Print Receipt — {receipt.receipt_no}" subtitle="ACCTG-FOR-005 · Acknowledgment Receipt" actions="" %}
+  {% include "ui/partials/page_header.html" with title=receipt.receipt_no subtitle="ACCTG-FOR-005 · Acknowledgment Receipt" actions="" %}
 
   <div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
     <div>
@@ -81,7 +81,7 @@
 
   <div class="mt-6 flex justify-end gap-3">
     <button onclick="window.print()" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Print HTML →</button>
-    <a href="{% url 'ui:ar_receipt_print' receipt.id %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Download PDF →</a>
+    <a href="{% url 'ui:ar_receipt_export' receipt.id 'pdf' %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Download PDF →</a>
   </div>
 </div>
 {% endblock %}

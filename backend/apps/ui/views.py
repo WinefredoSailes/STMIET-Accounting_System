@@ -1323,17 +1323,15 @@ def ar_receipts_export(request, fmt):
 
 @login_required
 def ar_receipt_print(request, pk: int):
-    """Physical AR form (ACCTG-FOR-005, A5) — prints one receipt."""
+    """Print-optimized Acknowledgment Receipt (ACCTG-FOR-005)."""
     from apps.ar.models import AcknowledgmentReceipt
-    from decimal import Decimal as _D
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
-    from .pdf import build_ar_receipt_pdf
-
-    pdf_bytes = build_ar_receipt_pdf(receipt, paper="a5")
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'inline; filename="AR_{receipt.receipt_no}.pdf"'
-    return response
+    return render(
+        request,
+        "ui/ar/receipt_print.html",
+        {"receipt": receipt},
+    )
 
 
 @login_required
@@ -1655,6 +1653,7 @@ def receipt_reject(request, pk: int):
 
 @login_required
 def receipt_deposit(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
     from apps.ar.services import DepositService
     from apps.foundation.models import Account
 
