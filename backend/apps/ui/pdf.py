@@ -1052,7 +1052,7 @@ def build_ar_receipt_pdf(receipt, *, paper="a5") -> bytes:
 
     # Header band
     story = [_form_header(colw, company_name, "ACKNOWLEDGMENT RECEIPT", ORANGE,
-                          "ACCTG-FOR-005", transaction_date.isoformat(), "")]
+                          "ACCTG-FOR-005", receipt.transaction_date.isoformat(), "")]
 
     # Receipt details
     story.append(Spacer(1, 0.15 * cm))

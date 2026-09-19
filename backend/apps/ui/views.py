@@ -1328,6 +1328,8 @@ def ar_receipt_print(request, pk: int):
     from decimal import Decimal as _D
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    from .pdf import build_ar_receipt_pdf
+
     pdf_bytes = build_ar_receipt_pdf(receipt, paper="a5")
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="AR_{receipt.receipt_no}.pdf"'
@@ -1580,7 +1582,7 @@ def receipt_create(request):
                     "segment": customer.segment.id,
                     "cost_center": "",
                     "description": request.POST.get("description", ""),
-                    "debit": float(request.POST.get("amount", "0")),
+                    "debit": money(request.POST.get("amount") or "0"),
                     "credit": 0.00,
                 }],
                 created_by=request.user,
@@ -1607,7 +1609,7 @@ def receipt_detail(request, pk: int):
     return render(
         request,
         "ui/ar/receipt_detail.html",
-        {"receipt": receipt},
+        {"receipt": receipt, "audit_trail": _audit_trail("ar", pk)},
     )
 
 
