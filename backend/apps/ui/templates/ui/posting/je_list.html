@@ -16,9 +16,21 @@
     </div>
   </div>
 
+  <div class="mt-4 border-b border-slate-200 flex gap-1">
+    <a href="{% url 'ui:je_list' %}" class="px-4 py-2 text-sm font-medium rounded-t-md {% if tab != 'pending' %}border-b-2 border-indigo-600 text-indigo-700{% else %}text-slate-500 hover:text-slate-700{% endif %}">Entries</a>
+    <a href="{% url 'ui:je_list' %}?tab=pending" class="px-4 py-2 text-sm font-medium rounded-t-md {% if tab == 'pending' %}border-b-2 border-indigo-600 text-indigo-700{% else %}text-slate-500 hover:text-slate-700{% endif %}">
+      Pending / Unposted
+      {% if pending_count %}<span class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{{ pending_count }}</span>{% endif %}
+    </a>
+  </div>
+
+  {% if tab == 'pending' %}
+  {% include "ui/posting/_pending_table.html" %}
+  {% else %}
   {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#je-table' filter_grid='md:grid-cols-4' %}
   <div id="je-table">
     {% include "ui/posting/_je_table.html" %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

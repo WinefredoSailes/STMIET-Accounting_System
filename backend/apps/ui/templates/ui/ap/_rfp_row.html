@@ -43,6 +43,9 @@ inline Approve/Check action is shown: only for the role the RFP is waiting on.
         {% elif rfp.status == 'submitted' %}Submitted
         {% else %}Prepared{% endif %}
       </span>
+      {% if rfp.status == 'rejected' and request.user.id == rfp.created_by_id %}
+      <a href="{% url 'ui:rfp_revise' rfp.id %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Revise</a>
+      {% endif %}
       {% if rfp.approval_info.has_action %}
       <form
         hx-post="{% url 'ui:rfp_approve' rfp.id %}"

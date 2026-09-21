@@ -51,6 +51,27 @@ def pct(value):
 
 
 @register.filter
+def is_reversed(entry):
+    """True when a document's linked JournalEntry has been reversed (ADR-004)."""
+    from apps.posting.models import PostingStatus
+
+    return bool(entry and entry.status == PostingStatus.REVERSED)
+
+
+@register.filter
+def reversal_entry(entry):
+    """The POSTED reversing entry for a reversed JE, or None."""
+    if not entry:
+        return None
+    req = (
+        entry.reversal_requests.filter(status="approved")
+        .select_related("reversal_entry")
+        .first()
+    )
+    return req.reversal_entry if req else None
+
+
+@register.filter
 def cycle_label(date_value, company=None):
     """Transaction date -> weekly cash cycle label, e.g. "Sep 8-14, 2026".
 

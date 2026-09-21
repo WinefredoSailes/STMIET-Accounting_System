@@ -1,0 +1,13 @@
+{% load ui_filters %}
+{% comment %}Reversed-document banner. Pass the document's linked JournalEntry:
+{% include "ui/partials/reversed_banner.html" with entry=rfp.journal_entry %}
+Renders nothing when the entry is null or not reversed (ADR-004).{% endcomment %}
+{% if entry|is_reversed %}
+<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+  <div class="text-sm font-semibold text-red-800">This document's journal entry has been reversed</div>
+  <div class="text-xs text-slate-500 mt-1">A correcting reversing entry was posted; the amounts net to zero in the GL.</div>
+  {% with rev=entry|reversal_entry %}
+  {% if rev %}<a href="{% url 'ui:je_detail' rev.id %}" class="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">Reversing entry {{ rev.entry_no }} →</a>{% endif %}
+  {% endwith %}
+</div>
+{% endif %}

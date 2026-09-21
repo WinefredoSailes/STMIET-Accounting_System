@@ -7,6 +7,16 @@
   <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit{% else %}New{% endif %} Journal Entry</h1>
   <p class="text-sm text-slate-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
 
+  {% if editing.rejection_note %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+    <div class="text-sm font-semibold text-red-800">
+      Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by|default:"approver" }} — needs revision
+    </div>
+    <div class="text-xs text-slate-500 mt-1">{{ editing.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
+  </div>
+  {% endif %}
+
   <form method="post" class="mt-6 space-y-6">
     {% csrf_token %}
 

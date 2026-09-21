@@ -32,6 +32,12 @@
             {% else %}bg-red-100 text-red-800{% endif %}">
             {{ je.get_status_display }}
           </span>
+          {% if je.rejection_note and je.status == 'draft' %}
+          <span class="ml-1 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800" title="{{ je.rejection_note }}">Returned</span>
+          {% endif %}
+          {% for r in je.reversal_requests.all %}{% if r.status == 'requested' %}
+          <span class="ml-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Reversal requested</span>
+          {% endif %}{% endfor %}
         </td>
         <td class="px-4 py-2.5 whitespace-nowrap">
           <a href="{% url 'ui:je_print' je.id %}" target="_blank" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Print</a>

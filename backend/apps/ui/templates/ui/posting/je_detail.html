@@ -10,6 +10,9 @@
   {% endcapture %}
   {% capture as entry_actions %}
   {% include "ui/partials/status_badge.html" with status=entry.status label=entry.get_status_display color=entry_badge_color %}
+  {% if source_doc %}
+  <a href="{% url source_doc.detail source_doc.pk %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Open {{ source_doc.label }} →</a>
+  {% else %}
   {% if entry.status == 'draft' and entry.created_by_id == request.user.id %}
   <form method="post" action="{% url 'ui:je_submit' entry.id %}" class="inline">
     {% csrf_token %}
@@ -30,18 +33,73 @@
     <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post</button>
   </form>
   {% endif %}
+  {% endif %}
 <a href="{% url 'ui:je_pdf_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export PDF</a>
   <a href="{% url 'ui:je_xlsx_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>
   <a href="{% url 'ui:je_csv_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export CSV</a>
-  <a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
-  {% if not entry.is_posted %}
-  <form method="post" action="{% url 'ui:je_reverse' entry.id %}" class="inline">
-    {% csrf_token %}
-    <button type="submit" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reverse</button>
-  </form>
+<a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
+  {% if can_request_reversal %}
+  <button type="button" onclick="openReversalModal()" class="inline rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">Request reversal</button>
   {% endif %}
   {% endcapture %}
-  {% include "ui/partials/page_header.html" with title=entry.entry_no subtitle=entry.description back_url_name="ui:je_list" back_label="Journal entries" actions=entry_actions %}
+{% include "ui/partials/page_header.html" with title=entry.entry_no subtitle=entry.description back_url_name="ui:je_list" back_label="Journal entries" actions=entry_actions %}
+
+  {% if source_doc %}
+  <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+    <div class="text-sm font-semibold text-slate-800">Generated from {{ source_doc.label }}</div>
+    <div class="text-xs text-slate-500 mt-1">This entry is part of {{ source_doc.label }} and is actioned from that document — correct or reverse it there, not in the Journal Entries module.</div>
+    <a href="{% url source_doc.detail source_doc.pk %}" class="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">Open {{ source_doc.label }} →</a>
+  </div>
+  {% endif %}
+
+  {% if entry.rejection_note %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+    <div class="text-sm font-semibold text-red-800">
+      Returned by {{ entry.rejected_by.get_full_name|default:entry.rejected_by|default:"approver" }} — needs revision
+    </div>
+    <div class="text-xs text-slate-500 mt-1">{{ entry.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ entry.rejection_note }}</div>
+    {% if entry.status == 'draft' and entry.created_by_id == request.user.id %}
+    <a href="{% url 'ui:je_edit' entry.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise &amp; resubmit</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if reversed_by_request %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+    <div class="text-sm font-semibold text-red-800">Reversed — correcting entry posted</div>
+    <div class="text-xs text-slate-500 mt-1">
+      Approved by {{ reversed_by_request.approved_by.get_full_name|default:reversed_by_request.approved_by|default:"—" }}
+      · {{ reversed_by_request.approved_at|date:"M d, Y H:i" }}
+    </div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ reversed_by_request.reason }}</div>
+    {% if reversed_by_request.reversal_entry %}
+    <a href="{% url 'ui:je_detail' reversed_by_request.reversal_entry.id %}" class="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">Reversing entry {{ reversed_by_request.reversal_entry.entry_no }} →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if pending_reversal %}
+  <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+    <div class="text-sm font-semibold text-amber-900">Reversal requested — awaiting approval</div>
+    <div class="text-xs text-slate-500 mt-1">
+      Requested by {{ pending_reversal.requested_by.get_full_name|default:pending_reversal.requested_by|default:"—" }}
+      · {{ pending_reversal.requested_at|date:"M d, Y H:i" }}
+    </div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ pending_reversal.reason }}</div>
+    {% if can_approve_reversal %}
+    <div class="mt-3 flex items-center gap-3">
+      <form method="post" action="{% url 'ui:je_reversal_approve' pending_reversal.id %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
+      </form>
+      <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject reversal</button>
+    </div>
+    {% elif request.user|approval_role_of == "head" %}
+    <p class="mt-2 text-xs text-amber-700">You requested this reversal — it must be approved by a different approver.</p>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <dl class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
@@ -125,6 +183,8 @@
     </table>
   </div>
 
+  {% include "ui/partials/audit_trail.html" %}
+
   <!-- Reject Modal -->
   <div id="reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
@@ -147,6 +207,53 @@
     </div>
   </div>
 
+  <!-- Request Reversal Modal -->
+  <div id="reversal-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900">Request Reversal</h3>
+      </div>
+      <form method="post" action="{% url 'ui:je_reverse' entry.id %}">
+        {% csrf_token %}
+        <div class="p-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Reason (required)</label>
+          <textarea name="reason" data-autogrow rows="4" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Why must this posted entry be reversed? (e.g. duplicate posting, wrong account)"></textarea>
+          <p class="mt-2 text-xs text-slate-500">A posted entry is never deleted — a correcting reversing entry is posted once the head approves.</p>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Request reversal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reject Reversal Modal -->
+  <div id="reversal-reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900">Reject Reversal</h3>
+      </div>
+      {% if pending_reversal %}
+      <form method="post" action="{% url 'ui:je_reversal_reject' pending_reversal.id %}">
+        {% csrf_token %}
+        <div class="p-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
+          <textarea name="note" data-autogrow rows="4" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Why is this reversal being refused?"></textarea>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalRejectModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Reject reversal</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
   <script>
     function openRejectModal() {
       document.getElementById('reject-modal').classList.remove('hidden');
@@ -156,8 +263,24 @@
       document.getElementById('reject-modal').classList.add('hidden');
       document.getElementById('reject-modal').classList.remove('flex');
     }
+    function openReversalModal() {
+      document.getElementById('reversal-modal').classList.remove('hidden');
+      document.getElementById('reversal-modal').classList.add('flex');
+    }
+    function closeReversalModal() {
+      document.getElementById('reversal-modal').classList.add('hidden');
+      document.getElementById('reversal-modal').classList.remove('flex');
+    }
+    function openReversalRejectModal() {
+      var m = document.getElementById('reversal-reject-modal');
+      if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
+    }
+    function closeReversalRejectModal() {
+      var m = document.getElementById('reversal-reject-modal');
+      if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+    }
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeRejectModal();
+      if (e.key === 'Escape') { closeRejectModal(); closeReversalModal(); closeReversalRejectModal(); }
     });
     document.getElementById('reject-modal').addEventListener('click', function(e) {
       if (e.target === this) closeRejectModal();

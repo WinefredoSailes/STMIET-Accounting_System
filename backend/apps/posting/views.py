@@ -41,6 +41,20 @@ class JournalEntryViewSet(
         out = JournalEntrySerializer(posted, context={"request": request})
         return Response(out.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        """Request a reversal of a posted entry (head approves separately)."""
+        from .services import ReversalService
+
+        entry = self.get_object()
+        req = ReversalService.request(
+            entry, reason=request.data.get("reason", ""), user=request.user
+        )
+        return Response(
+            {"id": req.id, "status": req.status, "entry": entry.id},
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class PostingRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PostingRule.objects.filter(is_active=True).prefetch_related("lines")

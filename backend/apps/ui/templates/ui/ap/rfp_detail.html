@@ -7,6 +7,7 @@
   {% capture as badge_color %}{% if rfp.status == 'posted' %}bg-emerald-100 text-emerald-800{% elif rfp.status == 'checked' or rfp.status == 'acctg_approved' or rfp.status == 'fin_approved' or rfp.status == 'cnr_approved' %}bg-amber-100 text-amber-800{% else %}bg-slate-100 text-slate-700{% endif %}{% endcapture %}
   {% capture as actions %}{% include "ui/partials/status_badge.html" with status=rfp.status color=badge_color %}<a href="{% url 'ui:rfp_export' rfp.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a><a href="{% url 'ui:rfp_export' rfp.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a><a href="{% url 'ui:rfp_export' rfp.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a><a href="{% url 'ui:rfp_print' rfp.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print RFP</a>{% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:rfp_list" back_label="RFPs" actions=actions %}
+  {% include "ui/partials/reversed_banner.html" with entry=rfp.journal_entry %}
 
   {% capture as shell_meta %}
   <div>AP NO: <span class="font-mono font-medium text-slate-800">{{ rfp.ap_number }}</span></div>

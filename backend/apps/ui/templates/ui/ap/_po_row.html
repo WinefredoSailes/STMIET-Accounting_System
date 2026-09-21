@@ -39,6 +39,9 @@ inline Approve/Check action is shown: only for the role the PO is waiting on.
         {% elif po.status == 'submitted' %}Submitted
         {% else %}Prepared{% endif %}
       </span>
+      {% if po.status == 'rejected' and request.user.id == po.created_by_id %}
+      <a href="{% url 'ui:po_revise' po.id %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">Revise</a>
+      {% endif %}
       {% if po.approval_info.has_action %}
       <form
         hx-post="{% url 'ui:po_approve' po.id %}"

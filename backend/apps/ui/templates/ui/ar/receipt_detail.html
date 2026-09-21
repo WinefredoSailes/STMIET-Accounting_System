@@ -29,6 +29,7 @@
   <a href="{% url 'ui:ar_receipt_print' receipt.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=receipt.receipt_no subtitle="ACCTG-FOR-005 · Acknowledgment Receipt" back_url_name="ui:receipt_list" back_label="Acknowledgment receipts" actions=actions %}
+  {% include "ui/partials/reversed_banner.html" with entry=receipt.journal_entry %}
 
   <dl class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">

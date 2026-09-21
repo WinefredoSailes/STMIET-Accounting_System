@@ -356,6 +356,34 @@ def transfer_queue(user_roles):
     return out
 
 
+def reversal_queue(user_roles):
+    """Pending journal-entry reversal requests waiting on the head (ADR-004)."""
+    if "head" not in user_roles:
+        return []
+    from apps.posting.models import ReversalRequest
+
+    out = []
+    docs = ReversalRequest.objects.filter(
+        status=ReversalRequest.Status.REQUESTED
+    ).select_related("entry", "requested_by")
+    for req in docs:
+        out.append(
+            {
+                "kind": "reversal",
+                "role": "head",
+                "doc": req,
+                "number": f"REV {req.entry.entry_no}",
+                "title": f"Reversal requested · {req.reason[:60]}",
+                "date": req.requested_at.date() if req.requested_at else None,
+                "amount": req.entry.total_debit,
+                "detail": ("ui:je_detail", req.entry_id),
+                "action": ("ui:je_reversal_approve", req.id),
+                "action_label": "Approve reversal",
+            }
+        )
+    return out
+
+
 def je_queue(user_roles):
     """Manual Journal Entries waiting on `user_roles` (head only)."""
     if "head" not in user_roles:
@@ -518,6 +546,7 @@ def pending_approval_queue(user):
         + cash_short_queue({role})
         + transfer_queue({role})
         + je_queue({role})
+        + reversal_queue({role})
         + ar_receipt_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
