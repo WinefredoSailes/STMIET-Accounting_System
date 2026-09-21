@@ -20,6 +20,7 @@ Design invariants (tested in apps/posting/tests/):
 from decimal import Decimal
 
 from django.db import models, transaction
+from django.utils import timezone
 
 from apps.core.money import money
 from apps.core.models import AuditableModel
@@ -32,6 +33,13 @@ class PostingStatus(models.TextChoices):
     POSTED = "posted", "Posted"
     REVERSED = "reversed", "Reversed (matched by reversing entry)"
     REJECTED = "rejected", "Rejected"
+
+
+#: Entry statuses whose GeneralLedger projection counts toward balances.
+#: A reversed entry keeps its GL rows and its reversing entry is a separate
+#: POSTED contra, so BOTH must be summed for the pair to net to zero
+#: (ADR-004 immutable journal / ADR-005 GL derivation / ADR-013 cycle ledger).
+GL_EFFECTIVE_STATUSES = (PostingStatus.POSTED, PostingStatus.REVERSED)
 
 
 class JournalEntry(AuditableModel):
@@ -206,3 +214,54 @@ class PostingRuleLine(models.Model):
 
     def __str__(self):
         return f"{self.rule.code} L{self.line_no} {self.side} {self.account_code}"
+
+
+class ReversalRequest(AuditableModel):
+    """Maker-checker request to reverse a posted JournalEntry (ADR-004).
+
+    The entry stays ``POSTED`` and in the GL while the request is pending; the
+    Accounting & Finance Head's approval posts the mirror entry and flips the
+    original to ``REVERSED``. Posted entries are never deleted or edited.
+
+    ``source_doc_type`` / ``source_doc_no`` are denormalized from the entry so
+    the source document can be flagged reversed and list queries stay simple.
+    """
+
+    class Status(models.TextChoices):
+        REQUESTED = "requested", "Requested"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    entry = models.ForeignKey(
+        JournalEntry, on_delete=models.PROTECT, related_name="reversal_requests"
+    )
+    source_doc_type = models.CharField(max_length=16, blank=True)
+    source_doc_no = models.CharField(max_length=32, blank=True, db_index=True)
+    reason = models.TextField()
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.REQUESTED, db_index=True
+    )
+    requested_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    requested_at = models.DateTimeField(default=timezone.now)
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    reject_note = models.TextField(blank=True)
+    reversal_entry = models.ForeignKey(
+        JournalEntry, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="reversal_of_requests",
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["entry", "status"])]
+
+    def __str__(self):
+        return f"Reversal of {self.entry_id} ({self.status})"

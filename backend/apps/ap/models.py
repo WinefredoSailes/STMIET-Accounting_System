@@ -167,6 +167,19 @@ class RFPDocument(AuditableModel):
     def __str__(self):
         return f"{self.ap_number} {self.payee} {self.amount} ({self.status})"
 
+    @property
+    def is_reversed(self):
+        """True when this document's posted JE has been reversed (ADR-004).
+
+        A reversed RFP must be excluded from PO balances and the AP/supplier
+        ledger, because its reversing entry is not an RFP.
+        """
+        if not self.journal_entry_id:
+            return False
+        from apps.posting.models import PostingStatus
+
+        return self.journal_entry.status == PostingStatus.REVERSED
+
 
 class RFPLine(models.Model):
     """One Dr/Cr distribution line of the RFP (ADR-023). The sum of debit
@@ -263,9 +276,12 @@ class PurchaseOrder(AuditableModel):
 
     @property
     def billed_amount(self):
-        """Posted RFP amounts already drawn against this PO."""
+        """Posted RFP amounts already drawn against this PO.
+
+        Reversed RFPs are excluded — the payment was undone, so the PO balance
+        is restored (ADR-004 reversal recompute)."""
         return sum(
-            (r.amount for r in self.rfps.all() if r.status == "posted"),
+            (r.amount for r in self.rfps.all() if r.status == "posted" and not r.is_reversed),
             Decimal("0.00"),
         )
 
@@ -420,6 +436,7 @@ class ActionLog(models.Model):
         AR = "ar", "Acknowledgment Receipt"
         DEPOSIT = "dep", "Bank Deposit"
         TRANSFER = "transfer", "Fund Transfer"
+        JE = "je", "Journal Entry"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)

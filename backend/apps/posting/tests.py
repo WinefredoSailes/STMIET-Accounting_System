@@ -159,12 +159,14 @@ class TestPostingEngine:
         je.recalc_totals()
         PostingService.post(je)
 
-        rev = PostingService.reverse(je, reason="wrong account")
+        rev = PostingService.reverse(je, reason="wrong account", reversal_date=date(2026, 1, 20))
 
         rev.refresh_from_db()
+        je.refresh_from_db()
         assert rev.status == PostingStatus.POSTED
         assert rev.reversal_token == je.reversal_token
-        assert rev.transaction_date == date(2026, 1, 20)  # next cycle start
+        assert rev.transaction_date == date(2026, 1, 20)  # requested reversal date
+        assert je.status == PostingStatus.REVERSED  # original is marked reversed
         rev_lines = {l.line_no: (l.debit, l.credit) for l in rev.lines.all()}
         assert rev_lines[1] == (money("0.00"), money("250.00"))
         assert rev_lines[2] == (money("250.00"), money("0.00"))

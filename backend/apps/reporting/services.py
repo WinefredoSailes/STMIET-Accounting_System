@@ -70,10 +70,10 @@ class TrialBalanceService:
         `start`/`end` bound transaction_date (inclusive). With neither, the
         whole posted GL for the company is summed.
         """
-        from apps.posting.models import GeneralLedger
+        from apps.posting.models import GL_EFFECTIVE_STATUSES, GeneralLedger
 
         qs = GeneralLedger.objects.filter(
-            entry__status="posted",
+            entry__status__in=GL_EFFECTIVE_STATUSES,
             entry__company=company,
         )
         if start:

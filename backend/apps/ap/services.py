@@ -158,19 +158,26 @@ def validate_po_for_rfp(po, *, payee_id, amount):
 def log_action(doc, action, *, actor=None, note=""):
     """Append an immutable audit-trail entry for any tracked document.
 
-    Covers RFP / Check Voucher / PO plus the AR receipt and bank deposit
-    audit trails (doc_type is stored so histories never mix).
+    Covers RFP / Check Voucher / PO / Journal Entry / Inter-Account Transfer
+    plus the AR receipt and bank deposit audit trails (doc_type is stored so
+    histories never mix).
     """
     from apps.ar.models import AcknowledgmentReceipt, Deposit
+    from apps.cash.models import InterAccountTransfer
+    from apps.posting.models import JournalEntry
 
     if isinstance(doc, AcknowledgmentReceipt):
         doc_type = ActionLog.DocType.AR
     elif isinstance(doc, Deposit):
         doc_type = ActionLog.DocType.DEPOSIT
+    elif isinstance(doc, InterAccountTransfer):
+        doc_type = ActionLog.DocType.TRANSFER
     elif isinstance(doc, CheckVoucher):
         doc_type = ActionLog.DocType.CV
     elif isinstance(doc, PurchaseOrder):
         doc_type = ActionLog.DocType.PO
+    elif isinstance(doc, JournalEntry):
+        doc_type = ActionLog.DocType.JE
     else:
         doc_type = ActionLog.DocType.RFP
     ActionLog.objects.create(

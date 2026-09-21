@@ -13,9 +13,11 @@ Invariants enforced here are the heart of the system (ADR-002/004/005):
    approval before POSTED (ADR-033 workflow).
 """
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.core.exceptions import PostingError, UnbalancedEntryError
 from apps.core.money import approve_threshold, money
@@ -27,6 +29,7 @@ from .models import (
     PostingRule,
     PostingRuleLine,
     PostingStatus,
+    ReversalRequest,
 )
 
 
@@ -181,17 +184,26 @@ class PostingService:
     # ------------------------------------------------------------------ rev
 
     @classmethod
-    def reverse(cls, entry: JournalEntry, *, reason: str, user=None) -> JournalEntry:
-        """Create the reversing entry: exact mirror, ALLOCATED to the next
-        cycle, linked by reversal_token (ADR-002/004 correction semantics)."""
+    def reverse(
+        cls,
+        entry: JournalEntry,
+        *,
+        reason: str,
+        user=None,
+        reversal_date: date | None = None,
+    ) -> JournalEntry:
+        """Create the reversing entry: exact mirror, posted to the CURRENT OPEN
+        cycle (next cycle only when it is locked), linked by reversal_token.
+
+        Correcting the books in the open period is what keeps the cycle-based
+        ledger (ADR-013) netting to zero without restating a locked period.
+        The original is marked REVERSED; its GL rows remain and both entries are
+        summed by the GL readers so the pair nets to zero (ADR-004/005).
+        """
         if not entry.is_posted:
             raise PostingError("Only posted entries can be reversed.")
 
-        from apps.foundation.calendar import cycle_range_for
-        from datetime import timedelta
-
-        start, end = cycle_range_for(entry.transaction_date, company=entry.company)
-        reversal_date = end + timedelta(days=1)
+        rev_date = cls._reversal_date(entry, reversal_date)
 
         with transaction.atomic():
             token = f"REV:{entry.entry_no}:{entry.id}"
@@ -200,7 +212,7 @@ class PostingService:
                 company=entry.company,
                 segment=entry.segment,
                 fiscal_period=entry.fiscal_period,
-                transaction_date=reversal_date,
+                transaction_date=rev_date,
                 status=PostingStatus.POSTED,
                 description=f"Reversal of {entry.entry_no}: {reason}",
                 source_doc_type=entry.source_doc_type,
@@ -224,17 +236,41 @@ class PostingService:
             entry.updated_by = user
             entry.save(update_fields=["reversal_token", "status", "updated_by", "updated_at"])
 
-            # GL projection for the reversing entry:
-            _lines = list(rev.lines.all().select_related("account", "segment"))
-            GeneralLedger.objects.bulk_create([
-                GeneralLedger(
-                    entry=rev, line=line, account=line.account, company=rev.company,
-                    segment=line.segment or rev.segment, fiscal_period=rev.fiscal_period,
-                    transaction_date=rev.transaction_date, debit=line.debit, credit=line.credit,
+            # GL projection for the reversing entry (same idempotent pattern
+            # as post()).
+            for line in rev.lines.all().select_related("account", "segment"):
+                GeneralLedger.objects.update_or_create(
+                    line=line,
+                    defaults=dict(
+                        entry=rev,
+                        account=line.account,
+                        company=rev.company,
+                        segment=line.segment or rev.segment,
+                        fiscal_period=rev.fiscal_period,
+                        transaction_date=rev.transaction_date,
+                        debit=line.debit,
+                        credit=line.credit,
+                    ),
                 )
-                for line in _lines
-            ])
         return rev
+
+    @staticmethod
+    def _reversal_date(entry: JournalEntry, requested: date | None = None) -> date:
+        """Reversal posts to the current open cycle; if today's cycle for the
+        entry's segment is locked, advance to the first day of the next cycle."""
+        from apps.cash.models import WeeklyCashCycle
+        from apps.foundation.calendar import cycle_range_for
+
+        target = requested or date.today()
+        start, _end = cycle_range_for(target, company=entry.company)
+        cycle = (
+            WeeklyCashCycle.objects.filter(segment=entry.segment, cycle_start=start)
+            .only("status", "cycle_end")
+            .first()
+        )
+        if cycle and cycle.status == "locked":
+            return cycle.cycle_end + timedelta(days=1)
+        return target
 
 
 def _resolve_account(code: str):
@@ -244,3 +280,155 @@ def _resolve_account(code: str):
         return Account.objects.get(code=code, is_postable=True)
     except Account.DoesNotExist as exc:
         raise PostingError(f"Account {code} missing or not postable.") from exc
+
+
+def _log_je(entry: JournalEntry, action: str, *, actor=None, note: str = "") -> None:
+    """Audit-trail entry for a JournalEntry (DocType.JE, never mixed with RFP)."""
+    from apps.ap.models import ActionLog
+
+    ActionLog.objects.create(
+        doc_type=ActionLog.DocType.JE,
+        doc_id=entry.id,
+        action=action,
+        actor=actor,
+        note=(note or "").strip(),
+    )
+
+
+def mark_source_reversed(request: ReversalRequest) -> None:
+    """Propagate an approved reversal to its source document + derived data.
+
+    Recompute contract (ADR-004/013):
+      - GL balance readers sum POSTED + REVERSED, so the pair nets to zero.
+      - Document ledgers exclude reversed documents (a reversed RFP / receipt is
+        not a live document) — PO billed, AR invoice paid, AP/supplier ledger.
+      - The open cash cycle the reversal landed in is regenerated; locked
+        cycles are never restated.
+    """
+    entry = request.entry
+    rev = request.reversal_entry
+    if rev is None:
+        return
+
+    src = (entry.source_doc_type or "").upper()
+
+    # AR: re-open the invoice a reversed collection receipt was applied to.
+    if src == "AR" and entry.source_doc_no:
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.ar.services import _refresh_invoice_status
+
+        receipt = (
+            AcknowledgmentReceipt.objects.filter(receipt_no=entry.source_doc_no)
+            .select_related("applied_to")
+            .first()
+        )
+        if receipt and receipt.applied_to_id:
+            _refresh_invoice_status(receipt.applied_to)
+
+    # Cash cycle: reflect the reversal in the cycle it posted to (open only).
+    _regenerate_open_cycle(entry.segment, rev.transaction_date, entry.company)
+
+
+def _regenerate_open_cycle(segment, when, company) -> None:
+    from apps.cash.models import WeeklyCashCycle
+    from apps.cash.services import CashCycleService
+    from apps.foundation.calendar import cycle_range_for
+
+    start, _end = cycle_range_for(when, company=company)
+    cycle = WeeklyCashCycle.objects.filter(segment=segment, cycle_start=start).first()
+    if cycle and cycle.status == "open":
+        CashCycleService.generate_cycle(segment, start)
+
+
+class ReversalService:
+    """Maker-checker reversal workflow for posted journal entries (ADR-004).
+
+    Any accounting user requests a reversal with a reason; the entry stays
+    POSTED and in the GL. Only the Accounting & Finance Head approves (which
+    posts the mirror entry and propagates to the source document) or rejects
+    (with a note). Posted entries are never deleted or edited.
+    """
+
+    @classmethod
+    @transaction.atomic
+    def request(
+        cls, entry: JournalEntry, *, reason: str, user=None
+    ) -> ReversalRequest:
+        if not entry.is_posted:
+            raise PostingError("Only posted entries can be reversed.")
+        if entry.reversal_token:
+            raise PostingError("This entry has already been reversed.")
+        if not (reason or "").strip():
+            raise PostingError("A reversal reason is required.")
+        if entry.reversal_requests.filter(status=ReversalRequest.Status.REQUESTED).exists():
+            raise PostingError("A reversal request is already pending for this entry.")
+        req = ReversalRequest.objects.create(
+            entry=entry,
+            source_doc_type=entry.source_doc_type or "",
+            source_doc_no=entry.source_doc_no or "",
+            reason=reason.strip(),
+            status=ReversalRequest.Status.REQUESTED,
+            requested_by=user,
+            requested_at=timezone.now(),
+        )
+        _log_je(entry, "reversal_requested", actor=user, note=reason)
+        return req
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, request: ReversalRequest, *, user=None) -> ReversalRequest:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if request.status != ReversalRequest.Status.REQUESTED:
+            raise PostingError("Only a requested reversal can be approved.")
+        if request.requested_by_id and user is not None and request.requested_by_id == user.id:
+            raise PostingError("The requester cannot approve their own reversal request.")
+
+        entry = request.entry
+        rev = PostingService.reverse(entry, reason=request.reason, user=user)
+        request.status = ReversalRequest.Status.APPROVED
+        request.approved_by = user
+        request.approved_at = timezone.now()
+        request.reversal_entry = rev
+        request.save(
+            update_fields=[
+                "status", "approved_by", "approved_at", "reversal_entry", "updated_at",
+            ]
+        )
+        mark_source_reversed(request)
+        _log_je(entry, "reversal_approved", actor=user, note=request.reason)
+        return request
+
+    @classmethod
+    @transaction.atomic
+    def reject(
+        cls, request: ReversalRequest, *, user=None, note: str = ""
+    ) -> ReversalRequest:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if request.status != ReversalRequest.Status.REQUESTED:
+            raise PostingError("Only a requested reversal can be rejected.")
+        if not (note or "").strip():
+            raise PostingError("A rejection note is required.")
+        request.status = ReversalRequest.Status.REJECTED
+        request.rejected_by = user
+        request.rejected_at = timezone.now()
+        request.reject_note = note.strip()
+        request.save(
+            update_fields=["status", "rejected_by", "rejected_at", "reject_note", "updated_at"]
+        )
+        _log_je(request.entry, "reversal_rejected", actor=user, note=note)
+        return request
+
+    @classmethod
+    def pending(cls):
+        return (
+            ReversalRequest.objects.filter(status=ReversalRequest.Status.REQUESTED)
+            .select_related("entry")
+        )
+
+    @classmethod
+    def pending_count(cls) -> int:
+        return cls.pending().count()

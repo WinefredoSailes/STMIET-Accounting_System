@@ -720,8 +720,12 @@ class CycleLedgerService:
 
 
 def _refresh_invoice_status(invoice: ARInvoice) -> None:
+    # Recompute from live receipts; a reversed collection drops out of
+    # amount_paid, so a fully reversed payment re-opens the invoice.
     if invoice.balance <= 0:
         invoice.status = "paid"
     elif invoice.amount_paid > 0:
         invoice.status = "partially_paid"
+    else:
+        invoice.status = "open"
     invoice.save(update_fields=["status", "updated_at"])

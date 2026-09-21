@@ -78,8 +78,12 @@ class CashCycleService:
 
     @classmethod
     def _recompute_activities(cls, cycle: WeeklyCashCycle) -> None:
-        """Derive ADR-028 activity rows from posted GL for this cycle/segment."""
-        from apps.posting.models import GeneralLedger
+        """Derive ADR-028 activity rows from the GL for this cycle/segment.
+
+        Includes REVERSED originals so a reversal never restates the cycle it
+        corrects: the original stays in its cycle and the reversal lands in the
+        cycle it was posted to (ADR-004/013)."""
+        from apps.posting.models import GL_EFFECTIVE_STATUSES, GeneralLedger
 
         # Banks are company-level: every active bank of the company participates
         # in each segment's cycle sheet; the GL row's segment attributes the
@@ -94,7 +98,7 @@ class CashCycleService:
         qs = GeneralLedger.objects.filter(
             account_id__in=bank_ids,
             segment=cycle.segment,
-            entry__status="posted",
+            entry__status__in=GL_EFFECTIVE_STATUSES,
             transaction_date__gte=cycle.cycle_start,
             transaction_date__lte=cycle.cycle_end,
         )
@@ -177,13 +181,13 @@ class BankReconService:
         user=None,
     ) -> BankReconciliation:
         """Create or update reconciliation for a cycle/bank."""
-        from apps.posting.models import GeneralLedger
+        from apps.posting.models import GL_EFFECTIVE_STATUSES, GeneralLedger
 
         book_bal = (
             GeneralLedger.objects.filter(
                 account=bank_account.gl_account,
                 segment=cycle.segment,
-                entry__status="posted",
+                entry__status__in=GL_EFFECTIVE_STATUSES,
                 transaction_date__lte=cycle.cycle_end,
             ).aggregate(
                 bal=Sum("debit") - Sum("credit")
@@ -214,12 +218,12 @@ class PCFService:
     @classmethod
     def check_replenishment_needed(cls, fund: PettyCashFund) -> bool:
         """Check if fund consumed >= trigger%."""
-        from apps.posting.models import GeneralLedger
+        from apps.posting.models import GL_EFFECTIVE_STATUSES, GeneralLedger
 
         spent = (
             GeneralLedger.objects.filter(
                 account=fund.gl_account,
-                entry__status="posted",
+                entry__status__in=GL_EFFECTIVE_STATUSES,
                 credit__gt=0,
             ).aggregate(s=Sum("credit"))["s"]
         ) or Decimal("0.00")

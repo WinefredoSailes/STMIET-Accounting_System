@@ -249,7 +249,14 @@ class ARInvoice(AuditableModel):
 
     @property
     def amount_paid(self):
-        return self.receipts.aggregate(paid=models.Sum("amount"))["paid"] or Decimal("0.00")
+        # Exclude receipts whose JE was reversed — the collection was undone,
+        # so the invoice balance is restored (ADR-004 reversal recompute).
+        return (
+            self.receipts.exclude(journal_entry__status="reversed").aggregate(
+                paid=models.Sum("amount")
+            )["paid"]
+            or Decimal("0.00")
+        )
 
     @property
     def balance(self):

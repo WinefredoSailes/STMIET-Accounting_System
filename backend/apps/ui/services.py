@@ -15,7 +15,7 @@ from django.utils import timezone
 from apps.core.money import money
 from apps.foundation.calendar import cycle_range_for
 from apps.foundation.models import FiscalPeriod, Segment
-from apps.posting.models import JournalEntry, PostingStatus
+from apps.posting.models import GL_EFFECTIVE_STATUSES, JournalEntry, PostingStatus
 from apps.reporting.models import StatementType
 from apps.reporting.services import MonthEndCloseService, StatementTemplateService, TrialBalanceService as TBSvc
 
@@ -289,7 +289,11 @@ def po_summary():
 
     pending_qs = PurchaseOrder.objects.exclude(status__in=["approved", "closed", "rejected"])
     approved_qs = PurchaseOrder.objects.filter(status__in=["approved", "closed"])
-    posted_qs = PurchaseOrder.objects.filter(rfps__status="posted").distinct()
+    posted_qs = (
+        PurchaseOrder.objects.filter(rfps__status="posted")
+        .exclude(rfps__journal_entry__status=PostingStatus.REVERSED)
+        .distinct()
+    )
     return {
         "total": PurchaseOrder.objects.count(),
         "total_amount": PurchaseOrder.objects.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
@@ -427,6 +431,83 @@ def list_conso(*, limit=50):
     return CONSOBatch.objects.prefetch_related("rfps").order_by("-conso_date")[:limit]
 
 
+def pending_documents():
+    """Documents in flight that have no JournalEntry yet (ADR-043).
+
+    These are the source documents that only become a JE when posted, so they
+    never appear on the Journal Entries register. Surfaced on its Pending /
+    Unposted tab. AP pipeline first: RFP awaiting/in CONSO, open CONSO batches,
+    PCF replenishments awaiting posting.
+    """
+    from apps.ap.models import CONSOBatch, RFPDocument
+    from apps.cash.models import PCFReplenishment
+
+    rows = []
+    rfps = (
+        RFPDocument.objects.filter(status__in=("fin_approved", "cnr_approved"))
+        .select_related("payee", "conso")
+        .order_by("ap_number")
+    )
+    for rfp in rfps:
+        rows.append(
+            {
+                "kind": "RFP",
+                "number": rfp.ap_number,
+                "date": rfp.rfp_date,
+                "party": rfp.payee.name if rfp.payee_id else "",
+                "description": rfp.particulars or "",
+                "amount": rfp.amount,
+                "status_label": "In CONSO" if rfp.conso_id else "Awaiting CONSO",
+                "conso": rfp.conso.batch_no if rfp.conso_id else "",
+                "detail_url": ("ui:rfp_detail", rfp.id),
+            }
+        )
+    for batch in (
+        CONSOBatch.objects.filter(status__in=("open", "reviewed"))
+        .prefetch_related("rfps")
+        .order_by("batch_no")
+    ):
+        rows.append(
+            {
+                "kind": "CONSO",
+                "number": batch.batch_no,
+                "date": batch.conso_date,
+                "party": "",
+                "description": f"{batch.rfps.count()} RFP(s) awaiting posting",
+                "amount": batch.total_amount,
+                "status_label": batch.status.title(),
+                "conso": "",
+                "detail_url": ("ui:conso_detail", batch.id),
+            }
+        )
+    for replen in (
+        PCFReplenishment.objects.filter(status__in=("requested", "approved"))
+        .select_related("fund")
+        .order_by("id")
+    ):
+        fund = replen.fund
+        rows.append(
+            {
+                "kind": "PCF",
+                "number": replen.voucher_no or f"PCF#{replen.id}",
+                "date": replen.request_date,
+                "party": (fund.name or fund.fund_code) if fund else "",
+                "description": replen.payee_name or "",
+                "amount": replen.amount,
+                "status_label": "Awaiting CONSO" if replen.status == "approved" else "Requested",
+                "conso": "",
+                "detail_url": ("ui:pcf_replenishment_detail", replen.id),
+            }
+        )
+    rows.sort(key=lambda r: (r["date"] or date.min, r["number"]))
+    return rows
+
+
+def pending_count():
+    """Number of in-flight (not-yet-posted) documents for the dashboard badge."""
+    return len(pending_documents())
+
+
 def conso_context(batch):
     """Members (RFPs + PCF replenishments) with their posting state + total."""
     members = list(batch.rfps.select_related("payee", "segment").order_by("ap_number"))
@@ -455,14 +536,16 @@ def list_cash_shorts(*, limit=100):
 
 
 def book_balance(cycle, bank):
-    """Posted GL balance for the bank's GL account up to cycle end (ADR-026)."""
+    """GL balance for the bank's GL account up to cycle end (ADR-026).
+
+    Includes REVERSED originals so a reversal nets against the original."""
     from apps.posting.models import GeneralLedger
 
     return (
         GeneralLedger.objects.filter(
             account=bank.gl_account,
             segment=cycle.segment,
-            entry__status="posted",
+            entry__status__in=GL_EFFECTIVE_STATUSES,
             transaction_date__lte=cycle.cycle_end,
         ).aggregate(bal=Sum("debit") - Sum("credit"))["bal"]
     ) or Decimal("0.00")
@@ -687,7 +770,7 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
     party_by = _source_parties()
 
     qs = (
-        JournalEntry.objects.filter(status=PostingStatus.POSTED)
+        JournalEntry.objects.filter(status__in=GL_EFFECTIVE_STATUSES)
         .select_related("segment", "company")
         .prefetch_related("lines__account")
     )
@@ -928,6 +1011,7 @@ def ap_aging_context(as_of: date) -> dict:
     not_yet_due = []
     for rfp in (
         RFPDocument.objects.filter(status="posted")
+        .exclude(journal_entry__status=PostingStatus.REVERSED)
         .select_related("payee", "segment")
         .prefetch_related("lines")
         .order_by("rfp_date")
@@ -1002,7 +1086,11 @@ def ap_supplier_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
 
     # --- Billed: posted RFP AP payables per supplier ---
     billed_by_supplier: dict = {}
-    for rfp in RFPDocument.objects.filter(status="posted").prefetch_related("payee", "lines"):
+    for rfp in (
+        RFPDocument.objects.filter(status="posted")
+        .exclude(journal_entry__status=PostingStatus.REVERSED)
+        .prefetch_related("payee", "lines")
+    ):
         
         payable = Decimal("0.00")
         for line in rfp.lines.all():
@@ -1064,7 +1152,12 @@ def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
 
     # --- Credit rows: posted RFPs ---
     credit_rows = []
-    for rfp in RFPDocument.objects.filter(status="posted", payee=supplier).select_related("segment").prefetch_related("lines"):
+    for rfp in (
+        RFPDocument.objects.filter(status="posted", payee=supplier)
+        .exclude(journal_entry__status=PostingStatus.REVERSED)
+        .select_related("segment")
+        .prefetch_related("lines")
+    ):
         payable = Decimal("0.00")
         for line in rfp.lines.all():
             if line.side == "cr" and line.account.code in ("20000", "21100"):
@@ -1351,7 +1444,9 @@ def ledger_window(params):
 
     if not start and not end:
         latest = (
-            GeneralLedger.objects.filter(entry__status="posted", entry__company=company)
+            GeneralLedger.objects.filter(
+                entry__status__in=GL_EFFECTIVE_STATUSES, entry__company=company
+            )
             .order_by("-transaction_date")
             .values_list("transaction_date", flat=True)
             .first()
@@ -1410,7 +1505,7 @@ def ledger_index(*, company, start=None, end=None, segment=None):
     from apps.posting.models import GeneralLedger
 
     gs = GeneralLedger.objects.filter(
-        entry__status=PostingStatus.POSTED, entry__company=company
+        entry__status__in=GL_EFFECTIVE_STATUSES, entry__company=company
     )
     if segment:
         gs = gs.filter(segment__code=segment)
@@ -1495,7 +1590,7 @@ def ledger_account(*, account, company, start=None, end=None, segment=None):
     from apps.posting.models import GeneralLedger
 
     gs = GeneralLedger.objects.filter(
-        entry__status=PostingStatus.POSTED, entry__company=company, account=account
+        entry__status__in=GL_EFFECTIVE_STATUSES, entry__company=company, account=account
     )
     if segment:
         gs = gs.filter(segment__code=segment)
