@@ -543,6 +543,60 @@ def _rfp_lines_from_form(request):
     return lines
 
 
+def _ar_receipt_lines_from_form(request, cash_account, segment):
+    """Build the full Dr/Cr lines for an AR receipt from its grid.
+
+    Option (i): the Debit is the single cash/bank account (auto); the grid
+    carries the preparer-entered credit lines ("what the money was for").
+    Returns a list of line dicts (account/segment/cost_center/description/
+    debit/credit) with the cash Dr line first.
+    """
+    accounts = request.POST.getlist("account")
+    seg_ids = request.POST.getlist("line_segment")
+    credits = request.POST.getlist("credit")
+    descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
+
+    credit_lines = []
+    for i, account_id in enumerate(accounts):
+        if not account_id:
+            continue
+        credit = money((credits[i] if i < len(credits) else "") or 0)
+        if credit <= 0:
+            continue
+        account = Account.objects.filter(pk=account_id).first()
+        if account is None:
+            raise ValidationError(f"Credit line {i + 1}: unknown account.")
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        line_segment = Segment.objects.filter(pk=seg_id).first() if seg_id else None
+        if line_segment is None:
+            raise ValidationError(f"Credit line {i + 1}: select a segment.")
+        credit_lines.append(
+            {
+                "account": account,
+                "segment": line_segment,
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
+                "description": (descs[i] if i < len(descs) else "")[:500],
+                "debit": money(0),
+                "credit": credit,
+            }
+        )
+    if not credit_lines:
+        raise ValidationError("Add at least one credit line with an amount.")
+
+    total = sum((l["credit"] for l in credit_lines), money(0))
+    return [
+        {
+            "account": cash_account,
+            "segment": segment,
+            "cost_center": "",
+            "description": "Cash received",
+            "debit": total,
+            "credit": money(0),
+        }
+    ] + credit_lines
+
+
 @login_required
 @require_POST
 def je_submit(request, pk):
@@ -1496,40 +1550,46 @@ def ar_receipt_print(request, pk: int):
 
 @login_required
 def ar_receipt_export(request, pk: int, fmt: str):
-    """AR receipt single-record export (pdf/xlsx/csv)."""
+    """AR receipt single-record export (pdf/xlsx/csv) with the account
+    distribution, mirroring the RFP/CV single-document export (ADR-044)."""
     from apps.ar.models import AcknowledgmentReceipt
     from apps.core.exports import Column, TableSpec, table_export
 
-    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
-    qs = AcknowledgmentReceipt.objects.filter(pk=receipt.pk).select_related(
-        "customer", "segment", "applied_to"
+    receipt = get_object_or_404(
+        AcknowledgmentReceipt.objects.select_related("customer", "segment", "cash_account", "applied_to"),
+        pk=pk,
     )
-    rows = [
-        [
-            receipt.receipt_no,
-            receipt.transaction_date.isoformat(),
-            receipt.customer.name,
-            receipt.segment.code,
-            receipt.get_payment_method_display(),
-            receipt.amount,
-            receipt.check_no or "",
-            receipt.transaction_no or "",
-            receipt.ref_po_no or "",
-            receipt.applied_to.invoice_no if receipt.applied_to else "",
-        ]
-    ]
-    total = receipt.amount
+    lines = list(receipt.lines.select_related("account", "segment").order_by("line_no"))
     spec = TableSpec(
         title=f"Acknowledgment Receipt — {receipt.receipt_no}",
         columns=[
-            Column("Receipt No"), Column("Date"), Column("Customer", width_cm=6),
-            Column("Segment"), Column("Method"), Column("Amount", money=True),
-            Column("Check No"), Column("Transaction No"), Column("Ref. PO No."),
-            Column("Applied To Invoice"),
+            Column("#"), Column("Side"), Column("COA"),
+            Column("Account Name", width_cm=6), Column("Segment"),
+            Column("Cost Center", width_cm=3.5), Column("Description", width_cm=6),
+            Column("Debit", money=True), Column("Credit", money=True),
         ],
-        rows=rows,
-        totals_row=["", "", "", "", "TOTAL", total, "", "", "",""],
-        sheet_title="AR RECEIPT",
+        preamble=[
+            ["Receipt No", receipt.receipt_no],
+            ["Date", receipt.transaction_date.isoformat()],
+            ["Customer", f"{receipt.customer.code} {receipt.customer.name}"],
+            ["Segment", receipt.segment.code],
+            ["Cash Account", receipt.cash_account.code if receipt.cash_account else ""],
+            ["Method", receipt.get_payment_method_display()],
+            ["Check No", receipt.check_no or ""],
+            ["Transaction No", receipt.transaction_no or ""],
+            ["Ref. PO No.", receipt.ref_po_no or ""],
+            ["Status", receipt.status],
+        ],
+        rows=[
+            [
+                line.line_no, "Dr" if line.debit else "Cr", line.account.code,
+                line.account.name, line.segment.code, line.cost_center or "",
+                line.description or "", line.debit, line.credit,
+            ]
+            for line in lines
+        ],
+        totals_row=["", "", "", "TOTAL", "", "", "", receipt.debit_total, receipt.credit_total],
+        sheet_title=f"AR_REC_{receipt.receipt_no}",
         page="portrait",
     )
     return table_export(spec, fmt, f"AR_receipt_{receipt.receipt_no}.{fmt}")
@@ -1717,35 +1777,92 @@ def customer_update(request, pk):
 def receipt_create(request):
     from apps.ar.models import Customer
     from apps.ar.services import CollectionService
-    from apps.foundation.models import Account
 
     if request.method == "POST":
         try:
-            customer = Customer.objects.get(pk=request.POST["customer"])
-            cash_account = Account.objects.get(pk=request.POST["cash_account"])
-            transaction_date = _parse_date(request.POST["transaction_date"])
+            customer_id = request.POST.get("customer") or ""
+            cash_id = request.POST.get("cash_account") or ""
+            if not customer_id:
+                raise ValidationError("Select a customer.")
+            if not cash_id:
+                raise ValidationError("Select the cash / bank account received into.")
+            customer = Customer.objects.get(pk=customer_id)
+            cash_account = Account.objects.get(pk=cash_id)
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of AR is required.")
 
-            receipt = CollectionService.record_collection(
+            receipt = CollectionService.create_receipt(
                 customer=customer,
                 transaction_date=transaction_date,
-                amount=request.POST.get("amount"),
                 cash_account=cash_account,
                 payment_method=request.POST.get("payment_method", "cash"),
                 check_no=request.POST.get("check_no", ""),
                 transaction_no=request.POST.get("transaction_no", ""),
                 ref_po_no=request.POST.get("ref_po_no", ""),
                 applied_to=None,
-                user=request.user,
+                lines=_ar_receipt_lines_from_form(request, cash_account, customer.segment),
+                created_by=request.user,
             )
-            messages.success(request, f"Receipt {receipt.receipt_no} recorded and posted to GL.")
+            messages.success(
+                request,
+                f"Receipt {receipt.receipt_no} saved as draft — submit it when ready.",
+            )
             return redirect("ui:receipt_detail", pk=receipt.pk)
-        except AccountingError as exc:
+        except (AccountingError, ValidationError, Customer.DoesNotExist, Account.DoesNotExist) as exc:
             messages.error(request, str(exc))
     return render(
         request,
         "ui/ar/receipt_form.html",
         {
             "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        },
+    )
+
+
+@login_required
+def receipt_edit(request, pk: int):
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(
+        AcknowledgmentReceipt.objects.select_related("customer", "cash_account", "segment"),
+        pk=pk,
+    )
+    if request.method == "POST":
+        try:
+            cash_id = request.POST.get("cash_account") or ""
+            if not cash_id:
+                raise ValidationError("Select the cash / bank account received into.")
+            cash_account = Account.objects.get(pk=cash_id)
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of AR is required.")
+            CollectionService.update_draft(
+                receipt=receipt,
+                lines=_ar_receipt_lines_from_form(request, cash_account, receipt.segment),
+                cash_account=cash_account,
+                payment_method=request.POST.get("payment_method", "cash"),
+                check_no=request.POST.get("check_no", ""),
+                transaction_no=request.POST.get("transaction_no", ""),
+                ref_po_no=request.POST.get("ref_po_no", ""),
+                transaction_date=transaction_date,
+                user=request.user,
+            )
+            messages.success(request, f"Receipt {receipt.receipt_no} updated.")
+            return redirect("ui:receipt_detail", pk=receipt.pk)
+        except (AccountingError, ValidationError, Account.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/receipt_form.html",
+        {
+            "editing": receipt,
+            "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         },
     )
 
@@ -1754,11 +1871,50 @@ def receipt_create(request):
 def receipt_detail(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
 
-    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    receipt = get_object_or_404(
+        AcknowledgmentReceipt.objects.select_related("journal_entry").prefetch_related(
+            "lines__account", "lines__segment"
+        ),
+        pk=pk,
+    )
+    pending_reversal = None
+    can_request_reversal = False
+    can_approve_reversal = False
+    if receipt.journal_entry_id:
+        from apps.posting.models import PostingStatus, ReversalRequest
+
+        pending_reversal = (
+            receipt.journal_entry.reversal_requests.filter(
+                status=ReversalRequest.Status.REQUESTED
+            )
+            .select_related("requested_by")
+            .first()
+        )
+        can_request_reversal = (
+            receipt.journal_entry.status == PostingStatus.POSTED
+            and not receipt.journal_entry.reversal_token
+            and pending_reversal is None
+        )
+        if pending_reversal:
+            can_approve_reversal = (
+                get_approval_role(request.user) == "head"
+                and pending_reversal.requested_by_id != request.user.id
+            )
     return render(
         request,
         "ui/ar/receipt_detail.html",
-        {"receipt": receipt, "audit_trail": _audit_trail("ar", pk)},
+        {
+            "receipt": receipt,
+            "audit_trail": _audit_trail("ar", pk),
+            "pending_reversal": pending_reversal,
+            "can_request_reversal": can_request_reversal,
+            "can_approve_reversal": can_approve_reversal,
+            "can_edit": receipt.status == "draft"
+            and (
+                receipt.created_by_id == request.user.id
+                or get_approval_role(request.user) == "head"
+            ),
+        },
     )
 
 
@@ -1769,6 +1925,8 @@ def receipt_submit(request, pk: int):
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
     try:
+        if receipt.created_by_id != request.user.id:
+            raise ValidationError("Only the preparer may submit this receipt.")
         CollectionService.submit(receipt, user=request.user)
         messages.success(request, f"Receipt {receipt.receipt_no} submitted for approval.")
     except Exception as exc:

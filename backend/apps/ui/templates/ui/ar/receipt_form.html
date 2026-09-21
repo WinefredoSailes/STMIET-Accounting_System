@@ -1,61 +1,267 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
-{% block title %}New Acknowledgment Receipt{% endblock %}
+{% load static ui_filters %}
+{% block title %}{% if editing %}Edit Receipt {{ editing.receipt_no }}{% else %}New Acknowledgment Receipt{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
-  {% include "ui/partials/page_header.html" with title="New Acknowledgment Receipt" subtitle="ACCTG-FOR-005 · posts the cash.collection JE on save (ADR-015)." back_url_name="ui:receipt_list" back_label="Acknowledgment receipts" %}
+  <a href="{% url 'ui:receipt_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Acknowledgment receipts</a>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit{% else %}New{% endif %} Acknowledgment Receipt</h1>
+  <p class="text-sm text-slate-500 mt-1">ACCTG-FOR-005 · the money in (Dr) is a single cash / bank account; the credit lines record what it was for. Posted to the GL only after the Head approves.</p>
 
-  {% capture as form_fields %}
-  <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_customer">Customer (TYPE CODING HERE)</label>
-    <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      <option value="" selected>— select customer —</option>
-    </select>
+  {% if editing and editing.status != 'draft' %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">Only draft receipts can be edited.</div>
+  {% elif editing.rejection_note %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+    <div class="text-sm font-semibold text-red-800">
+      Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by|default:"approver" }} — needs revision
+    </div>
+    <div class="text-xs text-slate-500 mt-1">{{ editing.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
   </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_date">Date of AR</label>
-    <input type="date" name="transaction_date" id="id_transaction_date" required
-           value="{{ today|date:'Y-m-d' }}"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_amount">Amount (TYPE AMOUNT HERE, ₱)</label>
-    <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="amount" id="id_amount" required
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cash_account">Cash account (Dr)</label>
-    <select name="cash_account" id="id_cash_account" data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=cash" data-search-value="id" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      <option value="">— select —</option>
-    </select>
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_payment_method">Payment method</label>
-    <select name="payment_method" id="id_payment_method" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      <option value="cash">Cash</option>
-      <option value="check">Check</option>
-      <option value="gcash">GCash</option>
-    </select>
-  </div>
-<div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_check_no">Check no.</label>
-    <input type="text" name="check_no" id="id_check_no" maxlength="32"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_no">Transaction No. <span class="text-slate-400">(optional)</span></label>
-    <input type="text" name="transaction_no" id="id_transaction_no" maxlength="64" autocomplete="off"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_ref_po_no">Ref. PO No. <span class="text-slate-400">(optional)</span></label>
-    <input type="text" name="ref_po_no" id="id_ref_po_no" maxlength="64" autocomplete="off"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-  </div>
-  {% endcapture %}
-  {% capture as footer_html %}
-  <p class="text-xs text-slate-500">The JE is Dr Cash (above) | Cr Unearned Revenue — posted immediately. AR# is auto-assigned.</p>
-  {% endcapture %}
-  {% include "ui/partials/form_card.html" with fields_html=form_fields footer_html=footer_html submit_label="Record collection" %}
+  {% endif %}
+
+  <form method="post" class="mt-6 space-y-6">
+    {% csrf_token %}
+
+    <div class="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3">
+        <div class="space-y-3">
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700">Customer</label>
+            {% if editing %}
+            <div class="text-sm font-medium">{{ editing.customer.code }} {{ editing.customer.name }}</div>
+            {% else %}
+            <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <option value="">— select customer —</option>
+            </select>
+            {% endif %}
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_transaction_date">Date of AR</label>
+            <input type="date" name="transaction_date" id="id_transaction_date" required
+                   value="{% if editing %}{{ editing.transaction_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
+                   class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_payment_method">Payment method</label>
+            <select name="payment_method" id="id_payment_method" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <option value="cash" {% if not editing or editing.payment_method == 'cash' %}selected{% endif %}>Cash</option>
+              <option value="check" {% if editing and editing.payment_method == 'check' %}selected{% endif %}>Check</option>
+              <option value="gcash" {% if editing and editing.payment_method == 'gcash' %}selected{% endif %}>GCash</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_check_no">Check no.</label>
+            <input type="text" name="check_no" id="id_check_no" maxlength="32" value="{{ editing.check_no|default:'' }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_transaction_no">Transaction No.</label>
+            <input type="text" name="transaction_no" id="id_transaction_no" maxlength="64" value="{{ editing.transaction_no|default:'' }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_ref_po_no">Ref. PO No.</label>
+            <input type="text" name="ref_po_no" id="id_ref_po_no" maxlength="64" value="{{ editing.ref_po_no|default:'' }}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-700 mb-3">Account Distribution</div>
+      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <table class="line-table w-full text-sm" style="min-width: 1150px;">
+          <colgroup>
+            <col style="width:40px"><!-- # -->
+            <col style="width:270px"><!-- Account (GL) -->
+            <col style="width:90px"><!-- Segment -->
+            <col style="width:90px"><!-- Cost Center -->
+            <col style="width:310px"><!-- Description -->
+            <col style="width:170px"><!-- Debit -->
+            <col style="width:170px"><!-- Credit -->
+            <col style="width:36px"><!-- remove -->
+          </colgroup>
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-2 py-2">#</th>
+              <th class="px-2 py-2">Account (GL)</th>
+              <th class="px-2 py-2">Segment</th>
+              <th class="px-2 py-2">Cost Center</th>
+              <th class="px-2 py-2">Description</th>
+              <th class="px-2 py-2 text-right">Debit</th>
+              <th class="px-2 py-2 text-right">Credit</th>
+              <th class="px-2 py-2"></th>
+            </tr>
+          </thead>
+          <tbody id="ar-lines-body" class="divide-y divide-slate-100">
+            <tr id="ar-cash-row" class="bg-slate-50">
+              <td class="px-2 py-2 text-slate-400 font-semibold">Dr</td>
+              <td class="px-2 py-2 overflow-hidden">
+                <select name="cash_account" data-searchable data-search-compact data-search-placeholder="Cash / bank received into…" data-search-url="{% url 'ui:account_options' %}?scope=cash" data-search-value="id" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% if editing %}<option value="{{ editing.cash_account.id }}" selected>{{ editing.cash_account.code }} {{ editing.cash_account.name }}</option>{% else %}<option value="">— cash / bank —</option>{% endif %}
+                </select>
+              </td>
+              <td class="px-2 py-2 text-xs text-slate-400">{{ editing.segment.code|default:"auto" }}</td>
+              <td class="px-2 py-2 text-xs text-slate-400">—</td>
+              <td class="px-2 py-2 text-xs text-slate-500">Cash received</td>
+              <td class="px-2 py-2 text-right font-semibold tabular-nums" id="ar-cash-debit">0.00</td>
+              <td class="px-2 py-2 text-xs text-slate-300 text-right">—</td>
+              <td class="px-2 py-2"></td>
+            </tr>
+            {% if editing %}
+              {% for line in editing.lines.all %}
+                {% if line.credit %}
+                <tr class="ar-credit-row">
+                  <td class="px-2 py-2 text-slate-400 line-no">{{ forloop.counter }}</td>
+                  <td class="px-2 py-2 overflow-hidden">
+                    <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                      <option value="{{ line.account.id }}" selected>{{ line.account.code }} {{ line.account.name }}</option>
+                    </select>
+                  </td>
+                  <td class="px-2 py-2 overflow-hidden">
+                    <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                      {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+                    </select>
+                  </td>
+                  <td class="px-2 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+                  <td class="px-2 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5">{{ line.description }}</textarea></td>
+                  <td class="px-2 py-2 overflow-hidden"><input type="text" disabled value="—" class="block w-full rounded-md border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs text-right text-slate-300 tabular-nums"></td>
+                  <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+                  <td class="px-2 py-2"><button type="button" data-remove-credit class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
+                </tr>
+                {% endif %}
+              {% endfor %}
+            {% else %}
+            <tr class="ar-credit-row">
+              <td class="px-2 py-2 text-slate-400 line-no">1</td>
+              <td class="px-2 py-2 overflow-hidden">
+                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="">— select —</option>
+                </select>
+              </td>
+              <td class="px-2 py-2 overflow-hidden">
+                <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-2 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-2 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5"></textarea></td>
+              <td class="px-2 py-2 overflow-hidden"><input type="text" disabled value="—" class="block w-full rounded-md border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs text-right text-slate-300 tabular-nums"></td>
+              <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+              <td class="px-2 py-2"><button type="button" data-remove-credit class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
+            </tr>
+            {% endif %}
+          </tbody>
+          <tfoot class="bg-slate-50">
+            <tr class="border-t-2 border-slate-300">
+              <td colspan="5" class="px-2 py-3 text-right text-sm font-bold uppercase tracking-wider text-slate-700">Totals</td>
+              <td id="total-debit" class="px-2 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td id="total-credit" class="px-2 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="8" class="px-2 py-2">
+                <button type="button" id="add-credit" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">+ Add credit line</button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Debit (cash) equals the total of the credit lines.</p>
+      <datalist id="cost_center_options">
+        {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+      </datalist>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{% if editing %}Save changes{% else %}Create draft{% endif %}</button>
+      <a href="{% if editing %}{% url 'ui:receipt_detail' editing.id %}{% else %}{% url 'ui:receipt_list' %}{% endif %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</a>
+    </div>
+  </form>
+
+  <template id="ar-credit-template">
+    <tr class="ar-credit-row">
+      <td class="px-2 py-2 text-slate-400 line-no"></td>
+      <td class="px-2 py-2 overflow-hidden">
+        <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+          <option value="">— select —</option>
+        </select>
+      </td>
+      <td class="px-2 py-2 overflow-hidden">
+        <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+          {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+        </select>
+      </td>
+      <td class="px-2 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+      <td class="px-2 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5"></textarea></td>
+      <td class="px-2 py-2 overflow-hidden"><input type="text" disabled value="—" class="block w-full rounded-md border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs text-right text-slate-300 tabular-nums"></td>
+      <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+      <td class="px-2 py-2"><button type="button" data-remove-credit class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
+    </tr>
+  </template>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var tbody = document.getElementById('ar-lines-body');
+    var tpl = document.getElementById('ar-credit-template');
+    var fmt = window.AmountFormat ? window.AmountFormat.fmt : function (n) { return (n || 0).toFixed(2); };
+    var parse = window.AmountFormat ? window.AmountFormat.parse : function (v) { return parseFloat(String(v || '').replace(/,/g, '')) || 0; };
+
+    function renumber() {
+      if (!tbody) return;
+      tbody.querySelectorAll('tr.ar-credit-row').forEach(function (r, i) {
+        var no = r.querySelector('.line-no');
+        if (no) no.textContent = String(i + 1);
+      });
+    }
+    function recalc() {
+      if (!tbody) return;
+      var total = 0;
+      tbody.querySelectorAll('tr.ar-credit-row').forEach(function (r) {
+        var c = r.querySelector('input[name="credit"]');
+        if (c) total += parse(c.value);
+      });
+      function set(id, v) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = fmt(v);
+      }
+      set('ar-cash-debit', total);
+      set('total-debit', total);
+      set('total-credit', total);
+      var hint = document.getElementById('balance-hint');
+      if (hint) {
+        if (total > 0) {
+          hint.textContent = 'Balanced — ₱' + fmt(total) + ' debited to the cash / bank account.';
+          hint.className = 'mt-2 text-xs text-emerald-700 font-medium';
+        } else {
+          hint.textContent = 'Debit (cash) equals the total of the credit lines.';
+          hint.className = 'mt-2 text-xs text-emerald-700';
+        }
+      }
+    }
+    var add = document.getElementById('add-credit');
+    if (add) add.addEventListener('click', function () {
+      if (!tbody || !tpl) return;
+      tbody.appendChild(tpl.content.cloneNode(true));
+      renumber();
+      recalc();
+    });
+    if (tbody) {
+      tbody.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-remove-credit]');
+        if (!btn) return;
+        var row = btn.closest('tr.ar-credit-row');
+        if (row) row.remove();
+        renumber();
+        recalc();
+      });
+      tbody.addEventListener('input', recalc);
+    }
+    renumber();
+    recalc();
+  })();
+</script>
 {% endblock %}

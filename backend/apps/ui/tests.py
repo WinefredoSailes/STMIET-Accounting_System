@@ -1074,52 +1074,178 @@ class TestEditPagesRender:
 
 
 class TestReceiptScreen:
-    def test_receipt_create_posts(self, client, company, segment, accounts, fiscal_period, user):
-        client.force_login(user)
+    def _new_customer(self, segment, code="C001"):
         from apps.ar.models import Customer
 
-        Customer.objects.create(
-            code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
+        return Customer.objects.create(
+            code=code, name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
         )
-        resp = client.post("/ar/receipts/new/", {
-            "customer": Customer.objects.get(code="C001").id,
+
+    def _post_grid(self, client, customer, accounts, segment, credit_amount="15000.00",
+                   credit_account="41010"):
+        return client.post("/ar/receipts/new/", {
+            "customer": customer.id,
             "transaction_date": "2026-01-15",
-            "amount": "15000.00",
-            "cash_account": accounts["10010"].id,
             "payment_method": "cash",
             "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "account": [accounts[credit_account].id],
+            "line_segment": [segment.id],
+            "credit": [credit_amount],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
         })
+
+    def test_receipt_create_draft(self, client, company, segment, accounts, fiscal_period, user):
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        resp = self._post_grid(client, customer, accounts, segment)
         assert resp.status_code == 302
         from apps.ar.models import AcknowledgmentReceipt
 
         receipt = AcknowledgmentReceipt.objects.latest("id")
         assert receipt.receipt_no.startswith("AR-2026-")
-        assert receipt.status == "posted"
-        assert receipt.journal_entry is not None
-        assert receipt.journal_entry.status == PostingStatus.POSTED
-        # redirect to receipt detail
+        assert receipt.status == "draft"
+        assert receipt.journal_entry is None
+        assert receipt.amount == Decimal("15000.00")
+        assert receipt.cash_account_id == accounts["10010"].id
+        assert receipt.lines.count() == 2  # Dr cash + Cr revenue
+        credit = receipt.lines.get(credit__gt=0)
+        assert credit.account_id == accounts["41010"].id
+        assert credit.credit == Decimal("15000.00")
+        assert receipt.lines.get(debit__gt=0).account_id == accounts["10010"].id
         assert resp.url == f"/ar/receipts/{receipt.pk}/"
 
-    def test_receipt_submit(self, client, company, segment, accounts, fiscal_period, user):
-        from apps.ar.models import Customer, AcknowledgmentReceipt
+    def test_receipt_full_lifecycle(self, client, company, segment, accounts, fiscal_period, role_users):
+        from apps.ar.models import AcknowledgmentReceipt
 
-        client.force_login(user)
-        Customer.objects.create(
-            code="C001", name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
-        )
-        resp = client.post("/ar/receipts/new/", {
-            "customer": Customer.objects.get(code="C001").id,
-            "transaction_date": "2026-01-15",
-            "amount": "15000.00",
-            "cash_account": accounts["10010"].id,
-            "payment_method": "cash",
-            "check_no": "",
-        })
-        assert resp.status_code == 302
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
         receipt = AcknowledgmentReceipt.objects.latest("id")
-        # record_collection auto-posts: receipt is already posted
+        assert receipt.status == "draft"
+
+        # preparer submits
+        resp = client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.status == "submitted"
+
+        # appears in the head's approvals inbox
+        client.force_login(head)
+        body = client.get("/approvals/").content.decode()
+        assert receipt.receipt_no in body
+
+        resp = client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
         assert receipt.status == "posted"
         assert receipt.journal_entry is not None
+        je = receipt.journal_entry
+        assert je.status == PostingStatus.POSTED
+        assert je.is_balanced
+        assert je.lines.get(debit__gt=0).account_id == accounts["10010"].id
+        assert je.lines.get(credit__gt=0).account_id == accounts["41010"].id
+
+    def test_receipt_reject_revise_resubmit(self, client, company, segment, accounts, fiscal_period, role_users):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+
+        client.force_login(head)
+        resp = client.post(f"/ar/receipts/{receipt.pk}/reject/", {"note": "wrong account"})
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.status == "draft"
+        assert receipt.rejection_note == "wrong account"
+
+        # the preparer sees the note + a revise action
+        client.force_login(staff)
+        body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        assert "wrong account" in body
+        assert "Revise" in body
+
+        # revise to a different credit account
+        resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
+            "cash_account": accounts["10010"].id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "account": [accounts["21000"].id],
+            "line_segment": [segment.id],
+            "credit": ["9000.00"],
+            "line_description": ["Advance"],
+            "line_cost_center": [""],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.lines.get(credit__gt=0).account_id == accounts["21000"].id
+        assert receipt.amount == Decimal("9000.00")
+
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+        assert receipt.journal_entry.lines.get(credit__gt=0).account_id == accounts["21000"].id
+
+    def test_receipt_submit_only_preparer(self, client, company, segment, accounts, fiscal_period, role_users):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        receipt.refresh_from_db()
+        assert receipt.status == "draft"  # head cannot submit on the preparer's behalf
+
+    def test_receipt_create_requires_credit_lines(self, client, company, segment, accounts, fiscal_period, user):
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        from apps.ar.models import AcknowledgmentReceipt
+
+        before = AcknowledgmentReceipt.objects.count()
+        resp = client.post("/ar/receipts/new/", {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "cash_account": accounts["10010"].id,
+            "payment_method": "cash",
+        })
+        assert resp.status_code == 200  # re-rendered with the error, no crash
+        assert AcknowledgmentReceipt.objects.count() == before
+
+    def test_receipt_detail_reversal_and_print(self, client, company, segment, accounts, fiscal_period, role_users):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+
+        client.force_login(staff)
+        body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        assert "Request reversal" in body
+
+        # print page renders the account distribution
+        print_body = client.get(f"/ar/receipts/{receipt.pk}/print/").content.decode()
+        assert accounts["41010"].code in print_body
 
 
 class TestRFPScreen:

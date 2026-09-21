@@ -25,12 +25,19 @@
           {% if r.check_no %}<span class="text-slate-400">· {{ r.check_no }}</span>{% endif %}
         </td>
         <td class="px-4 py-2">
-          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-            {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
-            {% elif r.status == 'submitted' %}bg-amber-100 text-amber-800
-            {% else %}bg-slate-100 text-slate-600{% endif %}">
-            {{ r.get_status_display }}
-          </span>
+          <div class="flex items-center gap-2 justify-start">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+              {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
+              {% elif r.status == 'submitted' %}bg-amber-100 text-amber-800
+              {% elif r.status == 'draft' and r.rejection_note %}bg-red-100 text-red-700
+              {% else %}bg-slate-100 text-slate-600{% endif %}">
+              {% if r.status == 'draft' and r.rejection_note %}Returned
+              {% else %}{{ r.get_status_display }}{% endif %}
+            </span>
+            {% if r.status == 'draft' and request.user.id == r.created_by_id %}
+            <a href="{% url 'ui:receipt_edit' r.pk %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">{% if r.rejection_note %}Revise{% else %}Edit{% endif %}</a>
+            {% endif %}
+          </div>
         </td>
         <td class="px-4 py-2 text-right font-medium">{{ r.amount|money }}</td>
       </tr>

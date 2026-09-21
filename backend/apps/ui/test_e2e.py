@@ -105,19 +105,35 @@ class TestEndToEndWorkflow:
         # 2. AR invoice (no UI screen yet — created via the model) ------------
         inv = create_invoice(segment, customer, date(2026, 1, 6), "120000.00")
 
-        # 3. Collection posted through the UI form -----------------------------
+        # 3. Collection through the UI form (draft -> submit -> head approve) ----
         resp = client.post(
             "/ar/receipts/new/",
             {"customer": customer.id, "cash_account": accounts["10010"].id,
-             "transaction_date": "2026-01-07", "amount": "50000.00",
-             "payment_method": "cash"},
+             "transaction_date": "2026-01-07", "payment_method": "cash",
+             "account": [accounts["21000"].id],
+             "line_segment": [segment.id],
+             "credit": ["50000.00"],
+             "line_description": ["Unearned revenue"],
+             "line_cost_center": [""]},
         )
         assert resp.status_code == 302
         receipt = AcknowledgmentReceipt.objects.get(customer=customer)
+        assert receipt.status == "draft"
+        assert receipt.journal_entry is None
+
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        receipt.refresh_from_db()
+        assert receipt.status == "submitted"
+
+        client.force_login(roles["head"])
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
         assert receipt.journal_entry.status == PostingStatus.POSTED
         assert (
             JournalEntry.objects.filter(status=PostingStatus.POSTED, source_doc_type="AR").count() == 1
         )
+        client.force_login(staff)
 
         # 4. RFP created + approved via the UI buttons -------------------------
         # 4a. Invalid submissions must NOT 500: blank line amount, blank date,

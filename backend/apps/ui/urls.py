@@ -84,6 +84,7 @@ urlpatterns = [
     path("ar/receipts/<int:pk>/export/<str:fmt>/", views.ar_receipt_export, name="ar_receipt_export"),
     path("ar/receipts/new/", views.receipt_create, name="receipt_create"),
     path("ar/receipts/<int:pk>/", views.receipt_detail, name="receipt_detail"),
+    path("ar/receipts/<int:pk>/edit/", views.receipt_edit, name="receipt_edit"),
     path("ar/receipts/<int:pk>/submit/", views.receipt_submit, name="receipt_submit"),
     path("ar/receipts/<int:pk>/approve/", views.receipt_approve, name="receipt_approve"),
     path("ar/receipts/<int:pk>/reject/", views.receipt_reject, name="receipt_reject"),
