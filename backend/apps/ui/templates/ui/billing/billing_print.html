@@ -1,0 +1,117 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}Billing {{ billing.billing_no }} — Print{% endblock %}
+{% block content %}
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .billing-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .billing-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .billing-paper td, .billing-paper th { padding: 1px 4px; }
+    .billing-paper thead { display: table-header-group; }
+    .billing-paper tbody tr { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar { display:flex; justify-content:center; gap:8px; padding:12px 16px; background:#f1f5f9; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:10; }
+  .print-toolbar button { padding:6px 14px; border:1px solid #cbd5e1; border-radius:4px; font-size:12px; cursor:pointer; background:#fff; }
+  .print-toolbar button:last-child { background:#16a34a; color:#fff; border-color:#16a34a; }
+  .billing-paper { background:#fff; margin:0 auto; padding:0; max-width:190mm; }
+  .billing-paper table { width:100%; table-layout:fixed; border-collapse:collapse; }
+  .billing-paper td, .billing-paper th { border:1px solid #000; box-sizing:border-box; padding:1px 4px; }
+  .billing-paper * { -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
+</style>
+
+<div class="no-print print-toolbar">
+  <button onclick="window.print()">Export PDF</button>
+</div>
+
+<div class="billing-paper">
+  <table>
+    <colgroup>
+      <col><col><col><col><col><col><col><col>
+    </colgroup>
+    <tbody>
+      <tr>
+        <td colspan="8" style="text-align:center; background:#fce4d6">
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">{{ billing.company.name }}</div>
+          <div style="font-size:15px; font-weight:900; letter-spacing:.06em">BILLING TRANSACTION</div>
+          <div style="font-size:10px">{{ billing.get_billing_type_display }}</div>
+        </td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">BILLING NO.:</td>
+        <td colspan="2" style="font-weight:700">{{ billing.billing_no }}</td>
+        <td colspan="2" style="font-weight:600">DATE:</td>
+        <td colspan="2">{{ billing.billing_date|date:"m/d/Y" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">PARTY:</td>
+        <td colspan="2">{{ billing.party_name }}</td>
+        <td colspan="2" style="font-weight:600">SEGMENT:</td>
+        <td colspan="2">{{ billing.segment.code }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">RFP BASIS:</td>
+        <td colspan="2">{{ billing.rfp.ap_number|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">REFERENCE:</td>
+        <td colspan="2">{{ billing.reference|default:"—" }}</td>
+      </tr>
+      {% if billing.particulars %}
+      <tr style="font-size:10px">
+        <td colspan="2" style="font-weight:600">PARTICULARS:</td>
+        <td colspan="6">{{ billing.particulars }}</td>
+      </tr>
+      {% endif %}
+
+      <tr style="font-size:10px; text-transform:uppercase; background:#fce4d6">
+        <th style="font-weight:700">#</th>
+        <th style="font-weight:700">COA</th>
+        <th style="font-weight:700">Account Name</th>
+        <th style="font-weight:700">Segment</th>
+        <th style="font-weight:700">Cost Center</th>
+        <th style="font-weight:700">Description</th>
+        <th style="font-weight:700; text-align:right">Debit</th>
+        <th style="font-weight:700; text-align:right">Credit</th>
+      </tr>
+      {% for line in billing.lines.all %}
+      <tr style="font-size:10px">
+        <td style="text-align:center">{{ line.line_no }}</td>
+        <td style="font-family:monospace; font-size:9px">{{ line.account.code }}</td>
+        <td style="white-space:normal">{{ line.account.name }}</td>
+        <td>{{ line.segment.code }}</td>
+        <td>{{ line.cost_center|default:"—" }}</td>
+        <td style="white-space:normal">{{ line.description|default:"—" }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ line.debit|money }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ line.credit|money }}</td>
+      </tr>
+      {% endfor %}
+      <tr style="font-size:10px; font-weight:700; background:#fce4d6">
+        <td colspan="6" style="text-align:right">TOTALS</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.debit_total|money }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.credit_total|money }}</td>
+      </tr>
+
+      <tr style="font-size:10px; font-weight:700; text-transform:uppercase">
+        <td colspan="4">Prepared By:</td>
+        <td colspan="4">Approved By:</td>
+      </tr>
+      <tr style="height:24px"><td colspan="4"></td><td colspan="4"></td></tr>
+      <tr style="font-size:10px; font-weight:600">
+        <td colspan="4" style="text-align:center">{{ prepared_by|default:"—" }}</td>
+        <td colspan="4" style="text-align:center">{{ approved_by|default:"—" }}</td>
+      </tr>
+      <tr style="font-size:8px; text-transform:uppercase; color:#64748b">
+        <td colspan="4" style="text-align:center">Signature over Printed Name</td>
+        <td colspan="4" style="text-align:center">Signature over Printed Name</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 350); });
+</script>
+{% endblock %}

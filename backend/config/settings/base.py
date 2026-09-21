@@ -58,6 +58,7 @@ DOMAIN_APPS = [
     "apps.posting",       # journal engine, GL, posting rules (Phase 1)
     "apps.ar",            # receivables (Phase 2)
     "apps.ap",            # payables (Phase 3)
+    "apps.billing",       # intercompany STPC / third-party billing
     "apps.cash",          # banks, petty cash, reconciliation (Phase 4)
     "apps.inventory",     # inventory integration (Phase 5)
     "apps.fleet",         # fleet/fuel bridge (Phase 5)

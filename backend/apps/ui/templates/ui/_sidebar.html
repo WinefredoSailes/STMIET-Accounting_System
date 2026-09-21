@@ -35,6 +35,9 @@
   <a href="{% url 'ui:ap_ledger' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">AP Subsidiary Ledger</a>
   <a href="{% url 'ui:advances' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Advances to Employees</a>
 
+  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Billing</div>
+  <a href="{% url 'ui:billing_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'billing_list' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Billing Transactions</a>
+
   <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Cash</div>
   <a href="{% url 'ui:bank_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Bank Accounts</a>
   <a href="{% url 'ui:cycle_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Weekly Cycles</a>

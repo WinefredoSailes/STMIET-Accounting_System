@@ -120,11 +120,12 @@ function renderLocalItems(panel) {
 // types, matching the current query against both code and name. Selected
 // values are merged into the native <select> so form submission keeps
 // working while the picker exposes a fresh server-side result set. ----
-function searchableItem(wrap, value, text, code, tin) {
+function searchableItem(wrap, value, text, code, tin, kind) {
   var item = document.createElement('div');
   item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
   item.dataset.value = value;
   item.dataset.tin = tin || '';
+  item.dataset.kind = kind || '';
   item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
   var codeEl = document.createElement('span');
@@ -163,8 +164,9 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
     opt.value = r.value;
     opt.textContent = r.text;
     opt.dataset.tin = r.tin || '';
+    opt.dataset.kind = r.kind || '';
     select.appendChild(opt);
-    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin));
+    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin, r.kind));
   });
   // Restore the pre-search selection so closing the panel without picking
   // (e.g. Escape) never wipes a filled row.
@@ -203,7 +205,10 @@ function applyAsyncFilter(wrap, panel, query) {
        if (wrap._abort !== ctrl) return; // stale response
 var normalized = (results || []).map(function (r) {
           var v = (valueField === 'id') ? r.id : r.code;
-          return { value: String(v), code: String(r.code), text: String(r.text || r.code), tin: String(r.tin || '') };
+          return {
+            value: String(v), code: String(r.code || ''), text: String(r.text || r.code),
+            tin: String(r.tin || ''), kind: String(r.kind || ''),
+          };
         });
        renderAsyncItems(panel, normalized, selected, selectedText);
      })

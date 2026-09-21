@@ -47,6 +47,10 @@ urlpatterns = [
         include("apps.ap.urls"),
     ),
     path(
+        f"{API_PREFIX}/billing/",
+        include("apps.billing.urls"),
+    ),
+    path(
         f"{API_PREFIX}/cash/",
         include("apps.cash.urls"),
     ),

@@ -40,6 +40,7 @@ class ARInvoiceSerializer(serializers.ModelSerializer):
         fields = (
             "id", "invoice_no", "customer", "transaction_date", "segment",
             "total", "is_paid_on_delivery", "status", "balance", "booked_on_payment",
+            "lines",
         )
         read_only_fields = ("status", "balance")
 

@@ -660,3 +660,47 @@ The settlement document itself does NOT create a JE — the underlying events (c
 5. **Approval**: JEs over {threshold} require supervisor approval before posting
 6. **No back-posting**: Cannot post to a closed period
 7. **Audit trail**: Once posted, JEs cannot be edited; corrections require reversal + new JE
+
+---
+
+## 18. BILLING TRANSACTIONS (Intercompany STPC / Third-Party)
+
+**Module**: `apps.billing` — Billing Documents (`BI-YYYY-####`).
+**Event**: `billing.document.posted`
+
+A billing carries a manual Account Distribution grid — exactly the fields
+**COA | Account Name | Segment | Cost Center | Description | Debit | Credit** —
+and the posted Journal Entry is built from those lines as entered. Dr total
+must equal Cr total (no force-balance, ADR-002).
+
+Two billing types:
+- **Intercompany Billing – STPC** (`billing_type = "stpc"`) — counterparty STPC.
+- **Third-Party Billing** (`billing_type = "third_party"`) — any customer/supplier.
+
+Lifecycle: `draft → submitted → approved (Accounting & Finance Head) → posted (JE)`.
+A rejected billing returns to draft with a rejection note.
+
+### 18.1 Posting
+
+There is no fixed posting template: the JE mirrors the distribution grid.
+
+| Line | Account | Segment | Debit | Credit |
+|------|---------|---------|-------|--------|
+| n | grid line account | [SEG] | {line.debit} | |
+| n | grid line account | [SEG] | | {line.credit} |
+
+JE header: `source_doc_type = "BILL"`, `source_doc_no = billing_no`,
+`entry_no = BI-{billing_no}`, `supplier_name = party`.
+
+### 18.2 RFP tracing (Note/Reference)
+
+When an RFP is the basis of the billing:
+- the JE header's **Note/Reference** (`ref_number`) captures the RFP number, and
+  `RFP <number>` is embedded in the JE description;
+- every JE line notes `RFP <number>`;
+- a **credit** line on an unbilled receivable account (**15550 / 15560**) records
+  `RFP <number> — billed <amount>` in its per-line Note/Reference, so the credit
+  traces back to the originating RFP and the amount being billed.
+
+These references surface in the General Journal register's **Note / Reference**
+column and in exports.

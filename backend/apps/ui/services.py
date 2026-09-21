@@ -499,6 +499,32 @@ def pending_documents():
                 "detail_url": ("ui:pcf_replenishment_detail", replen.id),
             }
         )
+    from apps.billing.models import BillingDocument, BillingStatus
+
+    for billing in (
+        BillingDocument.objects.filter(
+            status__in=(BillingStatus.DRAFT, BillingStatus.SUBMITTED, BillingStatus.APPROVED)
+        )
+        .select_related("rfp")
+        .order_by("billing_no")
+    ):
+        rows.append(
+            {
+                "kind": "BILLING",
+                "number": billing.billing_no,
+                "date": billing.billing_date,
+                "party": billing.party_name,
+                "description": billing.particulars or "",
+                "amount": billing.amount,
+                "status_label": (
+                    "Awaiting approval" if billing.status == BillingStatus.SUBMITTED
+                    else "Approved - for posting" if billing.status == BillingStatus.APPROVED
+                    else "Draft"
+                ),
+                "conso": "",
+                "detail_url": ("ui:billing_detail", billing.id),
+            }
+        )
     rows.sort(key=lambda r: (r["date"] or date.min, r["number"]))
     return rows
 
@@ -506,6 +532,28 @@ def pending_documents():
 def pending_count():
     """Number of in-flight (not-yet-posted) documents for the dashboard badge."""
     return len(pending_documents())
+
+
+def list_billings(*, limit=100):
+    """Billing transactions register, newest first."""
+    from apps.billing.models import BillingDocument
+
+    return (
+        BillingDocument.objects.select_related("segment", "rfp", "created_by", "approved_by")
+        .prefetch_related("lines")
+        .order_by("-billing_date", "-billing_no")[:limit]
+    )
+
+
+def billing_basis_rfps():
+    """Posted RFPs that can serve as the basis of a billing transaction.
+
+    An RFP is a valid billing basis once its own JE is in the GL (status
+    "posted"); the resulting billing traces back to it.
+    """
+    from apps.ap.models import RFPDocument
+
+    return RFPDocument.objects.filter(status="posted").select_related("payee", "segment")
 
 
 def conso_context(batch):
@@ -757,6 +805,11 @@ def _source_parties():
     for cv in CheckVoucher.objects.exclude(journal_entry__isnull=True).select_related("payee"):
         if cv.payee:
             parties[cv.cv_number] = cv.payee.name
+    from apps.billing.models import BillingDocument
+
+    for billing in BillingDocument.objects.exclude(journal_entry__isnull=True):
+        if billing.party_name:
+            parties[billing.billing_no] = billing.party_name
     return parties
 
 
@@ -811,6 +864,10 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
                     "coa": line.account.code,
                     "account_name": line.account.name,
                     "cost_center": line.cost_center or "",
+                    # Note/Reference: the per-line reference (e.g. the RFP number
+                    # + amount billed on a 15550/15560 credit) or the entry's
+                    # REF # when the line has none.
+                    "note": line.reference or entry.ref_number or "",
                     "debit": line.debit,
                     "credit": line.credit,
                     "entry_balanced": balanced,

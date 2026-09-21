@@ -175,6 +175,22 @@ the database, never from hardcoded strings.
     **Post batch** — every member RFP's JE posts atomically (Dr charge
     lines | Cr advances + AP balance).
 
+### 5b. Billing (Intercompany STPC / Third-Party)
+
+- **Billing Transactions** (`/billing/`) — BI-YYYY-#### billings of two types:
+  **Intercompany Billing – STPC** and **Third-Party Billing**.
+  - **+ New billing** (`/billing/new/`) — pick the type, a party (shared
+    supplier/customer picker; STPC default for intercompany), and optionally a
+    **posted RFP as the basis**. Picking an RFP pre-fills the party, segment and
+    the **Account Distribution** grid (COA | Account Name | Segment | Cost
+    Center | Description | Debit | Credit). Debits must equal credits.
+  - **Detail** (`/billing/<id>/`) — document view + lifecycle buttons:
+    **Submit → Approve (Accounting & Finance Head) → Post to General Journal**,
+    with reject/return-to-draft. Posting builds the JE from the grid; when based
+    on an RFP, the RFP number lands in the JE Note/Reference and credit lines on
+    **15550 / 15560** record `RFP <no> — billed <amount>` (visible in the
+    General Journal's **Note / Reference** column).
+
 ### 6. Cash
 
 - **Bank Accounts** (`/cash/banks/`) — bank master with GL mapping, segment,

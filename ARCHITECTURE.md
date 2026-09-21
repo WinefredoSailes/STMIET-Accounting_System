@@ -177,6 +177,19 @@ company/
 └── ApprovalMatrix       — Approval routing by amount & type
 ```
 
+### 4.10 Billing (Intercompany STPC / Third-Party)
+```
+apps/billing/
+├── BillingDocument     — BI-YYYY-####; type stpc | third_party; party; RFP basis;
+│                         status draft -> submitted -> approved -> posted
+└── BillingLine         — Account Distribution grid (COA, Account Name, Segment,
+                          Cost Center, Description, Debit, Credit)
+```
+The posted Journal Entry is built from the distribution lines. When an RFP is
+the basis, the JE Note/Reference captures the RFP number, and credit lines on
+the unbilled receivable accounts 15550 / 15560 record `RFP <no> — billed
+<amount>` (POSTING_RULES §18).
+
 ## 5. Integration Design
 
 ### 5.1 Event-Driven Posting

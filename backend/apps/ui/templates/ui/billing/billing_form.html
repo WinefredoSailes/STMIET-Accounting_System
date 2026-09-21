@@ -1,0 +1,271 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}New Billing{% endblock %}
+{% block content %}
+<div class="p-6">
+  <a href="{% url 'ui:billing_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Billing transactions</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-slate-900">New Billing Transaction</h1>
+    <span class="text-xs text-slate-400">BI-YYYY-#### auto-assigned · Debits must equal credits</span>
+  </div>
+
+  <form method="post" class="mt-6 space-y-6">
+    {% csrf_token %}
+
+    <!-- ===================== HEADER ===================== -->
+    <div class="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_billing_type">Billing Type</label>
+            <select name="billing_type" id="id_billing_type" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+              <option value="third_party">Third-Party Billing</option>
+              <option value="stpc">Intercompany Billing – STPC</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_party_picker">Party</label>
+            <div class="flex flex-col gap-1 min-w-0">
+              <select id="id_party_picker" data-searchable data-search-compact
+                      data-search-placeholder="Pick from recorded suppliers / customers…"
+                      data-search-url="{% url 'ui:party_options' %}"
+                      data-search-value="id"
+                      class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+                <option value="">— select supplier / customer —</option>
+              </select>
+              <input type="hidden" name="party_name" id="id_party_name" value="">
+              <input type="hidden" name="party_kind" id="id_party_kind" value="">
+              <input type="hidden" name="party_id" id="id_party_id" value="">
+            </div>
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_rfp">RFP Basis</label>
+            <select name="rfp" id="id_rfp" data-searchable data-search-value="id"
+                    data-search-placeholder="Search posted RFP number or payee…"
+                    data-search-url="{% url 'ui:billing_rfp_options' %}"
+                    class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <option value="" selected>— no RFP —</option>
+            </select>
+            <p class="col-start-2 text-xs text-slate-500">Optional. Selecting a posted RFP pre-fills the party and account distribution, and its number is captured in the posted entry's Note/Reference.</p>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_billing_date">Date</label>
+            <input type="date" name="billing_date" id="id_billing_date" required
+                   value="{{ today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_reference">Reference</label>
+            <input type="text" name="reference" id="id_reference" maxlength="128"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_particulars">Particulars</label>
+            <input type="text" name="particulars" id="id_particulars" maxlength="500"
+                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+          </div>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" name="segment" id="id_segment" value="">
+
+    <!-- ===================== ACCOUNT DISTRIBUTION ===================== -->
+    <div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-700 mb-3">Account Distribution</div>
+      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <table class="line-table w-full text-sm" style="min-width: 1210px;">
+          <colgroup>
+            <col style="width:44px"><!-- # -->
+            <col style="width:80px"><!-- COA -->
+            <col style="width:230px"><!-- Account Name -->
+            <col style="width:90px"><!-- Segment -->
+            <col style="width:150px"><!-- Cost Center -->
+            <col style="width:300px"><!-- Description -->
+            <col style="width:160px"><!-- Debit -->
+            <col style="width:160px"><!-- Credit -->
+            <col style="width:36px"><!-- remove -->
+          </colgroup>
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-3">#</th>
+              <th class="px-3 py-3">COA</th>
+              <th class="px-3 py-3">Account Name</th>
+              <th class="px-3 py-3">Segment</th>
+              <th class="px-3 py-3">Cost Center</th>
+              <th class="px-3 py-3">Description</th>
+              <th class="px-3 py-3 text-right">Debit</th>
+              <th class="px-3 py-3 text-right">Credit</th>
+              <th class="px-3 py-3"></th>
+            </tr>
+          </thead>
+          <tbody id="lines-body" data-line-grid="je"
+                 data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
+                 class="divide-y divide-slate-100">
+            <tr>
+              <td class="px-3 py-2 text-slate-400 line-no">1</td>
+              <td class="px-3 py-2"><span class="coa-display font-mono text-xs whitespace-nowrap"></span></td>
+              <td class="px-3 py-2">
+                <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  <option value="">— select —</option>
+                </select>
+              </td>
+              <td class="px-3 py-2">
+                <select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-3 py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS, GEN-FUEL" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2"><textarea name="line_description" data-autogrow rows="1" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></textarea></td>
+              <td class="px-3 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+              <td class="px-3 py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
+            </tr>
+          </tbody>
+          <tfoot class="bg-slate-50">
+            <tr class="border-t-2 border-slate-300">
+              <td colspan="6" class="px-3 py-3 text-right text-sm font-bold uppercase tracking-wider text-slate-700">Totals</td>
+              <td id="total-debit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td id="total-credit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="9" class="px-3 py-2">
+                <button type="button" id="add-line" data-add-row class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">+ Add line</button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p id="balance-hint" class="mt-2 text-xs text-slate-500">Enter each line's amount in either the Debit or the Credit column — not both. For Intercompany billing to STPC, credit lines on 15550 / 15560 will carry the RFP number and amount billed in the posted entry's Note/Reference field.</p>
+      <datalist id="cost_center_options">
+        {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+      </datalist>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Create billing (draft)</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/line-grid.js' %}"></script>
+<script>
+  (function () {
+    var hidden = document.getElementById("id_segment");
+    function syncSegment() {
+      var first = document.querySelector('#lines-body select[name="line_segment"]');
+      if (hidden && first && first.value) hidden.value = first.value;
+    }
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('select[name="line_segment"]')) syncSegment();
+    });
+    syncSegment();
+
+    // Party picker -> hidden party_name (store the plain recorded name, like
+    // the Journal Voucher's party field).
+    var partySel = document.getElementById("id_party_picker");
+    var partyName = document.getElementById("id_party_name");
+    var partyKind = document.getElementById("id_party_kind");
+    var partyId = document.getElementById("id_party_id");
+    function syncParty() {
+      if (!partySel || !partyName) return;
+      var opt = partySel.options[partySel.selectedIndex];
+      if (!opt || !opt.value) {
+        partyName.value = '';
+        if (partyKind) partyKind.value = '';
+        if (partyId) partyId.value = '';
+        return;
+      }
+      var raw = opt.textContent;
+      var m = raw.match(/^[^\s—]+\s*[—-]?\s*(.+)$/);
+      partyName.value = m && m[1] ? m[1].trim() : raw.trim();
+      if (partyKind) partyKind.value = opt.dataset.kind || '';
+      if (partyId) partyId.value = opt.value;
+    }
+    if (partySel) { partySel.addEventListener("change", syncParty); syncParty(); }
+
+    // Split the account picker display into COA code + Account Name.
+    function splitAccountText(text) {
+      var parts = String(text || '').trim().split(/\s+/);
+      var code = parts.length ? parts[0] : '';
+      var rest = String(text || '').replace(/^\s*\S+\s*/, '').replace(/^[—-]\s*/, '').trim();
+      return { code: code, name: rest };
+    }
+    function syncAccountDisplay(sel) {
+      var row = sel.closest('tr');
+      var coaSpan = row ? row.querySelector('.coa-display') : null;
+      var opt = sel.options[sel.selectedIndex];
+      if (coaSpan) coaSpan.textContent = (opt && opt.value) ? splitAccountText(opt.textContent).code : '';
+    }
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('#lines-body select[name="line_account"]')) {
+        syncAccountDisplay(e.target);
+      }
+    });
+    document.getElementById("add-line").addEventListener("click", function () {
+      setTimeout(function () {
+        var rows = document.querySelectorAll('#lines-body tr');
+        var last = rows[rows.length - 1];
+        if (last) { var s = last.querySelector('select[name="line_account"]'); if (s) syncAccountDisplay(s); var seg = last.querySelector('select[name="line_segment"]'); if (seg && hidden && hidden.value) seg.value = hidden.value; }
+      }, 0);
+    });
+
+    // RFP basis -> pre-fill party, segment, reference and the distribution grid.
+    var rfpSel = document.getElementById("id_rfp");
+    var segSel = hidden;
+    var refInput = document.getElementById("id_reference");
+    var tbody = document.getElementById("lines-body");
+    var accountUrl = "{% url 'ui:account_options' %}";
+    function esc(v) { return String(v == null ? '' : v); }
+    function resetCloneSearchable(sel) {
+      sel.removeAttribute("data-search-enhanced");
+      var wrap = sel.closest(".searchable-wrap");
+      if (wrap) wrap.replaceWith(sel);
+      sel.classList.add("hidden");
+    }
+    if (rfpSel) {
+      rfpSel.addEventListener("change", function () {
+        var id = rfpSel.value;
+        if (!id) return;
+        fetch("{% url 'ui:billing_rfp_prefill' 0 %}".replace('/0/prefill/', '/') + id + '/prefill/', {
+          headers: { "X-Requested-With": "XMLHttpRequest" }
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+          if (!data) return;
+          if (partyName && data.party_name && !partyName.value) partyName.value = data.party_name;
+          if (partyKind && !partyKind.value && data.party_kind) partyKind.value = data.party_kind;
+          if (partyId && !partyId.value && data.party_id) partyId.value = data.party_id;
+          if (segSel && data.segment_id) segSel.value = String(data.segment_id);
+          if (refInput && !refInput.value) refInput.value = data.reference || data.rfp_no || "";
+          if (!data.lines || !data.lines.length) return;
+          tbody.innerHTML = "";
+          data.lines.forEach(function (ln, i) {
+            var tr = document.createElement("tr");
+            tr.innerHTML =
+              '<td class="px-3 py-2 text-slate-400 line-no">' + (i + 1) + '</td>' +
+              '<td class="px-3 py-2"><span class="coa-display font-mono text-xs whitespace-nowrap">' + esc(ln.account_code) + '</span></td>' +
+              '<td class="px-3 py-2"><select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="' + accountUrl + '?scope=all&selected=' + encodeURIComponent(ln.account_code) + '" data-search-value="id" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"><option value="' + ln.account_id + '" selected>' + esc(ln.account_code) + ' — ' + esc(ln.account_name) + '</option></select></td>' +
+              '<td class="px-3 py-2"><select name="line_segment" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">{% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}</select></td>' +
+              '<td class="px-3 py-2"><input type="text" name="line_cost_center" maxlength="64" value="' + esc(ln.cost_center) + '" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>' +
+              '<td class="px-3 py-2"><textarea name="line_description" rows="1" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">' + esc(ln.description) + '</textarea></td>' +
+              '<td class="px-3 py-2"><input type="text" inputmode="decimal" data-amount name="line_debit" value="' + (ln.side === 'dr' ? esc(ln.amount) : '') + '" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>' +
+              '<td class="px-3 py-2"><input type="text" inputmode="decimal" data-amount name="line_credit" value="' + (ln.side === 'cr' ? esc(ln.amount) : '') + '" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>' +
+              '<td class="px-3 py-2"><button type="button" data-remove-row class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>';
+            var segSelect = tr.querySelector('select[name="line_segment"]');
+            if (segSelect && ln.segment_id) segSelect.value = String(ln.segment_id);
+            tbody.appendChild(tr);
+          });
+          if (window.enhanceSearchable) window.enhanceSearchable(document);
+          if (window.enhanceAutogrow) window.enhanceAutogrow(document);
+          tbody.dispatchEvent(new Event("change", { bubbles: true }));
+          syncSegment();
+        }).catch(function () {});
+      });
+    }
+  })();
+</script>
+{% endblock %}

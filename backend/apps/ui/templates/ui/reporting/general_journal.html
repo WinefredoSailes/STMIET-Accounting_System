@@ -37,6 +37,7 @@
           <th class="px-3 py-3">Supplier / Customer</th>
           <th class="px-3 py-3">PO #</th>
           <th class="px-3 py-3">Description</th>
+          <th class="px-3 py-3">Note / Reference</th>
           <th class="px-3 py-3">CoA</th>
           <th class="px-3 py-3">Account Name</th>
           <th class="px-3 py-3">Cost Center</th>
@@ -55,6 +56,7 @@
           <td class="px-3 py-1.5">{{ row.party }}</td>
           <td class="px-3 py-1.5">{{ row.po }}</td>
           <td class="px-3 py-1.5">{{ row.description|truncatechars:60 }}</td>
+          <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.note|default:"—"|truncatechars:50 }}</td>
           <td class="px-3 py-1.5 tabular-nums">{{ row.coa }}</td>
           <td class="px-3 py-1.5">{{ row.account_name|truncatechars:40 }}</td>
           <td class="px-3 py-1.5">{{ row.cost_center|default:"—" }}</td>
@@ -74,12 +76,12 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="13" class="px-4 py-8 text-center text-slate-400">No posted journal entries match the filters.</td></tr>
+        <tr><td colspan="14" class="px-4 py-8 text-center text-slate-400">No posted journal entries match the filters.</td></tr>
         {% endfor %}
       </tbody>
       <tfoot class="bg-slate-50 font-semibold">
         <tr>
-          <td colspan="9" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals</td>
+          <td colspan="10" class="px-3 py-2 text-right uppercase tracking-wider text-xs text-slate-500">Totals</td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_debit|money }}</td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ total_credit|money }}</td>
           <td class="px-3 py-2 text-center">

@@ -29,6 +29,17 @@
 | 17 | `sales.job_order.rendered` | Service completed | OPS dept | Job order ref, amount | Dr Unearned | Cr Job Orders | — |
 | 18 | `sales.job_order.direct` | Payment after service | Mich | Customer, amount | Dr Cash | Cr Job Orders | — |
 
+### 1a. BILLING — INTERCOMPANY STPC / THIRD-PARTY
+
+| # | Event | Trigger | Source | Data Required | Posting Rule | Approval |
+|---|-------|---------|--------|--------------|-------------|----------|
+| B1 | `billing.document.created` | Billing prepared (STPC / third-party) | Accounting staff | Type, party, RFP basis, distribution grid (COA, Account Name, Segment, Cost Center, Description, Dr/Cr) | — | — |
+| B2 | `billing.document.submitted` | Billing submitted for approval | Accounting staff | Billing ref | — | — |
+| B3 | `billing.document.approved` | Accounting & Finance Head approves | Alywin | Billing ref | — | Alywin |
+| B4 | `billing.document.posted` | Billing journalized | Alywin | Distribution lines | Dr grid lines | Cr grid lines | Alywin |
+
+> When based on an RFP, the JE Note/Reference captures the RFP number; credit lines on 15550 / 15560 record `RFP <no> — billed <amount>` (POSTING_RULES §18).
+
 ---
 
 ## 2. PROCUREMENT & PAYABLES (22 events)

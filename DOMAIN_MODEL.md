@@ -314,6 +314,17 @@ class CashReceiptJournal(models.Model):
 
 ## 3. Procure-to-Pay (AP)
 
+> **Billing (Intercompany STPC / Third-Party)** lives in `apps.billing`:
+> `BillingDocument` (`billing_no BI-YYYY-####`, `billing_type` stpc/third_party,
+> `billing_date`, company, segment, `party_name` + optional customer/supplier,
+> `rfp` basis, reference, particulars, `amount`, status draft/submitted/
+> approved/posted, `journal_entry`, approval audit fields) and `BillingLine`
+> (`side` dr/cr, `segment`, `account`, `cost_center`, `description`, debit,
+> credit). The posted JE is built from the distribution lines; the RFP number
+> is captured in the JE `ref_number`/description and, for 15550/15560 credit
+> lines, `RFP <no> — billed <amount>` in the line Note/Reference
+> (POSTING_RULES §18).
+
 ### 3.1 Supplier
 ```python
 class Supplier(models.Model):

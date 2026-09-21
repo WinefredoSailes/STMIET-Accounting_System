@@ -133,6 +133,7 @@ def _je_source_doc(entry):
     checks = (
         ("cv", "Check Voucher", "ui:cv_detail"),
         ("rfps", "RFP", "ui:rfp_detail"),
+        ("billing_documents", "Billing", "ui:billing_detail"),
         ("transfers", "Inter-Account Transfer", "ui:transfer_detail"),
         ("pcf_replenishments", "PCF Voucher", "ui:pcf_replenishment_detail"),
         ("ar_receipts", "Acknowledgment Receipt", "ui:receipt_detail"),
@@ -4137,7 +4138,7 @@ def general_journal_export(request):
     data = gj(start=start, end=end, segment=segment, limit=None)
     header = [
         "Date", "Cycle", "Ref #", "Supplier / Customer", "PO #", "Description",
-        "CoA", "Account Name", "Cost Center", "Debit", "Credit",
+        "Note / Reference", "CoA", "Account Name", "Cost Center", "Debit", "Credit",
     ]
     rows = [
         [
@@ -4147,6 +4148,7 @@ def general_journal_export(request):
             r["party"],
             r["po"],
             r["description"],
+            r["note"],
             r["coa"],
             r["account_name"],
             r["cost_center"],
@@ -4162,9 +4164,9 @@ def general_journal_export(request):
         fmt,
         "GENERAL-JOURNAL",
         sheet_title="GJ",
-        money_cols=(9, 10),
+        money_cols=(10, 11),
         totals_row=[
-            "TOTALS", "", "", "", "", "", "", "", "",
+            "TOTALS", "", "", "", "", "", "", "", "", "",
             data["total_debit"], data["total_credit"],
         ],
         page="landscape",
@@ -6506,4 +6508,383 @@ def month_end_close_export(request):
         fmt,
         "MONTH-END-CLOSE",
         sheet_title="MONTH-END CLOSE",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Billing (Intercompany STPC / Third-Party)
+# ---------------------------------------------------------------------------
+
+
+def _billing_lines_from_form(request):
+    """Parse the billing Account Distribution grid (parallel arrays).
+
+    Each row is one line carrying exactly one side; the amount goes in either
+    Debit or Credit — never both (mirrors the RFP grid parser).
+    """
+    seg_ids = request.POST.getlist("line_segment")
+    account_ids = request.POST.getlist("line_account")
+    debits = request.POST.getlist("line_debit")
+    credits = request.POST.getlist("line_credit")
+    descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
+    lines = []
+    for i, account_id in enumerate(account_ids):
+        if not account_id:
+            continue
+        debit = money((debits[i] if i < len(debits) else "") or 0)
+        credit = money((credits[i] if i < len(credits) else "") or 0)
+        if not debit and not credit:
+            continue
+        if debit and credit:
+            raise ValidationError(
+                f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+            )
+        account = Account.objects.filter(pk=account_id).first()
+        if account is None:
+            raise ValidationError(f"Line {i + 1}: unknown account.")
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        line_segment = Segment.objects.filter(pk=seg_id).first() if seg_id else None
+        if line_segment is None:
+            raise ValidationError(f"Line {i + 1}: select a segment.")
+        lines.append(
+            {
+                "side": "dr" if debit else "cr",
+                "segment": line_segment,
+                "account": account,
+                "amount": debit or credit,
+                "description": (descs[i] if i < len(descs) else "")[:500],
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
+            }
+        )
+    return lines
+
+
+@login_required
+def billing_list(request):
+    """Billing transactions register (Intercompany STPC / Third-Party)."""
+    from .services import list_billings
+
+    rows = list_billings()
+    return render(
+        request,
+        "ui/billing/billing_list.html",
+        {"page_obj": _page(request, rows, per_page=50)},
+    )
+
+
+@login_required
+def billing_create(request):
+    from apps.billing.services import BillingService
+
+    company = Company.objects.first()
+    if request.method == "POST":
+        try:
+            billing_type = (request.POST.get("billing_type") or "third_party").strip()
+            billing_date = _parse_date(request.POST.get("billing_date", ""))
+            if billing_date is None:
+                raise ValidationError("Enter the billing date.")
+            lines = _billing_lines_from_form(request)
+            if not lines:
+                raise ValueError("Add at least one line.")
+            segment = Segment.objects.filter(pk=request.POST.get("segment")).first()
+            if lines[0].get("segment") is not None:
+                segment = lines[0]["segment"]
+            if segment is None:
+                raise ValidationError("Select a segment.")
+
+            from apps.ap.models import RFPDocument
+
+            rfp = None
+            rfp_pk = (request.POST.get("rfp") or "").strip()
+            if rfp_pk:
+                rfp = get_object_or_404(RFPDocument, pk=rfp_pk)
+
+            party_name = (request.POST.get("party_name") or "").strip()
+            if billing_type == "stpc" and not party_name:
+                party_name = "STPC"
+
+            # Resolve the picked party into its master link (customer/supplier).
+            # The shared picker's `kind` distinguishes the two masters.
+            from apps.ap.models import Supplier
+            from apps.ar.models import Customer
+
+            customer = supplier = None
+            party_kind = (request.POST.get("party_kind") or "").strip()
+            party_id = (request.POST.get("party_id") or "").strip()
+            if party_id:
+                if party_kind == "supplier":
+                    supplier = Supplier.objects.filter(pk=party_id).first()
+                elif party_kind == "customer":
+                    customer = Customer.objects.filter(pk=party_id).first()
+            if not party_name and customer:
+                party_name = customer.name
+            if not party_name and supplier:
+                party_name = supplier.name
+
+            billing_no = DocumentSequence.next_number(
+                company=segment.company,
+                form_code="BILL",
+                year=billing_date.year,
+                pattern="BI-{YYYY}-{SEQ:04d}",
+            )
+            billing = BillingService.create_billing(
+                billing_no=billing_no,
+                billing_date=billing_date,
+                billing_type=billing_type,
+                company=segment.company,
+                segment=segment,
+                party_name=party_name,
+                customer=customer,
+                supplier=supplier,
+                lines=lines,
+                rfp=rfp,
+                reference=request.POST.get("reference", ""),
+                particulars=request.POST.get("particulars", ""),
+                user=request.user,
+            )
+            messages.success(request, f"Billing {billing.billing_no} created (draft).")
+            return redirect("ui:billing_detail", pk=billing.id)
+        except (AccountingError, ValueError, KeyError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/billing/billing_form.html",
+        {
+            "company": company,
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+            "today": date.today(),
+        },
+    )
+
+
+@login_required
+def billing_detail(request, pk):
+    from apps.billing.models import BillingDocument
+    from apps.core.approvals import approval_role_of, role_assignee, ROLE_LABELS, BILLING_NEXT_ROLE
+
+    billing = get_object_or_404(
+        BillingDocument.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
+    )
+    awaiting = None
+    role = BILLING_NEXT_ROLE.get(billing.status)
+    if role:
+        awaiting = {
+            "role": role,
+            "label": ROLE_LABELS[role],
+            "assignee": role_assignee(role),
+            "you_hold": approval_role_of(request.user) == role,
+        }
+    return render(
+        request,
+        "ui/billing/billing_detail.html",
+        {
+            "billing": billing,
+            "awaiting": awaiting,
+            "audit_trail": _audit_trail("bill", billing.id),
+        },
+    )
+
+
+@login_required
+@require_POST
+def billing_submit(request, pk):
+    from apps.billing.models import BillingDocument
+    from apps.billing.services import BillingService
+
+    billing = get_object_or_404(BillingDocument, pk=pk)
+    if billing.created_by_id not in (None, request.user.id):
+        messages.error(request, "Only the preparer may submit this billing.")
+        return redirect("ui:billing_detail", pk=pk)
+    try:
+        BillingService.submit(billing, user=request.user)
+        messages.success(request, f"Billing {billing.billing_no} submitted for approval.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:billing_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def billing_approve(request, pk):
+    from apps.billing.models import BillingDocument
+    from apps.billing.services import BillingService
+
+    billing = get_object_or_404(BillingDocument, pk=pk)
+    try:
+        BillingService.approve(billing, user=request.user)
+        messages.success(request, f"Billing {billing.billing_no} approved — ready to post.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:billing_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def billing_reject(request, pk):
+    from apps.billing.models import BillingDocument
+    from apps.billing.services import BillingService
+
+    billing = get_object_or_404(BillingDocument, pk=pk)
+    try:
+        BillingService.reject(
+            billing, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, f"Billing {billing.billing_no} returned for revision.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:billing_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def billing_post(request, pk):
+    from apps.billing.models import BillingDocument
+    from apps.billing.services import BillingService
+
+    billing = get_object_or_404(BillingDocument, pk=pk)
+    try:
+        entry = BillingService.post(billing, user=request.user)
+        messages.success(request, f"Billing {billing.billing_no} posted as {entry.entry_no}.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:billing_detail", pk=pk)
+
+
+@login_required
+def billing_print(request, pk):
+    from apps.billing.models import BillingDocument
+
+    billing = get_object_or_404(
+        BillingDocument.objects.select_related(
+            "segment", "rfp", "created_by", "approved_by"
+        ).prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    from apps.core.approvals import signatory_name
+
+    return render(
+        request,
+        "ui/billing/billing_print.html",
+        {
+            "billing": billing,
+            "prepared_by": signatory_name(billing.created_by),
+            "approved_by": signatory_name(billing.approved_by),
+        },
+    )
+
+
+@login_required
+def billing_export(request, pk, fmt):
+    from apps.billing.models import BillingDocument
+    from apps.core.exports import Column, TableSpec, table_export
+
+    billing = get_object_or_404(
+        BillingDocument.objects.select_related("segment", "rfp").prefetch_related(
+            "lines__account", "lines__segment"
+        ),
+        pk=pk,
+    )
+    lines = list(billing.lines.order_by("line_no"))
+    spec = TableSpec(
+        title=f"BILLING {billing.billing_no} — {billing.get_billing_type_display()}",
+        columns=[
+            Column("#"), Column("COA"), Column("Account Name", width_cm=5),
+            Column("Segment"), Column("Cost Center", width_cm=3.5),
+            Column("Description", width_cm=6), Column("Debit", money=True),
+            Column("Credit", money=True),
+        ],
+        preamble=[
+            ["Billing No.", billing.billing_no],
+            ["Type", billing.get_billing_type_display()],
+            ["Date", billing.billing_date.isoformat()],
+            ["Party", billing.party_name],
+            ["Segment", billing.segment.code],
+            ["RFP Basis", billing.rfp.ap_number if billing.rfp_id else "—"],
+            ["Reference", billing.reference or "—"],
+            ["Status", billing.get_status_display()],
+        ],
+        rows=[
+            [
+                line.line_no, line.account.code, line.account.name, line.segment.code,
+                line.cost_center or "", line.description or "", line.debit, line.credit,
+            ]
+            for line in lines
+        ],
+        totals_row=["", "", "", "", "", "TOTAL", billing.debit_total, billing.credit_total],
+        sheet_title=f"BILL-{billing.billing_no}",
+        page="landscape",
+    )
+    return table_export(spec, fmt, f"Billing_{billing.billing_no}.{fmt}")
+
+
+@login_required
+def billing_rfp_options(request):
+    """Type-ahead source for the billing form's RFP-basis picker (posted RFPs)."""
+    from .services import billing_basis_rfps
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    qs = billing_basis_rfps()
+    if q:
+        qs = qs.filter(
+            Q(ap_number__icontains=q)
+            | Q(payee__name__icontains=q)
+            | Q(payee__code__icontains=q)
+        )
+    rows = list(qs[:30])
+    if selected and not any(str(r.id) == selected or r.ap_number == selected for r in rows):
+        lookup = Q(ap_number=selected)
+        if selected.isdigit():
+            lookup |= Q(pk=selected)
+        keep = billing_basis_rfps().filter(lookup).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {
+                "id": r.id,
+                "code": r.ap_number,
+                "text": f"{r.ap_number} — {r.payee.name} — ₱{r.amount:,.2f}",
+            }
+            for r in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
+def billing_rfp_prefill(request, pk):
+    """JSON payload that pre-fills the billing grid from an RFP basis."""
+    from apps.ap.models import RFPDocument
+
+    rfp = get_object_or_404(
+        RFPDocument.objects.select_related("payee", "segment").prefetch_related(
+            "lines__account", "lines__segment"
+        ),
+        pk=pk,
+    )
+    return JsonResponse(
+        {
+            "rfp_no": rfp.ap_number,
+            "party_name": rfp.payee.name if rfp.payee_id else "",
+            "party_kind": "supplier" if rfp.payee_id else "",
+            "party_id": rfp.payee_id or "",
+            "segment_id": rfp.segment_id,
+            "reference": rfp.ap_number,
+            "lines": [
+                {
+                    "account_id": line.account_id,
+                    "account_code": line.account.code,
+                    "account_name": line.account.name,
+                    "segment_id": line.segment_id,
+                    "side": line.side,
+                    "amount": str(line.amount),
+                    "description": line.description or rfp.particulars,
+                    "cost_center": line.cost_center,
+                }
+                for line in rfp.lines.order_by("line_no")
+            ],
+        }
     )

@@ -146,6 +146,18 @@ urlpatterns = [
     path("ap/conso/export/", views.conso_list_export, name="conso_list_export"),
     path("ap/conso/<int:pk>/add-rfp/", views.conso_add_rfp, name="conso_add_rfp"),
     path("ap/conso/<int:pk>/post/", views.conso_post, name="conso_post"),
+    # Billing (Intercompany STPC / Third-Party)
+    path("billing/", views.billing_list, name="billing_list"),
+    path("billing/new/", views.billing_create, name="billing_create"),
+    path("billing/rfp-options/", views.billing_rfp_options, name="billing_rfp_options"),
+    path("billing/rfp/<int:pk>/prefill/", views.billing_rfp_prefill, name="billing_rfp_prefill"),
+    path("billing/<int:pk>/", views.billing_detail, name="billing_detail"),
+    path("billing/<int:pk>/print/", views.billing_print, name="billing_print"),
+    path("billing/<int:pk>/export/<str:fmt>/", views.billing_export, name="billing_export"),
+    path("billing/<int:pk>/submit/", views.billing_submit, name="billing_submit"),
+    path("billing/<int:pk>/approve/", views.billing_approve, name="billing_approve"),
+    path("billing/<int:pk>/reject/", views.billing_reject, name="billing_reject"),
+    path("billing/<int:pk>/post/", views.billing_post, name="billing_post"),
     # Cash
     path("cash/banks/", views.bank_list, name="bank_list"),
     path("cash/banks/export/", views.banks_export, name="banks_export"),

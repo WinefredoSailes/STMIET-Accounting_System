@@ -60,6 +60,12 @@ JE_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Billing transaction approval: staff prepares/submits → head approves (and
+# then posts the Journal Entry).
+BILLING_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 # Acknowledgment Receipt status -> next approval role (ADR-033).
 # Same pattern: head checks and approves at every step; no amount threshold.
 AR_NEXT_ROLE = {
@@ -457,51 +463,6 @@ def po_queue(user_roles):
     return out
 
 
-def po_queue(user_roles):
-    """Purchase Orders waiting on any of `user_roles` (same matrix as RFPs).
-
-    Prepared POs are excluded — the preparer submits them first, so the head's
-    in-box starts at "submitted". `fin_approved` POs are listed only while the
-    COO gate (ADR-0XX) is actually due; otherwise they are already approved
-    and RFP-bankable.
-    """
-    from apps.ap.models import PurchaseOrder
-
-    out = []
-    docs = PurchaseOrder.objects.filter(status__in=list(PO_NEXT_ROLE)).select_related(
-        "supplier", "segment", "created_by"
-    )
-    for po in docs:
-        if po.status == "prepared":
-            continue  # awaits the preparer's submit, not an approval
-        role = PO_NEXT_ROLE.get(po.status)
-        if po.status == "fin_approved":
-            from apps.ap.services import po_coo_required
-
-            if po_coo_required(po):
-                role = "coo"
-            else:
-                continue  # marked 'approved', ready for RFP funding
-        if role in user_roles:
-            out.append(
-                {
-                    "kind": "po",
-                    "role": role,
-                    "doc": po,
-                    "number": po.po_number,
-                    "title": po.particulars or (po.supplier.name if po.supplier else ""),
-                    "date": po.po_date,
-                    "amount": po.amount,
-                    "detail": ("ui:po_detail", po.id),
-                    "action": ("ui:po_approve", po.id),
-                    "action_label": (
-                        "Check" if po.status in ("prepared", "submitted") else "Approve"
-                    ),
-                }
-            )
-    return out
-
-
 def ar_receipt_queue(user_roles):
     """Acknowledgment Receipts waiting on any of `user_roles`.
 
@@ -534,6 +495,41 @@ def ar_receipt_queue(user_roles):
     return out
 
 
+def billing_queue(user_roles):
+    """Billing transactions waiting on `user_roles` (head only).
+
+    Billing documents in "submitted" status wait on the Accounting & Finance
+    Head, who approves and then posts the Journal Entry.
+    """
+    if "head" not in user_roles:
+        return []
+    from apps.billing.models import BillingDocument, BillingStatus
+
+    out = []
+    docs = BillingDocument.objects.filter(
+        status=BillingStatus.SUBMITTED
+    ).select_related("segment", "created_by", "rfp")
+    for billing in docs:
+        title = billing.particulars or billing.party_name or "Billing"
+        if billing.rfp_id:
+            title = f"{title} · RFP {billing.rfp.ap_number}"
+        out.append(
+            {
+                "kind": "billing",
+                "role": "head",
+                "doc": billing,
+                "number": billing.billing_no,
+                "title": title,
+                "date": billing.billing_date,
+                "amount": billing.amount,
+                "detail": ("ui:billing_detail", billing.id),
+                "action": ("ui:billing_approve", billing.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pending_approval_queue(user):
     """All documents waiting on `user`, oldest first (My Approvals)."""
     role = approval_role_of(user)
@@ -548,6 +544,7 @@ def pending_approval_queue(user):
         + je_queue({role})
         + reversal_queue({role})
         + ar_receipt_queue({role})
+        + billing_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
     return queues
