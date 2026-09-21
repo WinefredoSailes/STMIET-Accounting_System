@@ -9,7 +9,7 @@
     <span class="text-xs text-slate-400">ACCTG-FOR-012 · A#### auto-assigned</span>
   </div>
 
-  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <form method="post" class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
     {% csrf_token %}
     <div class="px-6 py-4 border-b border-slate-200">
       <div class="text-sm font-semibold text-slate-900">REQUEST FOR PAYMENT</div>

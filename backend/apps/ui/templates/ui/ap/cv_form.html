@@ -16,7 +16,7 @@
       </div>
     </div>
 
-    <form method="post" class="p-6 space-y-4">
+    <form method="post" class="p-6 space-y-4" data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}" data-autosave-scope="query">
       {% csrf_token %}
       <fieldset class="space-y-3" data-net-calc>
         <legend class="text-xs uppercase tracking-wider text-slate-500 font-medium">Payee Information</legend>

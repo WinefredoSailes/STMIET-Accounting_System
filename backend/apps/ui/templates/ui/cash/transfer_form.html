@@ -11,7 +11,8 @@
 
   <form method="post"
         action="{% if editing %}{% url 'ui:transfer_edit' editing.id %}{% else %}{% url 'ui:transfer_create' %}{% endif %}"
-        class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+        class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm"
+        {% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
     {% csrf_token %}
     <div class="p-4 border-b border-slate-100">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

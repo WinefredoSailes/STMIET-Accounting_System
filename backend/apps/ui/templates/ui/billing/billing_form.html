@@ -9,7 +9,7 @@
     <span class="text-xs text-slate-400">BI-YYYY-#### auto-assigned · Debits must equal credits</span>
   </div>
 
-  <form method="post" class="mt-6 space-y-6">
+  <form method="post" class="mt-6 space-y-6" data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}">
     {% csrf_token %}
 
     <!-- ===================== HEADER ===================== -->

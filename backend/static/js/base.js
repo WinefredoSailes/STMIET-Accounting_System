@@ -493,3 +493,32 @@ document.addEventListener('change', function (e) {
 window.onafterprint = function () {
   window.close();
 };
+
+// ---- Draft submit-marker reconciliation (see form-draft.js). A marker is
+// written at submit time; a later page load decides: different path = the
+// save succeeded, clear the localStorage draft; same path = the form
+// re-rendered after a validation error, keep the draft for restore. Login
+// screens are skipped so a session-expiry redirect cannot wipe the draft.
+function processDraftMarkers() {
+  var core = window.StmiDraftCore;
+  if (!core) return;
+  var isLogin = !!document.querySelector('input[type="password"]');
+  var done = [];
+  try {
+    for (var i = 0; i < window.sessionStorage.length; i++) {
+      var k = window.sessionStorage.key(i);
+      if (!k || k.indexOf(core.SUBMIT_PREFIX) !== 0) continue;
+      var m = null;
+      try { m = JSON.parse(window.sessionStorage.getItem(k)); } catch (e) { m = null; }
+      if (!m || typeof m.key !== 'string' || typeof m.path !== 'string') {
+        done.push(k);
+        continue;
+      }
+      var act = core.markerAction(m.path, window.location.pathname, isLogin);
+      if (act.clearDraft) { try { window.localStorage.removeItem(m.key); } catch (e) { } }
+      if (act.removeMarker) done.push(k);
+    }
+  } catch (e) { return; }
+  done.forEach(function (k) { try { window.sessionStorage.removeItem(k); } catch (e) { } });
+}
+processDraftMarkers();
