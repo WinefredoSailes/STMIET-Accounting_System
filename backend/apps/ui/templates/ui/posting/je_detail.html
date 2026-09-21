@@ -38,7 +38,7 @@
   <a href="{% url 'ui:je_xlsx_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>
   <a href="{% url 'ui:je_csv_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export CSV</a>
 <a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
-  {% if can_request_reversal %}
+  {% if can_request_reversal and not source_doc %}
   <button type="button" onclick="openReversalModal()" class="inline rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">Request reversal</button>
   {% endif %}
   {% endcapture %}
@@ -207,6 +207,7 @@
     </div>
   </div>
 
+  {% if can_request_reversal and not source_doc %}
   <!-- Request Reversal Modal -->
   <div id="reversal-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
@@ -229,6 +230,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
   <!-- Reject Reversal Modal -->
   <div id="reversal-reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
@@ -255,35 +257,30 @@
   </div>
 
   <script>
-    function openRejectModal() {
-      document.getElementById('reject-modal').classList.remove('hidden');
-      document.getElementById('reject-modal').classList.add('flex');
+    function toggleModal(id, show) {
+      var m = document.getElementById(id);
+      if (!m) return;
+      m.classList[show ? 'remove' : 'add']('hidden');
+      m.classList[show ? 'add' : 'remove']('flex');
     }
-    function closeRejectModal() {
-      document.getElementById('reject-modal').classList.add('hidden');
-      document.getElementById('reject-modal').classList.remove('flex');
-    }
-    function openReversalModal() {
-      document.getElementById('reversal-modal').classList.remove('hidden');
-      document.getElementById('reversal-modal').classList.add('flex');
-    }
-    function closeReversalModal() {
-      document.getElementById('reversal-modal').classList.add('hidden');
-      document.getElementById('reversal-modal').classList.remove('flex');
-    }
-    function openReversalRejectModal() {
-      var m = document.getElementById('reversal-reject-modal');
-      if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
-    }
-    function closeReversalRejectModal() {
-      var m = document.getElementById('reversal-reject-modal');
-      if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
-    }
+    function openRejectModal() { toggleModal('reject-modal', true); }
+    function closeRejectModal() { toggleModal('reject-modal', false); }
+    function openReversalModal() { toggleModal('reversal-modal', true); }
+    function closeReversalModal() { toggleModal('reversal-modal', false); }
+    function openReversalRejectModal() { toggleModal('reversal-reject-modal', true); }
+    function closeReversalRejectModal() { toggleModal('reversal-reject-modal', false); }
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') { closeRejectModal(); closeReversalModal(); closeReversalRejectModal(); }
     });
-    document.getElementById('reject-modal').addEventListener('click', function(e) {
-      if (e.target === this) closeRejectModal();
+    ['reject-modal', 'reversal-modal', 'reversal-reject-modal'].forEach(function (id) {
+      var m = document.getElementById(id);
+      if (!m) return;
+      m.addEventListener('click', function (e) {
+        if (e.target !== m) return;
+        if (id === 'reject-modal') closeRejectModal();
+        else if (id === 'reversal-modal') closeReversalModal();
+        else closeReversalRejectModal();
+      });
     });
   </script>
 {% endblock %}

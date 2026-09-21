@@ -64,6 +64,7 @@
     <div class="mt-3 flex items-center gap-3">
       <form method="post" action="{% url 'ui:je_reversal_approve' pending_reversal.id %}" class="inline">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
       </form>
       <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject reversal</button>
@@ -115,13 +116,22 @@
       <dt class="text-xs text-slate-500">Ref. PO No</dt>
       <dd class="mt-1 font-mono text-xs">{{ receipt.ref_po_no|default:"—" }}</dd>
     </div>
+    {% if receipt.applied_to %}
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Applied to invoice</dt>
+      <dd class="mt-1 font-mono text-xs">
+        {{ receipt.applied_to.invoice_no }}
+        <span class="ml-1 text-xs text-slate-500">(₱{{ receipt.applied_to.balance|money }} due)</span>
+      </dd>
+    </div>
+    {% endif %}
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Collected By</dt>
       <dd class="mt-1 font-medium">{{ receipt.collected_by|default:"—" }}</dd>
     </div>
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
       <dt class="text-xs text-slate-500">Status</dt>
-      <dd class="mt-1">{{ receipt.status|status_color_class }}</dd>
+      <dd class="mt-1">{% include "ui/partials/status_badge.html" with status=receipt.status label=receipt.get_status_display %}</dd>
     </div>
     {% if receipt.journal_entry %}
     <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
@@ -231,6 +241,7 @@
       </div>
       <form method="post" action="{% url 'ui:je_reverse' receipt.journal_entry.id %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
         <div class="p-6">
           <label class="block text-sm font-medium text-slate-700 mb-2">Reason (required)</label>
           <textarea name="reason" data-autogrow rows="4" required
@@ -255,6 +266,7 @@
       </div>
       <form method="post" action="{% url 'ui:je_reversal_reject' pending_reversal.id %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
         <div class="p-6">
           <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
           <textarea name="note" data-autogrow rows="4" required
@@ -277,35 +289,30 @@
 
 {% block extra_js %}
 <script>
-  function openRejectModal() {
-    document.getElementById('reject-modal').classList.remove('hidden');
-    document.getElementById('reject-modal').classList.add('flex');
+  function toggleModal(id, show) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    m.classList[show ? 'remove' : 'add']('hidden');
+    m.classList[show ? 'add' : 'remove']('flex');
   }
-  function closeRejectModal() {
-    document.getElementById('reject-modal').classList.add('hidden');
-    document.getElementById('reject-modal').classList.remove('flex');
-  }
-  function openReversalModal() {
-    var m = document.getElementById('reversal-modal');
-    if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
-  }
-  function closeReversalModal() {
-    var m = document.getElementById('reversal-modal');
-    if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
-  }
-  function openReversalRejectModal() {
-    var m = document.getElementById('reversal-reject-modal');
-    if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
-  }
-  function closeReversalRejectModal() {
-    var m = document.getElementById('reversal-reject-modal');
-    if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
-  }
+  function openRejectModal() { toggleModal('reject-modal', true); }
+  function closeRejectModal() { toggleModal('reject-modal', false); }
+  function openReversalModal() { toggleModal('reversal-modal', true); }
+  function closeReversalModal() { toggleModal('reversal-modal', false); }
+  function openReversalRejectModal() { toggleModal('reversal-reject-modal', true); }
+  function closeReversalRejectModal() { toggleModal('reversal-reject-modal', false); }
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') { closeRejectModal(); closeReversalModal(); closeReversalRejectModal(); }
   });
-  document.getElementById('reject-modal').addEventListener('click', function(e) {
-    if (e.target === this) closeRejectModal();
+  ['reject-modal', 'reversal-modal', 'reversal-reject-modal'].forEach(function (id) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    m.addEventListener('click', function (e) {
+      if (e.target !== m) return;
+      if (id === 'reject-modal') closeRejectModal();
+      else if (id === 'reversal-modal') closeReversalModal();
+      else closeReversalRejectModal();
+    });
   });
 </script>
 {% endblock %}

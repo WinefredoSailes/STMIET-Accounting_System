@@ -10,9 +10,11 @@
   <a href="{% url 'ui:transfer_export' transfer.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
   <a href="{% url 'ui:transfer_export' transfer.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
   <a href="{% url 'ui:ftv_print' transfer.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print FTV</a>
+  {% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title subtitle=transfer.purpose back_url_name="ui:transfers" back_label="Inter-Account Transfers" actions=actions %}
   {% include "ui/partials/reversed_banner.html" with entry=entry %}
+  {% include "ui/partials/reversal_ui.html" with entry=entry %}
 
   {% capture as shell_meta %}
   {% include "ui/partials/status_badge.html" with status=transfer.status color=badge_color %}

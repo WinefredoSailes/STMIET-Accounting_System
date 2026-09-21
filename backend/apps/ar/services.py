@@ -50,6 +50,8 @@ SEGMENT_CASH_ON_HAND = {
     "OPS": "10016",
 }
 
+_APPLIED_UNSET = object()  # update_draft sentinel: "leave applied_to as-is"
+
 
 def _account_code(*codes: str) -> str:
     """Resolve the first code that exists in the COA (segment fallbacks)."""
@@ -65,6 +67,26 @@ def _account_object(code: str):
     from apps.foundation.models import Account
 
     return Account.objects.get(code=code)
+
+
+def segment_ar_account(segment):
+    """The segment's Accounts-Receivable COA account (credit side of an
+    applied collection), or None when the COA has no AR account configured.
+
+    Mirrors ``_default_lines``' credit resolution (``_account_code`` over the
+    segment's other/fuel AR codes) so the UI's applied-to guard uses the exact
+    account the legacy auto-post would have credited."""
+    entry = SEGMENT_ACCOUNTS.get(segment.code)
+    if not entry:
+        return None
+    _, ar_other, ar_fuel = entry
+    from apps.foundation.models import Account
+
+    for code in (ar_other, ar_fuel):
+        account = Account.objects.filter(code=code).first() if code else None
+        if account is not None:
+            return account
+    return None
 
 
 def cash_on_hand_account(segment):
@@ -301,7 +323,7 @@ class CollectionService:
         transaction_no: str | None = None,
         ref_po_no: str | None = None,
         transaction_date: date | None = None,
-        applied_to=None,
+        applied_to=_APPLIED_UNSET,
         attachment=None,
         user=None,
     ) -> AcknowledgmentReceipt:
@@ -316,6 +338,11 @@ class CollectionService:
                 f"Account distribution is out of balance by "
                 f"{money(debit_total - credit_total)}."
             )
+        if applied_to is not _APPLIED_UNSET and applied_to is not None:
+            if applied_to.customer_id != receipt.customer_id:
+                raise ValidationError("Applied invoice belongs to a different customer.")
+            if applied_to.balance <= 0:
+                raise ValidationError(f"Invoice {applied_to.invoice_no} is fully paid.")
         with transaction.atomic():
             receipt.lines.all().delete()
             for i, line in enumerate(norm_lines, start=1):
@@ -341,8 +368,8 @@ class CollectionService:
                 receipt.ref_po_no = ref_po_no
             if transaction_date is not None:
                 receipt.transaction_date = transaction_date
-            if applied_to is not None:
-                receipt.applied_to = applied_to or None
+            if applied_to is not _APPLIED_UNSET:
+                receipt.applied_to = applied_to
             if attachment is not None:
                 receipt.attachment = attachment
             receipt.save()

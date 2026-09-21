@@ -127,6 +127,7 @@
   {% endcapture %}
   {% include "ui/partials/document_shell.html" with doc_title="PETTY CASH VOUCHER" doc_title_class="text-lg font-bold text-slate-900" doc_form_id="ACCOUNTING DEPARTMENT · ACCTG-FOR-002" doc_meta_html=doc_meta doc_body_html=doc_body %}
   {% include "ui/partials/reversed_banner.html" with entry=replen.journal_entry %}
+  {% include "ui/partials/reversal_ui.html" with entry=replen.journal_entry %}
 
   <div class="mt-4 flex items-center gap-3">
     {% if replen.status == "requested" %}
@@ -154,6 +155,7 @@
     <a href="{% url 'ui:je_detail' replen.journal_entry_id %}"
       class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>
     {% endif %}
+    {% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}
     <a href="{% url 'ui:pcf_replenishment_export' replen.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
     <a href="{% url 'ui:pcf_replenishment_export' replen.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
     <a href="{% url 'ui:pcf_replenishment_export' replen.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>

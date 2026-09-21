@@ -6,7 +6,8 @@
   {% capture as actions %}
   {% url 'ui:advances_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
   {% endcapture %}
-  {% include "ui/partials/page_header.html" with title="ADVANCES TO EMPLOYEES" subtitle="Standing-advance ledger (ADR-021): grant → liquidation → close. Outstanding total: ₱{{ total_outstanding|money }}." actions=actions %}
+  {% capture as advances_subtitle %}Standing-advance ledger (ADR-021): grant → liquidation → close. Outstanding total: ₱{{ total_outstanding|money }}.{% endcapture %}
+  {% include "ui/partials/page_header.html" with title="ADVANCES TO EMPLOYEES" subtitle=advances_subtitle actions=actions %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm min-w-[860px]">

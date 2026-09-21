@@ -4,9 +4,10 @@
 {% block content %}
 <div class="p-6">
   {% capture as doc_title %}CV {{ cv.cv_number }}{% endcapture %}
-  {% capture as actions %}<a href="{% url 'ui:cv_export' cv.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a><a href="{% url 'ui:cv_export' cv.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a><a href="{% url 'ui:cv_export' cv.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a><a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>{% endcapture %}
+  {% capture as actions %}<a href="{% url 'ui:cv_export' cv.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a><a href="{% url 'ui:cv_export' cv.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a><a href="{% url 'ui:cv_export' cv.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a><a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>{% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}{% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:cv_list" back_label="Check vouchers" actions=actions %}
   {% include "ui/partials/reversed_banner.html" with entry=cv.journal_entry %}
+  {% include "ui/partials/reversal_ui.html" with entry=cv.journal_entry %}
 
   {% capture as shell_meta %}
   {% capture as badge_color %}{% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800{% elif cv.status == 'created' %}bg-slate-100 text-slate-700{% else %}bg-amber-100 text-amber-800{% endif %}{% endcapture %}

@@ -22,6 +22,7 @@ urlpatterns = [
     path("foundation/coa/account-options/", views.account_options, name="account_options"),
     path("foundation/supplier-options/", views.supplier_options, name="supplier_options"),
     path("foundation/customer-options/", views.customer_options, name="customer_options"),
+    path("foundation/ar-invoice-options/", views.ar_invoice_options, name="ar_invoice_options"),
     path("foundation/party-options/", views.party_options, name="party_options"),
     path("foundation/coa/print/", views.coa_print, name="coa_print"),
     path("foundation/coa/export/", views.coa_export, name="coa_export"),

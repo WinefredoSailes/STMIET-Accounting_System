@@ -1,0 +1,5 @@
+{% comment %}Source-document detail screens: the "Request reversal" trigger.
+Included inside the page-header `actions` capture. Params: can_request_reversal.{% endcomment %}
+{% if can_request_reversal %}
+<button type="button" onclick="openReversalModal()" class="inline rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">Request reversal</button>
+{% endif %}

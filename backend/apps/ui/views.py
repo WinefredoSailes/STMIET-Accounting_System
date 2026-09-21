@@ -185,6 +185,46 @@ def _audit_trail(doc_type, doc_id):
     ]
 
 
+def _reversal_context(request, entry):
+    """Pending / reversed / can-request / can-approve reversal state for a
+    posted entry's source-document detail screen. Passes the same flags the
+    JE detail page uses so the shared reversal partials render identically."""
+    from apps.core.approvals import approval_role_of
+    from apps.posting.models import PostingStatus, ReversalRequest
+
+    if entry is None:
+        return {
+            "pending_reversal": None,
+            "reversed_by_request": None,
+            "can_request_reversal": False,
+            "can_approve_reversal": False,
+        }
+    pending = (
+        entry.reversal_requests.filter(status=ReversalRequest.Status.REQUESTED)
+        .select_related("requested_by")
+        .first()
+    )
+    reversed_by = (
+        entry.reversal_requests.filter(status=ReversalRequest.Status.APPROVED)
+        .select_related("reversal_entry", "approved_by")
+        .first()
+    )
+    return {
+        "pending_reversal": pending,
+        "reversed_by_request": reversed_by,
+        "can_request_reversal": (
+            entry.status == PostingStatus.POSTED
+            and not entry.reversal_token
+            and pending is None
+        ),
+        "can_approve_reversal": bool(
+            pending
+            and approval_role_of(request.user) == "head"
+            and pending.requested_by_id != request.user.id
+        ),
+    }
+
+
 def _coo_name() -> str:
     """Display name of the current COO role holder for the CV approval line.
 
@@ -332,22 +372,10 @@ def je_list(request):
 
 @login_required
 def je_detail(request, pk):
-    from apps.core.approvals import approval_role_of
-    from apps.posting.models import ReversalRequest
-
     entry = get_object_or_404(
         JournalEntry.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
     )
-    pending_reversal = (
-        entry.reversal_requests.filter(status=ReversalRequest.Status.REQUESTED)
-        .select_related("requested_by")
-        .first()
-    )
-    reversed_by_request = (
-        entry.reversal_requests.filter(status=ReversalRequest.Status.APPROVED)
-        .select_related("reversal_entry", "approved_by")
-        .first()
-    )
+    reversal = _reversal_context(request, entry)
     return render(
         request,
         "ui/posting/je_detail.html",
@@ -355,18 +383,7 @@ def je_detail(request, pk):
             "entry": entry,
             "audit_trail": _audit_trail("je", entry.id),
             "source_doc": _je_source_doc(entry),
-            "pending_reversal": pending_reversal,
-            "reversed_by_request": reversed_by_request,
-            "can_request_reversal": (
-                entry.status == PostingStatus.POSTED
-                and not entry.reversal_token
-                and pending_reversal is None
-            ),
-            "can_approve_reversal": bool(
-                pending_reversal
-                and approval_role_of(request.user) == "head"
-                and pending_reversal.requested_by_id != request.user.id
-            ),
+            **reversal,
         },
     )
 
@@ -595,6 +612,67 @@ def _ar_receipt_lines_from_form(request, cash_account, segment):
             "credit": money(0),
         }
     ] + credit_lines
+
+
+def _validate_ar_applied_credit(applied_to, ar_account, lines):
+    """A collection applied to a sales invoice must relieve that receivable:
+    every credit line must hit the segment's Accounts-Receivable COA account
+    (Dr Cash | Cr AR). Advances (no applied_to) keep the free credit grid."""
+    if applied_to is None:
+        return
+    if ar_account is None:
+        raise ValidationError(
+            f"Segment {applied_to.segment.code} has no Accounts-Receivable COA "
+            "account configured, so a collection cannot be applied to an invoice."
+        )
+    for line in lines:
+        if line["credit"] and line["account"].id != ar_account.id:
+            raise ValidationError(
+                f"A collection applied to invoice {applied_to.invoice_no} must credit "
+                f"AR account {ar_account.code} {ar_account.name} — line "
+                f"{line['account'].code} is not the receivable account."
+            )
+
+
+def _ar_applied_invoice_from_form(request):
+    """Resolve the optional ``applied_to`` picker value to an ARInvoice or None."""
+    from apps.ar.models import ARInvoice
+
+    raw = (request.POST.get("applied_to") or "").strip()
+    if not raw or not raw.isdigit():
+        return None
+    return ARInvoice.objects.filter(pk=raw).first()
+
+
+def _ar_invoice_prefill_map(customer=None):
+    """Open/partially-paid ARInvoices keyed by id with everything the form's
+    apply-to-invoice picker needs to auto-suggest the AR credit line (correct
+    GL + subledger move together, so the preparer never has to hand-pick it)."""
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import segment_ar_account
+
+    qs = ARInvoice.objects.filter(
+        status__in=("open", "partially_paid")
+    ).select_related("customer__segment").order_by("-transaction_date", "invoice_no")
+    if customer is not None:
+        qs = qs.filter(customer=customer)
+    ar_cache = {}
+    out = {}
+    for inv in qs[:200]:
+        seg = inv.customer.segment
+        if seg.code not in ar_cache:
+            ar_cache[seg.code] = segment_ar_account(seg)
+        ar = ar_cache[seg.code]
+        out[str(inv.id)] = {
+            "customer_id": inv.customer_id,
+            "segment_id": seg.id,
+            "ar_account_id": str(ar.id) if ar else "",
+            "ar_account_code": ar.code if ar else "",
+            "ar_account_name": ar.name if ar else "",
+            "invoice_no": inv.invoice_no,
+            "balance": f"{inv.balance:.2f}",
+        }
+    return out
 
 
 @login_required
@@ -999,6 +1077,14 @@ def _update_entry_from_form(request, entry):
 
 
 @login_required
+def _safe_next(request, fallback_url, *fallback_args):
+    """Return the caller-provided same-site path, else the fallback redirect."""
+    nxt = request.POST.get("next") or request.GET.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return nxt
+    return reverse(fallback_url, args=fallback_args) if fallback_args else reverse(fallback_url)
+
+
 def je_reverse(request, pk):
     """Request a reversal of a posted JE (maker). Head approves it (checker)."""
     from apps.posting.services import ReversalService
@@ -1015,7 +1101,7 @@ def je_reverse(request, pk):
         )
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:je_detail", pk))
 
 
 @login_required
@@ -1034,7 +1120,7 @@ def je_reversal_approve(request, pk):
         )
     except (AccountingError, ValidationError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=req.entry_id)
+    return redirect(_safe_next(request, "ui:je_detail", req.entry_id))
 
 
 @login_required
@@ -1052,7 +1138,7 @@ def je_reversal_reject(request, pk):
         messages.success(request, f"Reversal request for {req.entry.entry_no} rejected.")
     except (AccountingError, ValidationError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=req.entry_id)
+    return redirect(_safe_next(request, "ui:je_detail", req.entry_id))
 
 
 # ---------------------------------------------------------------------------
@@ -1540,7 +1626,12 @@ def ar_receipt_print(request, pk: int):
     """Print-optimized Acknowledgment Receipt (ACCTG-FOR-005)."""
     from apps.ar.models import AcknowledgmentReceipt
 
-    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    receipt = get_object_or_404(
+        AcknowledgmentReceipt.objects.select_related(
+            "customer", "cash_account", "segment", "journal_entry", "applied_to"
+        ).prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
     return render(
         request,
         "ui/ar/receipt_print.html",
@@ -1578,6 +1669,7 @@ def ar_receipt_export(request, pk: int, fmt: str):
             ["Check No", receipt.check_no or ""],
             ["Transaction No", receipt.transaction_no or ""],
             ["Ref. PO No.", receipt.ref_po_no or ""],
+            ["Applied To", receipt.applied_to.invoice_no if receipt.applied_to else ""],
             ["Status", receipt.status],
         ],
         rows=[
@@ -1776,7 +1868,7 @@ def customer_update(request, pk):
 @login_required
 def receipt_create(request):
     from apps.ar.models import Customer
-    from apps.ar.services import CollectionService
+    from apps.ar.services import CollectionService, segment_ar_account
 
     if request.method == "POST":
         try:
@@ -1791,7 +1883,10 @@ def receipt_create(request):
             transaction_date = _parse_date(request.POST.get("transaction_date") or "")
             if transaction_date is None:
                 raise ValidationError("Date of AR is required.")
+            applied_to = _ar_applied_invoice_from_form(request)
 
+            lines = _ar_receipt_lines_from_form(request, cash_account, customer.segment)
+            _validate_ar_applied_credit(applied_to, segment_ar_account(customer.segment), lines)
             receipt = CollectionService.create_receipt(
                 customer=customer,
                 transaction_date=transaction_date,
@@ -1800,8 +1895,8 @@ def receipt_create(request):
                 check_no=request.POST.get("check_no", ""),
                 transaction_no=request.POST.get("transaction_no", ""),
                 ref_po_no=request.POST.get("ref_po_no", ""),
-                applied_to=None,
-                lines=_ar_receipt_lines_from_form(request, cash_account, customer.segment),
+                applied_to=applied_to,
+                lines=lines,
                 created_by=request.user,
             )
             messages.success(
@@ -1818,6 +1913,7 @@ def receipt_create(request):
             "today": date.today(),
             "segments": Segment.objects.order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+            "ar_invoice_prefill": _ar_invoice_prefill_map(),
         },
     )
 
@@ -1825,10 +1921,12 @@ def receipt_create(request):
 @login_required
 def receipt_edit(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
-    from apps.ar.services import CollectionService
+    from apps.ar.services import CollectionService, segment_ar_account
 
     receipt = get_object_or_404(
-        AcknowledgmentReceipt.objects.select_related("customer", "cash_account", "segment"),
+        AcknowledgmentReceipt.objects.select_related(
+            "customer", "cash_account", "segment", "applied_to"
+        ),
         pk=pk,
     )
     if request.method == "POST":
@@ -1840,15 +1938,19 @@ def receipt_edit(request, pk: int):
             transaction_date = _parse_date(request.POST.get("transaction_date") or "")
             if transaction_date is None:
                 raise ValidationError("Date of AR is required.")
+            applied_to = _ar_applied_invoice_from_form(request)
+            lines = _ar_receipt_lines_from_form(request, cash_account, receipt.segment)
+            _validate_ar_applied_credit(applied_to, segment_ar_account(receipt.segment), lines)
             CollectionService.update_draft(
                 receipt=receipt,
-                lines=_ar_receipt_lines_from_form(request, cash_account, receipt.segment),
+                lines=lines,
                 cash_account=cash_account,
                 payment_method=request.POST.get("payment_method", "cash"),
                 check_no=request.POST.get("check_no", ""),
                 transaction_no=request.POST.get("transaction_no", ""),
                 ref_po_no=request.POST.get("ref_po_no", ""),
                 transaction_date=transaction_date,
+                applied_to=applied_to,
                 user=request.user,
             )
             messages.success(request, f"Receipt {receipt.receipt_no} updated.")
@@ -1863,6 +1965,7 @@ def receipt_edit(request, pk: int):
             "today": date.today(),
             "segments": Segment.objects.order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+            "ar_invoice_prefill": _ar_invoice_prefill_map(customer=receipt.customer),
         },
     )
 
@@ -1872,7 +1975,9 @@ def receipt_detail(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
 
     receipt = get_object_or_404(
-        AcknowledgmentReceipt.objects.select_related("journal_entry").prefetch_related(
+        AcknowledgmentReceipt.objects.select_related(
+            "journal_entry", "customer", "segment", "cash_account", "applied_to"
+        ).prefetch_related(
             "lines__account", "lines__segment"
         ),
         pk=pk,
@@ -2150,7 +2255,9 @@ def rfp_detail(request, pk):
     )
 
     rfp = get_object_or_404(
-        RFPDocument.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
+        RFPDocument.objects.select_related("journal_entry").prefetch_related(
+            "lines__account", "lines__segment"
+        ), pk=pk
     )
     cr_total = sum((l.amount for l in rfp.lines.all() if l.side == "cr"), Decimal("0.00"))
     from apps.ap.services import rfp_payable
@@ -2179,6 +2286,7 @@ def rfp_detail(request, pk):
             "payable": money(payable),
             "awaiting": awaiting,
             "audit_trail": _audit_trail("rfp", rfp.id),
+            **_reversal_context(request, rfp.journal_entry),
         },
     )
 
@@ -3327,7 +3435,7 @@ def cv_detail(request, pk):
         return signatory_name(user)
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"),
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp", "journal_entry"),
         pk=pk,
     )
     if cv.rfp_id:
@@ -3357,6 +3465,7 @@ def cv_detail(request, pk):
         "cleared_at": cleared_at,
         "signatories": signatories,
         "audit_trail": _audit_trail("cv", cv.id),
+        **_reversal_context(request, cv.journal_entry),
     })
 
 
@@ -3677,10 +3786,19 @@ def pcf_replenishment_detail(request, pk):
     from apps.cash.models import PCFReplenishment
 
     replen = get_object_or_404(
-        PCFReplenishment.objects.select_related("fund__custodian", "fund__company", "conso"),
+        PCFReplenishment.objects.select_related(
+            "fund__custodian", "fund__company", "conso", "journal_entry"
+        ),
         pk=pk,
     )
-    return render(request, "ui/cash/pcf_replenishment_detail.html", {"replen": replen})
+    return render(
+        request,
+        "ui/cash/pcf_replenishment_detail.html",
+        {
+            "replen": replen,
+            **_reversal_context(request, replen.journal_entry),
+        },
+    )
 
 
 @login_required
@@ -4448,6 +4566,47 @@ def customer_options(request):
                 "tin": c.tin,
             }
             for c in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
+def ar_invoice_options(request):
+    """Type-ahead source for the AR receipt's 'Apply to invoice' picker.
+
+    Lists open / partially-paid sales invoices, scoped to ``?customer=<id>``
+    so a preparer cannot apply a collection to the wrong customer (the service
+    still validates it). ``?selected=`` re-attaches an existing selection when
+    editing. Search matches invoice_no; value is the invoice id."""
+    from apps.ar.models import ARInvoice
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    customer_id = (request.GET.get("customer") or "").strip()
+    qs = ARInvoice.objects.filter(
+        status__in=("open", "partially_paid")
+    ).select_related("customer").order_by("-transaction_date", "invoice_no")
+    if customer_id.isdigit():
+        qs = qs.filter(customer_id=int(customer_id))
+    if q:
+        qs = qs.filter(invoice_no__icontains=q)
+    rows = list(qs[:30])
+    if selected and selected.isdigit() and not any(str(r.id) == selected for r in rows):
+        keep = ARInvoice.objects.filter(pk=selected).first()
+        if keep:
+            rows.insert(0, keep)
+    return JsonResponse(
+        [
+            {
+                "id": inv.id,
+                "code": inv.invoice_no,
+                "text": (
+                    f"{inv.invoice_no} — ₱{inv.balance:,.2f} due "
+                    f"({inv.customer.code} {inv.customer.name})"
+                ),
+            }
+            for inv in rows
         ],
         safe=False,
     )
@@ -5534,6 +5693,7 @@ def transfer_detail(request, pk):
                 request.user.id == transfer.initiated_by_id
                 or approval_role_of(request.user) == "head"
             ),
+            **_reversal_context(request, ctx.get("entry")),
         }
     )
     return render(request, "ui/cash/transfer_detail.html", ctx)
@@ -6823,7 +6983,9 @@ def billing_detail(request, pk):
     from apps.core.approvals import approval_role_of, role_assignee, ROLE_LABELS, BILLING_NEXT_ROLE
 
     billing = get_object_or_404(
-        BillingDocument.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
+        BillingDocument.objects.select_related("journal_entry").prefetch_related(
+            "lines__account", "lines__segment"
+        ), pk=pk
     )
     awaiting = None
     role = BILLING_NEXT_ROLE.get(billing.status)
@@ -6841,6 +7003,7 @@ def billing_detail(request, pk):
             "billing": billing,
             "awaiting": awaiting,
             "audit_trail": _audit_trail("bill", billing.id),
+            **_reversal_context(request, billing.journal_entry),
         },
     )
 

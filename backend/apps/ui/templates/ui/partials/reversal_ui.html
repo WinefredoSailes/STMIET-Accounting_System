@@ -1,0 +1,104 @@
+{% comment %}Source-document detail screens: the pending-reversal banner plus the
+Request / Reject modals and their JS. Renders nothing when the entry is missing.
+Params: entry (JournalEntry), pending_reversal, can_approve_reversal.{% endcomment %}
+{% load ui_filters %}
+{% if entry %}
+  {% if pending_reversal %}
+  <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+    <div class="text-sm font-semibold text-amber-900">Reversal requested — awaiting approval</div>
+    <div class="text-xs text-slate-500 mt-1">
+      Requested by {{ pending_reversal.requested_by.get_full_name|default:pending_reversal.requested_by|default:"—" }}
+      · {{ pending_reversal.requested_at|date:"M d, Y H:i" }}
+    </div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ pending_reversal.reason }}</div>
+    {% if can_approve_reversal %}
+    <div class="mt-3 flex items-center gap-3">
+      <form method="post" action="{% url 'ui:je_reversal_approve' pending_reversal.id %}" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
+      </form>
+      <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject reversal</button>
+    </div>
+    {% elif request.user|approval_role_of == "head" %}
+    <p class="mt-2 text-xs text-amber-700">You requested this reversal — it must be approved by a different approver.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_request_reversal %}
+  <div id="reversal-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900">Request Reversal</h3>
+      </div>
+      <form method="post" action="{% url 'ui:je_reverse' entry.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <div class="p-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Reason (required)</label>
+          <textarea name="reason" rows="4" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Why must this posted entry be reversed? (e.g. duplicate posting, wrong account)"></textarea>
+          <p class="mt-2 text-xs text-slate-500">A posted entry is never deleted — a correcting reversing entry is posted once the head approves.</p>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Request reversal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if can_approve_reversal %}
+  <div id="reversal-reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900">Reject Reversal</h3>
+      </div>
+      <form method="post" action="{% url 'ui:je_reversal_reject' pending_reversal.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <div class="p-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
+          <textarea name="note" rows="4" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Why is this reversal being refused?"></textarea>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalRejectModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Reject reversal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <script>
+    (function () {
+      function toggle(id, show) {
+        var m = document.getElementById(id);
+        if (!m) return;
+        m.classList[show ? 'remove' : 'add']('hidden');
+        m.classList[show ? 'add' : 'remove']('flex');
+      }
+      window.openReversalModal = window.openReversalModal || function () { toggle('reversal-modal', true); };
+      window.closeReversalModal = window.closeReversalModal || function () { toggle('reversal-modal', false); };
+      window.openReversalRejectModal = window.openReversalRejectModal || function () { toggle('reversal-reject-modal', true); };
+      window.closeReversalRejectModal = window.closeReversalRejectModal || function () { toggle('reversal-reject-modal', false); };
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { window.closeReversalModal(); window.closeReversalRejectModal(); }
+      });
+      ['reversal-modal', 'reversal-reject-modal'].forEach(function (id) {
+        var m = document.getElementById(id);
+        if (!m) return;
+        m.addEventListener('click', function (e) {
+          if (e.target !== m) return;
+          if (id === 'reversal-modal') window.closeReversalModal();
+          else window.closeReversalRejectModal();
+        });
+      });
+    })();
+  </script>
+{% endif %}

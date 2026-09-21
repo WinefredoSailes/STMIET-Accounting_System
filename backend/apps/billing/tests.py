@@ -248,3 +248,74 @@ class TestBillingAPI:
         entry = JournalEntry.objects.get(source_doc_no="BI-2026-0001")
         assert entry.ref_number == "A0001"
         assert entry.lines.get(account__code="15560").reference == "RFP A0001 — billed 1,000.00"
+
+
+@pytest.mark.django_db
+class TestBillingReversalUI:
+    """Reversal parity: a posted Billing's own detail screen offers the
+    Request-reversal action (shared partial), the pending banner returns to the
+    billing, and the generic JE screen no longer duplicates the trigger."""
+
+    def _post_billing(self, company, segment, billing_accounts, role_users):
+        billing = _create(company, segment, billing_accounts)
+        BillingService.submit(billing, user=role_users["staff"])
+        BillingService.approve(billing, user=role_users["head"])
+        entry = BillingService.post(billing, user=role_users["head"])
+        billing.refresh_from_db()
+        return billing, entry
+
+    def test_detail_offers_reversal_and_pending_returns(self, client, company, segment, billing_accounts, role_users):
+        billing, entry = self._post_billing(company, segment, billing_accounts, role_users)
+        staff = role_users["staff"]
+        head = role_users["head"]
+
+        client.force_login(staff)
+        body = client.get(f"/billing/{billing.pk}/").content.decode()
+        assert "Request reversal" in body
+        assert "bg-amber-600" in body          # modal submit button styling present
+
+        resp = client.post(
+            f"/journal/{entry.pk}/reverse/",
+            {"reason": "duplicate billing", "next": f"/billing/{billing.pk}/"},
+        )
+        assert resp.status_code == 302
+        assert resp.url == f"/billing/{billing.pk}/"
+        body = client.get(f"/billing/{billing.pk}/").content.decode()
+        assert "Reversal requested" in body
+        assert "Approve reversal" not in body   # staff can't approve their own request
+
+        client.force_login(head)
+        body = client.get(f"/billing/{billing.pk}/").content.decode()
+        assert "Approve reversal" in body
+
+    def test_source_doc_entry_hides_je_detail_reversal_button(self, client, company, segment, billing_accounts, role_users):
+        billing, entry = self._post_billing(company, segment, billing_accounts, role_users)
+        client.force_login(role_users["head"])
+        body = client.get(f"/journal/{entry.pk}/").content.decode()
+        # the reversal trigger lives on the Billing screen now, not on the JE
+        assert "Open Billing" in body
+        assert ">Request reversal<" not in body
+
+    def test_head_approves_reversal_from_billing(self, client, company, segment, billing_accounts, role_users):
+        billing, entry = self._post_billing(company, segment, billing_accounts, role_users)
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        client.post(
+            f"/journal/{entry.pk}/reverse/",
+            {"reason": "wrong amount", "next": f"/billing/{billing.pk}/"},
+        )
+        from apps.posting.models import ReversalRequest
+
+        req = ReversalRequest.objects.get(entry=entry)
+        client.force_login(head)
+        resp = client.post(
+            f"/journal/reversal/{req.pk}/approve/",
+            {"next": f"/billing/{billing.pk}/"},
+        )
+        assert resp.status_code == 302
+        assert resp.url == f"/billing/{billing.pk}/"
+        entry.refresh_from_db()
+        assert entry.status == PostingStatus.REVERSED
+        body = client.get(f"/billing/{billing.pk}/").content.decode()
+        assert "reversed" in body.lower()

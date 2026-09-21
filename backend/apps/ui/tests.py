@@ -923,6 +923,29 @@ class TestMasterScreens:
         cust.refresh_from_db()
         assert cust.contact_no == "0999-EDIT-123"
 
+    def test_customer_ledger_title_interpolates(
+        self, client, company, segment, accounts, user,
+    ):
+        from apps.ar.models import Customer
+
+        client.force_login(user)
+        cust = Customer.objects.create(
+            code="C777", name="Ledger Client", group="fuel", segment=segment,
+            pricing_tier="regular",
+        )
+        body = client.get(f"/ar/customers/{cust.pk}/").content.decode()
+        assert "Customer Ledger — C777 Ledger Client" in body
+        # regression: the {% include with %} must not leak a literal {{ }}
+        assert "{{ customer.code }}" not in body
+
+    def test_advances_subtitle_interpolates(
+        self, client, company, segment, accounts, user,
+    ):
+        client.force_login(user)
+        body = client.get("/ap/advances/").content.decode()
+        assert "Outstanding total:" in body
+        assert "{{ total_outstanding" not in body
+
 
 class TestEditPagesRender:
     """Full-page update forms (e18ef41): each edit page GETs with prefilled
@@ -1082,8 +1105,8 @@ class TestReceiptScreen:
         )
 
     def _post_grid(self, client, customer, accounts, segment, credit_amount="15000.00",
-                   credit_account="41010"):
-        return client.post("/ar/receipts/new/", {
+                   credit_account="41010", applied_to=None):
+        data = {
             "customer": customer.id,
             "transaction_date": "2026-01-15",
             "payment_method": "cash",
@@ -1094,7 +1117,10 @@ class TestReceiptScreen:
             "credit": [credit_amount],
             "line_description": ["Sales collection"],
             "line_cost_center": [""],
-        })
+        }
+        if applied_to is not None:
+            data["applied_to"] = [applied_to.id]
+        return client.post("/ar/receipts/new/", data)
 
     def test_receipt_create_draft(self, client, company, segment, accounts, fiscal_period, user):
         client.force_login(user)
@@ -1238,14 +1264,172 @@ class TestReceiptScreen:
         client.post(f"/ar/receipts/{receipt.pk}/submit/")
         client.force_login(head)
         client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        receipt.refresh_from_db()
 
         client.force_login(staff)
         body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        # reversal button + modal submit button are present
         assert "Request reversal" in body
+        assert "bg-amber-600" in body          # the modal's submit button class
+        # the status tile renders as a badge, not a raw Tailwind class string
+        assert ">Posted to GL<" in body
+        assert ">bg-emerald-100 text-emerald-800<" not in body
+
+        # request a reversal via the modal: POST carries reason + next back to
+        # the receipt so the user lands where they can see the pending banner
+        resp = client.post(
+            f"/journal/{receipt.journal_entry_id}/reverse/",
+            {"reason": "duplicate posting", "next": f"/ar/receipts/{receipt.pk}/"},
+        )
+        assert resp.status_code == 302
+        assert resp.url == f"/ar/receipts/{receipt.pk}/"
+        receipt.refresh_from_db()
+        body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        assert "Reversal requested" in body
+        assert "Approve reversal" not in body   # staff sees the pending banner, but only the head can act
+        client.force_login(head)
+        body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        assert "Approve reversal" in body      # the head gets the action buttons
+
+        # head approves the reversal on the receipt page and returns here
+        from apps.posting.models import ReversalRequest
+
+        pending = ReversalRequest.objects.filter(entry_id=receipt.journal_entry_id).latest("id")
+        client.force_login(head)
+        resp = client.post(
+            f"/journal/reversal/{pending.id}/approve/",
+            {"next": f"/ar/receipts/{receipt.pk}/"},
+        )
+        assert resp.status_code == 302
+        assert resp.url == f"/ar/receipts/{receipt.pk}/"
+        receipt.refresh_from_db()
+        assert receipt.journal_entry.status == "reversed"
 
         # print page renders the account distribution
         print_body = client.get(f"/ar/receipts/{receipt.pk}/print/").content.decode()
         assert accounts["41010"].code in print_body
+
+    def _new_invoice(self, customer, segment, total="15000.00", invoice_no="SI-E2E-001"):
+        from apps.ar.models import ARInvoice, ARInvoiceLine
+
+        inv = ARInvoice.objects.create(
+            invoice_no=invoice_no,
+            customer=customer,
+            transaction_date=date(2026, 1, 6),
+            segment=segment,
+            total=Decimal(total),
+            status="open",
+        )
+        ARInvoiceLine.objects.create(
+            invoice=inv, line_no=1, product_code="DIESEL",
+            description="Fuel delivery", quantity=1,
+            unit_price=Decimal(total), amount=Decimal(total),
+        )
+        return inv
+
+    def test_receipt_applied_requires_AR_credit(
+        self, client, company, segment, accounts, fiscal_period, user,
+    ):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        inv = self._new_invoice(customer, segment)
+        before = AcknowledgmentReceipt.objects.count()
+        resp = self._post_grid(
+            client, customer, accounts, segment,
+            credit_account="41010", applied_to=inv,
+        )
+        # credit went to revenue instead of AR -> form re-renders with an error
+        assert resp.status_code == 200
+        assert AcknowledgmentReceipt.objects.count() == before
+
+    def test_receipt_apply_to_invoice_lifecycle(
+        self, client, company, segment, accounts, fiscal_period, role_users,
+    ):
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.ar.services import CycleLedgerService
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        inv = self._new_invoice(customer, segment, total="15000.00")
+
+        # applying to an invoice forces the credit line to the segment AR account
+        self._post_grid(
+            client, customer, accounts, segment,
+            credit_amount="15000.00", credit_account="12020", applied_to=inv,
+        )
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.applied_to_id == inv.id
+        assert receipt.status == "draft"
+        inv.refresh_from_db()
+        assert inv.status == "open"          # draft does not move the invoice
+
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+        inv.refresh_from_db()
+        assert inv.status == "paid"
+        assert inv.balance == Decimal("0.00")
+        # AR credit line was posted: Dr 10010 | Cr 12020
+        je = receipt.journal_entry
+        assert je.lines.get(credit__gt=0).account_id == accounts["12020"].id
+        # aging now clears for that customer
+        aged = {b["bucket"]: b["amount"] for b in CycleLedgerService.aging(date(2026, 1, 31))}
+        assert float(aged.get("0-30", 0)) == 0.0
+
+    def test_receipt_edit_can_clear_applied_to(
+        self, client, company, segment, accounts, fiscal_period, user,
+    ):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        inv = self._new_invoice(customer, segment)
+        self._post_grid(
+            client, customer, accounts, segment,
+            credit_account="12020", applied_to=inv,
+        )
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.applied_to_id == inv.id
+
+        # re-edit with the picker cleared -> applied_to becomes None
+        resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
+            "cash_account": accounts["10010"].id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "account": [accounts["21000"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Advance"],
+            "line_cost_center": [""],
+            "applied_to": [""],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.applied_to_id is None
+
+    def test_ar_invoice_options_scoped_by_customer(
+        self, client, company, segment, accounts, user,
+    ):
+        import json
+
+        client.force_login(user)
+        c1 = self._new_customer(segment, code="C001")
+        c2 = self._new_customer(segment, code="C002")
+        inv1 = self._new_invoice(c1, segment, invoice_no="SI-A-001")
+        inv2 = self._new_invoice(c2, segment, invoice_no="SI-B-001")
+
+        body = json.loads(client.get(
+            f"/foundation/ar-invoice-options/?customer={c1.id}"
+        ).content.decode())
+        assert [b["id"] for b in body] == [inv1.id]
+        assert "SI-A-001" in body[0]["text"]
 
 
 class TestRFPScreen:

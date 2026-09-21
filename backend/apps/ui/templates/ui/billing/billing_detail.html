@@ -14,8 +14,12 @@
       <a href="{% url 'ui:billing_export' billing.id 'xlsx' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
       <a href="{% url 'ui:billing_export' billing.id 'csv' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
       <a href="{% url 'ui:billing_print' billing.id %}" target="_blank" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+      {% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}
     </div>
   </div>
+
+  {% include "ui/partials/reversed_banner.html" with entry=billing.journal_entry %}
+  {% include "ui/partials/reversal_ui.html" with entry=billing.journal_entry %}
 
   {% if billing.rejection_note %}
   <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">

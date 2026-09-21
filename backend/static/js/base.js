@@ -421,6 +421,11 @@ enhanceSearchable(document);
 // long text stays hover-readable in tight rows. enhanceAutogrow re-runs on
 // every DOM mutation (row clones, htmx swaps) through the observer below. ----
 function resizeAutogrow(ta) {
+  // Skip while the field lives in a not-rendered container (e.g. a closed
+  // display:none modal): scrollHeight is 0 there, which would collapse the
+  // box to nothing. Leave the declared rows height; the input listener re-runs
+  // this once the modal is open and the user types.
+  if (ta.offsetParent === null) return;
   ta.style.height = 'auto';
   ta.style.height = ta.scrollHeight + 'px';
   ta.title = ta.value;

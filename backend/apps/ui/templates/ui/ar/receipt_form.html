@@ -36,6 +36,16 @@
             {% endif %}
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-slate-700" for="id_applied_to">Apply to invoice</label>
+            <select name="applied_to" id="id_applied_to" data-searchable data-search-compact data-search-value="id" data-search-placeholder="Search by SI no…" data-search-url="{% url 'ui:ar_invoice_options' %}{% if editing %}?customer={{ editing.customer_id }}&selected={{ editing.applied_to.id|default:'' }}{% endif %}" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <option value="">— advance / no invoice —</option>
+              {% if editing and editing.applied_to %}
+              <option value="{{ editing.applied_to.id }}" selected>{{ editing.applied_to.invoice_no }} — ₱{{ editing.applied_to.balance|money }} due</option>
+              {% endif %}
+            </select>
+            <p class="col-start-2 text-xs text-slate-500">Optional. Applying a collection marks the chosen invoice paid and requires the credit to hit Accounts-Receivable.</p>
+          </div>
+          <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
             <label class="text-sm font-semibold text-slate-700" for="id_transaction_date">Date of AR</label>
             <input type="date" name="transaction_date" id="id_transaction_date" required
                    value="{% if editing %}{{ editing.transaction_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
@@ -199,6 +209,7 @@
       <td class="px-2 py-2"><button type="button" data-remove-credit class="text-slate-400 hover:text-red-600" title="Remove line">&times;</button></td>
     </tr>
   </template>
+  {{ ar_invoice_prefill|json_script:"ar-invoice-map" }}
 </div>
 {% endblock %}
 
@@ -262,6 +273,77 @@
     }
     renumber();
     recalc();
+  })();
+
+  (function () {
+    var inv = document.getElementById('id_applied_to');
+    var cust = document.getElementById('id_customer');
+    if (!inv) return;
+    var AR_MAP = {};
+    var mapEl = document.getElementById('ar-invoice-map');
+    if (mapEl) { try { AR_MAP = JSON.parse(mapEl.textContent || '{}') || {}; } catch (e) { AR_MAP = {}; } }
+    var baseUrl = (inv.dataset.searchUrl || '').split('?')[0];
+
+    function scopeInvoiceUrl(customerId) {
+      inv.dataset.searchUrl = baseUrl + '?customer=' + encodeURIComponent(customerId || '');
+    }
+    if (cust) {
+      cust.addEventListener('change', function () {
+        scopeInvoiceUrl(cust.value);
+        if (inv.value) {
+          if (window.setSearchableValue) {
+            setSearchableValue(inv, '', '— advance / no invoice —');
+          } else {
+            inv.value = '';
+          }
+        }
+      });
+      if (cust.value) scopeInvoiceUrl(cust.value);
+    }
+
+    function findEmptyCreditRow(tbody) {
+      var rows = tbody.querySelectorAll('tr.ar-credit-row');
+      for (var i = 0; i < rows.length; i++) {
+        var acct = rows[i].querySelector('select[name="account"]');
+        var amt = rows[i].querySelector('input[name="credit"]');
+        var amtVal = amt ? String(amt.value || '').replace(/,/g, '') : '';
+        var amtNum = parseFloat(amtVal);
+        if (acct && !acct.value && (!amtVal || isNaN(amtNum) || amtNum === 0)) return rows[i];
+      }
+      return rows[rows.length - 1];
+    }
+
+    function prefillCreditRow(data) {
+      var tbody = document.getElementById('ar-lines-body');
+      if (!tbody) return;
+      var row = findEmptyCreditRow(tbody);
+      if (!row) return;
+      if (data.ar_account_id && window.setSearchableValue) {
+        setSearchableValue(
+          row.querySelector('select[name="account"]'),
+          data.ar_account_id,
+          data.ar_account_code + ' ' + data.ar_account_name
+        );
+      }
+      var seg = row.querySelector('select[name="line_segment"]');
+      if (seg && data.segment_id) seg.value = data.segment_id;
+      var desc = row.querySelector('textarea[name="line_description"]');
+      if (desc && !desc.value.trim()) {
+        desc.value = 'Applied to ' + data.invoice_no;
+        if (window.resizeAutogrow) window.resizeAutogrow(desc);
+      }
+      var amt = row.querySelector('input[name="credit"]');
+      if (amt) {
+        var current = parseFloat(String(amt.value || '0').replace(/,/g, '')) || 0;
+        if (current === 0) amt.value = data.balance;
+        amt.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    inv.addEventListener('change', function () {
+      var data = AR_MAP[String(inv.value)];
+      if (data) prefillCreditRow(data);
+    });
   })();
 </script>
 {% endblock %}
