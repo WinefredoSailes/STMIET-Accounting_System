@@ -189,7 +189,7 @@ def test_print_page_renders(client, segment, billing_accounts, posted_rfp, role_
 def test_create_links_customer_party_fk(client, segment, billing_accounts, role_users):
     from apps.ar.models import Customer
 
-    customer = Customer.objects.create(code="C001", name="Acme Corp", segment=segment)
+    customer = Customer.objects.create(code="C001", name="Acme Corp")
     client.force_login(role_users["staff"])
     resp = client.post(
         "/billing/new/",

@@ -644,6 +644,37 @@ def _ar_applied_invoice_from_form(request):
     return ARInvoice.objects.filter(pk=raw).first()
 
 
+@require_POST
+def _cash_segment_from_form(request):
+    raw = request.POST.get("cash_segment", "").strip()
+    if not raw or not raw.isdigit():
+        raise ValidationError("Select the segment for the cash received.")
+    from apps.foundation.models import Segment as FoundationSegment
+
+    return FoundationSegment.objects.get(pk=int(raw))
+
+
+def _segment_cash_map():
+    """Map of segment -> Cash-on-Hand account info, for auto-suggest on DR row."""
+    from apps.foundation.models import Segment
+
+    out = []
+    for seg in Segment.objects.order_by("code"):
+        try:
+            from apps.ar.services import cash_on_hand_account
+            coh = cash_on_hand_account(seg)
+        except Exception:
+            coh = None
+        out.append({
+            "id": seg.id,
+            "code": seg.code,
+            "cash_account_id": coh.id if coh else "",
+            "cash_account_code": coh.code if coh else "",
+            "cash_account_name": coh.name if coh else "",
+        })
+    return out
+
+
 def _ar_invoice_prefill_map(customer=None):
     """Open/partially-paid ARInvoices keyed by id with everything the form's
     apply-to-invoice picker needs to auto-suggest the AR credit line (correct
@@ -653,13 +684,13 @@ def _ar_invoice_prefill_map(customer=None):
 
     qs = ARInvoice.objects.filter(
         status__in=("open", "partially_paid")
-    ).select_related("customer__segment").order_by("-transaction_date", "invoice_no")
+    ).select_related("segment").order_by("-transaction_date", "invoice_no")
     if customer is not None:
         qs = qs.filter(customer=customer)
     ar_cache = {}
     out = {}
     for inv in qs[:200]:
-        seg = inv.customer.segment
+        seg = inv.segment
         if seg.code not in ar_cache:
             ar_cache[seg.code] = segment_ar_account(seg)
         ar = ar_cache[seg.code]
@@ -1820,7 +1851,6 @@ def customer_create(request):
                 code=request.POST["code"].strip(),
                 name=request.POST["name"].strip(),
                 group=request.POST["group"],
-                segment=Segment.objects.get(pk=request.POST["segment"]),
                 pricing_tier=request.POST["pricing_tier"],
                 tin=request.POST.get("tin", ""),
                 address=request.POST.get("address", ""),
@@ -1832,7 +1862,7 @@ def customer_create(request):
             return redirect("ui:customer_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(request, "ui/ar/customer_form.html", {"segments": Segment.objects.order_by("code")})
+    return render(request, "ui/ar/customer_form.html", {})
 
 
 @login_required
@@ -1846,7 +1876,6 @@ def customer_update(request, pk):
             customer.code = request.POST["code"].strip()
             customer.name = request.POST["name"].strip()
             customer.group = request.POST["group"]
-            customer.segment = Segment.objects.get(pk=request.POST["segment"])
             customer.pricing_tier = request.POST["pricing_tier"]
             customer.tin = request.POST.get("tin", "")
             customer.address = request.POST.get("address", "")
@@ -1861,7 +1890,7 @@ def customer_update(request, pk):
     return render(
         request,
         "ui/ar/customer_form.html",
-        {"segments": Segment.objects.order_by("code"), "customer": customer, "editing": True},
+        {"customer": customer, "editing": True},
     )
 
 
@@ -1884,9 +1913,11 @@ def receipt_create(request):
             if transaction_date is None:
                 raise ValidationError("Date of AR is required.")
             applied_to = _ar_applied_invoice_from_form(request)
+            cash_segment = _cash_segment_from_form(request)
 
-            lines = _ar_receipt_lines_from_form(request, cash_account, customer.segment)
-            _validate_ar_applied_credit(applied_to, segment_ar_account(customer.segment), lines)
+            lines = _ar_receipt_lines_from_form(request, cash_account, cash_segment)
+            ar_seg = applied_to.segment if applied_to else cash_segment
+            _validate_ar_applied_credit(applied_to, segment_ar_account(ar_seg), lines)
             receipt = CollectionService.create_receipt(
                 customer=customer,
                 transaction_date=transaction_date,
@@ -1897,6 +1928,7 @@ def receipt_create(request):
                 ref_po_no=request.POST.get("ref_po_no", ""),
                 applied_to=applied_to,
                 lines=lines,
+                segment=cash_segment,
                 created_by=request.user,
             )
             messages.success(
@@ -1914,6 +1946,7 @@ def receipt_create(request):
             "segments": Segment.objects.order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
             "ar_invoice_prefill": _ar_invoice_prefill_map(),
+            "segment_cash_map": _segment_cash_map(),
         },
     )
 
@@ -1939,8 +1972,10 @@ def receipt_edit(request, pk: int):
             if transaction_date is None:
                 raise ValidationError("Date of AR is required.")
             applied_to = _ar_applied_invoice_from_form(request)
-            lines = _ar_receipt_lines_from_form(request, cash_account, receipt.segment)
-            _validate_ar_applied_credit(applied_to, segment_ar_account(receipt.segment), lines)
+            cash_segment = _cash_segment_from_form(request)
+            lines = _ar_receipt_lines_from_form(request, cash_account, cash_segment)
+            ar_seg = applied_to.segment if applied_to else cash_segment
+            _validate_ar_applied_credit(applied_to, segment_ar_account(ar_seg), lines)
             CollectionService.update_draft(
                 receipt=receipt,
                 lines=lines,
@@ -1951,6 +1986,7 @@ def receipt_edit(request, pk: int):
                 ref_po_no=request.POST.get("ref_po_no", ""),
                 transaction_date=transaction_date,
                 applied_to=applied_to,
+                segment=cash_segment,
                 user=request.user,
             )
             messages.success(request, f"Receipt {receipt.receipt_no} updated.")
@@ -1966,6 +2002,7 @@ def receipt_edit(request, pk: int):
             "segments": Segment.objects.order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
             "ar_invoice_prefill": _ar_invoice_prefill_map(customer=receipt.customer),
+            "segment_cash_map": _segment_cash_map(),
         },
     )
 
@@ -6194,7 +6231,6 @@ def customer_export(request):
             c.owner_name or "",
             c.contact_no or "",
             c.tin or "",
-            c.segment.code if c.segment else "",
             c.group,
             c.pricing_tier,
             c.address or "",
@@ -6204,7 +6240,7 @@ def customer_export(request):
     ]
     return _table_response(
         "CUSTOMERS MASTER",
-        ["Code", "Business Name", "Owner", "Contact", "TIN", "Segment",
+        ["Code", "Business Name", "Owner", "Contact", "TIN",
          "Group", "Pricing Tier", "Address", "Notes"],
         rows,
         fmt,

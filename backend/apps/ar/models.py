@@ -39,9 +39,6 @@ class Customer(SoftDeleteMixin, AuditableModel):
     code = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=255)
     group = models.CharField(max_length=16, choices=CustomerGroup.choices, default=CustomerGroup.FUEL)
-    segment = models.ForeignKey(
-        "foundation.Segment", on_delete=models.PROTECT, related_name="customers"
-    )
     pricing_tier = models.CharField(max_length=16, choices=PricingTier.choices, default=PricingTier.REGULAR)
     tin = models.CharField("TIN", max_length=32, blank=True)
     address = models.CharField(max_length=255, blank=True)

@@ -893,13 +893,12 @@ class TestMasterScreens:
 
         c = Customer.objects.get(code="C001")
         assert c.name == "DHPP Fuel Client"
-        assert c.segment == segment
 
     def test_customer_update_superadmin_only(self, client, company, segment, accounts):
         from apps.ar.models import Customer
 
         cust = Customer.objects.create(
-            code="C002", name="Client Two", group="fuel", segment=segment,
+            code="C002", name="Client Two", group="fuel",
             contact_no="0000",
         )
         update = client.get(f"/ar/customers/{cust.pk}/update/")
@@ -930,7 +929,7 @@ class TestMasterScreens:
 
         client.force_login(user)
         cust = Customer.objects.create(
-            code="C777", name="Ledger Client", group="fuel", segment=segment,
+            code="C777", name="Ledger Client", group="fuel",
             pricing_tier="regular",
         )
         body = client.get(f"/ar/customers/{cust.pk}/").content.decode()
@@ -982,7 +981,7 @@ class TestEditPagesRender:
     def test_customer_update_page(self, company, segment, accounts):
         from apps.ar.models import Customer
 
-        c = Customer.objects.create(code="C002", name="Client Two", group="fuel", segment=segment)
+        c = Customer.objects.create(code="C002", name="Client Two", group="fuel")
         body = self._superuser_client().get(f"/ar/customers/{c.pk}/update/").content.decode()
         assert c.name in body
         assert "Save changes" in body
@@ -1101,7 +1100,7 @@ class TestReceiptScreen:
         from apps.ar.models import Customer
 
         return Customer.objects.create(
-            code=code, name="Fuel Client", group="fuel", segment=segment, pricing_tier="regular"
+            code=code, name="Fuel Client", group="fuel", pricing_tier="regular"
         )
 
     def _post_grid(self, client, customer, accounts, segment, credit_amount="15000.00",
@@ -1112,6 +1111,7 @@ class TestReceiptScreen:
             "payment_method": "cash",
             "check_no": "",
             "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
             "account": [accounts[credit_account].id],
             "line_segment": [segment.id],
             "credit": [credit_amount],
@@ -1141,6 +1141,84 @@ class TestReceiptScreen:
         assert credit.credit == Decimal("15000.00")
         assert receipt.lines.get(debit__gt=0).account_id == accounts["10010"].id
         assert resp.url == f"/ar/receipts/{receipt.pk}/"
+
+    def test_receipt_cash_segment_syncs_header(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.foundation.models import Segment as SegmentModel
+
+        seg2 = SegmentModel.objects.create(code="TES2", name="Extra Segment", company=company)
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "cash_segment": seg2.id,
+            "account": [accounts["41010"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
+        }
+        resp = client.post("/ar/receipts/new/", data)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        debit = receipt.lines.get(debit__gt=0)
+        assert debit.account_id == accounts["10010"].id
+        assert debit.segment_id == seg2.id
+        assert receipt.segment_id == seg2.id
+
+    def test_receipt_edit_changes_cash_segment(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.foundation.models import Segment as SegmentModel
+
+        seg2 = SegmentModel.objects.create(code="TES2", name="Extra Segment", company=company)
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.segment_id == segment.id
+
+        resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
+            "cash_account": accounts["10010"].id,
+            "cash_segment": seg2.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "account": [accounts["41010"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.segment_id == seg2.id
+        assert receipt.lines.get(debit__gt=0).segment_id == seg2.id
+
+    def test_receipt_requires_cash_segment(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "account": [accounts["41010"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
+        }
+        before = AcknowledgmentReceipt.objects.count()
+        resp = client.post("/ar/receipts/new/", data)
+        assert resp.status_code == 200
+        assert AcknowledgmentReceipt.objects.count() == before
+        assert "Select the segment for the cash received." in resp.content.decode()
 
     def test_receipt_full_lifecycle(self, client, company, segment, accounts, fiscal_period, role_users):
         from apps.ar.models import AcknowledgmentReceipt
@@ -1202,6 +1280,7 @@ class TestReceiptScreen:
         # revise to a different credit account
         resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
             "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
             "transaction_date": "2026-01-15",
             "payment_method": "cash",
             "account": [accounts["21000"].id],
@@ -1401,6 +1480,7 @@ class TestReceiptScreen:
         # re-edit with the picker cleared -> applied_to becomes None
         resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
             "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
             "transaction_date": "2026-01-15",
             "payment_method": "cash",
             "account": [accounts["21000"].id],
@@ -3127,7 +3207,7 @@ class TestCollectionsSummaryScreen:
 
         customer = Customer.objects.create(
             code="C001", name="MORTE FUEL-BAYLIMANGO", group="fuel",
-            segment=segment, pricing_tier="regular",
+            pricing_tier="regular",
         )
         BankAccount.objects.create(
             code="EW-1", name="EW Checking", account_type="checking",
@@ -3530,7 +3610,7 @@ class TestARAgingScreen:
         from apps.ui.services import aging_context
 
         customer = Customer.objects.create(
-            code="C002", name="Future Customer", segment=segment
+            code="C002", name="Future Customer"
         )
         as_of = date(2026, 3, 31)
         ARInvoice.objects.create(
@@ -4068,7 +4148,7 @@ class TestJournalVoucherLayout:
             code="S001", name="Shell Fuel Depot", supplier_type="equipment",
             default_segment=segment,
         )
-        Customer.objects.create(code="C001", name="3DS Refilling Station", segment=segment)
+        Customer.objects.create(code="C001", name="3DS Refilling Station")
 
         resp = client.get("/foundation/party-options/", {"q": "fuel"})
         assert resp.status_code == 200

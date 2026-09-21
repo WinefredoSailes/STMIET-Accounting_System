@@ -20,7 +20,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects
     serializer_class = CustomerSerializer
     search_fields = ["code", "name"]
-    filterset_fields = ["group", "segment", "pricing_tier"]
+    filterset_fields = ["group", "pricing_tier"]
 
     @action(detail=True, methods=["get"])
     def ledger(self, request, pk=None):
@@ -67,6 +67,7 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
         if data.get("cash_account"):
             cash_account = Account.objects.get(pk=data["cash_account"])
 
+        header_segment = Segment.objects.get(pk=data.get("segment")) if data.get("segment") else None
         norm_lines = None
         if lines:
             norm_lines = []
@@ -76,7 +77,7 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
                         "account": Account.objects.get(pk=line["account"]),
                         "segment": Segment.objects.get(pk=line["segment"])
                         if line.get("segment")
-                        else customer.segment,
+                        else header_segment,
                         "cost_center": line.get("cost_center", ""),
                         "description": line.get("description", ""),
                         "debit": line.get("debit", 0),
@@ -98,6 +99,7 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
                 else None,
                 lines=norm_lines,
                 created_by=request.user,
+                segment=header_segment,
             )
         except AccountingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

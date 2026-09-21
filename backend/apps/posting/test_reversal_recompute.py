@@ -68,7 +68,7 @@ def test_po_balance_restored_when_rfp_reversed(company, segment, accounts, role_
 
 def test_ar_invoice_reopens_when_receipt_reversed(company, segment, accounts, role_users):
     customer = Customer.objects.create(
-        code="CUST-R1", name="Reversal Customer", segment=segment
+        code="CUST-R1", name="Reversal Customer"
     )
     invoice = ARInvoice.objects.create(
         invoice_no="SI-REV-1", customer=customer, transaction_date=date(2026, 9, 1),

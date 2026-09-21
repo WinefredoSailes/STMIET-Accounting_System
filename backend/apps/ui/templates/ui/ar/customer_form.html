@@ -36,12 +36,7 @@
       <option value="ops" {% if customer.group == 'ops' %}selected{% endif %}>Operations</option>
     </select>
   </div>
-  <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
-    <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-      {% for seg in segments %}<option value="{{ seg.id }}" {% if customer.segment_id == seg.id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
-    </select>
-  </div>
+
   <div>
     <label class="block text-sm font-medium text-slate-700 mb-1" for="id_pricing_tier">Pricing tier</label>
     <select name="pricing_tier" id="id_pricing_tier" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">

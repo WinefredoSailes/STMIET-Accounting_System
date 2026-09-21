@@ -1063,8 +1063,8 @@ def build_ar_receipt_pdf(receipt, *, paper="a5") -> bytes:
     receipt = receipt if isinstance(receipt, AcknowledgmentReceipt) else \
         AcknowledgmentReceipt.objects.get(pk=int(receipt))
     customer = receipt.customer
-    rfp = getattr(customer, "segment", None) and getattr(customer.segment, "company", None)
-    company_name = (rfp.name if rfp else "") or COMPANY_FALLBACK
+    r = receipt.segment
+    company_name = (r.company.name if r else "") or COMPANY_FALLBACK
 
     pagesize = A4 if paper == "a4" else A5
     margin = 1.0 * cm

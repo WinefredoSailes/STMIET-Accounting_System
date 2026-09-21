@@ -30,7 +30,7 @@ from io import StringIO
 
 @pytest.fixture
 def customer(db, segment, company):
-    return Customer.objects.create(code="C001", name="ABC Trading", segment=segment)
+    return Customer.objects.create(code="C001", name="ABC Trading")
 
 
 @pytest.fixture
@@ -63,6 +63,7 @@ class TestCollectionPosting:
             transaction_date=date(2026, 1, 15),
             amount="1000.00",
             cash_account=bank_account,
+            segment=segment,
         )
         receipt.refresh_from_db()
         assert receipt.journal_entry is not None
@@ -83,6 +84,7 @@ class TestCollectionPosting:
             amount="3000.00",
             cash_account=bank_account,
             applied_to=invoice,
+            segment=segment,
         )
         je = receipt.journal_entry
         line2 = je.lines.get(line_no=2)
@@ -99,12 +101,13 @@ class TestCollectionPosting:
             amount="5000.00",
             cash_account=bank_account,
             applied_to=invoice,
+            segment=segment,
         )
         invoice.refresh_from_db()
         assert invoice.status == "paid"
 
     def test_invalid_customer_on_applied_invoice_rejected(self, customer, bank_account, segment, invoice):
-        other = Customer.objects.create(code="C002", name="Other Co", segment=segment)
+        other = Customer.objects.create(code="C002", name="Other Co")
         with pytest.raises(ValidationError):
             CollectionService.record_collection(
                 receipt_no="AR-2026-00004",
@@ -113,9 +116,10 @@ class TestCollectionPosting:
                 amount="100.00",
                 cash_account=bank_account,
                 applied_to=invoice,
+                segment=segment,
             )
 
-    def test_zero_amount_rejected(self, customer, bank_account):
+    def test_zero_amount_rejected(self, customer, bank_account, segment):
         with pytest.raises(ValidationError):
             CollectionService.record_collection(
                 receipt_no="AR-2026-00005",
@@ -123,6 +127,7 @@ class TestCollectionPosting:
                 transaction_date=date(2026, 1, 16),
                 amount="0.00",
                 cash_account=bank_account,
+                segment=segment,
             )
 
 
@@ -148,12 +153,14 @@ class TestCycleLedger:
             receipt_no="AR-2026-00010", customer=customer,
             transaction_date=date(2026, 1, 14), amount="3000.00",
             cash_account=bank_account,
+            segment=segment,
         )
         # Cycle 2 (Tue 01-20): paid 4000 -> over +4000, cumulative +2000.
         CollectionService.record_collection(
             receipt_no="AR-2026-00011", customer=customer,
             transaction_date=date(2026, 1, 21), amount="4000.00",
             cash_account=bank_account,
+            segment=segment,
         )
 
         rows = CycleLedgerService.for_customer(customer)
@@ -190,28 +197,24 @@ class TestCycleLedger:
 
 
 class TestImportCustomers:
-    def test_creates_and_is_idempotent(self, tmp_path, company, segment):
+    def test_creates_and_is_idempotent(self, tmp_path, company):
         from apps.ar.models import CustomerGroup, PricingTier
-        from apps.foundation.models import Segment as SegmentModel
-
-        SegmentModel.objects.create(code="DMIE", name="DMIE", company=company)
 
         path = tmp_path / "customers.csv"
         import csv
         with open(path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
-            writer.writerow(["CODE", "NAME", "SEGMENT", "GROUP", "PRICING TIER", "TIN"])
-            writer.writerow(["X001", "Client One", "DHPP", "fuel", "volume", "111"])
-            writer.writerow(["X002", "Client Two", "DMIE", "equipment", "patron", "222"])
+            writer.writerow(["CODE", "NAME", "GROUP", "PRICING TIER", "TIN"])
+            writer.writerow(["X001", "Client One", "fuel", "volume", "111"])
+            writer.writerow(["X002", "Client Two", "equipment", "patron", "222"])
         call_command("import_customers", file=str(path), stdout=StringIO())
 
         c1 = Customer.objects.get(code="X001")
-        assert c1.segment.code == "DHPP"
         assert c1.group == CustomerGroup.FUEL
         assert c1.pricing_tier == PricingTier.VOLUME
         assert c1.tin == "111"
         c2 = Customer.objects.get(code="X002")
-        assert c2.segment.code == "DMIE"
+        assert c2.group == CustomerGroup.EQUIPMENT
 
         call_command("import_customers", file=str(path), stdout=StringIO())
         assert Customer.objects.filter(code="X001").count() == 1

@@ -61,7 +61,7 @@ def posted_invoice(db, company, segment, tax_accounts):
     from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
     from apps.posting.services import PostingService
 
-    cust = Customer.objects.create(code="C001", name="Test Fleet", segment=segment)
+    cust = Customer.objects.create(code="C001", name="Test Fleet")
     inv = ARInvoice.objects.create(
         invoice_no="SI-2026-0001",
         customer=cust,

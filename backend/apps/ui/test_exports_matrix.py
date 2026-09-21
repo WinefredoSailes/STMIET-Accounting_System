@@ -281,7 +281,7 @@ class TestConsoAssetReceiptMatrix:
 
         customer = Customer.objects.create(
             code="MX-AR", name="Matrix Buyer", group="fuel",
-            segment=voucher_docs["rfp"].segment, pricing_tier="regular",
+            pricing_tier="regular",
         )
         ack = AcknowledgmentReceipt.objects.create(
             receipt_no="AR-MX-0001", customer=customer,
@@ -430,7 +430,7 @@ class TestRegisterDataQuality:
 
         customer = Customer.objects.create(
             code="MX-100", name="Matrix Trading Corp", group="fuel",
-            segment=segment, pricing_tier="regular",
+            pricing_tier="regular",
         )
         supplier = Supplier.objects.create(
             code="MX-100", name="Matrix Supply Inc", default_segment=segment,

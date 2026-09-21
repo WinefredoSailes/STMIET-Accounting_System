@@ -99,7 +99,7 @@ class TestEndToEndWorkflow:
         # only edited by a super admin; operator screens post collections/RFPs.)
         customer = Customer.objects.create(
             code="E2E-001", name="E2E Customer", group="fuel",
-            segment=segment, pricing_tier="regular",
+            pricing_tier="regular",
         )
 
         # 2. AR invoice (no UI screen yet — created via the model) ------------
@@ -109,6 +109,7 @@ class TestEndToEndWorkflow:
         resp = client.post(
             "/ar/receipts/new/",
             {"customer": customer.id, "cash_account": accounts["10010"].id,
+             "cash_segment": segment.id,
              "transaction_date": "2026-01-07", "payment_method": "cash",
              "account": [accounts["21000"].id],
              "line_segment": [segment.id],
@@ -445,7 +446,7 @@ class TestEndToEndWorkflow:
 
         client.force_login(user)
         customer = Customer.objects.create(
-            code="E2E-AG", name="E2E Ager", segment=segment
+            code="E2E-AG", name="E2E Ager"
         )
         today = date.today()
         for offset, total in ((5, "10000.00"), (40, "20000.00"), (75, "30000.00")):

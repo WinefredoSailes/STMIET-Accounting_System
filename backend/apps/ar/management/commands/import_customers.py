@@ -32,7 +32,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.ar.models import Customer, CustomerGroup, PricingTier
-from apps.foundation.models import Company, Segment
+from apps.foundation.models import Company
 
 try:
     import openpyxl
@@ -42,7 +42,6 @@ except ImportError:  # pragma: no cover
 HEADER_MAP = {
     "code": ("CODE", "CUSTOMER CODE", "CUST CODE", "ACCT #"),
     "name": ("NAME", "CUSTOMER NAME", "BUSINESS NAME", "OUTLET NAME", "CLIENT"),
-    "segment": ("SEGMENT", "SECTION", "DEPARTMENT"),
     "group": ("GROUP", "CATEGORY"),
     "pricing_tier": ("PRICING TIER", "TIER", "PRICE TIER"),
     "tin": ("TIN",),
@@ -50,12 +49,6 @@ HEADER_MAP = {
     "contact": ("CONTACT", "CONTACT #", "CONTACT NO", "PHONE", "MOBILE", "TEL NO"),
     "owner_name": ("OWNER", "OWNER NAME", "PROPRIETOR"),
     "notes": ("NOTES", "REMARKS"),
-}
-
-SEGMENT_ALIASES = {
-    "DHPP": "DHPP", "DIESEL & HEAVY PARTS PROCUREMENT": "DHPP", "DIESEL": "DHPP",
-    "DMIE": "DMIE", "DIESEL MACHINERY & INDUSTRIAL EQUIPMENT": "DMIE",
-    "OPS": "OPS", "OPERATIONS": "OPS", "OPERATIONS / SERVICES": "OPS",
 }
 
 GROUP_ALIASES = {
@@ -83,10 +76,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--file", dest="file", default=None, help="CSV/XLSX path")
         parser.add_argument("--company", dest="company", default="STMIET")
-        parser.add_argument(
-            "--default-segment", dest="default_segment", default="DHPP",
-            help="Segment used for rows with no SEGMENT column (default DHPP)",
-        )
 
     def _load_rows(self, file_path):
         """Yield (row_dict, row_label) for each data row."""
@@ -138,24 +127,6 @@ class Command(BaseCommand):
                 out[field] = _clean(row[pos])
         return out
 
-    def _resolve_segment(self, raw):
-        key = raw.upper().strip()
-        segment_code = SEGMENT_ALIASES.get(key)
-        if not segment_code:
-            # Match partial segment text (e.g. "DHPP" inside a longer cell).
-            for alias, code in SEGMENT_ALIASES.items():
-                if alias and alias in key:
-                    segment_code = code
-                    break
-        if not segment_code:
-            raise ValueError(f"Unknown segment: {raw!r}")
-        segment = Segment.objects.filter(code=segment_code).first()
-        if segment is None:
-            raise CommandError(
-                f"Segment '{segment_code}' not found. Run import_coa first."
-            )
-        return segment
-
     def _resolve_group(self, raw):
         if not raw:
             return CustomerGroup.FUEL
@@ -198,8 +169,6 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
             try:
-                raw_segment = row.get("segment") or options["default_segment"]
-                segment = self._resolve_segment(raw_segment)
                 if not code:
                     base = re.sub(r"[^A-Z0-9]+", "-", name.upper())[:16].strip("-")
                     code = f"{base}-{derived_seq()}"
@@ -210,7 +179,6 @@ class Command(BaseCommand):
                     defaults={
                         "name": name or code,
                         "group": group,
-                        "segment": segment,
                         "pricing_tier": tier,
                         "tin": row.get("tin", ""),
                         "address": row.get("address", ""),

@@ -225,7 +225,9 @@ class CollectionService:
         converted into Dr Cash on Hand | Cr Unearned (or Cr AR when applied).
         No journal entry is posted here — that happens on Head approval.
         """
-        seg = segment or customer.segment
+        if segment is None:
+            raise ValidationError("A segment is required for a receipt.")
+        seg = segment
         if applied_to is not None and applied_to.customer_id != customer.id:
             raise ValidationError("Applied invoice belongs to a different customer.")
         if applied_to is not None and applied_to.balance <= 0:
@@ -237,7 +239,7 @@ class CollectionService:
             amount = money(amount)
             if amount <= 0:
                 raise ValidationError("Collection amount must be positive.")
-            generated = receipt_no or cls._next_receipt_no(customer, transaction_date)
+            generated = receipt_no or cls._next_receipt_no(seg, transaction_date)
             norm_lines = _default_lines(
                 customer=customer,
                 segment=seg,
@@ -260,7 +262,7 @@ class CollectionService:
             )
 
         if receipt_no is None:
-            receipt_no = cls._next_receipt_no(customer, transaction_date)
+            receipt_no = cls._next_receipt_no(seg, transaction_date)
 
         with transaction.atomic():
             receipt = AcknowledgmentReceipt.objects.create(
@@ -299,11 +301,11 @@ class CollectionService:
         return receipt
 
     @staticmethod
-    def _next_receipt_no(customer, transaction_date):
+    def _next_receipt_no(segment, transaction_date):
         from apps.sequences.models import DocumentSequence
 
         return DocumentSequence.next_number(
-            company=customer.segment.company,
+            company=segment.company,
             form_code="AR",
             year=transaction_date.year,
             pattern="AR-{YYYY}-{SEQ:05d}",
@@ -323,6 +325,7 @@ class CollectionService:
         transaction_no: str | None = None,
         ref_po_no: str | None = None,
         transaction_date: date | None = None,
+        segment=None,
         applied_to=_APPLIED_UNSET,
         attachment=None,
         user=None,
@@ -344,6 +347,7 @@ class CollectionService:
             if applied_to.balance <= 0:
                 raise ValidationError(f"Invoice {applied_to.invoice_no} is fully paid.")
         with transaction.atomic():
+            saved_fields = []
             receipt.lines.all().delete()
             for i, line in enumerate(norm_lines, start=1):
                 AcknowledgmentReceiptLine.objects.create(
@@ -358,21 +362,32 @@ class CollectionService:
                 )
             if cash_account is not None:
                 receipt.cash_account = cash_account
+                saved_fields.append("cash_account")
             if payment_method is not None:
                 receipt.payment_method = payment_method
+                saved_fields.append("payment_method")
             if check_no is not None:
                 receipt.check_no = check_no
+                saved_fields.append("check_no")
             if transaction_no is not None:
                 receipt.transaction_no = transaction_no
+                saved_fields.append("transaction_no")
             if ref_po_no is not None:
                 receipt.ref_po_no = ref_po_no
+                saved_fields.append("ref_po_no")
             if transaction_date is not None:
                 receipt.transaction_date = transaction_date
+                saved_fields.append("transaction_date")
             if applied_to is not _APPLIED_UNSET:
                 receipt.applied_to = applied_to
+                saved_fields.append("applied_to")
             if attachment is not None:
                 receipt.attachment = attachment
-            receipt.save()
+                saved_fields.append("attachment")
+            if segment is not None:
+                receipt.segment = segment
+                saved_fields.append("segment")
+            receipt.save(update_fields=saved_fields or ["amount"])
             receipt.recalc_totals()
             _log(receipt, "revised", actor=user)
         return receipt
@@ -670,37 +685,23 @@ class CycleLedgerService:
     @classmethod
     def for_customer(cls, customer: Customer) -> list[dict]:
         """Return per-cycle entries for the customer, oldest cycle first."""
-        from django.db.models import Sum
-
         rows = []
+        seen = {}
         receipts = (
             AcknowledgmentReceipt.objects.filter(customer=customer, journal_entry__isnull=False)
-            .values("transaction_date")
-            .annotate(paid=Sum("amount"))
-            .order_by("transaction_date")
+            .select_related("segment")
         )
-        invoices = (
-            ARInvoice.objects.filter(customer=customer)
-            .values("transaction_date")
-            .annotate(billed=Sum("total"))
-            .order_by("transaction_date")
-        )
-
-        events = []
-        company = customer.segment.company if customer.segment_id else None
         for r in receipts:
-            start, _ = cycle_range_for(r["transaction_date"], company=company)
-            events.append((start, "paid", r["paid"]))
-        for inv in invoices:
-            start, _ = cycle_range_for(inv["transaction_date"], company=company)
-            events.append((start, "billed", inv["billed"]))
-
-        events.sort(key=lambda e: (e[0], e[1]))
-        cumulative = Decimal("0.00")
-        seen = {}
-        for start, kind, amt in events:
+            start, _ = cycle_range_for(r.transaction_date, company=r.segment.company)
             bucket = seen.setdefault(start, {"paid": Decimal("0.00"), "billed": Decimal("0.00")})
-            bucket[kind] += amt
+            bucket["paid"] += r.amount
+        invoices = ARInvoice.objects.filter(customer=customer).select_related("segment")
+        for inv in invoices:
+            start, _ = cycle_range_for(inv.transaction_date, company=inv.segment.company)
+            bucket = seen.setdefault(start, {"paid": Decimal("0.00"), "billed": Decimal("0.00")})
+            bucket["billed"] += inv.total
+
+        cumulative = Decimal("0.00")
         for start in sorted(seen):
             b = seen[start]
             cycle_over_short = b["paid"] - b["billed"]

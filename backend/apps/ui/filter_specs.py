@@ -70,7 +70,6 @@ def customer_list_filter_spec():
                 "q", "Search", kind="text", placeholder="Code or name",
                 search_fields=("code", "name", "owner_name"),
             ),
-            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField(
                 "group", "Group", kind="choice",
                 choices=lambda req: CustomerGroup.choices,

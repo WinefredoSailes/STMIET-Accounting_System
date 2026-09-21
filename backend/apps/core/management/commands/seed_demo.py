@@ -128,7 +128,7 @@ class Command(BaseCommand):
 
         out = {}
         for code, name, seg_code in CUSTOMERS:
-            cust, _ = Customer.objects.get_or_create(code=code, defaults={"name": name, "segment": segs[seg_code]})
+            cust, _ = Customer.objects.get_or_create(code=code, defaults={"name": name})
             out[code] = cust
         self.stdout.write(f"customers: {len(out)}")
         return out
@@ -143,7 +143,7 @@ class Command(BaseCommand):
         self.stdout.write(f"suppliers: {len(out)}")
         return out
 
-    def _invoice(self, *, invoice_no, customer, transaction_date, total):
+    def _invoice(self, *, invoice_no, customer, transaction_date, total, segment=None):
         from decimal import Decimal
 
         from apps.ar.models import ARInvoice, ARInvoiceLine
@@ -154,7 +154,7 @@ class Command(BaseCommand):
             defaults={
                 "customer": customer,
                 "transaction_date": transaction_date,
-                "segment": customer.segment,
+                "segment": segment,
                 "total": total,
                 "status": "open",
             },
@@ -177,6 +177,7 @@ class Command(BaseCommand):
         inv = self._invoice(
             invoice_no="SI-2026-0003", customer=customers["MIG-001"],
             transaction_date=date(2026, 1, 6), total="120000.00",
+            segment=seg,
         )
         if not AcknowledgmentReceipt.objects.filter(receipt_no="AR-2026-0003").exists():
             CollectionService.record_collection(
@@ -203,11 +204,14 @@ class Command(BaseCommand):
             self.stdout.write("AR-2026-0501 posted (unearned)")
         today = date.today()
         self._invoice(invoice_no="SI-2026-0090", customer=customers["PMP-001"],
-                      transaction_date=today - timedelta(days=33), total="18000.00")
+                      transaction_date=today - timedelta(days=33), total="18000.00",
+                      segment=segs["DMIE"])
         self._invoice(invoice_no="SI-2026-0101", customer=customers["JRT-001"],
-                      transaction_date=today - timedelta(days=14), total="25000.00")
+                      transaction_date=today - timedelta(days=14), total="25000.00",
+                      segment=segs["OPS"])
         self._invoice(invoice_no="SI-2026-0102", customer=customers["PMP-001"],
-                      transaction_date=today - timedelta(days=3), total="40000.00")
+                      transaction_date=today - timedelta(days=3), total="40000.00",
+                      segment=segs["DMIE"])
         self.stdout.write("fresh open invoices for aging seeded")
 
     def _rfp_chain(self, suppliers, segs):

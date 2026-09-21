@@ -111,7 +111,11 @@
                   {% if editing %}<option value="{{ editing.cash_account.id }}" selected>{{ editing.cash_account.code }} {{ editing.cash_account.name }}</option>{% else %}<option value="">— cash / bank —</option>{% endif %}
                 </select>
               </td>
-              <td class="px-2 py-2 text-xs text-slate-400">{{ editing.segment.code|default:"auto" }}</td>
+              <td class="px-2 py-2">
+                <select name="cash_segment" id="id_cash_segment" required class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.id }}" {% if editing and editing.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
               <td class="px-2 py-2 text-xs text-slate-400">—</td>
               <td class="px-2 py-2 text-xs text-slate-500">Cash received</td>
               <td class="px-2 py-2 text-right font-semibold tabular-nums" id="ar-cash-debit">0.00</td>
@@ -210,6 +214,7 @@
     </tr>
   </template>
   {{ ar_invoice_prefill|json_script:"ar-invoice-map" }}
+  {{ segment_cash_map|json_script:"segment-cash-map" }}
 </div>
 {% endblock %}
 
@@ -344,6 +349,38 @@
       var data = AR_MAP[String(inv.value)];
       if (data) prefillCreditRow(data);
     });
+  })();
+
+  (function () {
+    var segSel = document.getElementById('id_cash_segment');
+    var custEl = document.getElementById('id_customer');
+    var cashSel = document.getElementById('id_cash_account');
+    if (!segSel) return;
+    var CASH_MAP = [];
+    var cmEl = document.getElementById('segment-cash-map');
+    if (cmEl) { try { CASH_MAP = JSON.parse(cmEl.textContent || '[]') || []; } catch (e) { CASH_MAP = []; } }
+    CASH_MAP = Array.isArray(CASH_MAP) ? CASH_MAP : [];
+    var byId = {};
+    CASH_MAP.forEach(function (item) { if (item.id) byId[item.id] = item; });
+
+    function applySegmentSuggestion(segId) {
+      var m = byId[String(segId)];
+      if (m && m.cash_account_id && cashSel && window.setSearchableValue) {
+        setSearchableValue(cashSel, m.cash_account_id, m.cash_account_code + ' ' + m.cash_account_name);
+      }
+    }
+
+    if (segSel) {
+      segSel.addEventListener('change', function () {
+        applySegmentSuggestion(this.value);
+      });
+    }
+
+    if (custEl) {
+      custEl.addEventListener('change', function () {
+        // customer is segment-agnostic; no prefill here
+      });
+    }
   })();
 </script>
 {% endblock %}

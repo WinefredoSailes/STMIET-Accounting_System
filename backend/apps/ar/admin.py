@@ -14,8 +14,8 @@ from .models import (
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "group", "segment", "pricing_tier")
-    list_filter = ("group", "segment", "pricing_tier")
+    list_display = ("code", "name", "group", "pricing_tier")
+    list_filter = ("group", "pricing_tier")
     search_fields = ("code", "name")
 
 
