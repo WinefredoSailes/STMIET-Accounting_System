@@ -113,3 +113,22 @@ Run `pytest --nomigrations -q` all green.
   in the right rail; a regression test pins every row to 14 columns.
 - Full suite: `pytest` → 707 passed, 3 skipped. See ADR-043 for the
   unification mandate this establishes.
+
+## Recent changes (reversal, pending postings, reject-return)
+
+- **Reversal (ADR-044):** posted entries are corrected by a maker-checker
+  reversing entry — the preparer requests with a reason, the head approves
+  (`PostingService.reverse` posts the mirror) or rejects (note required).
+  Posted entries stay undeletable. `apps/posting/test_reversal*.py`.
+- **Recompute:** `GL_EFFECTIVE_STATUSES = (POSTED, REVERSED)` is used by every
+  balance reader so the original + mirror net to zero; PO balances exclude
+  reversed RFPs, AR invoices re-open when a collection is reversed, and open
+  cash cycles regenerate. Locked cycles are never restated.
+- **Pending / Unposted tab:** the Journal Entries screen (and dashboard) surface
+  approved RFP/CONSO/PCF documents that have no JE yet. `ui/services.py::pending_documents`.
+- **Reject-return:** rejected RFP/PO/CV/Transfer stay trackable + revisable in
+  their own list/detail; source-document JEs cannot be edited/submitted/
+  approved/posted through the generic JE module (`_manual_je_guard`).
+- **JE rejection note** now shows to the requester (detail + edit form + a
+  "Returned" chip in the register).
+- `ActionLog.DocType.JE` added — JE audit no longer collides with RFP history.
