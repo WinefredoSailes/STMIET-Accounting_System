@@ -222,10 +222,15 @@ class AcknowledgmentReceiptLine(models.Model):
 class ARInvoice(AuditableModel):
     """Sales invoice / delivery billing (SI# per catalog events #48/#49).
 
-    Booked on delivery-completed. Two posting paths (POSTING_RULES §12):
-      - paid on delivery: Dr Cash | Cr Revenue
-      - unpaid (credit):  Dr AR 120xx | Cr Revenue
-    Payment later applies the receipt to this invoice (Cr AR).
+    Lifecycle: draft -> submitted (awaiting Accounting & Finance Head) -> posted.
+    After posting, credit-sale invoices move to open / partially_paid / paid as
+    receipts are applied (`_refresh_invoice_status`); paid-on-delivery invoices
+    stay "posted" because the advance collection already closed them.
+
+    Two posting paths (POSTING_RULES §12, B-phase resolution):
+      - paid on delivery: Dr Unearned (segment 210xx) | Cr Sales (segment 4xxxx)
+      - unpaid (credit):  Dr AR (segment 120xx)            | Cr Sales (segment 4xxxx)
+    The revenue JE is posted by the Head when the invoice is approved.
     """
 
     invoice_no = models.CharField(max_length=32, unique=True)
@@ -234,7 +239,19 @@ class ARInvoice(AuditableModel):
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="ar_invoices")
     total = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     is_paid_on_delivery = models.BooleanField(default=False, db_index=True)
-    status = models.CharField(max_length=16, default="open")  # open / partially_paid / paid / posted
+    status = models.CharField(max_length=16, default="open")  # draft / submitted / posted / open / partially_paid / paid
+    journal_entry = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="ar_invoices"
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="ar_invoices"
     )

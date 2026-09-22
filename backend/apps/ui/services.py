@@ -1070,10 +1070,14 @@ def ar_customer_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
     total_billed = Decimal("0.00")
     total_paid = Decimal("0.00")
     total_outstanding = Decimal("0.00")
+    total_advance = Decimal("0.00")
     for c in customers:
         billed = billed_by_customer.get(c.id, Decimal("0.00"))
         paid = paid_by_customer.get(c.id, Decimal("0.00"))
         outstanding = billed - paid
+        advance = -outstanding if outstanding < 0 else Decimal("0.00")
+        if outstanding < 0:
+            outstanding = Decimal("0.00")
         if outstanding_only and outstanding <= 0:
             continue
         rows.append(
@@ -1084,24 +1088,27 @@ def ar_customer_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
                 "billed": billed,
                 "paid": paid,
                 "outstanding": outstanding,
+                "advance": advance,
             }
         )
         total_billed += billed
         total_paid += paid
         total_outstanding += outstanding
+        total_advance += advance
 
     return {
         "rows": rows,
         "total_billed": total_billed,
         "total_paid": total_paid,
         "total_outstanding": total_outstanding,
+        "total_advance": total_advance,
     }
 
 
 def ar_customer_ledger(*, customer, start=None, end=None) -> dict:
     """Return the per-customer AR subsidiary ledger rows with running balance.
 
-    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance Dr | Balance Cr.
+    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance (Dr/Cr).
     Debit rows = AR invoices (receivable recognized). Credit rows = posted ack
     receipts (collections), reversal-excluded. Mirror of ``ap_supplier_ledger``
     with a debit-normal receivable running balance (ADR-005).
@@ -1371,10 +1378,14 @@ def ap_supplier_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
     total_billed = Decimal("0.00")
     total_paid = Decimal("0.00")
     total_outstanding = Decimal("0.00")
+    total_advance = Decimal("0.00")
     for s in suppliers:
         billed = billed_by_supplier.get(s.id, Decimal("0.00"))
         paid = paid_by_supplier.get(s.id, Decimal("0.00"))
         outstanding = billed - paid
+        advance = -outstanding if outstanding < 0 else Decimal("0.00")
+        if outstanding < 0:
+            outstanding = Decimal("0.00")
         if outstanding_only and outstanding <= 0:
             continue
         rows.append(
@@ -1385,24 +1396,27 @@ def ap_supplier_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
                 "billed": billed,
                 "paid": paid,
                 "outstanding": outstanding,
+                "advance": advance,
             }
         )
         total_billed += billed
         total_paid += paid
         total_outstanding += outstanding
+        total_advance += advance
 
     return {
         "rows": rows,
         "total_billed": total_billed,
         "total_paid": total_paid,
         "total_outstanding": total_outstanding,
+        "total_advance": total_advance,
     }
 
 
 def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
     """Return the per-supplier AP subsidiary ledger rows with running balance.
 
-    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance Dr | Balance Cr.
+    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance (Dr/Cr).
     """
     from decimal import Decimal
     from datetime import datetime

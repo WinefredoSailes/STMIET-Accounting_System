@@ -1,0 +1,61 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Sales Invoices{% endblock %}
+{% block content %}
+<div class="p-6">
+  {% capture as list_actions %}
+  <a href="{% url 'ui:si_create' %}" class="inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ New invoice</a>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="Sales Invoices" subtitle="SI-YYYY-SEQ numbered invoices — revenue posts to the GL when the Head approves." back_url_name="ui:receipt_list" back_label="Acknowledgment receipts" actions=list_actions %}
+
+  <form method="get" class="mt-4 flex flex-wrap items-center gap-3">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search invoice no., customer…"
+           class="rounded-md border border-slate-300 px-3 py-2 text-sm w-72">
+    <select name="status" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+      <option value="">All statuses</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|capfirst }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Filter</button>
+    {% if status or q %}<a href="{% url 'ui:si_list' %}" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Clear</a>{% endif %}
+  </form>
+
+  <div class="mt-4 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm min-w-[780px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Invoice No</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Customer</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3 text-right">Total</th>
+          <th class="px-4 py-3 text-right">Due</th>
+          <th class="px-4 py-3">Mode</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for inv in page_obj.object_list %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2.5">
+            <a class="text-indigo-600 hover:underline font-mono text-xs" href="{% url 'ui:si_detail' inv.id %}">{{ inv.invoice_no }}</a>
+          </td>
+          <td class="px-4 py-2.5">{{ inv.transaction_date|date:"M d, Y" }}</td>
+          <td class="px-4 py-2.5">{{ inv.customer.code }} {{ inv.customer.name }}</td>
+          <td class="px-4 py-2.5 text-xs">{{ inv.segment.code }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums">₱{{ inv.total|money }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums">{% if inv.is_paid_on_delivery %}—{% else %}₱{{ inv.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2.5 text-xs">{% if inv.is_paid_on_delivery %}On delivery{% else %}Credit{% endif %}</td>
+          <td class="px-4 py-2.5">{% include "ui/partials/status_badge.html" with status=inv.status %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-4 py-10 text-center text-slate-400">No sales invoices found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% include "ui/partials/pagination.html" with page_obj=page_obj pagination_params=pagination_params %}
+</div>
+{% endblock %}

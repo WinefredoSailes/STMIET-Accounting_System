@@ -72,6 +72,12 @@ AR_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Sales Invoice (SI) status -> next approval role (ADR-033). Mirrors receipts:
+# the preparer submits, the Head approves and posts the revenue JE.
+AR_INVOICE_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 # Inter-account transfer status -> next approval role (ADR-030). Mirrors JE:
 # the preparer submits, the head approves (and the JE posts).
 TRANSFER_NEXT_ROLE = {
@@ -495,6 +501,39 @@ def ar_receipt_queue(user_roles):
     return out
 
 
+def ar_invoice_queue(user_roles):
+    """Sales Invoices waiting on any of `user_roles`.
+
+    SIs in "submitted" status wait for the Accounting & Finance Head, who
+    approves and posts the revenue JE. Drafts are excluded; approved SIs are
+    posted and drop out of the queue.
+    """
+    from apps.ar.models import ARInvoice
+
+    out = []
+    docs = ARInvoice.objects.filter(
+        status="submitted"
+    ).select_related("customer", "segment", "created_by")
+    for invoice in docs:
+        role = AR_INVOICE_NEXT_ROLE.get(invoice.status)
+        if role in user_roles:
+            out.append(
+                {
+                    "kind": "invoice",
+                    "role": role,
+                    "doc": invoice,
+                    "number": invoice.invoice_no,
+                    "title": f"SI · {invoice.customer.name} · {invoice.segment.code if invoice.segment else ''}",
+                    "date": invoice.transaction_date,
+                    "amount": invoice.total,
+                    "detail": ("ui:si_detail", invoice.id),
+                    "action": ("ui:si_approve", invoice.id),
+                    "action_label": "Approve",
+                }
+            )
+    return out
+
+
 def billing_queue(user_roles):
     """Billing transactions waiting on `user_roles` (head only).
 
@@ -544,6 +583,7 @@ def pending_approval_queue(user):
         + je_queue({role})
         + reversal_queue({role})
         + ar_receipt_queue({role})
+        + ar_invoice_queue({role})
         + billing_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))

@@ -1,4 +1,4 @@
-"""AR services: collection lifecycle, bank deposits, cycle ledger, aging.
+"""AR services: collection lifecycle, business invoices, bank deposits, ledgers.
 
 AR receipt lifecycle (draft -> submitted -> posted):
   draft     staff builds the Account Distribution (Dr segment Cash on Hand |
@@ -6,6 +6,10 @@ AR receipt lifecycle (draft -> submitted -> posted):
   submitted awaiting the Accounting & Finance Head (ADR-033 gate).
   posted    the Head approves; the collection JE is built from the receipt
             lines and posted to the GL.
+
+AR invoice (SI) lifecycle mirrors the receipt gate (see InvoiceService):
+  draft -> submitted -> posted; the Head's approval posts the revenue JE
+  (Dr Unearned | Cr Sales for paid-on-delivery, Dr AR | Cr Sales for credit).
 
 The Head then records a Bank Deposit covering one or more posted receipts:
   Dr Cash in Bank (bank_account) | Cr segment Cash on Hand
@@ -29,6 +33,7 @@ from .models import (
     AcknowledgmentReceipt,
     AcknowledgmentReceiptLine,
     ARInvoice,
+    ARInvoiceLine,
     Customer,
     Deposit,
     PaymentMethod,
@@ -40,6 +45,15 @@ SEGMENT_ACCOUNTS = {
     "DHPP": ("21000", "12020", "12030"),
     "DMIE": ("21023", "12023", "12023"),
     "OPS": ("21016", "12026", "12026"),
+}
+
+# Segment -> Sales (Revenue) GL code, the Cr side of the SI revenue JE
+# (POSTING_RULES §12 B-phase resolution). Resolved against the COA like
+# SEGMENT_ACCOUNTS; never assumed to exist.
+SEGMENT_SALES_ACCOUNTS = {
+    "DHPP": "40000",
+    "DMIE": "41003",
+    "OPS": "42006",
 }
 
 # Segment -> canonical Cash on Hand GL code (ADR-003/016). Resolved against the
@@ -87,6 +101,29 @@ def segment_ar_account(segment):
         if account is not None:
             return account
     return None
+
+
+def segment_unearned_account(segment):
+    """The segment's Unearned revenue COA account (Debit side of a paid-on-
+    delivery SI posting — an advance collection is converted into revenue),
+    or None when the COA has no unearned account configured."""
+    entry = SEGMENT_ACCOUNTS.get(segment.code)
+    if not entry:
+        return None
+    from apps.foundation.models import Account
+
+    return Account.objects.filter(code=entry[0]).first()
+
+
+def segment_sales_account(segment):
+    """The segment's Sales/Revenue COA account (Credit side of the SI revenue
+    JE, POSTING_RULES §12), or None when the COA has no sales account mapped."""
+    code = SEGMENT_SALES_ACCOUNTS.get(segment.code)
+    if not code:
+        return None
+    from apps.foundation.models import Account
+
+    return Account.objects.filter(code=code).first()
 
 
 def cash_on_hand_account(segment):
@@ -750,6 +787,9 @@ class CycleLedgerService:
 def _refresh_invoice_status(invoice: ARInvoice) -> None:
     # Recompute from live receipts; a reversed collection drops out of
     # amount_paid, so a fully reversed payment re-opens the invoice.
+    if invoice.status in ("draft", "submitted"):
+        # Not posted yet — payments are never applied to a draft/submitted SI.
+        return
     if invoice.balance <= 0:
         invoice.status = "paid"
     elif invoice.amount_paid > 0:
@@ -757,3 +797,349 @@ def _refresh_invoice_status(invoice: ARInvoice) -> None:
     else:
         invoice.status = "open"
     invoice.save(update_fields=["status", "updated_at"])
+
+
+class InvoiceService:
+    """Owns the Sales Invoice (SI) lifecycle and its revenue posting event.
+
+    Lifecycle (ADR-033 gate, mirroring AR receipts):
+      draft     staff builds header + line items. No JE exists yet.
+      submitted awaiting the Accounting & Finance Head approval.
+      posted    the Head approves; the revenue JE is built and posted to GL.
+
+    Posting paths (POSTING_RULES §12, B-phase resolution):
+      - paid on delivery: Dr Unearned (segment 210xx) | Cr Sales (segment 4xxxx)
+      - unpaid (credit):  Dr AR (segment 120xx)      | Cr Sales (segment 4xxxx)
+
+    Paid-on-delivery approval first checks the customer's available advance
+    (unearned collections not yet consumed by a posted POD invoice) — the
+    delivery cannot be booked into revenue beyond the advance on hand.
+    """
+
+    STATUS_DRAFT = "draft"
+    STATUS_SUBMITTED = "submitted"
+    STATUS_POSTED = "posted"
+
+    # ------------------------------------------------------------------ create
+
+    @classmethod
+    def create_invoice(
+        cls,
+        *,
+        customer,
+        transaction_date: date,
+        segment,
+        is_paid_on_delivery: bool,
+        lines,
+        invoice_no: str | None = None,
+        created_by=None,
+    ) -> ARInvoice:
+        """Create a DRAFT invoice + its line items. No JE is posted here —
+        that happens when the Head approves the submitted invoice.
+        """
+        if segment is None:
+            raise ValidationError("A segment is required for an invoice.")
+        norm_lines = cls._normalize_lines(lines)
+        total = sum((line["amount"] for line in norm_lines), Decimal("0.00"))
+        if total <= 0:
+            raise ValidationError("Invoice total must be positive.")
+        if invoice_no is None:
+            invoice_no = cls._next_invoice_no(segment, transaction_date)
+
+        with transaction.atomic():
+            invoice = ARInvoice.objects.create(
+                invoice_no=invoice_no,
+                customer=customer,
+                transaction_date=transaction_date,
+                segment=segment,
+                total=total,
+                is_paid_on_delivery=bool(is_paid_on_delivery),
+                status=cls.STATUS_DRAFT,
+                created_by=created_by,
+            )
+            for i, line in enumerate(norm_lines, start=1):
+                ARInvoiceLine.objects.create(
+                    invoice=invoice,
+                    line_no=i,
+                    product_code=line["product_code"],
+                    description=line.get("description", ""),
+                    quantity=line["quantity"],
+                    unit_price=line["unit_price"],
+                    amount=line["amount"],
+                )
+            _log(invoice, "created", actor=created_by)
+        return invoice
+
+    @staticmethod
+    def _next_invoice_no(segment, transaction_date: date) -> str:
+        from apps.sequences.models import DocumentSequence
+
+        return DocumentSequence.next_number(
+            company=segment.company,
+            form_code="SI",
+            year=transaction_date.year,
+            pattern="SI-{YYYY}-{SEQ:05d}",
+        )
+
+    @staticmethod
+    def _normalize_lines(lines):
+        """Validate/normalize invoice line dicts: money-clean quantity/unit
+        price with the line amount recomputed as qty x unit price."""
+        if not lines:
+            raise ValidationError("Add at least one line item.")
+        out = []
+        for i, line in enumerate(lines, start=1):
+            product_code = (line.get("product_code") or "").strip()
+            if not product_code:
+                raise ValidationError(f"Line {i}: product code is required.")
+            quantity = money(line.get("quantity") or 0)
+            if quantity <= 0:
+                raise ValidationError(f"Line {i}: quantity must be positive.")
+            unit_price = money(line.get("unit_price") or 0)
+            if unit_price <= 0:
+                raise ValidationError(f"Line {i}: unit price must be positive.")
+            out.append(
+                {
+                    "product_code": product_code[:32],
+                    "description": (line.get("description") or "").strip()[:255],
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "amount": money(quantity * unit_price),
+                }
+            )
+        return out
+
+    # ------------------------------------------------------------------ edit
+
+    @classmethod
+    def update_draft(
+        cls,
+        *,
+        invoice: ARInvoice,
+        transaction_date: date | None = None,
+        segment=None,
+        is_paid_on_delivery: bool | None = None,
+        lines=None,
+        user=None,
+    ) -> ARInvoice:
+        """Replace a DRAFT invoice's header/lines (immutability gate)."""
+        if invoice.status != cls.STATUS_DRAFT:
+            raise ValidationError("Only draft invoices can be edited.")
+        with transaction.atomic():
+            saved = []
+            if transaction_date is not None:
+                invoice.transaction_date = transaction_date
+                saved.append("transaction_date")
+            if segment is not None:
+                invoice.segment = segment
+                saved.append("segment")
+            if is_paid_on_delivery is not None:
+                invoice.is_paid_on_delivery = bool(is_paid_on_delivery)
+                saved.append("is_paid_on_delivery")
+            if lines is not None:
+                norm_lines = cls._normalize_lines(lines)
+                invoice.lines.all().delete()
+                for i, line in enumerate(norm_lines, start=1):
+                    ARInvoiceLine.objects.create(
+                        invoice=invoice,
+                        line_no=i,
+                        product_code=line["product_code"],
+                        description=line.get("description", ""),
+                        quantity=line["quantity"],
+                        unit_price=line["unit_price"],
+                        amount=line["amount"],
+                    )
+                invoice.total = sum((line["amount"] for line in norm_lines), Decimal("0.00"))
+                saved.append("total")
+            if saved:
+                invoice.save(update_fields=[*saved, "updated_at"])
+            _log(invoice, "revised", actor=user)
+        return invoice
+
+    # ------------------------------------------------------------------ submit
+
+    @classmethod
+    def submit(cls, invoice: ARInvoice, *, user=None) -> ARInvoice:
+        if invoice.status != cls.STATUS_DRAFT:
+            raise ValidationError("Only draft invoices can be submitted.")
+        if not invoice.lines.exists():
+            raise ValidationError("Add at least one line item before submitting.")
+        if invoice.total <= 0:
+            raise ValidationError("Invoice total must be positive.")
+        invoice.status = cls.STATUS_SUBMITTED
+        invoice.approved_by = None
+        invoice.approved_at = None
+        invoice.rejected_by = None
+        invoice.rejected_at = None
+        invoice.rejection_note = ""
+        invoice.save(
+            update_fields=[
+                "status",
+                "approved_by",
+                "approved_at",
+                "rejected_by",
+                "rejected_at",
+                "rejection_note",
+                "updated_at",
+            ]
+        )
+        _log(invoice, "submitted", actor=user)
+        return invoice
+
+    # ------------------------------------------------------------------ approve
+
+    @classmethod
+    def approve(cls, invoice: ARInvoice, *, user) -> ARInvoice:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if invoice.status != cls.STATUS_SUBMITTED:
+            raise ValidationError("Only submitted invoices can be approved.")
+        if invoice.is_paid_on_delivery:
+            available = cls.available_unearned(invoice.customer)
+            if available < invoice.total:
+                raise ValidationError(
+                    f"Customer advance of only ₱{money(available)} covers this "
+                    f"₱{money(invoice.total)} delivery — record the collection first."
+                )
+        return cls._post_invoice(invoice, user=user)
+
+    @staticmethod
+    def available_unearned(customer) -> Decimal:
+        """Unearned advance available to consume: posted un-applied collections
+        minus the total of already-posted paid-on-delivery invoices."""
+        from django.db.models import Sum
+
+        unearned = (
+            customer.receipts.filter(
+                applied_to__isnull=True,
+                journal_entry__status="posted",
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        consumed = (
+            customer.invoices.filter(
+                is_paid_on_delivery=True,
+                journal_entry__isnull=False,
+            ).aggregate(total=Sum("total"))["total"]
+            or Decimal("0.00")
+        )
+        return money(unearned - consumed)
+
+    @classmethod
+    def _post_invoice(cls, invoice: ARInvoice, *, user) -> ARInvoice:
+        with transaction.atomic():
+            entry = cls._build_invoice_je(invoice, user=user)
+            PostingService.post(entry, approver=user, user=user)
+            invoice.journal_entry = entry
+            # Paid-on-delivery invoices are closed by their advance collection
+            # (stay "posted"); credit-sale invoices open a live receivable, so
+            # they enter aging and the apply-to picker as "open".
+            invoice.status = cls.STATUS_POSTED if invoice.is_paid_on_delivery else "open"
+            invoice.approved_by = user
+            invoice.approved_at = timezone.now()
+            invoice.rejected_by = None
+            invoice.rejected_at = None
+            invoice.rejection_note = ""
+            invoice.save(
+                update_fields=[
+                    "journal_entry",
+                    "status",
+                    "approved_by",
+                    "approved_at",
+                    "rejected_by",
+                    "rejected_at",
+                    "rejection_note",
+                    "updated_at",
+                ]
+            )
+            _log(invoice, "approved", actor=user)
+        from apps.tax.services import VATService
+
+        VATService.extract_from_invoice(invoice)
+        return invoice
+
+    @staticmethod
+    def _build_invoice_je(invoice: ARInvoice, *, user):
+        """Build the revenue JE for the approved invoice (not yet posted)."""
+        if invoice.is_paid_on_delivery:
+            debit_account = segment_unearned_account(invoice.segment)
+            debit_description = f"Unearned revenue applied - {invoice.invoice_no}"
+        else:
+            debit_account = segment_ar_account(invoice.segment)
+            debit_description = f"Accounts Receivable - {invoice.customer.name}"
+        credit_account = segment_sales_account(invoice.segment)
+        missing = [
+            name
+            for name, account in (
+                ("AR/Unearned", debit_account),
+                ("Sales", credit_account),
+            )
+            if account is None
+        ]
+        if missing:
+            raise ValidationError(
+                f"Segment {invoice.segment.code} is missing COA accounts for "
+                f"SI posting ({', '.join(missing)})."
+            )
+
+        entry_no = invoice.invoice_no
+        entry = JournalEntry.objects.create(
+            entry_no=entry_no,
+            company=invoice.segment.company,
+            segment=invoice.segment,
+            fiscal_period=_fiscal_period_for(invoice.transaction_date),
+            transaction_date=invoice.transaction_date,
+            status=PostingStatus.APPROVED,
+            description=f"Sales Invoice {invoice.invoice_no} {invoice.customer.name}",
+            source_doc_type="SI",
+            source_doc_no=invoice.invoice_no,
+            created_by=user,
+            approved_by=user,
+            approved_at=timezone.now(),
+        )
+        JournalEntryLine.objects.create(
+            entry=entry,
+            line_no=1,
+            account=debit_account,
+            segment=invoice.segment,
+            description=debit_description,
+            debit=invoice.total,
+        )
+        JournalEntryLine.objects.create(
+            entry=entry,
+            line_no=2,
+            account=credit_account,
+            segment=invoice.segment,
+            description=f"Sales - {invoice.invoice_no}",
+            credit=invoice.total,
+        )
+        entry.recalc_totals()
+        return entry
+
+    # ------------------------------------------------------------------ reject
+
+    @classmethod
+    def reject(cls, invoice: ARInvoice, *, user, note: str) -> ARInvoice:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if invoice.status != cls.STATUS_SUBMITTED:
+            raise ValidationError("Only submitted invoices can be rejected.")
+        if not (note and note.strip()):
+            raise ValidationError("A rejection note is required.")
+        invoice.status = cls.STATUS_DRAFT
+        invoice.rejected_by = user
+        invoice.rejected_at = timezone.now()
+        invoice.rejection_note = note.strip()
+        invoice.save(
+            update_fields=[
+                "status",
+                "rejected_by",
+                "rejected_at",
+                "rejection_note",
+                "updated_at",
+            ]
+        )
+        _log(invoice, "rejected", actor=user, note=note.strip())
+        return invoice

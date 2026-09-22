@@ -212,3 +212,59 @@ def test_ar_ledger_reversed_collection_excluded(company, segment, accounts, user
     sum_ctx = ar_customer_summary()
     row = next(r for r in sum_ctx["rows"] if r["pk"] == customer.pk)
     assert row["paid"] == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_ar_ledger_advance_rendered(client, user, company, segment, accounts):
+    """A customer with receipt-only collections (no invoice) shows a Credit
+    Balance (Advance); the outstanding cell renders '—' and never a negative."""
+    customer = Customer.objects.create(code="LC-ADV", name="Advance Test Trading")
+    CollectionService.record_collection(
+        receipt_no="AR-L-ADV-0001",
+        customer=customer,
+        transaction_date=date(2026, 1, 12),
+        amount="2500.00",
+        cash_account=accounts["10010"],
+        segment=segment,
+    )
+    from apps.ui.services import ar_customer_summary
+
+    ctx = ar_customer_summary()
+    row = next(r for r in ctx["rows"] if r["pk"] == customer.pk)
+    assert row["billed"] == Decimal("0.00")
+    assert row["outstanding"] == Decimal("0.00")
+    assert row["advance"] == Decimal("2500.00")
+    assert ctx["total_advance"] == Decimal("2500.00")
+    assert ctx["total_outstanding"] == Decimal("0.00")
+
+    client.force_login(user)
+    resp = client.get("/ar/ledger/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Credit Balance (Advance)" in body
+    assert "Advance Test Trading" in body
+    assert "2,500.00" in body
+    assert "-2,500.00" not in body
+
+
+@pytest.mark.django_db
+def test_ar_ledger_summary_export_advance(client, user, company, segment, accounts):
+    """CSV export surfaces the Credit Balance (Advance) header and the positive
+    advance magnitude, never a negative outstanding."""
+    customer = Customer.objects.create(code="LC-ADVX", name="Advance Export Trading")
+    CollectionService.record_collection(
+        receipt_no="AR-L-ADVX-0001",
+        customer=customer,
+        transaction_date=date(2026, 1, 12),
+        amount="975.50",
+        cash_account=accounts["10010"],
+        segment=segment,
+    )
+    client.force_login(user)
+    resp = client.get("/ar/ledger/export/?format=csv")
+    assert resp.status_code == 200
+    text = resp.content.decode("utf-8", "replace")
+    assert "Credit Balance (Advance)" in text
+    assert "Advance Export Trading" in text
+    assert "975.50" in text
+    assert "-975.50" not in text

@@ -15,7 +15,7 @@
     {% include "ui/partials/export_buttons.html" with export_url=export_url %}
   </form>
   {% endcapture %}
-  {% capture as summary_subtitle %}Overview of outstanding balances and total transactions per payee.{% endcapture %}
+  {% capture as summary_subtitle %}Overview of outstanding balances and total transactions per payee. Advance = payments made in excess of posted payables (advance to supplier).{% endcapture %}
   {% include "ui/partials/page_header.html" with title="SUPPLIER / PAYEE LEDGER SUMMARY" subtitle=summary_subtitle actions=summary_filters %}
 
   <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
@@ -27,6 +27,7 @@
           <th class="px-4 py-3 text-right">Total Billed</th>
           <th class="px-4 py-3 text-right">Total Paid</th>
           <th class="px-4 py-3 text-right">Outstanding Balance</th>
+          <th class="px-4 py-3 text-right">Credit Balance (Advance)</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -38,10 +39,11 @@
 </td>
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ r.billed|money }}</td>
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ r.paid|money }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if r.outstanding > 0 %}text-amber-700{% else %}text-slate-400{% endif %}">₱{{ r.outstanding|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if r.outstanding > 0 %}text-amber-700{% else %}text-slate-400{% endif %}">{% if r.advance %}—{% else %}₱{{ r.outstanding|money }}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium {% if r.advance %}text-teal-700{% else %}text-slate-300{% endif %}">{% if r.advance %}₱{{ r.advance|money }}{% else %}—{% endif %}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No suppliers match the applied filters.</td></tr>
+        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No suppliers match the applied filters.</td></tr>
         {% endfor %}
       </tbody>
       <tfoot class="bg-slate-50 font-semibold">
@@ -50,6 +52,7 @@
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ total_billed|money }}</td>
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ total_paid|money }}</td>
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ total_outstanding|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ total_advance|money }}</td>
         </tr>
       </tfoot>
     </table>

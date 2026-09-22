@@ -1,0 +1,194 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}{{ invoice.invoice_no }}{% endblock %}
+{% block content %}
+<div class="p-6">
+  {% capture as actions %}
+  {% include "ui/partials/status_badge.html" with status=invoice.status %}
+  {% if invoice.status == 'draft' %}
+  {% if can_edit %}
+  <a href="{% url 'ui:si_edit' invoice.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{% if invoice.rejection_note %}Revise{% else %}Edit{% endif %}</a>
+  {% endif %}
+  {% if can_submit %}
+  <form method="post" action="{% url 'ui:si_submit' invoice.id %}" class="inline">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Submit for approval</button>
+  </form>
+  {% endif %}
+  {% elif invoice.status == 'submitted' %}
+  {% if can_approve %}
+  <form method="post" action="{% url 'ui:si_approve' invoice.id %}" class="inline">
+    {% csrf_token %}
+    <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve &amp; post</button>
+  </form>
+  <button type="button" onclick="openRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject</button>
+  {% endif %}
+  {% endif %}
+  <a href="{% url 'ui:si_print' invoice.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title=invoice.invoice_no subtitle="Sales Invoice" back_url_name="ui:si_list" back_label="Sales invoices" actions=actions %}
+  {% include "ui/partials/reversed_banner.html" with entry=invoice.journal_entry %}
+
+  {% if invoice.status == 'draft' and invoice.rejection_note %}
+  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+    <div class="text-sm font-semibold text-red-800">
+      Returned by {{ invoice.rejected_by.get_full_name|default:invoice.rejected_by|default:"approver" }} — needs revision
+    </div>
+    <div class="text-xs text-slate-500 mt-1">{{ invoice.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ invoice.rejection_note }}</div>
+    {% if can_edit %}
+    <a href="{% url 'ui:si_edit' invoice.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise &amp; resubmit</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <dl class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Invoice No</dt>
+      <dd class="mt-1 font-mono text-xs font-medium">{{ invoice.invoice_no }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Date</dt>
+      <dd class="mt-1 font-medium">{{ invoice.transaction_date|date:"M d, Y" }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Customer</dt>
+      <dd class="mt-1 font-medium">{{ invoice.customer.code }} {{ invoice.customer.name }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Segment</dt>
+      <dd class="mt-1 font-medium">{{ invoice.segment.code }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Total</dt>
+      <dd class="mt-1 font-medium tabular-nums">₱{{ invoice.total|money }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Mode</dt>
+      <dd class="mt-1 font-medium">{% if invoice.is_paid_on_delivery %}Paid on delivery{% else %}Credit (AR){% endif %}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Amount paid</dt>
+      <dd class="mt-1 font-medium tabular-nums">₱{{ invoice.amount_paid|money }}</dd>
+    </div>
+    {% if not invoice.is_paid_on_delivery %}
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Balance due</dt>
+      <dd class="mt-1 font-medium tabular-nums">₱{{ invoice.balance|money }}</dd>
+    </div>
+    {% endif %}
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Status</dt>
+      <dd class="mt-1">{% include "ui/partials/status_badge.html" with status=invoice.status %}</dd>
+    </div>
+    {% if invoice.journal_entry %}
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Journal Entry</dt>
+      <dd class="mt-1 font-mono text-xs"><a href="{% url 'ui:je_detail' invoice.journal_entry.id %}" class="text-indigo-600 hover:underline">{{ invoice.journal_entry.entry_no }}</a></dd>
+    </div>
+    {% endif %}
+    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
+      <dt class="text-xs text-slate-500">Prepared By</dt>
+      <dd class="mt-1 font-medium">{{ invoice.created_by|default:"—" }}</dd>
+    </div>
+  </dl>
+
+  {% if invoice.approved_by %}
+  <div class="mt-4 bg-white rounded-lg border border-slate-200 px-4 py-3 text-sm">
+    <span class="text-xs text-slate-500">Approved by</span>
+    <span class="ml-2 font-medium">{{ invoice.approved_by.get_full_name|default:invoice.approved_by.username }}</span>
+    <span class="text-xs text-slate-400 ml-2">{{ invoice.approved_at|date:"M d, Y H:i" }}</span>
+  </div>
+  {% elif invoice.rejected_by %}
+  <div class="mt-4 bg-white rounded-lg border border-red-200 px-4 py-3 text-sm">
+    <span class="text-xs text-slate-500">Rejected by</span>
+    <span class="ml-2 font-medium">{{ invoice.rejected_by.get_full_name|default:invoice.rejected_by.username }}</span>
+    <span class="text-xs text-slate-400 ml-2">{{ invoice.rejected_at|date:"M d, Y H:i" }}</span>
+    {% if invoice.rejection_note %}<p class="mt-1 text-xs text-red-700">{{ invoice.rejection_note }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="line-table w-full text-sm" style="min-width: 900px;">
+      <colgroup>
+        <col style="width: 40px;"><!-- # -->
+        <col style="width: 160px;"><!-- Product Code -->
+        <col style="width: 360px;"><!-- Description -->
+        <col style="width: 120px;"><!-- Quantity -->
+        <col style="width: 150px;"><!-- Unit Price -->
+        <col style="width: 180px;"><!-- Amount -->
+      </colgroup>
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2.5">#</th>
+          <th class="px-3 py-2.5">Product Code</th>
+          <th class="px-3 py-2.5">Description</th>
+          <th class="px-3 py-2.5 text-right">Quantity</th>
+          <th class="px-3 py-2.5 text-right">Unit Price</th>
+          <th class="px-3 py-2.5 text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for line in invoice.lines.all %}
+        <tr>
+          <td class="px-3 py-2.5 text-slate-400">{{ line.line_no }}</td>
+          <td class="px-3 py-2.5 font-mono text-xs">{{ line.product_code }}</td>
+          <td class="px-3 py-2.5 text-slate-700">{{ line.description|default:"—" }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.quantity|money }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.unit_price|money }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums font-medium">{{ line.amount|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td colspan="5" class="px-3 py-3 text-right font-bold uppercase tracking-wider text-slate-700">Total</td>
+          <td class="px-3 py-3 text-right tabular-nums">{{ invoice.total|money }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- Reject Modal -->
+  <div id="reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900">Reject Invoice {{ invoice.invoice_no }}</h3>
+      </div>
+      <form method="post" action="{% url 'ui:si_reject' invoice.id %}">
+        {% csrf_token %}
+        <div class="p-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
+          <textarea name="note" data-autogrow rows="4" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Enter reason for rejection..."></textarea>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button type="button" onclick="closeRejectModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Reject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% include "ui/partials/audit_trail.html" %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function toggleModal(id, show) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    m.classList[show ? 'remove' : 'add']('hidden');
+    m.classList[show ? 'add' : 'remove']('flex');
+  }
+  function openRejectModal() { toggleModal('reject-modal', true); }
+  function closeRejectModal() { toggleModal('reject-modal', false); }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeRejectModal();
+  });
+  var m = document.getElementById('reject-modal');
+  if (m) m.addEventListener('click', function(e) { if (e.target === m) closeRejectModal(); });
+</script>
+{% endblock %}

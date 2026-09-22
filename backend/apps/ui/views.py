@@ -268,6 +268,22 @@ def logout_view(request):
 # My Approvals (ADR-036): the named-person inbox, grouped by role
 # ---------------------------------------------------------------------------
 
+# Every document kind the approvals queue can produce, alphabetized so the
+# filter dropdown is a stable, complete list regardless of what is currently
+# pending for the signed-in user (an empty kind just filters to "no matches").
+KIND_LABELS = {
+    "ar_receipt": "Acknowledgment Receipts",
+    "billing": "Billing",
+    "cash_short": "Cash Short/Excess",
+    "cv": "Check Vouchers",
+    "invoice": "Sales Invoices",
+    "je": "Journal Entries",
+    "po": "Purchase Orders",
+    "reversal": "Reversals",
+    "rfp": "RFPs (Disbursements)",
+    "transfer": "Inter-account Transfers",
+}
+
 
 @login_required
 def my_approvals(request):
@@ -280,6 +296,32 @@ def my_approvals(request):
     )
 
     queues = pending_approval_queue(request.user)
+    has_inbox = bool(queues)
+
+    # Client-side-invisible filter bar: kind / free text / date window are all
+    # applied server-side here, in memory, BEFORE group_by_role — so the
+    # grouped table and the total badge always agree on the filtered set.
+    kinds = sorted(KIND_LABELS)
+    kind = request.GET.get("kind", "")
+    q = request.GET.get("q", "").strip()
+    date_from = _parse_date(request.GET.get("from", ""))
+    date_to = _parse_date(request.GET.get("to", ""))
+
+    if kind:
+        queues = [i for i in queues if i["kind"] == kind]
+    if q:
+        needle = q.lower()
+        queues = [
+            i
+            for i in queues
+            if needle in i["number"].lower()
+            or needle in (i.get("title") or "").lower()
+        ]
+    if date_from:
+        queues = [i for i in queues if (i["date"] or date.min) >= date_from]
+    if date_to:
+        queues = [i for i in queues if (i["date"] or date.min) <= date_to]
+
     my_role = get_approval_role(request.user)
     return render(
         request,
@@ -289,6 +331,14 @@ def my_approvals(request):
             "total": len(queues),
             "my_role": ROLE_LABELS.get(my_role, "no approval role"),
             "assignees": {r: role_assignee(r) for r in ("staff", "head", "coo")},
+            "has_inbox": has_inbox,
+            "kinds": kinds,
+            "kind_labels": KIND_LABELS,
+            "kind": kind,
+            "q": q,
+            "date_from": date_from,
+            "date_to": date_to,
+            "filters_active": bool(kind or q or date_from or date_to),
         },
     )
 
@@ -2106,6 +2156,235 @@ def receipt_reject(request, pk: int):
     except Exception as exc:
         messages.error(request, str(exc))
     return redirect("ui:receipt_detail", pk=pk)
+
+
+def _si_lines_from_form(request):
+    """Build normalized line dicts for an SI from its item grid.
+
+    Mirrors ``_ar_receipt_lines_from_form``'s postlist contract; the amount
+    is recomputed by the service as quantity x unit price.
+    """
+    products = request.POST.getlist("product_code")
+    quantities = request.POST.getlist("quantity")
+    unit_prices = request.POST.getlist("unit_price")
+    descs = request.POST.getlist("line_description")
+
+    lines = []
+    for i, product in enumerate(products):
+        if not product.strip():
+            continue
+        lines.append(
+            {
+                "product_code": product.strip()[:32],
+                "quantity": quantities[i] if i < len(quantities) else "",
+                "unit_price": unit_prices[i] if i < len(unit_prices) else "",
+                "description": (descs[i] if i < len(descs) else "")[:255],
+            }
+        )
+    if not lines:
+        raise ValidationError("Add at least one line item.")
+    return lines
+
+
+@login_required
+def si_list(request):
+    """Sales Invoices register — search + status filter."""
+    from apps.ar.models import ARInvoice
+
+    qs = ARInvoice.objects.select_related("customer", "segment").order_by(
+        "-transaction_date", "-invoice_no"
+    )
+    status = request.GET.get("status", "")
+    if status:
+        qs = qs.filter(status=status)
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(invoice_no__icontains=q)
+            | Q(customer__name__icontains=q)
+            | Q(customer__code__icontains=q)
+        )
+    pagination_params = {}
+    if status:
+        pagination_params["status"] = status
+    if q:
+        pagination_params["q"] = q
+    ctx = {
+        "page_obj": _page(request, qs),
+        "status": status,
+        "q": q,
+        "pagination_params": pagination_params,
+        "statuses": ("draft", "submitted", "posted", "open", "partially_paid", "paid"),
+    }
+    return render(request, "ui/ar/si_list.html", ctx)
+
+
+@login_required
+def si_detail(request, pk: int):
+    from apps.ar.models import ARInvoice
+
+    invoice = get_object_or_404(
+        ARInvoice.objects.select_related(
+            "customer", "segment", "journal_entry", "created_by"
+        ).prefetch_related("lines"),
+        pk=pk,
+    )
+    return render(
+        request,
+        "ui/ar/si_detail.html",
+        {
+            "invoice": invoice,
+            "audit_trail": _audit_trail("ar", pk),
+            "can_edit": invoice.status == "draft"
+            and (
+                invoice.created_by_id == request.user.id
+                or get_approval_role(request.user) == "head"
+            ),
+            "can_submit": invoice.status == "draft"
+            and invoice.created_by_id == request.user.id,
+            "can_approve": invoice.status == "submitted"
+            and get_approval_role(request.user) == "head",
+        },
+    )
+
+
+@login_required
+def si_create(request):
+    from apps.ar.models import Customer
+    from apps.ar.services import InvoiceService
+
+    if request.method == "POST":
+        try:
+            customer_id = request.POST.get("customer") or ""
+            if not customer_id:
+                raise ValidationError("Select a customer.")
+            customer = Customer.objects.get(pk=customer_id)
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of SI is required.")
+            segment = Segment.objects.get(pk=request.POST.get("segment"))
+            invoice = InvoiceService.create_invoice(
+                customer=customer,
+                transaction_date=transaction_date,
+                segment=segment,
+                is_paid_on_delivery=request.POST.get("is_paid_on_delivery") == "on",
+                lines=_si_lines_from_form(request),
+                created_by=request.user,
+            )
+            messages.success(
+                request,
+                f"Invoice {invoice.invoice_no} saved as draft — submit it when ready.",
+            )
+            return redirect("ui:si_detail", pk=invoice.pk)
+        except (AccountingError, ValidationError, Customer.DoesNotExist, Segment.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/si_form.html",
+        {
+            "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+            "default_pod": True,
+        },
+    )
+
+
+@login_required
+def si_edit(request, pk: int):
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import InvoiceService
+
+    invoice = get_object_or_404(
+        ARInvoice.objects.select_related("customer", "segment").prefetch_related("lines"),
+        pk=pk,
+    )
+    if request.method == "POST":
+        try:
+            segment = Segment.objects.get(pk=request.POST.get("segment"))
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of SI is required.")
+            is_pod = request.POST.get("is_paid_on_delivery") == "on"
+            InvoiceService.update_draft(
+                invoice=invoice,
+                transaction_date=transaction_date,
+                segment=segment,
+                is_paid_on_delivery=is_pod,
+                lines=_si_lines_from_form(request),
+                user=request.user,
+            )
+            messages.success(request, f"Invoice {invoice.invoice_no} updated.")
+            return redirect("ui:si_detail", pk=invoice.pk)
+        except (AccountingError, ValidationError, Segment.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/si_form.html",
+        {
+            "editing": invoice,
+            "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+        },
+    )
+
+
+@login_required
+def si_submit(request, pk: int):
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import InvoiceService
+
+    invoice = get_object_or_404(ARInvoice, pk=pk)
+    try:
+        if invoice.created_by_id != request.user.id:
+            raise ValidationError("Only the preparer may submit this invoice.")
+        InvoiceService.submit(invoice, user=request.user)
+        messages.success(request, f"Invoice {invoice.invoice_no} submitted for approval.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:si_detail", pk=pk)
+
+
+@login_required
+def si_approve(request, pk: int):
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import InvoiceService
+
+    invoice = get_object_or_404(ARInvoice, pk=pk)
+    try:
+        InvoiceService.approve(invoice, user=request.user)
+        messages.success(request, f"Invoice {invoice.invoice_no} approved and posted to GL.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:si_detail", pk=pk)
+
+
+@login_required
+def si_reject(request, pk: int):
+    from apps.ar.models import ARInvoice
+    from apps.ar.services import InvoiceService
+
+    invoice = get_object_or_404(ARInvoice, pk=pk)
+    note = request.POST.get("note", "")
+    try:
+        InvoiceService.reject(invoice, user=request.user, note=note)
+        messages.success(request, f"Invoice {invoice.invoice_no} rejected. Returned to Draft.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:si_detail", pk=pk)
+
+
+@login_required
+def si_print(request, pk: int):
+    """Print-optimized Sales Invoice (ACCTG-FOR-004)."""
+    from apps.ar.models import ARInvoice
+
+    invoice = get_object_or_404(
+        ARInvoice.objects.select_related(
+            "customer", "segment", "journal_entry", "created_by"
+        ).prefetch_related("lines"),
+        pk=pk,
+    )
+    return render(request, "ui/ar/si_print.html", {"invoice": invoice})
 
 
 @login_required
@@ -5070,18 +5349,18 @@ def ar_ledger_export(request):
     outstanding_only = request.GET.get("filter", "") == "outstanding"
     ctx = ar_customer_summary(q=q, outstanding_only=outstanding_only)
     rows = [
-        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"]]
+        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"], r["advance"]]
         for r in ctx["rows"]
     ]
     return _table_response(
         "CUSTOMER LEDGER SUMMARY",
-        ["Code", "Customer Name", "Total Billed", "Total Paid", "Outstanding Balance"],
+        ["Code", "Customer Name", "Total Billed", "Total Paid", "Outstanding Balance", "Credit Balance (Advance)"],
         rows,
         request.GET.get("format", "xlsx"),
         "CUSTOMER-LEDGER-SUMMARY",
         sheet_title="CUSTOMER LEDGER SUMMARY",
-        money_cols=(2, 3, 4),
-        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"]],
+        money_cols=(2, 3, 4, 5),
+        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"], ctx["total_advance"]],
         page="landscape",
     )
 
@@ -5116,9 +5395,15 @@ def ar_customer_ledger_export(request, pk):
     end = request.GET.get("end")
     ctx = _ar_customer_ledger(customer=customer, start=start, end=end)
 
-    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance Dr", "Balance Cr"]
+    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance"]
     rows = []
     for r in ctx["rows"]:
+        if r["balance_dr"] is not None:
+            bal = r["balance_dr"]
+        elif r["balance_cr"] is not None:
+            bal = -r["balance_cr"]
+        else:
+            bal = None
         rows.append([
             r["date"],
             r["ref"],
@@ -5126,10 +5411,14 @@ def ar_customer_ledger_export(request, pk):
             r["description"],
             r["debit"],
             r["credit"],
-            r["balance_dr"] if r["balance_dr"] is not None else "",
-            r["balance_cr"] if r["balance_cr"] is not None else "",
+            bal,
         ])
-    # totals row
+    # totals row (single signed Balance: + = Dr receivable, - = Cr advance)
+    closing = (
+        ctx["closing_dr"]
+        if ctx["closing_dr"] is not None
+        else (-ctx["closing_cr"] if ctx["closing_cr"] is not None else None)
+    )
     totals = [
         ctx["start"] or "",
         "",
@@ -5137,13 +5426,13 @@ def ar_customer_ledger_export(request, pk):
         "Period Totals",
         ctx["period_debit"],
         ctx["period_credit"],
-        ctx["closing_dr"] if ctx["closing_dr"] is not None else "",
-        ctx["closing_cr"] if ctx["closing_cr"] is not None else "",
+        closing,
     ]
     # preamble with customer / period info
     preamble = [
         [f"Customer: {ctx['customer'].code} — {ctx['customer'].name}", ""],
         [f"Period: {ctx['start'] or 'All Dates'}", ""],
+        ["Balance", "positive = Dr (receivable), negative = Cr (advance)"],
     ]
     return _table_response(
         f"STATEMENT OF ACCOUNT — {customer.code} {customer.name}",
@@ -5152,7 +5441,7 @@ def ar_customer_ledger_export(request, pk):
         request.GET.get("format", "xlsx"),
         f"LEDGER-{customer.code}",
         sheet_title="LEDGER",
-        money_cols=(4, 5, 6, 7),
+        money_cols=(4, 5, 6),
         totals_row=totals,
         page="landscape",
         preamble=preamble,
@@ -5213,18 +5502,18 @@ def ap_ledger_export(request):
     outstanding_only = request.GET.get("filter", "") == "outstanding"
     ctx = ap_supplier_summary(q=q, outstanding_only=outstanding_only)
     rows = [
-        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"]]
+        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"], r["advance"]]
         for r in ctx["rows"]
     ]
     return _table_response(
         "SUPPLIER / PAYEE LEDGER SUMMARY",
-        ["Code", "Supplier/Payee Name", "Total Billed", "Total Paid", "Outstanding Balance"],
+        ["Code", "Supplier/Payee Name", "Total Billed", "Total Paid", "Outstanding Balance", "Credit Balance (Advance)"],
         rows,
         request.GET.get("format", "xlsx"),
         "SUPPLIER-LEDGER-SUMMARY",
         sheet_title="SUPPLIER LEDGER SUMMARY",
-        money_cols=(2, 3, 4),
-        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"]],
+        money_cols=(2, 3, 4, 5),
+        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"], ctx["total_advance"]],
         page="landscape",
     )
 
@@ -5259,9 +5548,15 @@ def ap_supplier_ledger_export(request, pk):
     end = request.GET.get("end")
     ctx = ap_supplier_ledger(supplier=supplier, start=start, end=end)
 
-    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance Dr", "Balance Cr"]
+    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance"]
     rows = []
     for r in ctx["rows"]:
+        if r["balance_dr"] is not None:
+            bal = r["balance_dr"]
+        elif r["balance_cr"] is not None:
+            bal = -r["balance_cr"]
+        else:
+            bal = None
         rows.append([
             r["date"],
             r["ref"],
@@ -5269,10 +5564,14 @@ def ap_supplier_ledger_export(request, pk):
             r["description"],
             r["debit"],
             r["credit"],
-            r["balance_dr"] if r["balance_dr"] is not None else "",
-            r["balance_cr"] if r["balance_cr"] is not None else "",
+            bal,
         ])
-    # totals row
+    # totals row (single signed Balance: + = Dr advance, - = Cr payable owing)
+    closing = (
+        ctx["closing_dr"]
+        if ctx["closing_dr"] is not None
+        else (-ctx["closing_cr"] if ctx["closing_cr"] is not None else None)
+    )
     totals = [
         ctx["start"] or "",
         "",
@@ -5280,13 +5579,13 @@ def ap_supplier_ledger_export(request, pk):
         "Period Totals",
         ctx["period_debit"],
         ctx["period_credit"],
-        ctx["closing_dr"] if ctx["closing_dr"] is not None else "",
-        ctx["closing_cr"] if ctx["closing_cr"] is not None else "",
+        closing,
     ]
     # preamble with supplier / period info
     preamble = [
         [f"Supplier: {ctx['supplier'].code} — {ctx['supplier'].name}", ""],
         [f"Period: {ctx['start'] or 'All Dates'}", ""],
+        ["Balance", "positive = Dr (advance), negative = Cr (payable owed)"],
     ]
     return _table_response(
         f"STATEMENT OF ACCOUNT — {supplier.code} {supplier.name}",
@@ -5295,7 +5594,7 @@ def ap_supplier_ledger_export(request, pk):
         request.GET.get("format", "xlsx"),
         f"LEDGER-{supplier.code}",
         sheet_title="LEDGER",
-        money_cols=(4, 5, 6, 7),
+        money_cols=(4, 5, 6),
         totals_row=totals,
         page="landscape",
         preamble=preamble,

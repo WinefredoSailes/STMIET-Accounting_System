@@ -84,21 +84,27 @@
           Account Balance Summary
         </td>
       </tr>
-      <!-- Brought Forward: 8 label + 4 empty + 2 balance = 14 -->
+      <!-- Brought Forward: 8 label + 2 empty + 2 empty + 2 balance = 14 -->
       <tr class="keep-together" style="font-size:10px">
         <td colspan="8" style="white-space:normal; font-weight:600">Balance Brought Forward {% if start or end %}(prior activity){% endif %}</td>
         <td colspan="2"></td>
         <td colspan="2"></td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if opening_dr is not None %}{{ opening_dr|money }}{% endif %}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if opening_cr is not None %}{{ opening_cr|money }}{% endif %}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if opening_cr is not None %}{{ opening_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif opening_dr is not None %}{{ opening_dr|money }} <span style="font-size:8px">Dr</span>
+          {% endif %}
+        </td>
       </tr>
-      <!-- Closing Balance: 8 label + 4 empty + 2 balance = 14 -->
+      <!-- Closing Balance: 8 label + 2 empty + 2 empty + 2 balance = 14 -->
       <tr class="keep-together" style="font-size:10px; font-weight:700">
         <td colspan="8" style="white-space:normal;">Closing Balance</td>
         <td colspan="2"></td>
         <td colspan="2"></td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_dr is not None %}{{ closing_dr|money }}{% endif %}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_cr is not None %}{{ closing_cr|money }}{% endif %}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if closing_cr is not None %}{{ closing_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif closing_dr is not None %}{{ closing_dr|money }} <span style="font-size:8px">Dr</span>
+          {% endif %}
+        </td>
       </tr>
 
       <!-- ═══ TRANSACTION LEDGER (14 full span) ═══ -->
@@ -112,13 +118,12 @@
         <th colspan="2" style="font-weight:700; text-align:left; width:8%">Date</th>
         <th colspan="2" style="font-weight:700; text-align:left; width:10%">Ref #</th>
         <th colspan="2" style="font-weight:700; text-align:left; width:10%">Type</th>
-        <th colspan="2" style="font-weight:700; text-align:left; width:28%">Description / Particulars</th>
-        <th colspan="2" style="font-weight:700; text-align:right; width:16%">Debit</th>
-        <th colspan="2" style="font-weight:700; text-align:right; width:16%">Credit</th>
-        <th style="font-weight:700; text-align:right; width:6%">Bal Dr</th>
-        <th style="font-weight:700; text-align:right; width:6%">Bal Cr</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:30%">Description / Particulars</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:14%">Debit</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:14%">Credit</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:14%">Balance</th>
       </tr>
-      <!-- Data rows  (2+2+2+2+2+2+1+1=14) -->
+      <!-- Data rows  (2+2+2+2+2+2+2=14) -->
       {% for row in rows %}
       <tr style="font-size:10px; line-height:2;" class="line-row">
         <td colspan="2" style="white-space:nowrap">{{ row.date|date:"Y-m-d" }}</td>
@@ -129,21 +134,27 @@
         <td colspan="2" style="overflow:hidden; text-overflow:ellipsis; white-space:normal">{{ row.description|truncatechars:70 }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.debit|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.credit|money }}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if row.balance_dr is not None %}{{ row.balance_dr|money }}{% endif %}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if row.balance_cr is not None %}{{ row.balance_cr|money }}{% endif %}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if row.balance_cr is not None %}{{ row.balance_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif row.balance_dr is not None %}{{ row.balance_dr|money }} <span style="font-size:8px">Dr</span>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
       <tr>
         <td colspan="14" style="font-size:10px; color:#94a3b8">No transactions for this supplier in the selected period.</td>
       </tr>
       {% endfor %}
-      <!-- Period Totals  (8 label + 2+2+1+1=14) -->
+      <!-- Period Totals  (8 label + 2+2+2=14) -->
       <tr class="keep-together" style="font-size:10px; font-weight:700; background:#e2efda">
         <td colspan="8" style="text-align:right; text-transform:uppercase; letter-spacing:.03em">Period Totals</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_debit|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_credit|money }}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_dr is not None %}{{ closing_dr|money }}{% endif %}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_cr is not None %}{{ closing_cr|money }}{% endif %}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if closing_cr is not None %}{{ closing_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif closing_dr is not None %}{{ closing_dr|money }} <span style="font-size:8px">Dr</span>
+          {% endif %}
+        </td>
       </tr>
 
       <!-- ═══ SIGNATURE SECTION (14 full span) ═══ -->
@@ -165,6 +176,7 @@
 
   <p style="margin-top:6px; font-size:8px; color:#64748b; text-align:center">
     All figures from the posted GL projection (ADR-005).
+    Running Balance: Cr = owed to the supplier, Dr = advance paid in excess of posted payables.
   </p>
 </div>
 {% endblock %}
