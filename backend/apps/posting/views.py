@@ -24,12 +24,18 @@ class JournalEntryViewSet(
     @action(detail=True, methods=["post"])
     def post(self, request, pk=None):
         entry = self.get_object()
-        from apps.ap.models import CheckVoucher
+        from apps.posting.services import entry_source_doc
 
-        cv = CheckVoucher.objects.filter(journal_entry_id=entry.id).first()
-        if cv and cv.status != "cleared":
+        source = entry_source_doc(entry)
+        if source is not None:
             return Response(
-                {"detail": f"CV {cv.cv_number} posts only when the voucher is cleared."},
+                {
+                    "detail": (
+                        f"This entry belongs to {source['label']} and is actioned "
+                        "from that document's screen — correct or post it there, "
+                        "not through the Journal Entries module."
+                    )
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
         serializer = PostEntrySerializer(
@@ -44,9 +50,20 @@ class JournalEntryViewSet(
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         """Request a reversal of a posted entry (head approves separately)."""
-        from .services import ReversalService
+        from .services import ReversalService, entry_source_doc
 
         entry = self.get_object()
+        source = entry_source_doc(entry)
+        if source is not None:
+            return Response(
+                {
+                    "detail": (
+                        f"This entry belongs to {source['label']} — request the "
+                        "reversal from that document's screen."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         req = ReversalService.request(
             entry, reason=request.data.get("reason", ""), user=request.user
         )

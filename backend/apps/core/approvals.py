@@ -14,6 +14,7 @@ that mapping — nothing is hard-coded to a login name.
 from datetime import date
 
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
 from apps.core.exceptions import ValidationError
 
@@ -397,15 +398,32 @@ def reversal_queue(user_roles):
 
 
 def je_queue(user_roles):
-    """Manual Journal Entries waiting on `user_roles` (head only)."""
+    """Manual Journal Entries waiting on `user_roles` (head only).
+
+    Document-owned JEs (CV/RFP/Billing/Transfer/PCF/AR receipt/AR deposit)
+    are deliberately excluded: they are approved from their own document's
+    screen and would show up here only when out of sync with that document's
+    submission state. The "Journal Entries" inbox therefore lists manual JEs
+    only, and only once they reach ``submitted``.
+    """
     if "head" not in user_roles:
         return []
     from apps.posting.models import JournalEntry, PostingStatus
 
     out = []
-    docs = JournalEntry.objects.filter(
-        status=PostingStatus.SUBMITTED
-    ).select_related("company", "segment", "created_by")
+    docs = (
+        JournalEntry.objects.filter(status=PostingStatus.SUBMITTED)
+        .select_related("company", "segment", "created_by")
+        .exclude(
+            Q(cv__isnull=False)
+            | Q(rfps__isnull=False)
+            | Q(billing_documents__isnull=False)
+            | Q(transfers__isnull=False)
+            | Q(pcf_replenishments__isnull=False)
+            | Q(ar_receipts__isnull=False)
+            | Q(ar_deposits__isnull=False)
+        )
+    )
     for je in docs:
         out.append(
             {
@@ -569,6 +587,40 @@ def billing_queue(user_roles):
     return out
 
 
+def pcf_queue(user_roles):
+    """Petty cash replenishments waiting on the head.
+
+    PCF replenishments have no preparer submit step (mirroring CV ``created``
+    and cash-short ``open``): ``requested`` is the awaiting-head state — the
+    head's approval batches the claim to CONSO.
+    """
+    if "head" not in user_roles:
+        return []
+    from apps.cash.models import PCFReplenishment
+
+    out = []
+    docs = PCFReplenishment.objects.filter(status="requested").select_related(
+        "fund", "requested_by"
+    )
+    for replen in docs:
+        fund = replen.fund.fund_code if replen.fund_id else ""
+        out.append(
+            {
+                "kind": "pcf",
+                "role": "head",
+                "doc": replen,
+                "number": replen.voucher_no or f"PCF-{replen.id}",
+                "title": f"{fund} replenishment",
+                "date": replen.request_date,
+                "amount": replen.amount,
+                "detail": ("ui:pcf_replenishment_detail", replen.id),
+                "action": ("ui:pcf_replenishment_approve", replen.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pending_approval_queue(user):
     """All documents waiting on `user`, oldest first (My Approvals)."""
     role = approval_role_of(user)
@@ -585,6 +637,7 @@ def pending_approval_queue(user):
         + ar_receipt_queue({role})
         + ar_invoice_queue({role})
         + billing_queue({role})
+        + pcf_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
     return queues

@@ -8,7 +8,7 @@ from apps.core.exceptions import ValidationError as AccountingValidationError
 from apps.sequences.models import DocumentSequence
 
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingRule, PostingRuleLine, PostingStatus
-from apps.posting.services import PostingService
+from apps.posting.services import PostingService, _log_je, entry_source_doc
 
 
 class JournalEntryLineSerializer(serializers.ModelSerializer):
@@ -59,6 +59,7 @@ class JournalEntrySerializer(serializers.ModelSerializer):
                     for i, line_data in enumerate(lines_data, start=1):
                         JournalEntryLine.objects.create(entry=entry, line_no=i, **line_data)
                     entry.recalc_totals()
+                    _log_je(entry, "created", actor=getattr(request, "user", None))
                     return entry
             except IntegrityError as exc:
                 last_exc = exc
@@ -92,6 +93,13 @@ class PostEntrySerializer(serializers.Serializer):
     def create(self, validated_data):
         entry = validated_data["entry"]
         user = self.context["request"].user
+        source = entry_source_doc(entry)
+        if source is not None:
+            raise AccountingValidationError(
+                f"This entry belongs to {source['label']} and is actioned from that "
+                "document's screen — correct or post it there, not through the "
+                "Journal Entries module."
+            )
         if validated_data["approve"]:
             require_approval_role(user, "head")
             if entry.status not in (PostingStatus.DRAFT, PostingStatus.SUBMITTED):
@@ -108,6 +116,7 @@ class PostEntrySerializer(serializers.Serializer):
                     "rejected_by", "rejected_at", "rejection_note", "updated_at",
                 ]
             )
+            _log_je(entry, "approved", actor=user)
         elif entry.status != PostingStatus.APPROVED:
             raise AccountingValidationError("Only approved entries can be posted.")
         return PostingService.post(entry, approver=user, user=user)

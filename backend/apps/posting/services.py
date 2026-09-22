@@ -33,6 +33,34 @@ from .models import (
 )
 
 
+def entry_source_doc(entry):
+    """The business document that owns a JournalEntry, or None for a manual JE.
+
+    Source-document entries are driven by their own module's approval flow
+    (CV/RFP/Transfer/PCF/AR/Billing) — never through the generic JE editor,
+    the JE approval workflow, or the JE API. Returns
+    ``{"label", "detail", "pk"}`` or None.
+    """
+    # (reverse accessor, label, detail url name) — checked in priority order.
+    checks = (
+        ("cv", "Check Voucher", "ui:cv_detail"),
+        ("rfps", "RFP", "ui:rfp_detail"),
+        ("billing_documents", "Billing", "ui:billing_detail"),
+        ("transfers", "Inter-Account Transfer", "ui:transfer_detail"),
+        ("pcf_replenishments", "PCF Voucher", "ui:pcf_replenishment_detail"),
+        ("ar_receipts", "Acknowledgment Receipt", "ui:receipt_detail"),
+        ("ar_deposits", "Bank Deposit", "ui:receipt_list"),
+    )
+    for accessor, label, detail in checks:
+        manager = getattr(entry, accessor, None)
+        if manager is None:
+            continue
+        doc = manager.first()
+        if doc is not None:
+            return {"label": label, "detail": detail, "pk": doc.id}
+    return None
+
+
 class PostingService:
     """Stateless engine; all state lives on the models or in the caller."""
 
@@ -179,6 +207,7 @@ class PostingService:
                     ),
                 )
 
+        _log_je(entry, "posted", actor=approver or user)
         return entry
 
     # ------------------------------------------------------------------ rev
@@ -252,6 +281,7 @@ class PostingService:
                         credit=line.credit,
                     ),
                 )
+            _log_je(rev, "posted", actor=user)
         return rev
 
     @staticmethod

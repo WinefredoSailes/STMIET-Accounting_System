@@ -129,24 +129,9 @@ def _je_source_doc(entry):
     PCF/AR) — never through the generic JE editor. Returns
     ``{"label", "detail", "pk"}`` or None.
     """
-    # (reverse accessor, label, detail url name) — checked in priority order.
-    checks = (
-        ("cv", "Check Voucher", "ui:cv_detail"),
-        ("rfps", "RFP", "ui:rfp_detail"),
-        ("billing_documents", "Billing", "ui:billing_detail"),
-        ("transfers", "Inter-Account Transfer", "ui:transfer_detail"),
-        ("pcf_replenishments", "PCF Voucher", "ui:pcf_replenishment_detail"),
-        ("ar_receipts", "Acknowledgment Receipt", "ui:receipt_detail"),
-        ("ar_deposits", "Bank Deposit", "ui:receipt_list"),
-    )
-    for accessor, label, detail in checks:
-        manager = getattr(entry, accessor, None)
-        if manager is None:
-            continue
-        doc = manager.first()
-        if doc is not None:
-            return {"label": label, "detail": detail, "pk": doc.id}
-    return None
+    from apps.posting.services import entry_source_doc
+
+    return entry_source_doc(entry)
 
 
 def _manual_je_guard(request, entry):
@@ -182,6 +167,48 @@ def _audit_trail(doc_type, doc_id):
             "note": e.note,
         }
         for e in ActionLog.objects.filter(doc_type=doc_type, doc_id=doc_id)
+    ]
+
+
+def _doc_audit_trail(doc_type, doc_id, entry):
+    """Merged audit trail for source-document detail pages, newest first.
+
+    The Finance Head reads the detail screen to confirm what actually happened
+    to a document — created → posted to GL → reversed. That chain lives partly
+    on the document itself (create/approve/clear/reject) and partly on its
+    Journal Entry (post to GL, reversal request/approval), all in separate
+    ``ActionLog`` rows. Merge the document's rows with its linked entry's rows
+    (and the reversal copy's posted log) into one timeline so the trail is
+    complete on the document screen.
+    """
+    from django.db.models import Q
+
+    from apps.ap.models import ActionLog
+    from apps.posting.models import ReversalRequest
+
+    q = Q(doc_type=doc_type, doc_id=doc_id)
+    entry_ids = []
+    if entry is not None:
+        entry_ids.append(entry.id)
+        approved_reversal = (
+            entry.reversal_requests.filter(status=ReversalRequest.Status.APPROVED)
+            .select_related("reversal_entry")
+            .first()
+        )
+        if approved_reversal and approved_reversal.reversal_entry_id:
+            entry_ids.append(approved_reversal.reversal_entry_id)
+    if entry_ids:
+        q |= Q(doc_type=ActionLog.DocType.JE, doc_id__in=entry_ids)
+    return [
+        {
+            "label": AUDIT_ACTION_LABELS.get(
+                e.action, e.action.replace("_", " ").title()
+            ),
+            "actor": e.actor.get_full_name() if e.actor else "",
+            "at": e.created_at,
+            "note": e.note,
+        }
+        for e in ActionLog.objects.filter(q).order_by("-created_at", "-id")
     ]
 
 
@@ -278,6 +305,7 @@ KIND_LABELS = {
     "cv": "Check Vouchers",
     "invoice": "Sales Invoices",
     "je": "Journal Entries",
+    "pcf": "Petty Cash Replenishments",
     "po": "Purchase Orders",
     "reversal": "Reversals",
     "rfp": "RFPs (Disbursements)",
@@ -565,6 +593,9 @@ def _create_entry_from_form(request):
                         credit=p["credit"],
                     )
                 entry.recalc_totals()
+                from apps.ap.services import log_action
+
+                log_action(entry, "created", actor=request.user)
                 return entry
         except IntegrityError as exc:
             last_exc = exc
@@ -3783,7 +3814,7 @@ def cv_detail(request, pk):
         "payable": payable,
         "cleared_at": cleared_at,
         "signatories": signatories,
-        "audit_trail": _audit_trail("cv", cv.id),
+        "audit_trail": _doc_audit_trail("cv", cv.id, cv.journal_entry),
         **_reversal_context(request, cv.journal_entry),
     })
 
@@ -6160,7 +6191,7 @@ def transfer_detail(request, pk):
         {
             "timeline": transfer_timeline(transfer),
             "awaiting": awaiting,
-            "audit_trail": _audit_trail("transfer", transfer.id),
+            "audit_trail": _doc_audit_trail("transfer", transfer.id, transfer.journal_entry),
             "can_edit": transfer.status in ("requested", "rejected")
             and (
                 request.user.id == transfer.initiated_by_id
@@ -7474,7 +7505,7 @@ def billing_detail(request, pk):
         {
             "billing": billing,
             "awaiting": awaiting,
-            "audit_trail": _audit_trail("bill", billing.id),
+            "audit_trail": _doc_audit_trail("bill", billing.id, billing.journal_entry),
             **_reversal_context(request, billing.journal_entry),
         },
     )
