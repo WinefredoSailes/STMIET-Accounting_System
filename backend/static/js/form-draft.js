@@ -173,7 +173,11 @@
   function applyHeaders(form, items) {
     (items || []).forEach(function (item) {
       var el = findHeaderEl(form, item.name);
-      if (el) setItem(el, item, true);
+      // data-draft-static fields are page basis, not form data (the CV RFP
+      // picker, keyed by ?rfp=): restore must never overwrite them, or the
+      // change dispatch would navigate the page to the draft's RFP (and can
+      // loop). They are still captured so a per-basis draft stays intact.
+      if (el && !el.hasAttribute('data-draft-static')) setItem(el, item, true);
     });
   }
 
@@ -327,9 +331,18 @@
       pristine: core.sameState(capture(form), initial)
     })) {
       form.dataset.draftRestored = '1';
-      applyHeaders(form, draft.headers);
-      applyGrids(form, draft.grids);
-      showBanner(form, key);
+      // Broadcast a restore-in-progress flag so any inline listeners (e.g.
+      // the CV ?rfp= picker's onchange navigation) ignore programmatic
+      // change events fired while we repopulate the form.
+      var prevRestoring = window.StmiDraftRestoring;
+      window.StmiDraftRestoring = true;
+      try {
+        applyHeaders(form, draft.headers);
+        applyGrids(form, draft.grids);
+        showBanner(form, key);
+      } finally {
+        window.StmiDraftRestoring = prevRestoring;
+      }
     }
 
     form.addEventListener('input', schedule);

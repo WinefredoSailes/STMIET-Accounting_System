@@ -86,6 +86,15 @@ class TestCreateFormsOptIn:
         html = client.get("/ap/cv/new/").content.decode()
         assert 'data-autosave-scope="query"' in html
 
+    def test_cv_basis_picker_is_restore_static(self, client, company, accounts):
+        # The ?rfp= picker is a page basis, not form data: restore must never
+        # overwrite it (that change dispatch would navigate to the draft's RFP
+        # and can loop), so the template pins data-draft-static and asks its
+        # inline onchange to ignore programmatic changes during a restore.
+        html = client.get("/ap/cv/new/").content.decode()
+        assert 'data-draft-static' in html
+        assert 'window.StmiDraftRestoring' in html
+
     def test_validation_error_rerender_keeps_opt_in(self, client, company):
         # Unbalanced/empty JE re-renders the create form (200, not redirect):
         # exactly the page where the client restores the lost grid.
