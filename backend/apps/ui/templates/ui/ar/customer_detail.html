@@ -85,7 +85,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for r in aging.register %}
+        {% for r in aging_page %}
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-2 font-mono text-xs">{{ r.invoice_no }}</td>
           <td class="px-4 py-2">{{ r.customer }}</td>
@@ -109,6 +109,8 @@
       </tfoot>
     </table>
   </div>
+
+  {% include "ui/partials/pagination.html" with page_obj=aging_page %}
 
   <div class="mt-4 flex justify-end">
     <a href="{% url 'ui:ar_customer_ledger' customer.pk %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Statement of Account →</a>

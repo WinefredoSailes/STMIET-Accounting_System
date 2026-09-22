@@ -20,7 +20,7 @@
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
-      {% for d in pending %}
+      {% for d in pending_page %}
       <tr class="hover:bg-slate-50">
         <td class="px-4 py-2"><span class="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ d.kind }}</span></td>
         <td class="px-4 py-2"><a href="{% url d.detail_url.0 d.detail_url.1 %}" class="font-mono text-xs font-medium text-indigo-600 hover:underline">{{ d.number }}</a></td>
@@ -36,3 +36,4 @@
     </tbody>
   </table>
 </div>
+{% include "ui/partials/pagination.html" with page_obj=pending_page %}

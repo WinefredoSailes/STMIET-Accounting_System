@@ -275,6 +275,30 @@ def _page(request, seq, per_page=100):
     return page_obj
 
 
+def _page_ledger(request, rows, opening_dr=None, opening_cr=None):
+    """Paginate a running-balance ledger register without breaking the balance.
+
+    Pages carry their own "Balance Brought Forward" (the running balance after
+    the last row of the previous page) and "Balance Carried Forward" (after this
+    page's last row); the window totals/closing are only meaningful on `is_last`.
+    """
+    page_obj = _page(request, rows)
+    if page_obj.has_previous():
+        prev_last = rows[page_obj.start_index - 2]
+        page_obj.brought_dr = prev_last["balance_dr"]
+        page_obj.brought_cr = prev_last["balance_cr"]
+    else:
+        page_obj.brought_dr = opening_dr
+        page_obj.brought_cr = opening_cr
+    if page_obj.object_list:
+        page_obj.carried_dr = page_obj.object_list[-1]["balance_dr"]
+        page_obj.carried_cr = page_obj.object_list[-1]["balance_cr"]
+    else:
+        page_obj.carried_dr = page_obj.carried_cr = None
+    page_obj.is_last = not page_obj.has_next()
+    return page_obj
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect("ui:dashboard")
@@ -351,12 +375,14 @@ def my_approvals(request):
         queues = [i for i in queues if (i["date"] or date.min) <= date_to]
 
     my_role = get_approval_role(request.user)
+    queue_page = _page(request, queues)
     return render(
         request,
         "ui/approvals.html",
         {
-            "grouped": group_by_role(queues),
+            "grouped": group_by_role(queue_page.object_list),
             "total": len(queues),
+            "page_obj": queue_page,
             "my_role": ROLE_LABELS.get(my_role, "no approval role"),
             "assignees": {r: role_assignee(r) for r in ("staff", "head", "coo")},
             "has_inbox": has_inbox,
@@ -436,6 +462,7 @@ def je_list(request):
     ctx = {
         "tab": request.GET.get("tab", "entries"),
         "page_obj": _page(request, qs),
+        "pending_page": _page(request, pending),
         "filters": spec.context(request.GET, request),
         "pending": pending,
         "pending_count": len(pending),
@@ -1658,6 +1685,9 @@ def customer_detail(request, pk: int):
         customer=customer
     ).select_related("cash_account", "segment").order_by("-transaction_date", "-receipt_no")
 
+    register = aging.get("register") or []
+    aging_page = _page(request, register)
+
     return render(
         request,
         "ui/ar/customer_detail.html",
@@ -1665,6 +1695,7 @@ def customer_detail(request, pk: int):
             "customer": customer,
             "as_of": as_of,
             "aging": aging,
+            "aging_page": aging_page,
             "ledger": ledger,
             "receipts": receipts,
         },
@@ -5565,6 +5596,8 @@ def ap_supplier_ledger(request, pk):
     # preserve existing querystring for filter persistence
     filter_qs = "&".join([f"{k}={v}" for k, v in request.GET.items() if k not in ("page", "start", "end")])
     ctx = ap_supplier_ledger(supplier=supplier, start=start, end=end)
+    rows = ctx.pop("rows")
+    ctx["page_obj"] = _page_ledger(request, rows, ctx.get("opening_dr"), ctx.get("opening_cr"))
     ctx["supplier"] = supplier
     ctx["filter_qs"] = filter_qs
     return render(request, "ui/ap/supplier_ledger.html", ctx)
@@ -6482,6 +6515,10 @@ def ledger_account_detail(request, pk):
         start=win["start"],
         end=win["end"],
         segment=win["segment"] or None,
+    )
+    rows = reg.pop("rows")
+    reg["page_obj"] = _page_ledger(
+        request, rows, reg.get("opening_dr"), reg.get("opening_cr")
     )
     return render(
         request,
