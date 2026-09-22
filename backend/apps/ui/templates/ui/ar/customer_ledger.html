@@ -1,0 +1,86 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Statement of Account — {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6 max-w-7xl">
+  {% capture as ledger_filters %}
+  <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+    <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+    <span class="text-slate-400">to</span>
+    <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Apply Filter</button>
+    {% if filter_qs %}<a href="?{{ filter_qs }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Clear filters</a>{% endif %}
+  </form>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'ui:ar_customer_ledger_export' customer.pk %}?format=xlsx{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
+    <a href="{% url 'ui:ar_customer_ledger_export' customer.pk %}?format=pdf{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+    <a href="{% url 'ui:ar_customer_ledger_export' customer.pk %}?format=csv{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+    <a href="{% url 'ui:ar_customer_ledger_print' customer.pk %}{% if start or end or filter_qs %}?{% if start %}start={{ start }}&{% endif %}{% if end %}end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}{% endif %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  </div>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="STATEMENT OF ACCOUNT" subtitle=customer.name actions=ledger_filters %}
+
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <table class="w-full text-sm min-w-[1100px]">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3">Date</th>
+          <th class="px-3 py-3">Ref #</th>
+          <th class="px-3 py-3">Type</th>
+          <th class="px-3 py-3">Description / Particulars</th>
+          <th class="px-3 py-3 text-right">Debit</th>
+          <th class="px-3 py-3 text-right">Credit</th>
+          <th class="px-3 py-3 text-right">Balance Dr</th>
+          <th class="px-3 py-3 text-right">Balance Cr</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% if opening_dr is none and opening_cr is none %}
+        <tr class="bg-slate-100/60 font-semibold">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
+            Balance Brought Forward (All Dates)
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"></td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"></td>
+        </tr>
+        {% else %}
+        <tr class="bg-slate-100/60 font-semibold">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
+            Balance Brought Forward {% if start %}{{ start }}{% else %}(all prior activity){% endif %}
+          </td>
+          <td class="px-3 py-2"></td>
+          <td class="px-3 py-2"></td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ opening_dr|default:""|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ opening_cr|default:""|money }}</td>
+        </tr>
+        {% endif %}
+        {% for row in rows %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ row.date|date:"Y-m-d" }}</td>
+          <td class="px-3 py-1.5 whitespace-nowrap font-medium">
+            {% if row.ref_url %}<a href="{% url row.ref_url row.ref_pk %}" class="text-indigo-600 hover:text-indigo-800 hover:underline">{{ row.ref }}</a>{% else %}{{ row.ref }}{% endif %}
+          </td>
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ row.type }}</td>
+          <td class="px-3 py-1.5">{{ row.description|truncatechars:70 }}{% if row.ref_url %} <span class="text-xs text-slate-400">— {{ row.ref }}</span>{% endif %}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.debit|money }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.credit|money }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{% if row.balance_dr is not None %}{{ row.balance_dr|money }}{% endif %}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{% if row.balance_cr is not None %}{{ row.balance_cr|money }}{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No transactions for this customer in the selected period.</td></tr>
+        {% endfor %}
+        <tr class="bg-slate-50 font-semibold border-t-2 border-slate-200">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-500">Period Totals</td>
+          <td class="px-3 py-2"></td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ period_debit|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ period_credit|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{% if closing_dr is not None %}{{ closing_dr|money }}{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{% if closing_cr is not None %}{{ closing_cr|money }}{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="mt-3 text-xs text-slate-500">Invoices billed (Dr) and posted collections (Cr), from the receivable ledger projection (ADR-005). Click a receipt Ref # to open the originating document.</p>
+</div>
+{% endblock %}

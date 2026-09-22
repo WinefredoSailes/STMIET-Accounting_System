@@ -110,6 +110,74 @@
     </table>
   </div>
 
+  <div class="mt-4 flex justify-end">
+    <a href="{% url 'ui:ar_customer_ledger' customer.pk %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Statement of Account →</a>
+  </div>
+
+  {% if ledger %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <div class="px-4 py-3 border-b border-slate-200">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-700">Cycle Over/(Short) Ledger</h2>
+      <p class="text-xs text-slate-500 mt-1">Per weekly cycle: collections vs billings and the running cumulative (ADR-013).</p>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Cycle Start</th>
+          <th class="px-4 py-3 text-right">Billed</th>
+          <th class="px-4 py-3 text-right">Collected</th>
+          <th class="px-4 py-3 text-right">Over/(Short)</th>
+          <th class="px-4 py-3 text-right">Cumulative</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in ledger %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 whitespace-nowrap">{{ row.cycle_start|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ row.billed|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ row.paid|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap {% if row.over_short < 0 %}text-red-600{% else %}text-emerald-700{% endif %}">₱{{ row.over_short|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ row.cumulative|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if receipts %}
+  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+    <div class="px-4 py-3 border-b border-slate-200">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-700">Acknowledgment Receipts</h2>
+      <p class="text-xs text-slate-500 mt-1">All collection documents for this customer; only approved ones post to the GL.</p>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3">Receipt #</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Segment</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3 text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in receipts %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ r.receipt_no }}</a></td>
+          <td class="px-4 py-2">{{ r.transaction_date|date:"Y-m-d" }}</td>
+          <td class="px-4 py-2">{{ r.segment.code }}</td>
+          <td class="px-4 py-2">{{ r.get_status_display }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ r.amount|money }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No receipts recorded for this customer.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <div class="mt-6 flex justify-end gap-3">
     <a href="{% url 'ui:customer_list' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Back to customers</a>
     <a href="{% url 'ui:receipt_list' %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">View receipts →</a>

@@ -1,0 +1,184 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}Statement of Account — {{ customer.name }} Print{% endblock %}
+{% block content %}
+<style>
+  @page { size: A5 portrait; margin: 6mm; }
+  .print-a4 @page { size: A4 portrait; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .sl-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .sl-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .sl-paper td, .sl-paper th { padding: 1px 4px; }
+    .sl-paper tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    .sl-paper .keep-together { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
+  .print-toolbar button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .print-toolbar button:last-child:hover { background: #15803d; }
+  .sl-paper {
+    background: #fff; box-shadow: none;
+    margin: 0 auto; padding: 0; max-width: 148mm;
+  }
+  .sl-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .sl-paper td, .sl-paper th { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
+  .sl-paper *, .sl-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+</style>
+
+<div class="no-print print-toolbar">
+  <button class="active" onclick="setPaper('a5')">A5 / Half-Bond</button>
+  <button onclick="setPaper('a4')">A4</button>
+  <button onclick="window.print()">Print</button>
+</div>
+
+<div class="sl-paper">
+  <!-- 14-column document grid: every row's colspans sum to exactly 14 -->
+  <table>
+    <colgroup>
+      <col><col><col><col><col><col><col><col><col><col><col><col><col><col>
+    </colgroup>
+    <tbody>
+
+      <!-- ═══ HEADER (3 rows: logo/title rowspan + 2 info rows) ═══ -->
+      <!-- Row 1: logo + STATEMENT OF ACCOUNT + ACCOUNTING DEPARTMENT  (3+7+4=14) -->
+      <tr>
+        <td colspan="3" style="text-align:center; vertical-align:middle">
+          <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
+        </td>
+        <td colspan="7" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#e2efda">
+          STATEMENT OF ACCOUNT
+        </td>
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+          ACCOUNTING DEPARTMENT
+        </td>
+      </tr>
+      <!-- Row 2: Customer  (3+7+2+2=14) -->
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600; text-transform:uppercase; letter-spacing:.03em">Customer:</td>
+        <td colspan="7" style="font-weight:700">{{ customer.name }}</td>
+        <td colspan="2" style="font-weight:600; text-align:right; text-transform:uppercase; letter-spacing:.03em">Acct No:</td>
+        <td colspan="2" style="text-align:right">{{ customer.code }}</td>
+      </tr>
+      <!-- Row 3: Period  (3+11=14) -->
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600; text-transform:uppercase; letter-spacing:.03em">Period:</td>
+        <td colspan="11">
+          {% if start or end %}{{ start|default:"" }} to {{ end|default:"" }}{% else %}All Dates{% endif %}
+        </td>
+      </tr>
+
+      <!-- ═══ ACCOUNT BALANCE SUMMARY (14 full span) ═══ -->
+      <tr class="keep-together">
+        <td colspan="14" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Account Balance Summary
+        </td>
+      </tr>
+      <!-- Brought Forward: 8 label + 4 empty + 2 balance = 14 -->
+      <tr class="keep-together" style="font-size:10px">
+        <td colspan="8" style="white-space:normal; font-weight:600">Balance Brought Forward {% if start or end %}(prior activity){% endif %}</td>
+        <td colspan="2"></td>
+        <td colspan="2"></td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if opening_dr is not None %}{{ opening_dr|money }}{% endif %}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if opening_cr is not None %}{{ opening_cr|money }}{% endif %}</td>
+      </tr>
+      <!-- Closing Balance: 8 label + 4 empty + 2 balance = 14 -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700">
+        <td colspan="8" style="white-space:normal;">Closing Balance</td>
+        <td colspan="2"></td>
+        <td colspan="2"></td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_dr is not None %}{{ closing_dr|money }}{% endif %}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_cr is not None %}{{ closing_cr|money }}{% endif %}</td>
+      </tr>
+
+      <!-- ═══ TRANSACTION LEDGER (14 full span) ═══ -->
+      <tr class="keep-together">
+        <td colspan="14" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Transaction Ledger
+        </td>
+      </tr>
+      <!-- Column headers  (2+2+2+2+2+2+1+1=14) -->
+      <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
+        <th colspan="2" style="font-weight:700; text-align:left; width:8%">Date</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:10%">Ref #</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:10%">Type</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:28%">Description / Particulars</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:16%">Debit</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:16%">Credit</th>
+        <th style="font-weight:700; text-align:right; width:6%">Bal Dr</th>
+        <th style="font-weight:700; text-align:right; width:6%">Bal Cr</th>
+      </tr>
+      <!-- Data rows  (2+2+2+2+2+2+1+1=14) -->
+      {% for row in rows %}
+      <tr style="font-size:10px; line-height:2;" class="line-row">
+        <td colspan="2" style="white-space:nowrap">{{ row.date|date:"Y-m-d" }}</td>
+        <td colspan="2" style="white-space:nowrap; font-weight:600">
+          {{ row.ref }}
+        </td>
+        <td colspan="2" style="white-space:nowrap">{{ row.type }}</td>
+        <td colspan="2" style="overflow:hidden; text-overflow:ellipsis; white-space:normal">{{ row.description|truncatechars:70 }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.debit|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.credit|money }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if row.balance_dr is not None %}{{ row.balance_dr|money }}{% endif %}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if row.balance_cr is not None %}{{ row.balance_cr|money }}{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="14" style="font-size:10px; color:#94a3b8">No transactions for this customer in the selected period.</td>
+      </tr>
+      {% endfor %}
+      <!-- Period Totals  (8 label + 2+2+1+1=14) -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#e2efda">
+        <td colspan="8" style="text-align:right; text-transform:uppercase; letter-spacing:.03em">Period Totals</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_debit|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_credit|money }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_dr is not None %}{{ closing_dr|money }}{% endif %}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{% if closing_cr is not None %}{{ closing_cr|money }}{% endif %}</td>
+      </tr>
+
+      <!-- ═══ SIGNATURE SECTION (14 full span) ═══ -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="7">Prepared By:</td>
+        <td colspan="7">Reviewed By:</td>
+      </tr>
+      <tr class="keep-together" style="height:24px">
+        <td colspan="7" style="text-align:center; vertical-align:bottom; height:24px;"></td>
+        <td colspan="7" style="text-align:center; vertical-align:bottom; height:24px;"></td>
+      </tr>
+      <tr class="keep-together" style="font-size:8px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
+        <td colspan="7" style="text-align:center">Signature over Printed Name</td>
+        <td colspan="7" style="text-align:center">Signature over Printed Name</td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <p style="margin-top:6px; font-size:8px; color:#64748b; text-align:center">
+    Invoices billed (Dr) and posted collections (Cr), from the receivable ledger projection (ADR-005).
+  </p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function setPaper(size) {
+    document.body.classList.toggle('print-a4', size === 'a4');
+    document.querySelectorAll('.print-toolbar button').forEach(function (btn, i) {
+      if (i < 2) btn.classList.toggle('active', (i === 0 && size === 'a5') || (i === 1 && size === 'a4'));
+    });
+  }
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>
+{% endblock %}

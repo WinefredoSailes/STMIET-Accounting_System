@@ -1562,12 +1562,14 @@ def customer_detail(request, pk: int):
     from decimal import Decimal as _D
 
     from apps.ar.models import AcknowledgmentReceipt, ARInvoice, Customer
+    from apps.ar.services import CycleLedgerService
     from apps.foundation.models import Segment
 
     customer = get_object_or_404(Customer, pk=pk)
     as_of = request.GET.get("as_of", _d.today())
 
     aging = customer_aging_context(customer, as_of=as_of)
+    ledger = CycleLedgerService.for_customer(customer)
 
     receipts = AcknowledgmentReceipt.objects.filter(
         customer=customer
@@ -1580,6 +1582,7 @@ def customer_detail(request, pk: int):
             "customer": customer,
             "as_of": as_of,
             "aging": aging,
+            "ledger": ledger,
             "receipts": receipts,
         },
     )
@@ -5035,6 +5038,140 @@ def aging(request):
     ctx["export_url"] = _export_url("ui:aging_export", as_of=as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
     return render(request, "ui/ar/aging.html", ctx)
+
+
+@login_required
+def ar_ledger(request):
+    """Customer Ledger Summary.
+
+    Filter bar: text search (code / name), [All / With Outstanding Balance Only] dropdown,
+    Export dropdown. Table: Code | Customer Name | Total Billed | Total Paid | Outstanding.
+    Mirror of the AP subsidiary ledger summary (ADR-005).
+    """
+    from .services import ar_customer_summary
+
+    q = request.GET.get("q", "").strip()
+    outstanding_only = request.GET.get("filter", "") == "outstanding"
+    ctx = ar_customer_summary(q=q, outstanding_only=outstanding_only)
+    ctx["export_url"] = _export_url(
+        "ui:ar_ledger_export", q=q, filter="outstanding" if outstanding_only else ""
+    )
+    ctx["page_obj"] = _page(request, ctx.pop("rows"))
+    ctx["filter_url"] = request.GET.urlencode()
+    return render(request, "ui/ar/ledger_summary.html", ctx)
+
+
+@login_required
+def ar_ledger_export(request):
+    """Export the customer ledger summary as XLSX / CSV / PDF."""
+    from .services import ar_customer_summary
+
+    q = request.GET.get("q", "").strip()
+    outstanding_only = request.GET.get("filter", "") == "outstanding"
+    ctx = ar_customer_summary(q=q, outstanding_only=outstanding_only)
+    rows = [
+        [r["code"], r["name"], r["billed"], r["paid"], r["outstanding"]]
+        for r in ctx["rows"]
+    ]
+    return _table_response(
+        "CUSTOMER LEDGER SUMMARY",
+        ["Code", "Customer Name", "Total Billed", "Total Paid", "Outstanding Balance"],
+        rows,
+        request.GET.get("format", "xlsx"),
+        "CUSTOMER-LEDGER-SUMMARY",
+        sheet_title="CUSTOMER LEDGER SUMMARY",
+        money_cols=(2, 3, 4),
+        totals_row=["", "TOTALS", ctx["total_billed"], ctx["total_paid"], ctx["total_outstanding"]],
+        page="landscape",
+    )
+
+
+@login_required
+def ar_customer_ledger(request, pk):
+    """Customer Statement of Account / AR Subsidiary Ledger."""
+    from .services import ar_customer_ledger as _ar_customer_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ar.models import Customer
+
+    customer = get_object_or_404(Customer, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    # preserve existing querystring for filter persistence
+    filter_qs = "&".join([f"{k}={v}" for k, v in request.GET.items() if k not in ("page", "start", "end")])
+    ctx = _ar_customer_ledger(customer=customer, start=start, end=end)
+    ctx["customer"] = customer
+    ctx["filter_qs"] = filter_qs
+    return render(request, "ui/ar/customer_ledger.html", ctx)
+
+
+@login_required
+def ar_customer_ledger_export(request, pk):
+    """Export the customer subsidiary ledger as XLSX / CSV / PDF."""
+    from .services import ar_customer_ledger as _ar_customer_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ar.models import Customer
+
+    customer = get_object_or_404(Customer, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    ctx = _ar_customer_ledger(customer=customer, start=start, end=end)
+
+    header = ["Date", "Ref #", "Type", "Description / Particulars", "Debit", "Credit", "Balance Dr", "Balance Cr"]
+    rows = []
+    for r in ctx["rows"]:
+        rows.append([
+            r["date"],
+            r["ref"],
+            r["type"],
+            r["description"],
+            r["debit"],
+            r["credit"],
+            r["balance_dr"] if r["balance_dr"] is not None else "",
+            r["balance_cr"] if r["balance_cr"] is not None else "",
+        ])
+    # totals row
+    totals = [
+        ctx["start"] or "",
+        "",
+        "",
+        "Period Totals",
+        ctx["period_debit"],
+        ctx["period_credit"],
+        ctx["closing_dr"] if ctx["closing_dr"] is not None else "",
+        ctx["closing_cr"] if ctx["closing_cr"] is not None else "",
+    ]
+    # preamble with customer / period info
+    preamble = [
+        [f"Customer: {ctx['customer'].code} — {ctx['customer'].name}", ""],
+        [f"Period: {ctx['start'] or 'All Dates'}", ""],
+    ]
+    return _table_response(
+        f"STATEMENT OF ACCOUNT — {customer.code} {customer.name}",
+        header,
+        rows,
+        request.GET.get("format", "xlsx"),
+        f"LEDGER-{customer.code}",
+        sheet_title="LEDGER",
+        money_cols=(4, 5, 6, 7),
+        totals_row=totals,
+        page="landscape",
+        preamble=preamble,
+    )
+
+
+@login_required
+def ar_customer_ledger_print(request, pk):
+    """Print-optimized copy of the customer ledger (browser print dialog)."""
+    from .services import ar_customer_ledger as _ar_customer_ledger
+    from django.shortcuts import get_object_or_404
+    from apps.ar.models import Customer
+
+    customer = get_object_or_404(Customer, pk=pk)
+    start = request.GET.get("start")
+    end = request.GET.get("end")
+    ctx = _ar_customer_ledger(customer=customer, start=start, end=end)
+    ctx["customer"] = customer
+    return render(request, "ui/ar/customer_ledger_print.html", ctx)
 
 
 @login_required

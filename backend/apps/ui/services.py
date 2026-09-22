@@ -1032,6 +1032,210 @@ def customer_aging_context(customer: Any, as_of: date) -> dict:
     }
 
 
+def ar_customer_summary(*, q: str = "", outstanding_only: bool = False) -> dict:
+    """Return rows for the Customer Subsidiary Ledger Summary screen.
+
+    Columns: Code | Customer Name | Total Billed | Total Paid | Outstanding Balance.
+    Billed = Σ AR invoice totals (all invoice statuses — billing-side truth).
+    Paid   = Σ posted ack receipts (posted JE; reversed collections excluded).
+    Mirror of ``ap_supplier_summary`` for the AR receivable track (ADR-005).
+    """
+
+    from django.db.models import Q, Sum
+    from apps.ar.models import AcknowledgmentReceipt, ARInvoice, Customer
+    from apps.posting.models import PostingStatus
+
+    customers = Customer.objects.order_by("name")
+    if q:
+        customers = customers.filter(Q(code__icontains=q) | Q(name__icontains=q))
+
+    # --- Billed: Σ invoice totals per customer ---
+    billed_by_customer: dict = dict(
+        ARInvoice.objects.values("customer_id")
+        .annotate(total=Sum("total"))
+        .values_list("customer_id", "total")
+    )
+
+    # --- Paid: posted ack receipts (posted JE, reversed excluded) per customer ---
+    paid_by_customer: dict = dict(
+        AcknowledgmentReceipt.objects.filter(
+            journal_entry__status=PostingStatus.POSTED
+        )
+        .values("customer_id")
+        .annotate(total=Sum("amount"))
+        .values_list("customer_id", "total")
+    )
+
+    rows = []
+    total_billed = Decimal("0.00")
+    total_paid = Decimal("0.00")
+    total_outstanding = Decimal("0.00")
+    for c in customers:
+        billed = billed_by_customer.get(c.id, Decimal("0.00"))
+        paid = paid_by_customer.get(c.id, Decimal("0.00"))
+        outstanding = billed - paid
+        if outstanding_only and outstanding <= 0:
+            continue
+        rows.append(
+            {
+                "pk": c.pk,
+                "code": c.code,
+                "name": c.name,
+                "billed": billed,
+                "paid": paid,
+                "outstanding": outstanding,
+            }
+        )
+        total_billed += billed
+        total_paid += paid
+        total_outstanding += outstanding
+
+    return {
+        "rows": rows,
+        "total_billed": total_billed,
+        "total_paid": total_paid,
+        "total_outstanding": total_outstanding,
+    }
+
+
+def ar_customer_ledger(*, customer, start=None, end=None) -> dict:
+    """Return the per-customer AR subsidiary ledger rows with running balance.
+
+    Columns: Date | Ref # | Type | Description/Particulars | Debit | Credit | Balance Dr | Balance Cr.
+    Debit rows = AR invoices (receivable recognized). Credit rows = posted ack
+    receipts (collections), reversal-excluded. Mirror of ``ap_supplier_ledger``
+    with a debit-normal receivable running balance (ADR-005).
+    """
+
+    from datetime import datetime
+    from decimal import Decimal
+
+    from apps.ar.models import AcknowledgmentReceipt, ARInvoice
+    from apps.posting.models import PostingStatus
+    from apps.ui.services import _balance_cell
+
+    # --- Debit rows: AR invoices (all statuses — billing-side truth) ---
+    debit_rows = []
+    for inv in ARInvoice.objects.filter(customer=customer).select_related("segment"):
+        debit_rows.append(
+            {
+                "date": inv.transaction_date,
+                "ref": inv.invoice_no,
+                "ref_pk": inv.id,
+                # No UI invoice-detail route yet — the ref renders as plain text.
+                "ref_url": "",
+                "type": "Invoice",
+                "description": f"{inv.segment.code} — {inv.total:.2f} billed",
+                "debit": inv.total,
+                "credit": Decimal("0.00"),
+            }
+        )
+
+    # --- Credit rows: posted ack receipts (collections) ---
+    credit_rows = []
+    for r in (
+        AcknowledgmentReceipt.objects.filter(
+            customer=customer, journal_entry__status=PostingStatus.POSTED
+        )
+        .select_related("segment", "applied_to")
+    ):
+        if r.applied_to_id:
+            desc = f"Applied to {r.applied_to.invoice_no}"
+        else:
+            desc = "Collection (Unearned revenue)"
+        credit_rows.append(
+            {
+                "date": r.transaction_date,
+                "ref": r.receipt_no,
+                "ref_pk": r.id,
+                "ref_url": "ui:receipt_detail",
+                "type": "Receipt (Collection)",
+                "description": desc,
+                "debit": Decimal("0.00"),
+                "credit": r.amount,
+            }
+        )
+
+    # --- Merge and sort (before the date window so the opening balance below
+    # can reference all activity, not just the visible window) ---
+    all_rows = debit_rows + credit_rows
+    all_rows.sort(key=lambda r: (r["date"], r["ref_pk"]))
+
+    # Views pass raw ISO strings from request.GET; normalise once so the date
+    # comparisons below never mix date objects and strings.
+    def _as_date(value):
+        if isinstance(value, str) and value:
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+        return value
+
+    start_d = _as_date(start)
+    end_d = _as_date(end)
+
+    # Date window filter
+    if start_d:
+        all_rows = [r for r in all_rows if r["date"] >= start_d]
+    if end_d:
+        all_rows = [r for r in all_rows if r["date"] <= end_d]
+
+    # --- Running balance ---
+    # Opening balance = sum of (debit - credit) for rows before the window start
+    opening = Decimal("0.00")
+    if start_d:
+        opening = sum(
+            (r["debit"] - r["credit"]) for r in debit_rows + credit_rows if r["date"] < start_d
+        )
+
+    running = opening
+    opening_dr = _balance_cell(opening, "debit", "debit") or Decimal("0.00")
+    opening_cr = _balance_cell(opening, "debit", "credit") or Decimal("0.00")
+
+    rows = []
+    period_debit = Decimal("0.00")
+    period_credit = Decimal("0.00")
+    for r in all_rows:
+        period_debit += r["debit"]
+        period_credit += r["credit"]
+        running += r["debit"] - r["credit"]  # cumulative running balance
+        balance_dr = _balance_cell(running, "debit", "debit") or Decimal("0.00")
+        balance_cr = _balance_cell(running, "debit", "credit") or Decimal("0.00")
+        rows.append(
+            {
+                "date": r["date"].isoformat() if hasattr(r["date"], "isoformat") else str(r["date"]),
+                "ref": r["ref"],
+                "ref_pk": r["ref_pk"],
+                "ref_url": r["ref_url"],
+                "type": r["type"],
+                "description": r["description"],
+                "debit": r["debit"],
+                "credit": r["credit"],
+                "balance_dr": balance_dr,
+                "balance_cr": balance_cr,
+            }
+        )
+
+    closing = running
+    closing_dr = _balance_cell(closing, "debit", "debit")
+    closing_cr = _balance_cell(closing, "debit", "credit")
+
+    return {
+        "customer": customer,
+        "start": start,
+        "end": end,
+        "opening": opening,
+        "opening_dr": opening_dr,
+        "opening_cr": opening_cr,
+        "rows": rows,
+        "period_debit": period_debit,
+        "period_credit": period_credit,
+        "closing": closing,
+        "closing_dr": closing_dr,
+        "closing_cr": closing_cr,
+    }
+
+
 def ap_aging_context(as_of: date) -> dict:
     """AP aging buckets + per-RFP open-payable register for an as-of date.
 

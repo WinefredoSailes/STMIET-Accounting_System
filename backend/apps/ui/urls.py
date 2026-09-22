@@ -92,6 +92,11 @@ urlpatterns = [
     path("ar/receipts/<int:pk>/deposit/", views.receipt_deposit, name="receipt_deposit"),
     path("ar/aging/", views.aging, name="aging"),
     path("ar/aging/export/", views.aging_export, name="aging_export"),
+    path("ar/ledger/", views.ar_ledger, name="ar_ledger"),
+    path("ar/ledger/export/", views.ar_ledger_export, name="ar_ledger_export"),
+    path("ar/ledger/<int:pk>/", views.ar_customer_ledger, name="ar_customer_ledger"),
+    path("ar/ledger/<int:pk>/export/", views.ar_customer_ledger_export, name="ar_customer_ledger_export"),
+    path("ar/ledger/<int:pk>/print/", views.ar_customer_ledger_print, name="ar_customer_ledger_print"),
     # AP
     path("ap/aging/", views.ap_aging, name="ap_aging"),
     path("ap/aging/export/", views.ap_aging_export, name="ap_aging_export"),
