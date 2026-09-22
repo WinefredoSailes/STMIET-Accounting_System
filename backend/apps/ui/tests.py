@@ -1142,6 +1142,61 @@ class TestReceiptScreen:
         assert receipt.lines.get(debit__gt=0).account_id == accounts["10010"].id
         assert resp.url == f"/ar/receipts/{receipt.pk}/"
 
+    def test_receipt_dr_line_cost_center_and_description(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
+            "cash_cost_center": "DMIE",
+            "cash_description": "Downpayment for 8,000 tanker re-piping",
+            "account": [accounts["41010"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
+        }
+        resp = client.post("/ar/receipts/new/", data)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        debit = receipt.lines.get(debit__gt=0)
+        assert debit.cost_center == "DMIE"
+        assert debit.description == "Downpayment for 8,000 tanker re-piping"
+        assert debit.debit == Decimal("15000.00")
+
+    def test_receipt_dr_line_blank_description_defaults(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
+            "cash_cost_center": "",
+            "cash_description": "   ",
+            "account": [accounts["41010"].id],
+            "line_segment": [segment.id],
+            "credit": ["15000.00"],
+            "line_description": ["Sales collection"],
+            "line_cost_center": [""],
+        }
+        resp = client.post("/ar/receipts/new/", data)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        debit = receipt.lines.get(debit__gt=0)
+        assert debit.description == "Cash received"
+        assert debit.cost_center == ""
+
     def test_receipt_cash_segment_syncs_header(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
         from apps.foundation.models import Segment as SegmentModel

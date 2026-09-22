@@ -116,8 +116,8 @@
                   {% for seg in segments %}<option value="{{ seg.id }}" {% if editing and editing.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
                 </select>
               </td>
-              <td class="px-2 py-2 text-xs text-slate-400">—</td>
-              <td class="px-2 py-2 text-xs text-slate-500">Cash received</td>
+              <td class="px-2 py-2 overflow-hidden"><input type="text" name="cash_cost_center" maxlength="64" list="cost_center_options" value="{% if editing and cash_line %}{{ cash_line.cost_center }}{% endif %}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-2 py-2 overflow-hidden"><textarea name="cash_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5">{% if editing and cash_line %}{{ cash_line.description }}{% else %}Cash received{% endif %}</textarea></td>
               <td class="px-2 py-2 text-right font-semibold tabular-nums" id="ar-cash-debit">0.00</td>
               <td class="px-2 py-2 text-xs text-slate-300 text-right">—</td>
               <td class="px-2 py-2"></td>

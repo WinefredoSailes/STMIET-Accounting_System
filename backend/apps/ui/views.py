@@ -687,8 +687,10 @@ def _ar_receipt_lines_from_form(request, cash_account, segment):
         {
             "account": cash_account,
             "segment": segment,
-            "cost_center": "",
-            "description": "Cash received",
+            "cost_center": (request.POST.get("cash_cost_center") or "").strip()[:64],
+            "description": (
+                (request.POST.get("cash_description") or "").strip() or "Cash received"
+            )[:500],
             "debit": total,
             "credit": money(0),
         }
@@ -2082,6 +2084,7 @@ def receipt_edit(request, pk: int):
         "ui/ar/receipt_form.html",
         {
             "editing": receipt,
+            "cash_line": receipt.lines.filter(debit__gt=0).first(),
             "today": date.today(),
             "segments": Segment.objects.order_by("code"),
             "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
