@@ -1,3 +1,337 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    @apply font-sans text-surface-700 antialiased;
+  }
+  body {
+    @apply bg-surface-50 text-surface-700;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold text-surface-900 tracking-tight;
+  }
+  h1 { @apply text-2xl; }
+  h2 { @apply text-xl; }
+  h3 { @apply text-lg; }
+  h4 { @apply text-base; }
+  label { @apply text-sm font-medium text-surface-700; }
+  input, select, textarea {
+    @apply text-sm text-surface-900 placeholder:text-surface-400;
+  }
+  ::placeholder { @apply text-surface-400; }
+}
+
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500/40;
+  }
+  .btn-secondary {
+    @apply btn bg-surface-100 text-surface-700 border border-surface-300 hover:bg-surface-200 focus:ring-surface-400/40;
+  }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700 focus:ring-rose-500/40;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-surface-600 hover:bg-surface-100 focus:ring-surface-400/40;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
+  }
+  .btn-lg {
+    @apply px-4 py-2 text-base;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white rounded-xl border border-surface-200 shadow-sm;
+  }
+  .card-header {
+    @apply px-5 py-4 border-b border-surface-200;
+  }
+  .card-body {
+    @apply p-5;
+  }
+  .card-footer {
+    @apply px-5 py-4 border-t border-surface-200 bg-surface-50 rounded-b-xl;
+  }
+
+  /* KPI Card */
+  .kpi-card {
+    @apply relative overflow-hidden bg-white rounded-xl border border-surface-200 shadow-sm p-4 sm:p-5 transition-shadow hover:shadow-md;
+  }
+  .kpi-accent {
+    @apply absolute inset-x-0 top-0 h-1;
+  }
+  .kpi-label {
+    @apply text-xs uppercase tracking-wider text-surface-500 font-medium;
+  }
+  .kpi-value {
+    @apply mt-2 text-xl sm:text-2xl font-bold text-surface-900 tabular-nums leading-tight;
+  }
+  .kpi-sub {
+    @apply mt-1 text-xs text-surface-500 truncate;
+  }
+  .kpi-trend {
+    @apply mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold;
+  }
+  .kpi-trend.up { @apply bg-emerald-50 text-emerald-700; }
+  .kpi-trend.down { @apply bg-rose-50 text-rose-700; }
+  .kpi-trend.flat { @apply bg-surface-100 text-surface-500; }
+  .kpi-icon-bubble {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg;
+  }
+
+  /* Status badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-success { @apply badge bg-emerald-100 text-emerald-800; }
+  .badge-warning { @apply badge bg-amber-100 text-amber-800; }
+  .badge-danger { @apply badge bg-rose-100 text-rose-800; }
+  .badge-info { @apply badge bg-brand-100 text-brand-800; }
+  .badge-neutral { @apply badge bg-surface-100 text-surface-700; }
+  .badge-pipeline { @apply badge bg-brand-50 text-brand-700; }
+
+  /* Table shell */
+  .table-shell {
+    @apply w-full overflow-x-auto;
+  }
+  .table-shell table {
+    @apply w-full text-sm;
+  }
+  .table-shell thead {
+    @apply bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500;
+  }
+  .table-shell th,
+  .table-shell td {
+    @apply px-4 py-3;
+  }
+  .table-shell tbody tr {
+    @apply border-t border-surface-100 hover:bg-surface-50/50;
+  }
+  .table-shell tbody tr:first-child {
+    @apply border-t-0;
+  }
+
+  /* Form field */
+  .form-field {
+    @apply w-full rounded-md border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition-colors disabled:bg-surface-50 disabled:text-surface-400 disabled:cursor-not-allowed;
+  }
+  .form-field-error {
+    @apply form-field border-rose-300 focus:ring-rose-500/40 focus:border-rose-500;
+  }
+  .form-label {
+    @apply block text-sm font-medium text-surface-700 mb-1;
+  }
+  .form-hint {
+    @apply mt-1 text-xs text-surface-500;
+  }
+  .form-error {
+    @apply mt-1 text-xs text-rose-600;
+  }
+
+  /* Select wrapper (for searchable) */
+  .select-wrap {
+    @apply relative;
+  }
+
+  /* Empty state */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-12 px-4 text-center;
+  }
+  .empty-state-icon {
+    @apply mb-3 text-surface-300;
+  }
+  .empty-state-title {
+    @apply text-surface-900 font-medium;
+  }
+  .empty-state-desc {
+    @apply mt-1 text-sm text-surface-500;
+  }
+  .empty-state-action {
+    @apply mt-4;
+  }
+
+  /* Pagination */
+  .pagination {
+    @apply flex items-center justify-center gap-1 mt-4;
+  }
+  .pagination-btn {
+    @apply px-3 py-1.5 text-sm font-medium rounded-md border border-surface-300 bg-white text-surface-700 hover:bg-surface-50 focus:outline-none focus:ring-2 focus:ring-brand-500/40;
+  }
+  .pagination-btn.active {
+    @apply bg-brand-600 text-white border-brand-600 hover:bg-brand-700;
+  }
+  .pagination-btn.disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+  .pagination-ellipsis {
+    @apply px-2 text-surface-400;
+  }
+
+  /* Print toolbar (used in print_shell.html) */
+  .print-toolbar {
+    @apply flex justify-center gap-2 p-3 bg-surface-100 border-b border-surface-200 no-print;
+  }
+  .print-toolbar button {
+    @apply btn-secondary;
+  }
+  .print-toolbar button.primary {
+    @apply bg-emerald-600 text-white hover:bg-emerald-700;
+  }
+
+  /* Modal/Dialog */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-surface-900/50 flex items-center justify-center p-4;
+  }
+  .modal-panel {
+    @apply bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col;
+  }
+  .modal-header {
+    @apply px-5 py-4 border-b border-surface-200 flex items-center justify-between;
+  }
+  .modal-body {
+    @apply p-5 overflow-y-auto;
+  }
+  .modal-footer {
+    @apply px-5 py-4 border-t border-surface-200 bg-surface-50 rounded-b-xl flex items-center justify-end gap-2;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply absolute z-50 px-2 py-1 text-xs text-white bg-surface-900 rounded shadow-lg opacity-0 pointer-events-none transition-opacity;
+  }
+  .tooltip.show { @apply opacity-100; }
+
+  /* Alert / Toast */
+  .toast {
+    @apply fixed top-4 right-4 z-50 max-w-sm rounded-md border px-4 py-3 text-sm shadow-lg animate-slide-in;
+  }
+  .toast-success { @apply toast bg-emerald-50 text-emerald-800 border-emerald-200; }
+  .toast-error { @apply toast bg-rose-50 text-rose-800 border-rose-200; }
+  .toast-info { @apply toast bg-brand-50 text-brand-800 border-brand-200; }
+  .toast-warning { @apply toast bg-amber-50 text-amber-800 border-amber-200; }
+
+  /* Accordion (for sidebar sections) */
+  .accordion {
+    @apply border border-surface-200 rounded-lg overflow-hidden;
+  }
+  .accordion-header {
+    @apply flex items-center justify-between w-full px-4 py-3 text-left text-sm font-medium text-surface-700 bg-surface-50 hover:bg-surface-100 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:ring-inset transition-colors;
+  }
+  .accordion-content {
+    @apply overflow-hidden transition-all duration-200 ease-out;
+  }
+  .accordion-content.open { @apply max-h-96 opacity-100; }
+  .accordion-content.closed { @apply max-h-0 opacity-0; }
+  .accordion-chevron {
+    @apply h-5 w-5 text-surface-400 transition-transform duration-200;
+  }
+  .accordion-chevron.open { @apply rotate-180; }
+
+  /* Line table utilities (from line-table.css) */
+  .line-table {
+    @apply table-fixed;
+  }
+  .line-table th,
+  .line-table td {
+    @apply overflow-hidden;
+  }
+  .line-table textarea,
+  .line-table select,
+  .line-table input,
+  .line-table .searchable-wrap {
+    @apply max-w-full min-w-0;
+  }
+  .line-table .searchable-trigger {
+    @apply overflow-hidden min-w-0;
+  }
+  .line-table .searchable-label {
+    @apply min-w-0 truncate;
+  }
+  .clip {
+    @apply inline-block max-w-full overflow-hidden text-ellipsis whitespace-nowrap align-bottom;
+  }
+}
+
+@layer utilities {
+  /* Animation */
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-slide-in {
+    animation: slide-in 0.2s ease-out;
+  }
+
+  /* Print helpers */
+  .no-print { @media print { display: none !important; } }
+  .print-only { display: none; @media print { display: block; } }
+
+  /* Collapsible sidebar rail (desktop): icon-only width.
+     Lives in the utilities layer so it beats the w-56 utility on the aside. */
+  .sidebar-rail-collapsed {
+    @apply w-16;
+  }
+  .sidebar-rail-collapsed .sidebar-label,
+  .sidebar-rail-collapsed .sidebar-badge,
+  .sidebar-rail-collapsed .sidebar-logo-text {
+    @apply hidden;
+  }
+  /* Rail mode = every section's items are reachable as icons; hide section
+     headers so the rail reads as one flat icon list. */
+  .sidebar-rail-collapsed .sidebar-section-header {
+    @apply hidden;
+  }
+  .sidebar-rail-collapsed .sidebar-group-content {
+    display: block !important;
+  }
+  .sidebar-rail-collapsed .sidebar-link {
+    @apply justify-center;
+  }
+  .sidebar-rail-collapsed .sidebar-icon {
+    @apply mx-auto;
+  }
+  .sidebar-rail-collapsed .sidebar-footer {
+    @apply flex justify-center;
+  }
+/* Accordion chevron: rotate when section open */
+.sidebar-section-header[aria-expanded="true"] .sidebar-chevron {
+  transform: rotate(180deg);
+}
+
+/* Mobile card list (Phase 8): wide tables collapse to stacked cards < md. */
+.mobile-card {
+  @apply bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden;
+}
+.mobile-card-head {
+  @apply flex items-center justify-between gap-2 px-4 py-3 border-b border-surface-100;
+}
+.mobile-card-title {
+  @apply font-mono text-xs font-semibold text-surface-900 truncate;
+}
+.mobile-card-body {
+  @apply px-4 py-3;
+}
+.mobile-card-rows {
+  @apply space-y-1.5 text-xs;
+}
+.mobile-card-row {
+  @apply flex items-baseline justify-between gap-3;
+}
+.mobile-card-k {
+  @apply text-surface-500 shrink-0;
+}
+.mobile-card-v {
+  @apply text-surface-800 text-right truncate;
+}
+.mobile-card-foot {
+  @apply flex items-center gap-2 border-t border-surface-100 bg-surface-50 px-4 py-2;
+}
+}

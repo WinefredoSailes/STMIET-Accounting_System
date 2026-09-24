@@ -1,22 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="STMIET Accounting logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Accounting System logo">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4f46e5"/>
-      <stop offset="1" stop-color="#312e81"/>
+      <stop offset="0" stop-color="#0d9488"/>
+      <stop offset="1" stop-color="#134e4a"/>
     </linearGradient>
     <linearGradient id="bars" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#c7d2fe"/>
-      <stop offset="1" stop-color="#ffffff"/>
+      <stop offset="0" stop-color="#99f6e4"/>
+      <stop offset="1" stop-color="#f0fdfa"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
+
+  <!-- rounded card -->
   <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#shine)"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#0f766e" stroke-opacity="0.45" stroke-width="1.5"/>
+
+  <!-- bar chart -->
   <g fill="url(#bars)">
-    <rect x="13" y="33" width="9" height="14" rx="2"/>
-    <rect x="27" y="24" width="9" height="23" rx="2"/>
-    <rect x="41" y="14" width="9" height="33" rx="2"/>
+    <rect x="11" y="35" width="9" height="16" rx="2.5"/>
+    <rect x="26" y="26" width="9" height="25" rx="2.5"/>
+    <rect x="41" y="16" width="9" height="35" rx="2.5"/>
   </g>
-  <line x1="12" y1="49" x2="51" y2="49" stroke="#ffffff" stroke-opacity="0.9" stroke-width="2.5" stroke-linecap="round"/>
-  <circle cx="45.5" cy="14" r="4.5" fill="#34d399"/>
-  <path d="M43.7 14.6l1.2 1.2 2.6-2.8" fill="none" stroke="#064e3b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- baseline -->
+  <line x1="10" y1="51" x2="52" y2="51" stroke="#f0fdfa" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- amber growth arrow -->
+  <path d="M16.5 29.5l6.5-6.5 4.5 4.5 10.5-11" fill="none" stroke="#fbbf24" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32.5 16.5H38l0 5.5" fill="none" stroke="#fbbf24" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

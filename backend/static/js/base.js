@@ -40,10 +40,62 @@ function toggleSidebar(force) {
 }
 var sbNav = document.getElementById('sidebar-nav');
 if (sbNav) {
-  sbNav.addEventListener('click', function () {
-    if (window.innerWidth < 1024) toggleSidebar(false);
+  sbNav.addEventListener('click', function (e) {
+    // Close the mobile drawer when a nav LINK is clicked, but keep accordion
+    // section toggles working inside the drawer.
+    if (window.innerWidth < 1024 && e.target.closest && e.target.closest('.sidebar-link')) {
+      toggleSidebar(false);
+    }
   });
 }
+
+// ---- Sidebar rail collapse (desktop): icon-only width, persisted ----
+var RAIL_KEY = 'sidebar-rail-collapsed';
+function toggleSidebarRail() {
+  var sb = document.getElementById('sidebar');
+  if (!sb) return;
+  var collapsed = sb.classList.toggle('sidebar-rail-collapsed');
+  try { localStorage.setItem(RAIL_KEY, collapsed ? '1' : '0'); } catch (e) { }
+  var btn = document.querySelector('.sidebar-rail-toggle');
+  if (btn) {
+    btn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  }
+}
+(function restoreRail() {
+  var sb = document.getElementById('sidebar');
+  if (!sb) return;
+  try {
+    if (localStorage.getItem(RAIL_KEY) === '1') sb.classList.add('sidebar-rail-collapsed');
+  } catch (e) { }
+})();
+
+// ---- Sidebar accordion sections: collapse/expand, persisted ----
+var ACC_KEY = 'sidebar-open-sections';
+(function accordionSidebar() {
+  var nav = document.getElementById('sidebar-nav');
+  if (!nav) return;
+  var stored = {};
+  try { stored = JSON.parse(localStorage.getItem(ACC_KEY) || '{}'); } catch (e) { stored = {}; }
+  nav.querySelectorAll('[data-accordion-group]').forEach(function (group, idx) {
+    var toggle = group.querySelector('[data-accordion-toggle]');
+    var content = group.querySelector('[data-accordion-content]');
+    if (!toggle || !content) return;
+    var key = group.getAttribute('data-accordion-key') || ('g' + idx);
+    // Persisted state wins over the server-rendered (active-section) default.
+    if (Object.prototype.hasOwnProperty.call(stored, key)) {
+      var open = !!stored[key];
+      content.classList.toggle('hidden', !open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    toggle.addEventListener('click', function () {
+      var isOpen = content.classList.toggle('hidden') === false;
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      stored[key] = isOpen;
+      try { localStorage.setItem(ACC_KEY, JSON.stringify(stored)); } catch (e) { }
+    });
+  });
+})();
 
 // ---- Searchable combobox: turns any <select data-searchable> into a
 // filterable dropdown panel while keeping the native select (name/value)
@@ -65,13 +117,13 @@ function openSearchable(wrap) {
     applyFilter(panel);
   }
   query.focus();
-  wrap.querySelector('.searchable-trigger').classList.add('border-indigo-500');
+  wrap.querySelector('.searchable-trigger').classList.add('border-brand-500');
 }
 
 function closeSearchable(wrap) {
   var panel = document.getElementById('sb-panel-' + wrap.dataset.sbId);
   if (panel) panel.remove();
-  wrap.querySelector('.searchable-trigger').classList.remove('border-indigo-500');
+  wrap.querySelector('.searchable-trigger').classList.remove('border-brand-500');
 }
 
 function buildPanel(wrap) {
@@ -79,12 +131,12 @@ function buildPanel(wrap) {
   if (old) old.remove();
   var panel = document.createElement('div');
   panel.id = 'sb-panel-' + wrap.dataset.sbId;
-  panel.className = 'searchable-panel hidden z-50 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden';
+  panel.className = 'searchable-panel hidden z-50 rounded-lg border border-surface-200 bg-white shadow-lg overflow-hidden';
   panel.style.position = 'fixed';
   panel.sbWrap = wrap;
 
   var searchRow = document.createElement('div');
-  searchRow.className = 'flex items-center gap-2 border-b border-slate-200 px-3 py-2';
+  searchRow.className = 'flex items-center gap-2 border-b border-surface-200 px-3 py-2';
   var query = document.createElement('input');
   query.type = 'text';
   query.className = 'searchable-query w-full text-sm focus:outline-none';
@@ -122,17 +174,17 @@ function renderLocalItems(panel) {
 // working while the picker exposes a fresh server-side result set. ----
 function searchableItem(wrap, value, text, code, tin, kind) {
   var item = document.createElement('div');
-  item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-indigo-50';
+  item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-brand-50';
   item.dataset.value = value;
   item.dataset.tin = tin || '';
   item.dataset.kind = kind || '';
   item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
   var codeEl = document.createElement('span');
-  codeEl.className = 'font-mono text-xs text-slate-500';
+  codeEl.className = 'font-mono text-xs text-surface-500';
   codeEl.textContent = code || value;
   var title = document.createElement('span');
-  title.className = 'text-slate-700 truncate';
+  title.className = 'text-surface-700 truncate';
   // Async results carry text like "61100 — Cost of Sales"; strip the code
   // prefix when it is duplicated so the title reads as the name only.
   var prefix = (code || value) + ' — ';
@@ -173,7 +225,7 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
   if (selectedValue) select.value = selectedValue;
   if (!results.length) {
     var empty = document.createElement('div');
-    empty.className = 'px-3 py-4 text-center text-xs text-slate-400';
+    empty.className = 'px-3 py-4 text-center text-xs text-surface-400';
     empty.textContent = 'No matches';
     list.appendChild(empty);
   }
@@ -192,7 +244,7 @@ function applyAsyncFilter(wrap, panel, query) {
   var listEl = panel.querySelector('.searchable-list');
   listEl.innerHTML = '';
   var loading = document.createElement('div');
-  loading.className = 'px-3 py-4 text-center text-xs text-slate-400';
+  loading.className = 'px-3 py-4 text-center text-xs text-surface-400';
   loading.textContent = 'Searching…';
   listEl.appendChild(loading);
 
@@ -247,10 +299,10 @@ function applyFilter(panel) {
   for (var i = 0; i < items.length; i++) {
     var match = items[i].textContent.toLowerCase().indexOf(q) !== -1;
     items[i].hidden = !match;
-    items[i].classList.remove('bg-indigo-50');
+    items[i].classList.remove('bg-brand-50');
     if (match && first === null) first = items[i];
   }
-  if (first) first.classList.add('bg-indigo-50');
+  if (first) first.classList.add('bg-brand-50');
 }
 
 function selectItem(wrap, item) {
@@ -261,8 +313,8 @@ function selectItem(wrap, item) {
   var label = wrap.querySelector('.searchable-label');
   var chosen = select.selectedOptions.length ? select.selectedOptions[0].textContent : '— select —';
   label.textContent = chosen;
-  label.classList.toggle('text-slate-700', !!select.value);
-  label.classList.toggle('text-slate-400', !select.value);
+  label.classList.toggle('text-surface-700', !!select.value);
+  label.classList.toggle('text-surface-400', !select.value);
   closeSearchable(wrap);
   wrap.querySelector('.searchable-trigger').focus();
 }
@@ -284,8 +336,8 @@ function setSearchableValue(select, value, text) {
     var label = wrap.querySelector('.searchable-label');
     if (label) {
       label.textContent = text;
-      label.classList.toggle('text-slate-700', !!v);
-      label.classList.toggle('text-slate-400', !v);
+      label.classList.toggle('text-surface-700', !!v);
+      label.classList.toggle('text-surface-400', !v);
     }
   }
   select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -294,7 +346,7 @@ function setSearchableValue(select, value, text) {
 function activeItem(panel) {
   var items = panel.querySelectorAll('.searchable-item:not([hidden])');
   for (var i = 0; i < items.length; i++) {
-    if (items[i].classList.contains('bg-indigo-50')) return items[i];
+    if (items[i].classList.contains('bg-brand-50')) return items[i];
   }
   return items.length ? items[0] : null;
 }
@@ -305,8 +357,8 @@ function moveActive(panel, dir) {
   var cur = activeItem(panel);
   var idx = Math.max(0, items.indexOf(cur));
   var next = items[Math.min(items.length - 1, idx + dir)];
-  for (var i = 0; i < items.length; i++) items[i].classList.remove('bg-indigo-50');
-  next.classList.add('bg-indigo-50');
+  for (var i = 0; i < items.length; i++) items[i].classList.remove('bg-brand-50');
+  next.classList.add('bg-brand-50');
   next.scrollIntoView({ block: 'nearest' });
 }
 
@@ -324,17 +376,17 @@ function enhanceSearchable(root) {
     var compact = select.hasAttribute('data-search-compact');
     var trigger = document.createElement('button');
     trigger.type = 'button';
-    trigger.className = 'searchable-trigger w-full rounded-md border border-slate-300 bg-white text-left flex items-center justify-between gap-2 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' +
+    trigger.className = 'searchable-trigger w-full rounded-md border border-surface-300 bg-white text-left flex items-center justify-between gap-2 hover:border-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500' +
       (compact ? ' px-2 py-1.5 text-xs' : ' px-3 py-2 text-sm');
     var label = document.createElement('span');
     label.className = 'searchable-label truncate';
     var chosen = select.selectedOptions.length ? select.selectedOptions[0].textContent : '— select —';
     label.textContent = chosen;
-    label.classList.toggle('text-slate-700', !!select.value);
-    label.classList.toggle('text-slate-400', !select.value);
+    label.classList.toggle('text-surface-700', !!select.value);
+    label.classList.toggle('text-surface-400', !select.value);
     trigger.appendChild(label);
     var chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    chevron.setAttribute('class', 'h-4 w-4 text-slate-400 shrink-0');
+    chevron.setAttribute('class', 'h-4 w-4 text-surface-400 shrink-0');
     chevron.setAttribute('viewBox', '0 0 20 20');
     chevron.setAttribute('fill', 'currentColor');
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');

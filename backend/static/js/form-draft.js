@@ -272,7 +272,7 @@
     act.className = 'flex items-center gap-3';
     var keep = document.createElement('button');
     keep.type = 'button';
-    keep.className = 'font-medium text-slate-600 underline hover:text-slate-900';
+    keep.className = 'font-medium text-surface-600 underline hover:text-surface-900';
     keep.textContent = 'Keep';
     keep.addEventListener('click', function () { bar.remove(); });
     var discard = document.createElement('button');

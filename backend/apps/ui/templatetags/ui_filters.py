@@ -4,10 +4,20 @@ from decimal import Decimal, InvalidOperation
 
 from django import template
 from django.template import Library, Node, TemplateSyntaxError
+from django.urls import NoReverseMatch, reverse
 
 from apps.core.approvals import get_approval_role
 
 register = Library()
+
+
+@register.filter
+def url_with(name, args):
+    """Reverse a URL name with a list of args: 'ui:statement'|['is'] -> '/reports/is/'."""
+    try:
+        return reverse(name, args=args or [])
+    except (NoReverseMatch, TypeError, ValueError):
+        return "#"
 
 
 @register.filter
@@ -30,6 +40,15 @@ def money(value):
     """Format an amount with thousand separators + 2dp: 1234567.5 -> "1,234,567.50"."""
     try:
         return f"{Decimal(value):,.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+
+
+@register.filter
+def peso(value):
+    """Money with the Philippine peso sign: 1234567.5 -> "\u20b11,234,567.50"."""
+    try:
+        return f"\u20b1{Decimal(value):,.2f}"
     except (InvalidOperation, TypeError, ValueError):
         return value
 
