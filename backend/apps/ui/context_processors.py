@@ -54,7 +54,9 @@ def nav_sections(request):
     from django.urls import NoReverseMatch, reverse
 
     from .nav import NAV_SECTIONS
+    from .screens import effective_screens
 
+    allowed = set(effective_screens(user))
     current = getattr(getattr(request, "resolver_match", None), "url_name", "")
     current_args = tuple(
         getattr(request.resolver_match, "kwargs", {}).values()
@@ -72,6 +74,10 @@ def nav_sections(request):
         items = []
         for item in section["items"]:
             name = item["name"]
+            # Screen access (ADR-047): hide what the user cannot open — the
+            # middleware already 403s deep links, this keeps the desk honest.
+            if name not in allowed:
+                continue
             active = name == current
             also = item.get("also_active") or []
             if name in also and current in also:
@@ -95,6 +101,8 @@ def nav_sections(request):
                     "badge": item.get("badge"),
                 }
             )
+        if not items:
+            continue  # nothing in this section is on their desk
         sections.append(
             {
                 "label": section.get("label"),

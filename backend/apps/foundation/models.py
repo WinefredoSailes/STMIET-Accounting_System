@@ -298,6 +298,10 @@ class UserProfile(AuditableModel):
     approval_role = models.CharField(
         max_length=16, choices=ApprovalRole.choices, blank=True, default=""
     )
+    # Explicit screen grants (ADR-047): a list of screen keys from
+    # apps.ui.screens. NULL means "inherit the role template" so enabling the
+    # feature changes nothing until someone edits a user's checkboxes.
+    screen_access = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["user__username"]
