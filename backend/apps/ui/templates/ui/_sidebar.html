@@ -1,79 +1,39 @@
-<!-- Sidebar navigation — one entry per bounded context screen -->
+<!-- Sidebar navigation — driven by apps.ui.nav.NAV_SECTIONS via the
+     nav_sections context processor. Pinned items render flat; every other
+     section renders as a collapsible accordion group. Adding a module =
+     one config entry in nav.py. -->
 <div class="space-y-0.5 px-2">
-  <a href="{% url 'ui:dashboard' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'dashboard' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Dashboard</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Approvals</div>
-  <a href="{% url 'ui:my_approvals' %}" class="flex items-center gap-2 rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'my_approvals' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">
-    <span>My Approvals</span>
-    {% if pending_approval_count %}
-    <span class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{{ pending_approval_count }}</span>
+  {% for section in nav_sections %}
+    {% if section.pinned %}
+      {% for item in section.items %}
+      <a href="{{ item.url }}" title="{{ item.label }}"
+         class="sidebar-link flex items-center gap-2 rounded px-3 py-1.5 hover:bg-surface-100 hover:text-surface-900 {% if item.active %}bg-brand-50 text-brand-700 font-semibold{% endif %}">
+        <svg class="sidebar-icon h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#i-{{ item.icon }}"/></svg>
+        <span class="sidebar-label">{{ item.label }}</span>
+        {% if item.badge == 'pending_approval_count' and pending_approval_count %}
+        <span class="sidebar-badge ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent-500 px-1.5 text-[10px] font-bold text-white">{{ pending_approval_count }}</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+      <div class="pt-2 pb-1"></div>
+    {% else %}
+      <div class="sidebar-group" data-accordion-group>
+        <button type="button" data-accordion-toggle
+                aria-expanded="{% if section.active %}true{% else %}false{% endif %}"
+                class="sidebar-section-header flex w-full items-center gap-2 rounded px-3 py-1.5 text-left hover:bg-surface-100 hover:text-surface-900">
+          <span class="sidebar-label text-[10px] uppercase tracking-wider text-surface-400 font-semibold flex-1">{{ section.label }}</span>
+          <svg class="sidebar-chevron h-3.5 w-3.5 flex-shrink-0 text-surface-400 transition-transform" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+        </button>
+        <div class="sidebar-group-content space-y-0.5 pb-1 {% if not section.active %}hidden{% endif %}" data-accordion-content>
+          {% for item in section.items %}
+          <a href="{{ item.url }}" title="{{ item.label }}"
+             class="sidebar-link flex items-center gap-2 rounded px-3 py-1.5 hover:bg-surface-100 hover:text-surface-900 {% if item.active %}bg-brand-50 text-brand-700 font-semibold{% endif %}">
+            <svg class="sidebar-icon h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#i-{{ item.icon }}"/></svg>
+            <span class="sidebar-label">{{ item.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
     {% endif %}
-  </a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Journal</div>
-  <a href="{% url 'ui:je_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'je_list' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Journal Entries</a>
-  <a href="{% url 'ui:general_journal' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">General Journal</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Fleet</div>
-  <a href="{% url 'ui:fleet_fuel' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Fleet Fuel Report</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Foundation</div>
-  <a href="{% url 'ui:coa_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Chart of Accounts</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Receivables (AR)</div>
-  <a href="{% url 'ui:customer_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Customers</a>
-  <a href="{% url 'ui:si_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Sales Invoices</a>
-  <a href="{% url 'ui:receipt_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Acknowledgment Receipts</a>
-  <a href="{% url 'ui:aging' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">AR Aging / Register</a>
-  <a href="{% url 'ui:ar_ledger' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">AR Subsidiary Ledger</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Payables (AP)</div>
-  <a href="{% url 'ui:supplier_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Suppliers</a>
-  <a href="{% url 'ui:po_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Purchase Orders</a>
-  <a href="{% url 'ui:rfp_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">RFPs (Disbursements)</a>
-  <a href="{% url 'ui:conso_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">CONSO Batches</a>
-  <a href="{% url 'ui:cv_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Check Vouchers</a>
-  <a href="{% url 'ui:ap_aging' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">AP Aging / Register</a>
-  <a href="{% url 'ui:ap_ledger' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">AP Subsidiary Ledger</a>
-  <a href="{% url 'ui:advances' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Advances to Employees</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Billing</div>
-  <a href="{% url 'ui:billing_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'billing_list' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Billing Transactions</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Cash</div>
-  <a href="{% url 'ui:bank_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Bank Accounts</a>
-  <a href="{% url 'ui:cycle_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Weekly Cycles</a>
-  <a href="{% url 'ui:recon_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Bank Reconciliation</a>
-  <a href="{% url 'ui:cash_short_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Cash Short</a>
-  <a href="{% url 'ui:collections_summary' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Daily Collections Summary</a>
-  <a href="{% url 'ui:collectibles' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Collectibles Worksheet</a>
-  <a href="{% url 'ui:transfers' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Inter-Account Transfers</a>
-  <a href="{% url 'ui:pcf_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Petty Cash Funds</a>
-  <a href="{% url 'ui:pcf_replenishment_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Petty Cash Vouchers</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Fixed Assets</div>
-  <a href="{% url 'ui:asset_list' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Assets</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Tax &amp; Compliance</div>
-  <a href="{% url 'ui:tax_dashboard' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Tax Dashboard</a>
-  <a href="{% url 'ui:tax_vat' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">VAT (SI level)</a>
-  <a href="{% url 'ui:tax_wht' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">WHT Certificates</a>
-  <a href="{% url 'ui:tax_provision' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Income Tax Provision</a>
-  <a href="{% url 'ui:tax_calendar' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Tax Calendar</a>
-
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Reports</div>
-  <a href="{% url 'ui:trial_balance' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Trial Balance</a>
-  <a href="{% url 'ui:ledger_index' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'ledger_index' or request.resolver_match.url_name == 'ledger_account_detail' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">Ledger</a>
-  <a href="{% url 'ui:cash_flow' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Cash Flow Statement</a>
-  <a href="{% url 'ui:statement' 'is' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Income Statement</a>
-  <a href="{% url 'ui:statement' 'sfp' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Financial Position</a>
-  <a href="{% url 'ui:statement' 'cos' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Cost of Sales</a>
-  <a href="{% url 'ui:statement' 'te' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Total Expenses</a>
-  <a href="{% url 'ui:statement' 'soce' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Changes in Equity</a>
-  <a href="{% url 'ui:month_end_close' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900">Month-End Close</a>
-
-  {% if request.user.is_superuser %}
-  <div class="pt-3 pb-1 px-3 text-[10px] uppercase tracking-wider text-slate-400">Settings / Admin</div>
-  <a href="{% url 'ui:user_management' %}" class="block rounded px-3 py-1.5 hover:bg-slate-100 hover:text-slate-900 {% if request.resolver_match.url_name == 'user_management' %}bg-indigo-50 text-indigo-700 font-semibold{% endif %}">User Management</a>
-  {% endif %}
+  {% endfor %}
 </div>

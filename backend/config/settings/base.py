@@ -97,6 +97,8 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.ui.context_processors.pending_approval_count",
                 "apps.ui.context_processors.master_data_permissions",
+                "apps.ui.context_processors.nav_sections",
+                "apps.ui.context_processors.weekly_verse",
             ],
         },
     },
