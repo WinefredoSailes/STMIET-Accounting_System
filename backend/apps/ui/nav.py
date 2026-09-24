@@ -20,13 +20,13 @@ NAV_SECTIONS = [
     {
         'label': 'Fleet',
         'items': [
-            {'name': 'fleet_fuel', 'label': 'Fleet Fuel Report', 'icon': 'trending-up'},
+            {'name': 'fleet_fuel', 'label': 'Fleet Fuel Report', 'icon': 'fire'},
         ],
     },
     {
         'label': 'Foundation',
         'items': [
-            {'name': 'coa_list', 'label': 'Chart of Accounts', 'icon': 'filter'},
+            {'name': 'coa_list', 'label': 'Chart of Accounts', 'icon': 'hashtag'},
         ],
     },
     {
@@ -34,9 +34,9 @@ NAV_SECTIONS = [
         'items': [
             {'name': 'customer_list', 'label': 'Customers', 'icon': 'user-group'},
             {'name': 'si_list', 'label': 'Sales Invoices', 'icon': 'receipt'},
-            {'name': 'receipt_list', 'label': 'Acknowledgment Receipts', 'icon': 'download'},
-            {'name': 'ar_aging', 'label': 'AR Aging / Register', 'icon': 'filter'},
-            {'name': 'ar_ledger', 'label': 'AR Subsidiary Ledger', 'icon': 'book-open'},
+            {'name': 'receipt_list', 'label': 'Acknowledgment Receipts', 'icon': 'document-check'},
+            {'name': 'ar_aging', 'label': 'AR Aging / Register', 'icon': 'exclamation-triangle'},
+            {'name': 'ar_ledger', 'label': 'AR Subsidiary Ledger', 'icon': 'rectangle-group'},
         ],
     },
     {
@@ -47,15 +47,15 @@ NAV_SECTIONS = [
             {'name': 'rfp_list', 'label': 'RFPs (Disbursements)', 'icon': 'credit-card'},
             {'name': 'conso_list', 'label': 'CONSO Batches', 'icon': 'folder-open'},
             {'name': 'cv_list', 'label': 'Check Vouchers', 'icon': 'banknotes'},
-            {'name': 'ap_aging', 'label': 'AP Aging / Register', 'icon': 'filter'},
-            {'name': 'ap_ledger', 'label': 'AP Subsidiary Ledger', 'icon': 'table-cells'},
-            {'name': 'advances', 'label': 'Advances to Employees', 'icon': 'user-group'},
+            {'name': 'ap_aging', 'label': 'AP Aging / Register', 'icon': 'inbox'},
+            {'name': 'ap_ledger', 'label': 'AP Subsidiary Ledger', 'icon': 'archive-box'},
+            {'name': 'advances', 'label': 'Advances to Employees', 'icon': 'hand-raised'},
         ],
     },
     {
         'label': 'Billing',
         'items': [
-            {'name': 'billing_list', 'label': 'Billing Transactions', 'icon': 'credit-card'},
+            {'name': 'billing_list', 'label': 'Billing Transactions', 'icon': 'paper-airplane'},
         ],
     },
     {
@@ -67,9 +67,9 @@ NAV_SECTIONS = [
             {'name': 'cash_short_list', 'label': 'Cash Short', 'icon': 'alert-circle'},
             {'name': 'collections_summary', 'label': 'Daily Collections Summary', 'icon': 'download'},
             {'name': 'collectibles', 'label': 'Collectibles Worksheet', 'icon': 'clock'},
-            {'name': 'transfers', 'label': 'Inter-Account Transfers', 'icon': 'shopping-cart'},
+            {'name': 'transfers', 'label': 'Inter-Account Transfers', 'icon': 'arrows-right-left'},
             {'name': 'pcf_list', 'label': 'Petty Cash Funds', 'icon': 'puzzle-piece'},
-            {'name': 'pcf_replenishment_list', 'label': 'Petty Cash Vouchers', 'icon': 'document-text'},
+            {'name': 'pcf_replenishment_list', 'label': 'Petty Cash Vouchers', 'icon': 'ticket'},
         ],
     },
     {
@@ -82,25 +82,25 @@ NAV_SECTIONS = [
         'label': 'Tax & Compliance',
         'items': [
             {'name': 'tax_dashboard', 'label': 'Tax Dashboard', 'icon': 'info'},
-            {'name': 'tax_vat', 'label': 'VAT (SI level)', 'icon': 'receipt'},
+            {'name': 'tax_vat', 'label': 'VAT (SI level)', 'icon': 'receipt-percent'},
             {'name': 'tax_wht', 'label': 'WHT Certificates', 'icon': 'check'},
             {'name': 'tax_provision', 'label': 'Income Tax Provision', 'icon': 'calculator'},
-            {'name': 'tax_calendar', 'label': 'Tax Calendar', 'icon': 'calendar-days'},
+            {'name': 'tax_calendar', 'label': 'Tax Calendar', 'icon': 'flag'},
         ],
     },
     {
         'label': 'Reports',
         'items': [
-            {'name': 'trial_balance', 'label': 'Trial Balance', 'icon': 'table-cells'},
+            {'name': 'trial_balance', 'label': 'Trial Balance', 'icon': 'scale'},
             {'name': 'ledger_index', 'label': 'Ledger', 'icon': 'book-open',
              'also_active': ['ledger_account_detail']},
             {'name': 'cash_flow', 'label': 'Cash Flow Statement', 'icon': 'trending-up'},
             {'name': 'statement', 'args': ['is'], 'label': 'Income Statement', 'icon': 'document-chart-bar'},
-            {'name': 'statement', 'args': ['sfp'], 'label': 'Financial Position', 'icon': 'book-open'},
+            {'name': 'statement', 'args': ['sfp'], 'label': 'Financial Position', 'icon': 'building-library'},
             {'name': 'statement', 'args': ['cos'], 'label': 'Cost of Sales', 'icon': 'trending-down'},
-            {'name': 'statement', 'args': ['te'], 'label': 'Total Expenses', 'icon': 'trending-down'},
+            {'name': 'statement', 'args': ['te'], 'label': 'Total Expenses', 'icon': 'minus-circle'},
             {'name': 'statement', 'args': ['soce'], 'label': 'Changes in Equity', 'icon': 'circle-stack'},
-            {'name': 'month_end_close', 'label': 'Month-End Close', 'icon': 'circle-stack'},
+            {'name': 'month_end_close', 'label': 'Month-End Close', 'icon': 'lock-closed'},
         ],
     },
     {

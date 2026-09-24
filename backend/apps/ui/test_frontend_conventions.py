@@ -79,6 +79,19 @@ def test_all_nav_icons_exist():
             )
 
 
+def test_all_nav_icons_are_unique():
+    """No two sidebar entries may share one heroicon (ADR-046 polish)."""
+    from collections import Counter
+
+    from apps.ui.nav import NAV_SECTIONS
+
+    counts = Counter(
+        item["icon"] for section in NAV_SECTIONS for item in section["items"]
+    )
+    dupes = sorted(k for k, v in counts.items() if v > 1)
+    assert not dupes, f"duplicated nav icons: {dupes}"
+
+
 # ---------------------------------------------------------------------------
 # 2. Shared filter engine
 # ---------------------------------------------------------------------------
