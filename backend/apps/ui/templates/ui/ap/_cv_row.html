@@ -23,7 +23,8 @@
   <td class="px-4 py-2 whitespace-nowrap">
     {% if cv.status == "created" %}
     <button type="button" hx-post="{% url 'ui:cv_approve' cv.id %}" hx-target="closest tr" hx-swap="outerHTML"
-      hx-confirm="Approve {{ cv.cv_number }}?" class="text-sm font-medium text-brand-600 hover:text-brand-800">Approve</button>
+      data-confirm="Approve {{ cv.cv_number }}? It will be signed under your name and ready to clear."
+      class="text-sm font-medium text-brand-600 hover:text-brand-800">Approve</button>
     {% elif cv.status == "approved" %}
     <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">Clear…</a>
     {% elif cv.status == "rejected" %}

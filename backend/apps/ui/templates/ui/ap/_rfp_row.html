@@ -52,6 +52,7 @@ inline Approve/Check action is shown: only for the role the RFP is waiting on.
         hx-target="#rfp-row-{{ rfp.id }}"
         hx-swap="outerHTML"
         hx-indicator="#rfp-row-{{ rfp.id }}"
+        data-confirm="{{ rfp.approval_info.label }} RFP {{ rfp.ap_number }}? It will be signed under your name and move to the next step."
         class="inline-flex"
       >
         {% csrf_token %}

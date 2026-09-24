@@ -164,7 +164,7 @@
     </div>
 
     <div class="px-6 py-4 border-t border-surface-200 flex justify-end">
-      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+      <button type="submit" data-confirm="{% if editing %}Resubmit this PO for checking? It re-enters the approval queue.{% endif %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
         {% if editing %}Save & resubmit (revised){% else %}Create PO (prepared){% endif %}
       </button>
     </div>

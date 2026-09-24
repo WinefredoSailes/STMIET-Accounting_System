@@ -51,6 +51,10 @@ if (sbNav) {
 
 // ---- Sidebar rail collapse (desktop): icon-only width, persisted ----
 var RAIL_KEY = 'sidebar-rail-collapsed';
+function setRailToggleIcon(collapsed) {
+  var btn = document.querySelector('.sidebar-rail-toggle use');
+  if (btn) btn.setAttribute('href', collapsed ? '#i-panel-right' : '#i-panel-left');
+}
 function toggleSidebarRail() {
   var sb = document.getElementById('sidebar');
   if (!sb) return;
@@ -61,12 +65,16 @@ function toggleSidebarRail() {
     btn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
     btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
   }
+  setRailToggleIcon(collapsed);
 }
 (function restoreRail() {
   var sb = document.getElementById('sidebar');
   if (!sb) return;
   try {
-    if (localStorage.getItem(RAIL_KEY) === '1') sb.classList.add('sidebar-rail-collapsed');
+    if (localStorage.getItem(RAIL_KEY) === '1') {
+      sb.classList.add('sidebar-rail-collapsed');
+      setRailToggleIcon(true);
+    }
   } catch (e) { }
 })();
 
@@ -574,3 +582,181 @@ function processDraftMarkers() {
   done.forEach(function (k) { try { window.sessionStorage.removeItem(k); } catch (e) { } });
 }
 processDraftMarkers();
+
+// ---- Hidden-field validation surfacing: searchable comboboxes keep their
+// native <select> display:none, so a required one left empty makes the browser
+// block the submit with NO visible message (the button "does nothing"). Catch
+// invalid events on hidden controls, flag their visible trigger, focus it and
+// show a one-line hint instead.
+var hiddenInvalidHint = null;
+function clearHiddenInvalidFlags() {
+  if (hiddenInvalidHint) hiddenInvalidHint.classList.add('hidden');
+  var marked = document.querySelectorAll('.searchable-trigger.field-invalid');
+  for (var i = 0; i < marked.length; i++) marked[i].classList.remove('field-invalid');
+}
+document.addEventListener('invalid', function (e) {
+  var el = e.target;
+  if (!el || !el.closest) return;
+  if (el.offsetParent !== null) return;            // visible: the browser's own bubble works
+  var wrap = el.closest('.searchable-wrap');
+  if (!wrap) return;                               // other hidden controls: server-side rules
+  e.preventDefault();
+  var label = el.id ? document.querySelector('label[for="' + el.id + '"]') : null;
+  var text = label ? label.textContent.trim() : el.name.replace(/_/g, ' ');
+  if (!hiddenInvalidHint) {
+    hiddenInvalidHint = document.createElement('div');
+    hiddenInvalidHint.id = 'hidden-invalid-hint';
+    hiddenInvalidHint.className = 'fixed top-4 right-4 z-50 max-w-sm rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-lg';
+    document.body.appendChild(hiddenInvalidHint);
+  }
+  hiddenInvalidHint.textContent = text + ': please pick an option before saving.';
+  hiddenInvalidHint.classList.remove('hidden');
+  var stale = document.querySelectorAll('.searchable-trigger.field-invalid');
+  for (var i = 0; i < stale.length; i++) stale[i].classList.remove('field-invalid');
+  var trigger = wrap.querySelector('.searchable-trigger');
+  if (trigger) { trigger.classList.add('field-invalid'); trigger.focus(); }
+}, true);
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.closest && e.target.closest('.searchable-wrap')) clearHiddenInvalidFlags();
+}, true);
+document.addEventListener('submit', clearHiddenInvalidFlags, true);
+
+// ---- Universal action confirmation (see confirm-core.js for the rules). ----
+// (approve, reject, submit, post, close, void, ...) asks "are you sure?"
+// through ONE shared modal before the form/htmx request fires. Rules live in
+// confirm-core.js (pure, node-tested): explicit data-confirm text wins, forms
+// that already carry a note/reason textarea ARE the confirmation and are
+// skipped, and untagged submits only confirm when the button's first word is
+// a workflow verb — so Save/Search/drafts never get a dialog stacked on them.
+var confirmGuard = new WeakSet();
+
+function ensureConfirmModal() {
+  var m = document.getElementById('action-confirm');
+  if (m) return m;
+  m = document.createElement('div');
+  m.id = 'action-confirm';
+  m.className = 'fixed inset-0 z-50 hidden items-center justify-center bg-black/50';
+  m.setAttribute('role', 'dialog');
+  m.setAttribute('aria-modal', 'true');
+  m.innerHTML =
+    '<div class="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4">' +
+    '  <div class="flex items-start gap-3 p-6 pb-4">' +
+    '    <span class="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-600">' +
+    '      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
+    '        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>' +
+    '    </span>' +
+    '    <p id="action-confirm-msg" class="pt-1.5 text-sm text-surface-700"></p>' +
+    '  </div>' +
+    '  <div id="action-confirm-note-wrap" class="px-6 pb-2 hidden">' +
+    '    <label for="action-confirm-note" class="block text-xs font-medium text-surface-600 mb-1"></label>' +
+    '    <textarea id="action-confirm-note" rows="3" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>' +
+    '  </div>' +
+    '  <div class="px-6 py-4 flex justify-end gap-3">' +
+    '    <button type="button" data-confirm-cancel class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</button>' +
+    '    <button type="button" data-confirm-yes class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Yes, continue</button>' +
+    '  </div>' +
+    '</div>';
+  document.body.appendChild(m);
+  return m;
+}
+
+// askConfirm(opts, onYes) — opts is a message string, or an object:
+//   { message, noteLabel, notePlaceholder, noteRequired, yesLabel }
+// When noteLabel is set, the modal collects a note and passes it to
+// onYes(noteText); a required note keeps "Yes" disabled until it's filled.
+function askConfirm(opts, onYes) {
+  var cfg = (typeof opts === 'string') ? { message: opts } : (opts || {});
+  var message = cfg.message || 'Are you sure?';
+  var hasNote = !!cfg.noteLabel;
+  var m = ensureConfirmModal();
+  var lastFocus = document.activeElement;
+  var noteWrap = m.querySelector('#action-confirm-note-wrap');
+  var note = m.querySelector('#action-confirm-note');
+  var noteLabel = noteWrap.querySelector('label');
+  var yesBtn = m.querySelector('[data-confirm-yes]');
+  m.querySelector('#action-confirm-msg').textContent = message;
+  yesBtn.textContent = cfg.yesLabel || 'Yes, continue';
+  if (hasNote) {
+    note.value = '';
+    noteLabel.textContent = cfg.noteLabel;
+    note.placeholder = cfg.notePlaceholder || '';
+    noteWrap.classList.remove('hidden');
+  } else {
+    noteWrap.classList.add('hidden');
+  }
+  function syncYes() {
+    if (hasNote && cfg.noteRequired) {
+      var ok = note.value.trim() !== '';
+      yesBtn.disabled = !ok;
+      yesBtn.classList.toggle('opacity-50', !ok);
+      yesBtn.classList.toggle('cursor-not-allowed', !ok);
+    } else {
+      yesBtn.disabled = false;
+    }
+  }
+  if (hasNote) note.oninput = syncYes;
+  syncYes();
+  m.classList.remove('hidden');
+  m.classList.add('flex');
+  function close(confirmed) {
+    m.classList.add('hidden');
+    m.classList.remove('flex');
+    document.removeEventListener('keydown', onKey, true);
+    m.removeEventListener('click', onBg, true);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+    if (confirmed) onYes(hasNote ? note.value.trim() : undefined);
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    else if (e.key === 'Enter' && (!hasNote || e.target !== note)) { e.preventDefault(); if (!yesBtn.disabled) close(true); }
+  }
+  function onBg(e) { if (e.target === m) close(false); }
+  m.querySelector('[data-confirm-cancel]').onclick = function () { close(false); };
+  yesBtn.onclick = function () { if (!yesBtn.disabled) close(true); };
+  document.addEventListener('keydown', onKey, true);
+  m.addEventListener('click', onBg, true);
+  (hasNote ? note : m.querySelector('[data-confirm-cancel]')).focus();
+}
+
+document.addEventListener('submit', function (e) {
+  var form = e.target;
+  if (!form || !(window.StmiConfirmCore)) return;
+  if (confirmGuard.has(form)) { confirmGuard.delete(form); return; }
+  if (e.defaultPrevented) return;
+  var submitter = e.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+  var label = submitter
+    ? (submitter.value || submitter.textContent || '').trim()
+    : '';
+  var msg = StmiConfirmCore.messageFor({
+    method: (form.getAttribute('method') || 'get').toLowerCase(),
+    label: label,
+    confirm: (submitter && submitter.getAttribute('data-confirm')) || form.getAttribute('data-confirm') || null,
+    hasNoteField: !!form.querySelector('textarea[name="note"], textarea[name="reason"], textarea[name="comment"]'),
+    disabled: form.hasAttribute('data-confirm-off') || !!(submitter && submitter.hasAttribute('data-confirm-off')),
+  });
+  if (!msg) return;
+  e.preventDefault();
+  askConfirm(msg, function () {
+    confirmGuard.add(form);
+    if (submitter && form.requestSubmit) form.requestSubmit(submitter);
+    else form.submit();
+  });
+});
+
+// htmx row actions (list Approve buttons): route htmx's own confirmation
+// through the same modal instead of a native window.confirm.
+document.body.addEventListener('htmx:confirm', function (e) {
+  var d = e.detail;
+  if (!d || !d.elt || !window.StmiConfirmCore) return;
+  var msg = d.elt.getAttribute('data-confirm') || d.question ||
+    StmiConfirmCore.messageFor({
+      method: 'post',
+      label: (d.elt.textContent || '').trim(),
+      confirm: null,
+      hasNoteField: false,
+      disabled: !!d.elt.closest('[data-confirm-off]'),
+    });
+  if (!msg) { if (d.skip) d.skip(); return; }
+  e.preventDefault();
+  askConfirm(msg, function () { d.issueRequest(true); });
+});

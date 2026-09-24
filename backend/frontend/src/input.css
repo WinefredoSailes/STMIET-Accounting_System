@@ -126,6 +126,9 @@
   .form-field-error {
     @apply form-field border-rose-300 focus:ring-rose-500/40 focus:border-rose-500;
   }
+  .searchable-trigger.field-invalid {
+    @apply border-rose-400 ring-2 ring-rose-400/40;
+  }
   .form-label {
     @apply block text-sm font-medium text-surface-700 mb-1;
   }
@@ -288,6 +291,14 @@
      headers so the rail reads as one flat icon list. */
   .sidebar-rail-collapsed .sidebar-section-header {
     @apply hidden;
+  }
+  /* Rail mode: logo and the collapse control stack so neither floats over
+     the other inside the narrow 64px column. */
+  .sidebar-rail-collapsed .sidebar-header {
+    @apply flex-col gap-2 py-3;
+  }
+  .sidebar-rail-collapsed .sidebar-rail-toggle {
+    @apply ml-0;
   }
   .sidebar-rail-collapsed .sidebar-group-content {
     display: block !important;

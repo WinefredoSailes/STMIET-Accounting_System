@@ -40,7 +40,8 @@ the reject-toggle/reject-form pair is wired by toggle-block.js.{% endcomment %}
   {% if can_edit %}
   <form method="post" action="{% url 'ui:transfer_revise' transfer.id %}" class="inline">
     {% csrf_token %}
-    <button type="submit" class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Revise &amp; resubmit</button>
+    <button type="submit" data-confirm="Resubmit this transfer for approval?"
+            class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Revise &amp; resubmit</button>
   </form>
   {% else %}
   <p class="mt-2 text-xs text-surface-500">Only the preparer can revise this transfer.</p>

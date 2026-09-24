@@ -21,13 +21,15 @@
     {% include "ui/partials/icons.html" %}
     <aside id="sidebar"
       class="fixed inset-y-0 left-0 z-40 w-56 -transurface-x-full transform bg-white border-r border-surface-200 text-surface-700 flex flex-col transition-transform duration-200 lg:static lg:transurface-x-0 lg:shrink-0">
-      <div class="relative px-4 py-4 border-b border-surface-200 flex items-center gap-2.5">
-        <img src="{% static 'img/logo.svg' %}" alt="logo" class="h-9 w-9 rounded-lg shadow sidebar-logo">
-        <div class="sidebar-logo-text min-w-0">
-          <div class="font-semibold text-surface-900 text-sm leading-tight truncate">Accounting System</div>
-        </div>
+      <div class="sidebar-header relative px-4 py-4 border-b border-surface-200 flex items-center gap-2.5">
+        <a href="{% url 'ui:dashboard' %}" title="Dashboard" class="flex items-center gap-2.5 min-w-0">
+          <img src="{% static 'img/logo.svg' %}" alt="logo" class="h-9 w-9 rounded-lg shadow sidebar-logo">
+          <div class="sidebar-logo-text min-w-0">
+            <div class="font-semibold text-surface-900 text-sm leading-tight truncate">Accounting System</div>
+          </div>
+        </a>
         <button onclick="toggleSidebarRail()" aria-label="Collapse sidebar" title="Collapse sidebar"
-          class="sidebar-rail-toggle ml-auto hidden lg:inline-flex rounded-md px-1.5 py-0.5 text-surface-400 hover:text-surface-900 hover:bg-surface-100">
+          class="sidebar-rail-toggle ml-auto hidden h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-surface-200 bg-white text-surface-500 hover:text-surface-900 hover:bg-surface-100 lg:inline-flex">
           <svg class="h-4 w-4" aria-hidden="true"><use href="#i-panel-left"/></svg>
         </button>
         <button onclick="toggleSidebar(false)" aria-label="Close menu"
@@ -50,7 +52,7 @@
       <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-white border-b border-surface-200 px-4 py-3 shadow-sm">
         <button onclick="toggleSidebar(true)" aria-label="Open menu"
           class="rounded-md px-2 py-1 text-surface-600 hover:text-surface-900 hover:bg-surface-100">☰</button>
-        <span class="font-semibold text-surface-900 text-sm">Accounting System</span>
+        <span class="font-semibold text-surface-900 text-sm"><a href="{% url 'ui:dashboard' %}">Accounting System</a></span>
       </header>
       {% endif %}
       {% if messages %}
@@ -69,6 +71,7 @@
   </div>
   {% include "ui/partials/verse_footer.html" %}
   <script src="{% static 'js/form-draft-core.js' %}"></script>
+  <script src="{% static 'js/confirm-core.js' %}"></script>
   <script src="{% static 'js/base.js' %}"></script>
   <script src="{% static 'js/amount-format.js' %}"></script>
   {% block extra_js %}{% endblock %}

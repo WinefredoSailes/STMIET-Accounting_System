@@ -48,6 +48,7 @@ inline Approve/Check action is shown: only for the role the PO is waiting on.
         hx-target="#po-row-{{ po.id }}"
         hx-swap="outerHTML"
         hx-indicator="#po-row-{{ po.id }}"
+        data-confirm="{{ po.approval_info.label }} PO {{ po.po_number }}? It will be signed under your name and move to the next step."
         class="inline-flex"
       >
         {% csrf_token %}
