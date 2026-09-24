@@ -71,6 +71,28 @@ pattern outside AP: `apps/cash/services.py::TransferService`,
 `apps/core/approvals.py::transfer_queue`, `ui/cash/transfer_detail.html`, and
 `ui/partials/workflow/transfer_actions.html`.
 
+## Frontend conventions (ADR-046)
+
+- **Theme:** finance-nature tokens (`brand`/`accent`/`surface`, danger=`rose`)
+  defined once in `backend/frontend/tailwind.config.js`; every NON-print
+  template renders from them exclusively (guard:
+  `test_ui_templates_use_only_theme_tokens`). CSS is rebuilt with
+  `npm run build` from `backend/frontend`.
+- **Navigation:** the sidebar loops `apps/ui/nav.py::NAV_SECTIONS` via the
+  `nav_sections` context processor — adding a module is one config entry
+  (label, icon, URL name, permissions). Sections are accordions; the sidebar
+  collapses to an icon rail (state kept in `localStorage`).
+- **Lists:** every register uses an `apps/ui/filter_specs` factory + the shared
+  `filter_bar.html` partial + an HTMX `_*table*.html` fragment.
+- **Mobile:** every table fragment is dual-view — desktop table `hidden md:block`
+  plus a `md:hidden` stacked card list (`.mobile-card*` utility classes).
+- **Dashboard:** `/` is the 4-zone executive dashboard
+  (`apps/ui/services.py::executive_dashboard_context`, Chart.js self-hosted in
+  `static/js/vendor/`). KPI math mirrors the statement builders exactly.
+- **Guards:** `apps/ui/test_frontend_conventions.py` pins these invariants —
+  nav config, dual-view fragments, self-hosted charts, palette discipline,
+  user-management access (superadmin + Head CRUD).
+
 ## Environments
 
 - `config.settings.dev`   — SQLite fallback, DEBUG on (default).

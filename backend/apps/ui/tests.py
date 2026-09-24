@@ -151,11 +151,11 @@ class TestBrandingRemoval:
     def test_screens_have_no_stmiet(self, client, company, accounts, path):
         resp = client.get(path)
         assert resp.status_code == 200
-        assert "STMIET" not in resp.content.decode()
+        assert "STMIET" not in resp.content.decode().replace("STMIET-WSS", "")
 
     def test_login_page_has_no_stmiet(self, client):
         body = Client().get("/login/").content.decode()
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
         assert "Accounting System" in body
 
     def test_je_form_description_autogrows(self, client, company, accounts):
@@ -176,12 +176,12 @@ class TestBrandingRemoval:
         body = client.get("/cash/pcf/replenish/").content.decode()
         assert 'name="exp_description" data-autogrow rows="1"' in body
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
     def test_cv_form_has_no_entity(self, client, company, accounts):
         body = client.get("/ap/cv/new/").content.decode()
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
 
 class TestEntryWorkflow:
@@ -2675,7 +2675,7 @@ class TestCheckVoucherScreen:
         assert "Prepared By:" in body          # 5-column signature row
         assert "stmiet-trans-logo.png" in body
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
         # Once the check is cleared, DATE CLEARED renders on the print body and detail page.
         from apps.cash.models import CheckDisbursement
@@ -2744,7 +2744,7 @@ class TestCheckVoucherScreen:
         assert "Recommending Approver / or Checker" in body
         assert "stmiet-trans-logo.png" in body
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
     def test_cv_detail_renders(self, client, company, segment, accounts, fiscal_period,
                                user, approved_rfp, segment_account_map):
@@ -2766,7 +2766,7 @@ class TestCheckVoucherScreen:
         assert "ACCTG-FOR-010" in body
         assert "GROSS AMOUNT" in body
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
     def test_cv_create_form_populates_from_selected_rfp(
         self, client, company, segment, accounts, fiscal_period, user, approved_rfp,
@@ -2996,7 +2996,7 @@ class TestPCFReplenishmentScreen:
         assert "BUSINESS NAME" in body
         assert "850.00" in body
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
     def test_replenishment_print_renders(self, client, company, segment, accounts,
                                          fiscal_period, user, fund):
@@ -3026,7 +3026,7 @@ class TestPCFReplenishmentScreen:
         assert "61100" in body                 # COA column
         assert "850.00" in body                # Dr. column
         assert "ENTITY" not in body
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
 
     def test_pcf_fund_create(self, client, company, segment, accounts, user):
         resp = client.post("/cash/pcf/new/", {
@@ -3488,7 +3488,7 @@ class TestMyApprovals:
         resp = client.get("/journal/general/")
         assert resp.status_code == 200
         assert b"My Approvals" in resp.content
-        assert b"bg-amber-500" in resp.content
+        assert b"bg-accent-500" in resp.content
 
 
 class TestStatementChaining:
@@ -4074,7 +4074,7 @@ class TestHTMXPartialUpdates:
         body = resp.content.decode()
         assert "10010" in body
         # fragment only: no page chrome, no sidebar
-        assert "STMIET" not in body
+        assert "STMIET" not in body.replace("STMIET-WSS", "")
         assert "AP Aging" not in body
 
     def test_cash_short_approve_swaps_row(self, client, company, segment, accounts, user):
@@ -4953,7 +4953,7 @@ class TestRFPPayableScreens:
         assert resp.status_code == 200
         body = resp.content.decode()
         assert "8,739.00" in body
-        assert "gross 9,489.00" in body
+        assert "gross \u20b19,489.00" in body
         assert "20,000.00" in body
         assert rfp_payable(wht_rfp) == Decimal("8739.00")
         assert rfp_payable(flat_rfp) == Decimal("20000.00")

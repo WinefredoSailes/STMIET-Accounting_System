@@ -44,6 +44,34 @@ the database, never from hardcoded strings.
   to the close screen.
 - **Recent entries** — last 8 journal entries with status badges.
 
+### 1b. Executive Dashboard — the 4-zone finance view (ADR-046)
+
+`/` is the management bird's-eye view, derived live from the posted GL
+(`apps/ui/services.py::executive_dashboard_context`):
+
+- **Zone A — the big 8:** Revenue YTD, Expenses YTD, Net Income YTD, Cash
+  Position, Gross Profit Margin, Net Profit Margin, AR Outstanding and AP
+  Outstanding — each with a MoM trend pill, drill-down link, and an icon
+  bubble. A segment pill filter (DHPP / DMIE / OPS / All) re-scopes every
+  GL-derived number.
+- **Zone B — 4 charts** (self-hosted Chart.js): Revenue vs Expenses (12 mo),
+  Cash Flow (cash in vs out), Segment Performance (grouped bars), and Expense
+  Breakdown (doughnut with center total). KPI math mirrors the statement
+  builders (`reporting/services.py`) so dashboard ratios equal the printed
+  Income Statement's GPM/NPM.
+- **Zone C — aging snapshots:** AR and AP bucket bars (0-30 → 120+) that link
+  to the full aging registers.
+- **Zone D — operational status:** disbursement pipeline (pending / awaiting
+  payment / posted), waiting-on-you approvals, reversal requests, unposted
+  documents, and the month-end close checklist.
+
+### Verse of the week
+
+Every page footer and the login screen carry a rotating **ESV Bible verse of
+the week** — 52 verses (stewardship/work themes mixed with the gospel) cycle
+by ISO week, one per week for the whole year (`apps/ui/verses.py`). ESV®
+attribution is shown via the tooltip on the mark.
+
 ### 2. Journal (`/journal/`)
 
 - **General Journal** (`/journal/general/`) — the posted-entry register in
@@ -348,6 +376,20 @@ register export × {pdf, xlsx, csv} asserting 200, the right Content-Type,
 real magic bytes, `attachment` filenames, and for XLSX that numbers land in
 numeric cells — including the empty-database register smoke so a fresh
 install can never ship a broken download.
+
+`apps/ui/test_exec_dashboard.py` pins the executive dashboard contract:
+all four zones render, the KPI set is complete, the chart JSON blob is valid,
+segment filtering flips the figures, and every KPI links to its source screen.
+
+`apps/ui/test_user_management_ui.py` covers user management CRUD — create /
+edit / deactivate / reactivate by superadmin and the Accounting & Finance
+Head, the head-blocked-from-superadmins rule, self-deactivation blocking, and
+the standalone create/edit forms.
+
+`apps/ui/test_frontend_conventions.py` is the architecture guard (ADR-046):
+config-driven sidebar, resolvable nav URLs, existing icon symbols, per-screen
+filter specs, dual-view table fragments, self-hosted charts and palette
+discipline — regressions fail CI instead of drifting.
 
 ## Tailwind content sources
 - `backend/frontend/tailwind.config.js` scans BOTH `apps/**/templates/**/*.html`
