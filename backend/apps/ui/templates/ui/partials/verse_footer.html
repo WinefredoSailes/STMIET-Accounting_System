@@ -1,0 +1,20 @@
+{% comment %}
+Global page footer: featured verse of the week (ESV, rotates by ISO week) +
+the product credit line.
+Keep the ESV® attribution visible: shown via tooltip + the small "ESV®" mark.
+{% endcomment %}
+<footer class="border-t border-surface-200 bg-white px-4 py-3">
+  <div class="mx-auto max-w-3xl text-center">
+    {% if weekly_verse %}
+    <p class="text-xs text-surface-500 italic leading-relaxed">&ldquo;{{ weekly_verse.text }}&rdquo;</p>
+    <p class="mt-1 text-[11px] text-surface-400">
+      &mdash; {{ weekly_verse.ref }}
+      <span title="{{ weekly_verse.attribution }}" class="cursor-help">ESV&reg;</span>
+      &middot; Verse of the week
+    </p>
+    {% endif %}
+    <p class="mt-2 text-[11px] text-surface-400">
+      Developed by: <span class="font-medium text-surface-500">STMIET-WSS</span> Live @09-2026
+    </p>
+  </div>
+</footer>

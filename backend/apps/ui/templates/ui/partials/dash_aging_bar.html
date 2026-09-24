@@ -1,0 +1,16 @@
+{% comment %}
+One aging bucket row: label, amount, and a proportional bar whose width is
+amount / max_amount (the largest bucket across the snapshot). Color-coded:
+fresh buckets green, middle amber, oldest rose.
+{% endcomment %}
+{% load ui_filters %}
+<div class="flex items-center gap-3">
+  <span class="w-14 flex-shrink-0 text-xs text-surface-500 tabular-nums">{{ label }}d</span>
+  <div class="flex-1 h-2.5 bg-surface-100 rounded-full overflow-hidden">
+    {% if max_amount %}
+    <div class="h-full rounded-full {% if label == '0-30' or label == '31-60' %}bg-emerald-500{% elif label == '61-90' or label == '91-120' %}bg-amber-500{% else %}bg-rose-500{% endif %}"
+         style="width: {% widthratio amount max_amount 100 %}%"></div>
+    {% endif %}
+  </div>
+  <span class="w-28 flex-shrink-0 text-right text-xs font-medium tabular-nums text-surface-700">{{ amount|peso }}</span>
+</div>

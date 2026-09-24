@@ -1,0 +1,233 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}Executive Dashboard{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6 max-w-8xl">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-surface-900">Executive Dashboard</h1>
+      <p class="text-sm text-surface-500 mt-1">Live bird's-eye view — FY {{ fy_label }}. Figures derive from the posted GL in real time.</p>
+    </div>
+    <!-- Segment filter -->
+    <form method="get" class="flex items-center gap-1 bg-white border border-surface-200 rounded-lg p-1">
+      {% for code in segments %}
+      <button type="submit" name="segment" value="{{ code }}"
+        class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors
+          {% if segment == code %}bg-brand-600 text-white{% else %}text-surface-600 hover:bg-surface-100{% endif %}">
+        {{ code }}
+      </button>
+      {% endfor %}
+      <button type="submit" name="segment" value=""
+        class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors
+          {% if not segment %}bg-brand-600 text-white{% else %}text-surface-600 hover:bg-surface-100{% endif %}">
+        All Segments
+      </button>
+    </form>
+  </div>
+
+  <!-- Zone A — the big 8 -->
+  <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    {% for kpi in kpis %}
+    <a href="{{ kpi.href_name|url_with:kpi.href_args }}" class="kpi-card block">
+      <div class="kpi-accent {{ kpi.accent }}"></div>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="kpi-label text-surface-500">{{ kpi.label }}</div>
+          <div class="kpi-value mt-2">{% if kpi.suffix == '%' %}{{kpi.value|peso}}{% else %}{{ kpi.value|peso }}{% endif %}{% if kpi.suffix %}<span class="text-base font-semibold text-surface-400"> {{ kpi.suffix }}</span>{% endif %}</div>
+          <div class="kpi-sub mt-1">{{ kpi.sub }}</div>
+        </div>
+        <span class="kpi-icon-bubble flex-shrink-0 {{ kpi.bubble }}">
+          <svg class="h-5 w-5" aria-hidden="true"><use href="#i-{{ kpi.icon }}"/></svg>
+        </span>
+      </div>
+      <div class="mt-3 flex items-center justify-between gap-2">
+        {% if kpi.trend.dir != 'flat' %}
+        <span class="kpi-trend {{ kpi.trend.dir }}">
+          {% if kpi.trend.dir == 'up' %}
+          <svg class="h-3.5 w-3.5" aria-hidden="true"><use href="#i-trending-up"/></svg>
+          {% else %}
+          <svg class="h-3.5 w-3.5" aria-hidden="true"><use href="#i-trending-down"/></svg>
+          {% endif %}
+          <span>{{ kpi.trend.pct }}%</span>
+        </span>
+        <span class="text-[11px] text-surface-400">vs prior month</span>
+        {% else %}
+        <span class="text-[11px] text-surface-400">{{ kpi.trend_note|default:"Snapshot" }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Zone B — the 4 charts -->
+  <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-surface-900">Revenue vs Expenses</h2>
+          <p class="text-xs text-surface-500 mt-0.5">Rolling 12 months, ₱</p>
+        </div>
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          <svg class="h-5 w-5" aria-hidden="true"><use href="#i-document-chart-bar"/></svg>
+        </span>
+      </div>
+      <div class="mt-4 h-72"><canvas id="chart-rve"></canvas></div>
+    </div>
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-surface-900">Cash Flow</h2>
+          <p class="text-xs text-surface-500 mt-0.5">Monthly cash in vs out (10xxx accounts), ₱</p>
+        </div>
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <svg class="h-5 w-5" aria-hidden="true"><use href="#i-banknotes"/></svg>
+        </span>
+      </div>
+      <div class="mt-4 h-72"><canvas id="chart-cashflow"></canvas></div>
+    </div>
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-surface-900">Segment Performance</h2>
+          <p class="text-xs text-surface-500 mt-0.5">Revenue vs expense per segment, FY {{ fy_label }}, ₱</p>
+        </div>
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+          <svg class="h-5 w-5" aria-hidden="true"><use href="#i-table-cells"/></svg>
+        </span>
+      </div>
+      <div class="mt-4 h-72"><canvas id="chart-segments"></canvas></div>
+    </div>
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-surface-900">Expense Breakdown</h2>
+          <p class="text-xs text-surface-500 mt-0.5">FY {{ fy_label }} expenses by category</p>
+        </div>
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+          <svg class="h-5 w-5" aria-hidden="true"><use href="#i-circle-stack"/></svg>
+        </span>
+      </div>
+      <div class="mt-4 h-72"><canvas id="chart-expenses"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Zone C — aging snapshots -->
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-surface-900">AR Aging</h2>
+        <a href="{% url 'ui:ar_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>
+      </div>
+      <div class="mt-3 space-y-2">
+        {% for b in ar_aging.buckets %}
+        {% include "ui/partials/dash_aging_bar.html" with label=b.bucket amount=b.amount max_amount=ar_aging.bucket_max %}
+        {% empty %}
+        <p class="text-xs text-surface-400 py-4">No overdue receivables.</p>
+        {% endfor %}
+      </div>
+      <div class="mt-3 pt-2 border-t border-surface-100 text-xs text-surface-500 flex justify-between">
+        <span>Total due</span><span class="font-semibold text-surface-900">{{ ar_aging.bucket_total|peso }}</span>
+      </div>
+    </div>
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-surface-900">AP Aging</h2>
+        <a href="{% url 'ui:ap_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>
+      </div>
+      <div class="mt-3 space-y-2">
+        {% for b in ap_aging.buckets %}
+        {% include "ui/partials/dash_aging_bar.html" with label=b.bucket amount=b.amount max_amount=ap_aging.bucket_max %}
+        {% empty %}
+        <p class="text-xs text-surface-400 py-4">No overdue payables.</p>
+        {% endfor %}
+      </div>
+      <div class="mt-3 pt-2 border-t border-surface-100 text-xs text-surface-500 flex justify-between">
+        <span>Total due</span><span class="font-semibold text-surface-900">{{ ap_aging.bucket_total|peso }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zone D — operational status -->
+  <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-surface-900">Disbursement Pipeline</h2>
+        <a href="{% url 'ui:rfp_list' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">RFPs &rarr;</a>
+      </div>
+      <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+        <div class="bg-surface-50 rounded-lg p-3">
+          <dt class="text-xs text-surface-500 uppercase">Pending</dt>
+          <dd class="mt-1 font-semibold tabular-nums">{{ pipeline.pending }} <span class="text-xs font-normal text-surface-500">RFPs</span></dd>
+          <dd class="text-xs tabular-nums text-surface-600">{{ pipeline.pending_amount|peso }}</dd>
+        </div>
+        <div class="bg-amber-50 rounded-lg p-3">
+          <dt class="text-xs text-amber-700 uppercase">Awaiting payment</dt>
+          <dd class="mt-1 font-semibold tabular-nums">{{ pipeline.approved }} <span class="text-xs font-normal text-amber-700">RFPs</span></dd>
+          <dd class="text-xs tabular-nums text-amber-800">{{ pipeline.approved_amount|peso }}</dd>
+        </div>
+        <div class="bg-emerald-50 rounded-lg p-3">
+          <dt class="text-xs text-emerald-700 uppercase">Posted</dt>
+          <dd class="mt-1 font-semibold tabular-nums text-emerald-900">{{ pipeline.posted_amount|peso }}</dd>
+        </div>
+      </dl>
+      {% if waiting_on_you %}
+      <div class="mt-3 rounded-md bg-accent-50 border border-accent-200 px-3 py-2 text-xs text-accent-800 flex items-center gap-2">
+        <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-bell-alert"/></svg>
+        <span><span class="font-bold">{{ waiting_on_you }}</span> document(s) waiting on you</span>
+        <a href="{% url 'ui:my_approvals' %}" class="ml-auto font-medium underline">Review &rarr;</a>
+      </div>
+      {% endif %}
+      {% if reversal_pending_count %}
+      <div class="mt-3 rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800 flex items-center gap-2">
+        <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-alert-circle"/></svg>
+        <span><span class="font-bold">{{ reversal_pending_count }}</span> reversal request(s) pending</span>
+        <a href="{% url 'ui:je_list' %}?status=posted" class="ml-auto font-medium underline">Review &rarr;</a>
+      </div>
+      {% endif %}
+      {% if pending_count %}
+      <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
+        <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-clock"/></svg>
+        <span><span class="font-bold">{{ pending_count }}</span> pending / not yet posted</span>
+        <a href="{% url 'ui:je_list' %}?tab=pending" class="ml-auto font-medium underline">Review &rarr;</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-surface-900">Month-End Close</h2>
+        <a href="{% url 'ui:month_end_close' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open close &rarr;</a>
+      </div>
+      {% if close %}
+      <div class="mt-3 text-sm text-surface-700">
+        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {% if close.status == 'closed' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">
+          {% if close.status == "closed" %}Closed{% else %}Open{% endif %}
+        </span>
+      </div>
+      <ul class="mt-3 space-y-2 text-sm">
+        {% for step, state in close.steps.items %}
+        <li class="flex items-center gap-2">
+          {% if state == 'done' %}
+          <svg class="h-4 w-4 text-emerald-600" aria-hidden="true"><use href="#i-check"/></svg>
+          {% elif state == 'in_progress' %}
+          <svg class="h-4 w-4 text-amber-600" aria-hidden="true"><use href="#i-clock"/></svg>
+          {% else %}
+          <svg class="h-4 w-4 text-surface-300" aria-hidden="true"><use href="#i-info"/></svg>
+          {% endif %}
+          <span class="capitalize text-surface-600">{{ step }}</span>
+          <span class="ml-auto text-xs text-surface-400">{{ state }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="mt-2 text-sm text-surface-500 py-4">No close in progress.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{{ chart|json_script:"dash-charts" }}
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endblock %}
