@@ -65,12 +65,11 @@
       <form method="post" action="{% url 'ui:je_reversal_approve' pending_reversal.id %}" class="inline">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.path }}">
-        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
+        <button type="submit" data-confirm="Approve this reversal? A reversing entry is posted immediately and the receipt becomes non-editable."
+                class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
       </form>
       <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">Reject reversal</button>
     </div>
-    {% elif request.user|approval_role_of == "head" %}
-    <p class="mt-2 text-xs text-amber-700">You requested this reversal — it must be approved by a different approver.</p>
     {% endif %}
   </div>
   {% endif %}

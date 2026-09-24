@@ -118,13 +118,17 @@ def test_request_then_head_approve_posts_mirror(company, segment, accounts, role
     assert _account_net(accounts["10010"]) == Decimal("0.00")
 
 
-def test_requester_cannot_approve_own_request(company, segment, accounts, role_users):
+def test_head_can_approve_own_request(company, segment, accounts, role_users):
     je = _posted(company, segment, accounts)
     req = ReversalService.request(je, reason="self", user=role_users["head"])
-    with pytest.raises(PostingError):
-        ReversalService.approve(req, user=role_users["head"])
+    # The Head is the only one who can approve reversals, so they must be able
+    # to approve a request they raised themselves (otherwise it would be stuck).
+    approved = ReversalService.approve(req, user=role_users["head"])
+    approved.refresh_from_db()
     je.refresh_from_db()
-    assert je.status == PostingStatus.POSTED  # unchanged
+    assert approved.status == ReversalRequest.Status.APPROVED
+    assert je.status == PostingStatus.REVERSED
+    assert approved.requested_by_id == approved.approved_by_id == role_users["head"].id
 
 
 def test_only_head_can_approve(company, segment, accounts, role_users):

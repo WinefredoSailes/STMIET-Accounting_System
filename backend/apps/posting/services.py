@@ -412,8 +412,11 @@ class ReversalService:
         require_approval_role(user, "head")
         if request.status != ReversalRequest.Status.REQUESTED:
             raise PostingError("Only a requested reversal can be approved.")
-        if request.requested_by_id and user is not None and request.requested_by_id == user.id:
-            raise PostingError("The requester cannot approve their own reversal request.")
+        # Self-approval is allowed for the Head: the role gate above means the
+        # Head is the only one who can ever reach this line, and blocking them
+        # from approving their own request would leave it permanently stuck
+        # (nobody outranks the Head). The audit trail logs requester and
+        # approver separately, so the double role is visible on the entry.
 
         entry = request.entry
         rev = PostingService.reverse(entry, reason=request.reason, user=user)
