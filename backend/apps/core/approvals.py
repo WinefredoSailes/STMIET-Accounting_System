@@ -240,11 +240,13 @@ def rfp_queue(user_roles):
         if rfp.status == "prepared":
             continue  # awaits the preparer's submit, not an approval
         role = RFP_NEXT_ROLE.get(rfp.status)
+        cnr = False
         if rfp.status == "fin_approved":
             from apps.ap.services import coo_required
 
             if coo_required(rfp):
                 role = "coo"
+                cnr = True
             else:
                 continue  # fully approved, waits for CONSO
         if role in user_roles:
@@ -258,7 +260,12 @@ def rfp_queue(user_roles):
                     "date": rfp.rfp_date,
                     "amount": rfp.amount,
                     "detail": ("ui:rfp_detail", rfp.id),
-                    "action": ("ui:rfp_approve", rfp.id),
+                    # The CNR step lives on its own endpoint — signing from
+                    # the inbox must hit the CNR Manager action, not Head's.
+                    "action": (
+                        "ui:rfp_approve_cnr" if cnr else "ui:rfp_approve",
+                        rfp.id,
+                    ),
                     "action_label": (
                         "Check" if rfp.status in ("prepared", "submitted") else "Approve"
                     ),

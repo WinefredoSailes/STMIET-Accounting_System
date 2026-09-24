@@ -212,8 +212,11 @@ class TestEndToEndWorkflow:
 
         # 4e. Master PO workflow: create -> submit -> approve -> an RFP that
         # bills part of it through the UI (reservation -> billed on CONSO).
+        # The PO desk belongs to the preparer (ADR-047): the COO's screen set
+        # no longer includes registers, so switch back to staff.
         from apps.ap.models import PurchaseOrder
 
+        client.force_login(roles["staff"])
         resp = client.post(
             "/ap/pos/new/",
             {"supplier": supplier.id, "segment": segment.id, "po_date": "2026-01-08",

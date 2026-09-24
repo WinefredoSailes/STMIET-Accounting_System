@@ -73,19 +73,42 @@
             <th class="px-4 py-3">Date</th>
             <th class="px-4 py-3 text-right">Amount</th>
             <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">Action</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-surface-100">
           {% for item in items %}
           <tr class="hover:bg-surface-50">
             <td class="px-4 py-2.5 font-mono text-xs">
+              {% if item.can_open %}
               <a class="text-brand-600 hover:underline" href="{% if item.detail|length > 1 %}{% url item.detail.0 item.detail.1 %}{% else %}{% url item.detail.0 %}{% endif %}">{{ item.number }}</a>
+              {% else %}
+              <span class="text-surface-500" title="You do not have access to its register">{{ item.number }}</span>
+              {% endif %}
             </td>
             <td class="px-4 py-2.5 text-surface-600">{{ item.title|default:"—" }}</td>
             <td class="px-4 py-2.5">{{ item.date|date:"M d, Y"|default:"—" }}</td>
             <td class="px-4 py-2.5 text-right tabular-nums">{{item.amount|peso}}</td>
             <td class="px-4 py-2.5">
               <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">Awaiting {{ label }}</span>
+            </td>
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <div class="flex items-center gap-2">
+                {% if item.action %}
+                <form method="post" action="{% url item.action.0 item.action.1 %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="/approvals/">
+                  <button type="submit" data-confirm="{{ item.action_label|default:'Approve' }} {{ item.number }}? It will be signed under your name and move to the next step."
+                          class="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">{{ item.action_label|default:"Approve" }}</button>
+                </form>
+                {% endif %}
+                {% with reject=reject_urls|get_item:item.kind %}
+                {% if reject and item.action %}
+                <button type="button" data-inbox-reject="{% url reject item.action.1 %}" data-inbox-number="{{ item.number }}"
+                        class="rounded-md border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50">Reject</button>
+                {% endif %}
+                {% endwith %}
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -104,4 +127,36 @@
 
   {% include "ui/partials/pagination.html" %}
 </div>
+<script>
+  // Reject straight from the queue through the shared confirm modal (a note
+  // is required to reject): POST with next back to the inbox.
+  document.querySelectorAll("[data-inbox-reject]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var target = btn.getAttribute("data-inbox-reject");
+      var number = (btn.getAttribute("data-inbox-number") || "").trim();
+      window.askConfirm({
+        message: "Reject " + number + "? The preparer will see your note and must revise before it re-enters the queue.",
+        yesLabel: "Reject",
+        noteLabel: "Rejection note (required)",
+        notePlaceholder: "Why is this being returned?",
+        noteRequired: true
+      }, function (note) {
+        var form = document.createElement("form");
+        form.method = "post";
+        form.action = target;
+        form.setAttribute("data-confirm-off", "");
+        var csrf = document.createElement("input");
+        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken";
+        csrf.value = document.querySelector('meta[name="csrf-token"]').content;
+        var n = document.createElement("input");
+        n.type = "hidden"; n.name = "note"; n.value = note;
+        var nx = document.createElement("input");
+        nx.type = "hidden"; nx.name = "next"; nx.value = "/approvals/";
+        form.appendChild(csrf); form.appendChild(n); form.appendChild(nx);
+        document.body.appendChild(form);
+        form.submit();
+      });
+    });
+  });
+</script>
 {% endblock %}

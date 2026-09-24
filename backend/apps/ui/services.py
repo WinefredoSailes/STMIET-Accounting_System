@@ -138,12 +138,15 @@ def executive_dashboard_context(*, segment=None, user=None):
     for yy, mm in months:
         first = date(yy, mm, 1)
         last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        if last > today:
+        if first > today:
             revenue_series.append(0.0)
             expense_series.append(0.0)
             cash_in_series.append(0.0)
             cash_out_series.append(0.0)
             continue
+        # This month counts as month-to-date, not zero (the old `last > today`
+        # guard dropped the whole current month out of every chart).
+        last = min(last, today)
         mbal = TBSvc.segment_balances(company, start=first, end=last)
         rev = segment_total(mbal, revenue_codes)
         exp = segment_total(mbal, expense_codes)
@@ -294,6 +297,28 @@ def executive_dashboard_context(*, segment=None, user=None):
         },
     ]
 
+    # Screen access (ADR-047): drill-down hrefs resolve only for screens the
+    # viewer can open, so a narrowed account (e.g. dashboard-only COO) gets
+    # read-only cards instead of links that would dead-end in a 403.
+    from .screens import SCREEN_KEYS, effective_screens
+
+    allowed = set(effective_screens(user)) if user is not None else set(SCREEN_KEYS)
+    kpi_screens = {
+        "revenue": "statement", "expenses": "statement", "net_income": "statement",
+        "cash": "bank_list", "gpm": "statement", "npm": "statement",
+        "ar": "ar_aging", "ap": "ap_aging",
+    }
+    from django.urls import NoReverseMatch, reverse
+
+    for kpi in kpis:
+        kpi["screen"] = kpi_screens[kpi["key"]]
+        kpi["href"] = None
+        if kpi["screen"] in allowed:
+            try:
+                kpi["href"] = reverse(kpi["href_name"], args=kpi["href_args"] or None)
+            except NoReverseMatch:
+                kpi["href"] = None
+
     chart = {
         "labels": [f"{yy}-{mm:02d}" for yy, mm in months],
         "month_labels": [date(yy, mm, 1).strftime("%b") for yy, mm in months],
@@ -310,6 +335,7 @@ def executive_dashboard_context(*, segment=None, user=None):
 
     return {
         "kpis": kpis,
+        "allowed_screens": allowed,
         "chart": chart,
         "ar_aging": ar_aging,
         "ap_aging": ap_aging,

@@ -67,11 +67,13 @@ class TestAuth:
         assert resp.status_code == 200
         assert "Sign in" in resp.content.decode()
 
-    def test_login_post_redirects_to_dashboard(self, client):
+    def test_login_post_redirects_to_role_home(self, client):
+        # "tester" holds the staff role → the desk landing (ADR-047);
+        # management roles (head/coo/superuser) land on the dashboard.
         c = Client()
         resp = c.post("/login/", {"username": "tester", "password": "x"})
         assert resp.status_code == 302
-        assert resp.url == "/"
+        assert resp.url == "/journal/"
 
     def test_screens_require_login(self, client):
         c = Client()
@@ -1603,6 +1605,51 @@ class TestRFPScreen:
         assert rfp.particulars == "Fuel purchase"  # mirrors the first line
         supplier.refresh_from_db()
         assert supplier.last_ap == rfp.ap_number
+
+    def test_rfp_create_missing_payee_segment_or_lines_prompts_not_500(
+            self, client, company, segment, accounts, supplier):
+        # Every "empty form" path must bounce back to the form with a clean
+        # message (the ValueError escape became a debug page in the field).
+        from apps.ap.models import RFPDocument
+
+        base = {"rfp_date": "2026-01-15", "purpose": "GEN-FUEL"}
+        cases = {
+            "no payee at all": dict(base, segment=segment.id),
+            "no segment": dict(base, payee=supplier.id),
+            "no charge lines": dict(base, payee=supplier.id, segment=segment.id),
+            "garbage date": dict(base, payee=supplier.id, segment=segment.id,
+                                 rfp_date="not-a-date"),
+        }
+        for label, payload in cases.items():
+            resp = client.post("/ap/rfps/new/", payload)
+            assert resp.status_code == 200, f"{label}: 500 instead of form re-render"
+            assert "traceback" not in resp.content.decode().lower()
+        assert RFPDocument.objects.count() == 0
+
+        resp = client.post("/ap/rfps/new/", dict(base, payee=supplier.id, segment=segment.id))
+        body = resp.content.decode()
+        assert "Add at least one charge line" in body
+        resp = client.post("/ap/rfps/new/", dict(base, segment=segment.id))
+        assert "Choose a payee" in resp.content.decode()
+        resp = client.post("/ap/rfps/new/", dict(base, payee=supplier.id))
+        assert "Choose a segment" in resp.content.decode()
+        resp = client.post("/ap/rfps/new/", dict(base, payee=supplier.id, segment=segment.id,
+                                                 rfp_date="not-a-date"))
+        assert "valid date of request" in resp.content.decode()
+
+    def test_rfp_create_bad_amount_prompts_with_line_number(self, client, company, segment,
+                                                            accounts, supplier):
+        resp = client.post("/ap/rfps/new/", {
+            "payee": supplier.id, "segment": segment.id, "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id], "line_account": ["61100"],
+            "line_debit": ["1.2.3"], "line_credit": [""],
+        })
+        assert resp.status_code == 200
+        assert "Line 1: Invalid amount" in resp.content.decode()
+        from apps.ap.models import RFPDocument
+
+        assert RFPDocument.objects.count() == 0
 
     def test_rfp_create_blank_row_skipped_and_mixed_row_rejected(self, client, company,
                                                                  segment, accounts, supplier):
@@ -3405,7 +3452,15 @@ class TestMyApprovals:
                                         supplier, role_users):
         rfp = self._create("50000.00", segment, supplier, role_users["staff"], "A2004")
         self._approve_through(rfp, role_users, "checked")
-        client.force_login(role_users["coo"])
+        # This test pins the service-layer role guard + error copy shown on the
+        # register. The COO's default screen set is dashboard+inbox (ADR-047),
+        # so grant the work set explicitly to keep asserting that behaviour.
+        from apps.ui.screens import WORK_KEYS
+
+        coo = role_users["coo"]
+        coo.profile.screen_access = sorted(WORK_KEYS)
+        coo.profile.save(update_fields=["screen_access"])
+        client.force_login(coo)
         resp = client.post(f"/ap/rfps/{rfp.id}/approve/", follow=True)
         rfp.refresh_from_db()
         assert rfp.status == "checked"  # nothing moved

@@ -4,9 +4,9 @@
 {% block content %}
 <div class="p-6 max-w-3xl">
   {% if editing %}
-  {% include "ui/partials/page_header.html" with title="Edit user" subtitle="Update names, contact details, approval role and status. Username is immutable." back_url_name="ui:user_management" back_label="User management" %}
+  {% include "ui/partials/page_header.html" with title="Edit user" subtitle="Update names, contact details, approval role, screen access and status. Username is immutable." back_url_name="ui:user_management" back_label="User management" %}
   {% else %}
-  {% include "ui/partials/page_header.html" with title="Add a new staff login" subtitle="Creates a username + password so the person can sign in, and assigns their approval role / custodian expectation." back_url_name="ui:user_management" back_label="User management" %}
+  {% include "ui/partials/page_header.html" with title="Add a new staff login" subtitle="Creates a username + password so the person can sign in, and assigns their approval role / screen access." back_url_name="ui:user_management" back_label="User management" %}
   {% endif %}
 
   {% capture as fields_html %}
@@ -38,9 +38,9 @@
   <div>
     <label class="form-label" for="id_role">Approval role</label>
     <select id="id_role" name="role" class="form-field">
-      <option value="">No approval role (e.g. custodian)</option>
+      <option value="" {% if not screen_role_selected %}selected{% endif %}>No approval role (e.g. custodian)</option>
       {% for value, label in role_choices %}
-      <option value="{{ value }}" {% if editing_role == value %}selected{% endif %}>{{ label }}</option>
+      <option value="{{ value }}" {% if screen_role_selected == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </div>
@@ -52,23 +52,78 @@
   </div>
   {% if editing %}
   <div class="flex items-center gap-2 self-end">
-    <div class="flex items-center gap-2">
-      <label class="inline-flex items-center gap-2 text-sm font-medium text-surface-700">
-        <input type="checkbox" name="is_active" value="1" {% if editing.is_active %}checked{% endif %}
-               class="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500"
-               {% if editing.pk == request.user.pk %}disabled{% endif %}>
-        Active login
-      </label>
-      <p class="form-hint">Uncheck to deactivate (deactivated users cannot sign in, history is kept).</p>
-    </div>
+    <label class="inline-flex items-center gap-2 text-sm font-medium text-surface-700">
+      <input type="checkbox" name="is_active" value="1" {% if editing.is_active %}checked{% endif %}
+             class="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500"
+             {% if editing.pk == request.user.pk %}disabled{% endif %}>
+      Active login
+    </label>
+    <p class="form-hint">Uncheck to deactivate (history is kept).</p>
   </div>
   {% endif %}
+
+  <!-- Screen access (ADR-047) -->
+  <div class="md:col-span-2 mt-2 border-t border-surface-200 pt-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-surface-900">Screen access</h3>
+        <p class="text-xs text-surface-500 mt-0.5">
+          What this person may open and use. Unchecked screens are blocked
+          everywhere — hidden from the sidebar <em>and</em> denied by direct
+          URL, including the API (ADR-047). Leaving the set equal to a role's
+          defaults keeps the user following that role template automatically.
+        </p>
+      </div>
+      {% if screen_custom %}
+      <span class="badge badge-pipeline flex-shrink-0">custom grants</span>
+      {% elif editing %}
+      <span class="badge badge-neutral flex-shrink-0">follows role template</span>
+      {% endif %}
+    </div>
+
+    {% if not screen_editable %}
+    <p class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      {% if editing.is_superuser %}Superadmin accounts are managed by superadmins only.{% else %}You cannot change screen access for this account ({{ editing.username }} holds the Head role).{% endif %}
+    </p>
+    {% endif %}
+
+    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+      {% for group in screen_groups %}
+      <div {% if group.section %}{% endif %}>
+        <div class="text-[10px] uppercase tracking-wider text-surface-400 font-semibold mb-1.5">
+          {{ group.section|default:"Overview" }}
+        </div>
+        <div class="space-y-1">
+          {% for item in group.items %}
+          <label class="flex items-center gap-2 text-sm text-surface-700 {% if item.key == 'dashboard' %}opacity-70{% endif %}">
+            <input type="checkbox" name="screens" value="{{ item.key }}"
+                   {% if item.key in screen_checked %}checked{% endif %}
+                   {% if not screen_editable or item.key == 'dashboard' %}disabled{% endif %}
+                   class="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500 screen-checkbox">
+            {{ item.label }}
+            {% if item.key == 'dashboard' %}<span class="text-[10px] text-surface-400">(always on — landing)</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if screen_editable %}
+    <div class="mt-3 flex items-center gap-3">
+      <button type="button" id="screens-all" class="rounded-md border border-surface-300 px-2.5 py-1 text-xs font-medium text-surface-700 hover:bg-surface-50">All screens</button>
+      <button type="button" id="screens-role" class="rounded-md border border-surface-300 px-2.5 py-1 text-xs font-medium text-surface-700 hover:bg-surface-50">Reset to role defaults</button>
+      <button type="button" id="screens-none" class="rounded-md border border-surface-300 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50">None</button>
+    </div>
+    {% endif %}
+  </div>
   {% endcapture %}
 
   {% capture as footer_html %}
   <p class="text-xs text-surface-500">
     The approval chain is <span class="font-medium text-surface-700">staff &rarr; head &rarr; coo</span>;
     the head checks every document, the COO signs above &#8369;100,000 (ADR-020 / ADR-036).
+    Screen access (ADR-047) is separate: it controls what a person can <em>open</em>, not whose signature is valid.
   </p>
   {% endcapture %}
 
@@ -78,4 +133,29 @@
   {% include "ui/partials/form_card.html" with action_url="ui:user_create" fields_html=fields_html footer_html=footer_html submit_label="Create user" cancel_url_name="ui:user_management" %}
   {% endif %}
 </div>
+
+{{ role_templates|json_script:"role-templates" }}
+{% if screen_editable %}
+<script>
+  (function () {
+    var RT = JSON.parse(document.getElementById('role-templates').textContent);
+    var roleSel = document.getElementById('id_role');
+    function boxes() { return Array.prototype.slice.call(document.querySelectorAll('.screen-checkbox')); }
+    function applyKeys(keys) {
+      boxes().forEach(function (cb) {
+        if (cb.disabled) return;
+        cb.checked = keys.indexOf(cb.value) !== -1;
+      });
+    }
+    function currentTemplate() { return RT[roleSel ? roleSel.value : ''] || []; }
+    if (roleSel) roleSel.addEventListener('change', function () { applyKeys(currentTemplate()); });
+    var all = document.getElementById('screens-all');
+    var reset = document.getElementById('screens-role');
+    var none = document.getElementById('screens-none');
+    if (all) all.addEventListener('click', function () { applyKeys(RT['head'] || []); });
+    if (reset) reset.addEventListener('click', function () { applyKeys(currentTemplate()); });
+    if (none) none.addEventListener('click', function () { applyKeys([]); });
+  })();
+</script>
+{% endif %}
 {% endblock %}

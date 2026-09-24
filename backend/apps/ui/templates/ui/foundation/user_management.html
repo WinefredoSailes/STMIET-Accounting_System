@@ -48,7 +48,10 @@
         <tr class="hover:bg-surface-50">
           <td class="px-4 py-2.5">
             <div class="font-medium">{{ r.user.username }}</div>
-            <div class="text-xs text-surface-400">{% if r.user.is_superuser %}Superadmin{% endif %}</div>
+            <div class="text-xs text-surface-400">
+              {% if r.user.is_superuser %}Superadmin{% endif %}
+              {% if r.profile.screen_access %}<span class="ml-1 inline-flex rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">custom access</span>{% endif %}
+            </div>
           </td>
           <td class="px-4 py-2.5">
             <div class="text-surface-700">{{ r.user.get_full_name|default:"—" }}</div>

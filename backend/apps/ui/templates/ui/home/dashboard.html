@@ -28,7 +28,7 @@
   <!-- Zone A — the big 8 -->
   <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     {% for kpi in kpis %}
-    <a href="{{ kpi.href_name|url_with:kpi.href_args }}" class="kpi-card block">
+    {% if kpi.href %}<a href="{{ kpi.href }}" class="kpi-card block">{% else %}<div class="kpi-card">{% endif %}
       <div class="kpi-accent {{ kpi.accent }}"></div>
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
@@ -55,7 +55,7 @@
         <span class="text-[11px] text-surface-400">{{ kpi.trend_note|default:"Snapshot" }}</span>
         {% endif %}
       </div>
-    </a>
+    {% if kpi.href %}</a>{% else %}</div>{% endif %}
     {% endfor %}
   </div>
 
@@ -116,7 +116,7 @@
     <div class="card p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-surface-900">AR Aging</h2>
-        <a href="{% url 'ui:ar_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>
+        {% if 'ar_aging' in allowed_screens %}<a href="{% url 'ui:ar_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>{% endif %}
       </div>
       <div class="mt-3 space-y-2">
         {% for b in ar_aging.buckets %}
@@ -132,7 +132,7 @@
     <div class="card p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-surface-900">AP Aging</h2>
-        <a href="{% url 'ui:ap_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>
+        {% if 'ap_aging' in allowed_screens %}<a href="{% url 'ui:ap_aging' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open aging &rarr;</a>{% endif %}
       </div>
       <div class="mt-3 space-y-2">
         {% for b in ap_aging.buckets %}
@@ -152,7 +152,7 @@
     <div class="card p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-surface-900">Disbursement Pipeline</h2>
-        <a href="{% url 'ui:rfp_list' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">RFPs &rarr;</a>
+        {% if 'rfp_list' in allowed_screens %}<a href="{% url 'ui:rfp_list' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">RFPs &rarr;</a>{% endif %}
       </div>
       <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
         <div class="bg-surface-50 rounded-lg p-3">
@@ -174,21 +174,21 @@
       <div class="mt-3 rounded-md bg-accent-50 border border-accent-200 px-3 py-2 text-xs text-accent-800 flex items-center gap-2">
         <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-bell-alert"/></svg>
         <span><span class="font-bold">{{ waiting_on_you }}</span> document(s) waiting on you</span>
-        <a href="{% url 'ui:my_approvals' %}" class="ml-auto font-medium underline">Review &rarr;</a>
+        {% if 'my_approvals' in allowed_screens %}<a href="{% url 'ui:my_approvals' %}" class="ml-auto font-medium underline">Review &rarr;</a>{% endif %}
       </div>
       {% endif %}
       {% if reversal_pending_count %}
       <div class="mt-3 rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800 flex items-center gap-2">
         <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-alert-circle"/></svg>
         <span><span class="font-bold">{{ reversal_pending_count }}</span> reversal request(s) pending</span>
-        <a href="{% url 'ui:je_list' %}?status=posted" class="ml-auto font-medium underline">Review &rarr;</a>
+        {% if 'je_list' in allowed_screens %}<a href="{% url 'ui:je_list' %}?status=posted" class="ml-auto font-medium underline">Review &rarr;</a>{% endif %}
       </div>
       {% endif %}
       {% if pending_count %}
       <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
         <svg class="h-4 w-4 flex-shrink-0" aria-hidden="true"><use href="#i-clock"/></svg>
         <span><span class="font-bold">{{ pending_count }}</span> pending / not yet posted</span>
-        <a href="{% url 'ui:je_list' %}?tab=pending" class="ml-auto font-medium underline">Review &rarr;</a>
+        {% if 'je_list' in allowed_screens %}<a href="{% url 'ui:je_list' %}?tab=pending" class="ml-auto font-medium underline">Review &rarr;</a>{% endif %}
       </div>
       {% endif %}
     </div>
@@ -196,7 +196,7 @@
     <div class="card p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-surface-900">Month-End Close</h2>
-        <a href="{% url 'ui:month_end_close' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open close &rarr;</a>
+        {% if 'month_end_close' in allowed_screens %}<a href="{% url 'ui:month_end_close' %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Open close &rarr;</a>{% endif %}
       </div>
       {% if close %}
       <div class="mt-3 text-sm text-surface-700">

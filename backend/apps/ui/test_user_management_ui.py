@@ -194,3 +194,127 @@ def test_head_can_deactivate_staff(client, role_users):
     client.post(f"/settings/users/{target.pk}/toggle-active/")
     target.refresh_from_db()
     assert not target.is_active
+
+
+# --------------------------- screen grants ----------------------------------
+
+
+def test_edit_form_shows_screen_access_grid(client, role_users):
+    _login(client, role_users["boss"])
+    body = client.get(f"/settings/users/{role_users['staffer'].pk}/update/").content.decode()
+    assert "Screen access" in body
+    assert 'name="screens" value="je_list"' in body
+    assert "always on" in body  # dashboard locked on
+
+
+def test_custom_grants_round_trip(client, role_users):
+    from apps.ui.screens import effective_screens
+
+    staff = role_users["staffer"]
+    _login(client, role_users["boss"])
+    resp = client.post(
+        f"/settings/users/{staff.pk}/update/",
+        {"first_name": "", "last_name": "", "email": "", "role": "staff",
+         "is_active": "1", "password": "",
+         "screens": ["dashboard", "my_approvals", "je_list", "bogus_key"]},
+        follow=True,
+    )
+    assert resp.status_code == 200
+    staff.refresh_from_db()
+    screens = effective_screens(staff)
+    assert screens == frozenset({"dashboard", "my_approvals", "je_list"})
+    # unknown key dropped, template not "accidentally" matched: stored explicitly
+    assert staff.profile.screen_access == ["dashboard", "je_list", "my_approvals"]
+    # and enforcement really bites (as the staffer, not the superuser admin):
+    client.force_login(staff)
+    assert client.get("/journal/").status_code == 200
+    assert client.get("/ap/rfps/").status_code == 403
+
+
+def test_selection_equal_to_template_stays_following(client, role_users):
+    from apps.ui.screens import WORK_KEYS, effective_screens
+
+    staff = role_users["staffer"]
+    _login(client, role_users["boss"])
+    client.post(
+        f"/settings/users/{staff.pk}/update/",
+        {"first_name": "", "last_name": "", "email": "", "role": "staff",
+         "is_active": "1", "password": "",
+         "screens": sorted(WORK_KEYS)},
+    )
+    staff.refresh_from_db()
+    assert staff.profile.screen_access is None  # follows role template
+    assert effective_screens(staff) == WORK_KEYS
+
+
+def test_head_can_narrow_staff_but_not_head_or_self(client, role_users):
+    from apps.ui.screens import SCREEN_KEYS, effective_screens
+
+    head = role_users["head"]
+    staffer = role_users["staffer"]
+    client.force_login(head)
+
+    # head narrows staff
+    client.post(
+        f"/settings/users/{staffer.pk}/update/",
+        {"first_name": "", "last_name": "", "email": "", "role": "staff",
+         "is_active": "1", "password": "", "screens": ["dashboard", "cv_list"]},
+    )
+    staffer.refresh_from_db()
+    assert effective_screens(staffer) == frozenset({"dashboard", "cv_list"})
+
+    # head cannot change own grants (nor another head's — none here) 
+    mine = sorted(SCREEN_KEYS - {"journal"})
+    client.post(
+        f"/settings/users/{head.pk}/update/",
+        {"first_name": "", "last_name": "", "email": "", "role": "head",
+         "is_active": "1", "password": "", "screens": ["dashboard"]},
+    )
+    head.refresh_from_db()
+    assert head.profile.screen_access is None
+    assert effective_screens(head) == SCREEN_KEYS
+
+    # form renders read-only panel for a head target opened by a head
+    other_head = User.objects.create_user("head2x", password="x")
+    from apps.foundation.models import UserProfile
+
+    UserProfile.objects.create(user=other_head, approval_role="head")
+    body = client.get(f"/settings/users/{other_head.pk}/update/").content.decode()
+    assert "cannot change screen access" in body
+
+
+def test_narrow_grants_then_relogin_landing_nav_and_403(client, role_users):
+    """The full manual pass as ONE flow: boss narrows a staffer to
+    dashboard+inbox, staffer re-logs in -> lands on Dashboard, sees ONLY
+    those two nav items, and deep-typed work URLs 403."""
+    import re
+
+    from apps.ui.screens import WORK_KEYS
+
+    staffer = role_users["staffer"]
+    assert WORK_KEYS  # sanity: staffer's default was the whole work set
+    _login(client, role_users["boss"])
+    resp = client.post(
+        f"/settings/users/{staffer.pk}/update/",
+        {"first_name": staffer.first_name, "last_name": staffer.last_name,
+         "email": staffer.email, "role": "staff", "is_active": "1",
+         "password": "", "screens": ["dashboard", "my_approvals"]},
+    )
+    assert resp.status_code == 302
+    staffer.refresh_from_db()
+    assert staffer.profile.screen_access == ["dashboard", "my_approvals"]
+
+    # "re-login": fresh session as the staffer (not the admin who edited)
+    client.force_login(staffer)
+    landing = client.get("/")
+    assert landing.status_code == 200               # dashboard always held
+    body = landing.content.decode()
+    nav = re.search(r'<nav id="sidebar-nav".*?</nav>', body, re.S).group(0)
+    assert "My Approvals" in nav
+    for hidden in ("Journal Entries", "Chart of Accounts", "Purchase Orders", "Cash Short"):
+        assert hidden not in nav, f"{hidden} still advertised after narrowing"
+
+    # the rest of the desk is gone server-side, not just visually
+    for url in ("/journal/", "/ap/rfps/", "/ar/aging/", "/settings/users/"):
+        assert client.get(url).status_code == 403, url
+    assert client.get("/approvals/").status_code == 200

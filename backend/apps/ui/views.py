@@ -255,9 +255,7 @@ def _reversal_context(request, entry):
             and pending is None
         ),
         "can_approve_reversal": bool(
-            pending
-            and approval_role_of(request.user) == "head"
-            and pending.requested_by_id != request.user.id
+            pending and approval_role_of(request.user) == "head"
         ),
     }
 
@@ -310,12 +308,15 @@ def _page_ledger(request, rows, opening_dr=None, opening_cr=None):
 
 
 def login_view(request):
+    from .screens import home_url_for
+
     if request.user.is_authenticated:
-        return redirect("ui:dashboard")
+        return redirect(home_url_for(request.user))
     form = AuthenticationForm(request, data=request.POST or None)
     if request.method == "POST" and form.is_valid():
-        login(request, form.get_user())
-        return redirect("ui:dashboard")
+        user = form.get_user()
+        login(request, user)
+        return redirect(home_url_for(user))
     return render(request, "ui/home/login.html", {"form": form})
 
 
@@ -357,8 +358,33 @@ def my_approvals(request):
         ROLE_LABELS,
     )
 
+    # Reject endpoints by queue kind — the inbox can send back a note, so
+    # sign-off and return happen without leaving the queue (ADR-047: needed
+    # by approvers whose screen set is dashboard+inbox only).
+    reject_urls = {
+        "je": "ui:je_reject",
+        "reversal": "ui:je_reversal_reject",
+        "ar_receipt": "ui:receipt_reject",
+        "invoice": "ui:si_reject",
+        "rfp": "ui:rfp_reject",
+        "po": "ui:po_reject",
+        "cv": "ui:cv_reject",
+        "billing": "ui:billing_reject",
+        "transfer": "ui:transfer_reject",
+    }
+
     queues = pending_approval_queue(request.user)
     has_inbox = bool(queues)
+
+    # A document number opens the register it lives in — only a link when the
+    # viewer actually holds that screen (ADR-047: no 403 traps in the inbox).
+    from .screens import effective_screens, screen_for_url_name
+
+    allowed = set(effective_screens(request.user))
+    for item in queues:
+        detail = item.get("detail")
+        screen = screen_for_url_name(detail[0].split(":")[-1]) if detail else None
+        item["can_open"] = bool(detail) and (screen is None or screen in allowed)
 
     # Client-side-invisible filter bar: kind / free text / date window are all
     # applied server-side here, in memory, BEFORE group_by_role — so the
@@ -403,6 +429,7 @@ def my_approvals(request):
             "date_from": date_from,
             "date_to": date_to,
             "filters_active": bool(kind or q or date_from or date_to),
+            "reject_urls": reject_urls,
         },
     )
 
@@ -485,7 +512,7 @@ def je_create(request):
             entry = _create_entry_from_form(request)
             messages.success(request, f"Entry {entry.entry_no} saved as draft.")
             return redirect("ui:je_detail", pk=entry.id)
-        except (AccountingError, ValueError, KeyError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     ctx = {
         "company": company,
@@ -613,6 +640,16 @@ def _create_entry_from_form(request):
     raise last_exc
 
 
+def _form_date(value, label):
+    """Parse an ISO date field into a friendly ValidationError, never a 500."""
+    if not value:
+        raise ValidationError(f"Enter the {label}.")
+    try:
+        return date.fromisoformat(value)
+    except (ValueError, TypeError) as exc:
+        raise ValidationError(f"Enter a valid {label}.") from exc
+
+
 def _rfp_lines_from_form(request):
     """Parse the RFP Dr/Cr line grid (parallel arrays) into line dicts.
 
@@ -631,8 +668,12 @@ def _rfp_lines_from_form(request):
         seg_id = seg_ids[i] if i < len(seg_ids) else ""
         if not code or not seg_id:
             continue
-        debit = money((debits[i] if i < len(debits) else 0) or 0)
-        credit = money((credits[i] if i < len(credits) else 0) or 0)
+        try:
+            debit = money((debits[i] if i < len(debits) else 0) or 0)
+            credit = money((credits[i] if i < len(credits) else 0) or 0)
+        except (ValidationError, ValueError, TypeError, ArithmeticError) as exc:
+            detail = getattr(exc, "message", None) or str(exc)
+            raise ValidationError(f"Line {i + 1}: {detail}") from exc
         if not debit and not credit:
             continue
         if debit and credit:
@@ -810,13 +851,13 @@ def je_submit(request, pk):
         return guard
     if entry.created_by_id != request.user.id:
         messages.error(request, "Only the preparer may submit this entry.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     if entry.status != PostingStatus.DRAFT:
         messages.error(request, "Only draft entries can be submitted.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     if not entry.lines.exists():
         messages.error(request, "Entry has no lines.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     try:
         entry.status = PostingStatus.SUBMITTED
         entry.approved_by = None
@@ -830,7 +871,7 @@ def je_submit(request, pk):
         messages.success(request, f"Entry {entry.entry_no} submitted for approval.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:je_detail", pk))
 
 
 @login_required
@@ -858,7 +899,7 @@ def je_approve(request, pk):
         messages.success(request, f"Entry {entry.entry_no} approved.")
     except (ValueError, AccountingError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:je_detail", pk))
 
 
 @require_POST
@@ -889,7 +930,7 @@ def je_reject(request, pk):
         messages.success(request, f"Entry {entry.entry_no} rejected and returned to draft.")
     except (ValueError, AccountingError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:je_detail", pk))
 
 
 @require_POST
@@ -902,7 +943,7 @@ def je_post(request, pk):
         return guard
     if entry.status != PostingStatus.APPROVED:
         messages.error(request, "Only approved entries can be posted.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     try:
         from apps.core.approvals import require_approval_role
 
@@ -911,7 +952,7 @@ def je_post(request, pk):
         messages.success(request, f"Entry {posted.entry_no} posted.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:je_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:je_detail", pk))
 
 
 @login_required
@@ -932,16 +973,16 @@ def je_edit(request, pk):
         return redirect(source["detail"], pk=source["pk"])
     if entry.status != PostingStatus.DRAFT:
         messages.error(request, "Only draft entries can be edited.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     if entry.created_by_id != request.user.id and not request.user.is_superuser:
         messages.error(request, "Only the creator or a super admin may edit this entry.")
-        return redirect("ui:je_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:je_detail", pk))
     if request.method == "POST":
         try:
             updated_entry = _update_entry_from_form(request, entry)
             messages.success(request, f"Entry {updated_entry.entry_no} updated.")
             return redirect("ui:je_detail", pk=updated_entry.id)
-        except (AccountingError, ValueError, KeyError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     ctx = {
         "company": entry.company,
@@ -2168,10 +2209,7 @@ def receipt_detail(request, pk: int):
             and pending_reversal is None
         )
         if pending_reversal:
-            can_approve_reversal = (
-                get_approval_role(request.user) == "head"
-                and pending_reversal.requested_by_id != request.user.id
-            )
+            can_approve_reversal = get_approval_role(request.user) == "head"
     return render(
         request,
         "ui/ar/receipt_detail.html",
@@ -2203,7 +2241,7 @@ def receipt_submit(request, pk: int):
         messages.success(request, f"Receipt {receipt.receipt_no} submitted for approval.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:receipt_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
 
 @login_required
@@ -2217,7 +2255,7 @@ def receipt_approve(request, pk: int):
         messages.success(request, f"Receipt {receipt.receipt_no} approved and posted to GL.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:receipt_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
 
 @login_required
@@ -2232,7 +2270,7 @@ def receipt_reject(request, pk: int):
         messages.success(request, f"Receipt {receipt.receipt_no} rejected. Returned to Draft.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:receipt_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
 
 def _si_lines_from_form(request):
@@ -2412,7 +2450,7 @@ def si_submit(request, pk: int):
         messages.success(request, f"Invoice {invoice.invoice_no} submitted for approval.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:si_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:si_detail", pk))
 
 
 @login_required
@@ -2426,7 +2464,7 @@ def si_approve(request, pk: int):
         messages.success(request, f"Invoice {invoice.invoice_no} approved and posted to GL.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:si_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:si_detail", pk))
 
 
 @login_required
@@ -2441,7 +2479,7 @@ def si_reject(request, pk: int):
         messages.success(request, f"Invoice {invoice.invoice_no} rejected. Returned to Draft.")
     except Exception as exc:
         messages.error(request, str(exc))
-    return redirect("ui:si_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:si_detail", pk))
 
 
 @login_required
@@ -2480,7 +2518,7 @@ def receipt_deposit(request, pk: int):
             messages.success(request, f"Deposit {deposit.deposit_no} recorded and posted to GL.")
         except Exception as exc:
             messages.error(request, str(exc))
-        return redirect("ui:receipt_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
     # GET: show deposit form with the receipt and available bank accounts
     banks = Account.objects.filter(is_postable=True).order_by("code")
@@ -2592,11 +2630,13 @@ def rfp_create(request):
 
     if request.method == "POST":
         try:
-            payee = Supplier.objects.get(pk=request.POST["payee"])
-            segment = Segment.objects.get(pk=request.POST["segment"])
-            rfp_date = request.POST.get("rfp_date", "")
-            if not rfp_date:
-                raise ValidationError("Enter the date of request.")
+            payee = Supplier.objects.filter(pk=request.POST.get("payee") or 0).first()
+            if payee is None:
+                raise ValidationError("Choose a payee.")
+            segment = Segment.objects.filter(pk=request.POST.get("segment") or 0).first()
+            if segment is None:
+                raise ValidationError("Choose a segment (set on the first charge line).")
+            rfp_date = _form_date(request.POST.get("rfp_date", ""), "date of request")
             po = None
             po_pk = (request.POST.get("po") or "").strip()
             if po_pk:
@@ -2604,14 +2644,14 @@ def rfp_create(request):
             ap_number = DocumentSequence.next_number(
                 company=payee.default_segment.company if payee.default_segment else segment.company,
                 form_code="RFP",
-                year=int(rfp_date[:4]),
+                year=rfp_date.year,
             )
             lines = _rfp_lines_from_form(request)
             if not lines:
-                raise ValueError("Add at least one charge line.")
+                raise ValidationError("Add at least one charge line.")
             rfp = RFPService.create_rfp(
                 ap_number=ap_number,
-                rfp_date=date.fromisoformat(rfp_date),
+                rfp_date=rfp_date,
                 payee=payee,
                 segment=segment,
                 purpose=request.POST.get("purpose", ""),
@@ -2621,7 +2661,7 @@ def rfp_create(request):
             )
             messages.success(request, f"RFP {rfp.ap_number} created (prepared).")
             return redirect("ui:rfp_detail", pk=rfp.id)
-        except AccountingError as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     return render(
         request,
@@ -2794,7 +2834,7 @@ def rfp_submit(request, pk):
         messages.success(request, f"RFP {rfp.ap_number} submitted.")
     except ValueError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:rfp_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
 
 @login_required
@@ -2822,7 +2862,7 @@ def rfp_approve(request, pk):
         response = render(request, "ui/ap/_rfp_row.html", {"rfp": rfp})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
-    return redirect("ui:rfp_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
 
 @login_required
@@ -2846,7 +2886,7 @@ def rfp_finance_notes(request, pk):
         messages.success(request, "Finance notes saved for issuance.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:rfp_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
 
 @login_required
@@ -2863,7 +2903,7 @@ def rfp_approve_cnr(request, pk):
         messages.success(request, f"RFP {rfp.ap_number} approved by CNR.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:rfp_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
 
 @login_required
@@ -2890,7 +2930,7 @@ def rfp_reject(request, pk):
         messages.success(request, f"RFP {rfp.ap_number} rejected and returned to {rfp.created_by}.")
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:rfp_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
 
 @login_required
@@ -2905,7 +2945,7 @@ def rfp_revise(request, pk):
     )
     if request.user.id != rfp.created_by_id:
         messages.error(request, "Only the preparer may revise this RFP.")
-        return redirect("ui:rfp_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
     if request.method == "POST":
         try:
@@ -2924,8 +2964,8 @@ def rfp_revise(request, pk):
                 purpose=request.POST.get("purpose", ""),
             )
             messages.success(request, f"RFP {rfp.ap_number} revised and resubmitted.")
-            return redirect("ui:rfp_detail", pk=pk)
-        except (AccountingError, ValidationError) as exc:
+            return redirect(_safe_next(request, "ui:rfp_detail", pk))
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
 
     return render(
@@ -2954,18 +2994,20 @@ def rfp_edit(request, pk):
     )
     if rfp.status != "prepared":
         messages.error(request, "Only prepared RFPs can be edited.")
-        return redirect("ui:rfp_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:rfp_detail", pk))
     if request.user.id != rfp.created_by_id:
         messages.error(request, "Only the preparer may edit this RFP.")
-        return redirect("ui:rfp_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:rfp_detail", pk))
 
     if request.method == "POST":
         try:
-            payee = get_object_or_404(Supplier, pk=request.POST["payee"])
-            segment = get_object_or_404(Segment, pk=request.POST["segment"])
-            rfp_date = request.POST.get("rfp_date", "")
-            if not rfp_date:
-                raise ValidationError("Enter the date of request.")
+            payee = Supplier.objects.filter(pk=request.POST.get("payee") or 0).first()
+            if payee is None:
+                raise ValidationError("Choose a payee.")
+            segment = Segment.objects.filter(pk=request.POST.get("segment") or 0).first()
+            if segment is None:
+                raise ValidationError("Choose a segment (set on the first charge line).")
+            rfp_date = _form_date(request.POST.get("rfp_date", ""), "date of request")
             po = None
             po_pk = (request.POST.get("po") or "").strip()
             if po_pk:
@@ -2976,7 +3018,7 @@ def rfp_edit(request, pk):
             rfp = RFPService.edit_prepared(
                 rfp,
                 user=request.user,
-                rfp_date=date.fromisoformat(rfp_date),
+                rfp_date=rfp_date,
                 payee=payee,
                 segment=segment,
                 po=po,
@@ -2984,8 +3026,8 @@ def rfp_edit(request, pk):
                 lines=lines,
             )
             messages.success(request, f"RFP {rfp.ap_number} updated.")
-            return redirect("ui:rfp_detail", pk=pk)
-        except (AccountingError, ValidationError) as exc:
+            return redirect(_safe_next(request, "ui:rfp_detail", pk))
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
 
     return render(
@@ -3224,7 +3266,7 @@ def po_submit(request, pk):
         messages.success(request, f"PO {po.po_number} submitted.")
     except ValueError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:po_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:po_detail", pk))
 
 
 @login_required
@@ -3249,7 +3291,7 @@ def po_approve(request, pk):
         response = render(request, "ui/ap/_po_row.html", {"po": po})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
-    return redirect("ui:po_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:po_detail", pk))
 
 
 @login_required
@@ -3266,7 +3308,7 @@ def po_approve_cnr(request, pk):
         messages.success(request, f"PO {po.po_number} approved by CNR.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:po_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:po_detail", pk))
 
 
 @login_required
@@ -3292,7 +3334,7 @@ def po_reject(request, pk):
         messages.success(request, f"PO {po.po_number} rejected and returned to {po.created_by}.")
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:po_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:po_detail", pk))
 
 
 @login_required
@@ -3307,7 +3349,7 @@ def po_revise(request, pk):
     )
     if request.user.id != po.created_by_id:
         messages.error(request, "Only the preparer may revise this PO.")
-        return redirect("ui:po_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:po_detail", pk))
 
     if request.method == "POST":
         try:
@@ -3330,7 +3372,7 @@ def po_revise(request, pk):
                 notes=request.POST.get("notes", ""),
             )
             messages.success(request, f"PO {po.po_number} revised and resubmitted.")
-            return redirect("ui:po_detail", pk=pk)
+            return redirect(_safe_next(request, "ui:po_detail", pk))
         except (AccountingError, ValidationError) as exc:
             messages.error(request, str(exc))
 
@@ -3355,7 +3397,7 @@ def po_close(request, pk):
         messages.success(request, f"PO {po.po_number} closed.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:po_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:po_detail", pk))
 
 
 @login_required
@@ -3784,7 +3826,7 @@ def cv_create(request):
             )
             messages.success(request, f"Check voucher {cv.cv_number} issued.")
             return redirect("ui:cv_detail", pk=cv.id)
-        except (AccountingError, ValueError, KeyError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     selected_rfp = None
     payable = None
@@ -3989,7 +4031,7 @@ def cv_approve(request, pk):
         response = render(request, "ui/ap/_cv_row.html", {"cv": cv})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
-    return redirect("ui:cv_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:cv_detail", pk))
 
 
 @login_required
@@ -4010,7 +4052,7 @@ def cv_clear(request, pk):
         messages.success(request, f"CV {cv.cv_number} cleared — entry in GL.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:cv_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:cv_detail", pk))
 
 
 @login_required
@@ -4034,7 +4076,7 @@ def cv_reject(request, pk):
         messages.success(request, f"CV {cv.cv_number} rejected and returned to {cv.created_by}.")
     except AccountingError as exc:
         messages.error(request, str(exc))
-    return redirect("ui:cv_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:cv_detail", pk))
 
 
 @login_required
@@ -4049,7 +4091,7 @@ def cv_revise(request, pk):
     )
     if request.user.id != cv.created_by_id:
         messages.error(request, "Only the issuer may revise this CV.")
-        return redirect("ui:cv_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:cv_detail", pk))
 
     if request.method == "POST":
         try:
@@ -4063,7 +4105,7 @@ def cv_revise(request, pk):
                 cv_date=date.fromisoformat(request.POST["cv_date"]),
             )
             messages.success(request, f"CV {cv.cv_number} revised and resubmitted.")
-            return redirect("ui:cv_detail", pk=pk)
+            return redirect(_safe_next(request, "ui:cv_detail", pk))
         except (AccountingError, ValidationError, ValueError, KeyError) as exc:
             messages.error(request, str(exc))
 
@@ -4168,7 +4210,7 @@ def pcf_replenish(request):
             replen.save(update_fields=["payee_name", "reference", "request_date", "updated_at"])
             messages.success(request, f"PCF replenishment {replen.voucher_no} requested (₱{replen.amount}).")
             return redirect("ui:pcf_replenishment_list")
-        except (AccountingError, ValueError, KeyError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     return render(
         request,
@@ -4364,7 +4406,7 @@ def pcf_replenishment_post(request, pk):
         messages.success(request, f"Replenishment {replen.id} posted to GL.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:pcf_replenishment_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:pcf_replenishment_detail", pk))
 
 
 @login_required
@@ -4384,7 +4426,7 @@ def pcf_replenishment_approve(request, pk):
         messages.success(request, f"Replenishment {replen.id} approved and batched to {replen.conso.batch_no}.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:pcf_replenishment_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:pcf_replenishment_detail", pk))
 
 
 @login_required
@@ -4695,7 +4737,7 @@ def cash_short_record(request):
                 user=request.user,
             )
             messages.success(request, f"Variance ₱{ws.variance} recorded (open).")
-            return redirect("ui:cash_short_list")
+            return redirect(_safe_next(request, "ui:cash_short_list"))
         except (ObjectDoesNotExist, ValueError, AccountingError) as exc:
             messages.error(request, str(exc))
     return render(
@@ -4727,7 +4769,7 @@ def cash_short_approve(request, pk):
         response = render(request, "ui/cash/_cash_short_row.html", {"ws": ws})
         response["HX-Trigger"] = json.dumps({"showToast": msg})
         return response
-    return redirect("ui:cash_short_list")
+    return redirect(_safe_next(request, "ui:cash_short_list"))
 
 
 @login_required
@@ -5271,6 +5313,7 @@ def coa_print(request):
             "q": request.GET.get("q", "").strip(),
             "segment_sel": request.GET.get("segment", "").strip(),
             "account_type_sel": request.GET.get("account_type", "").strip(),
+            "querystring": request.GET.urlencode(),
         },
     )
 
@@ -6143,7 +6186,7 @@ def transfer_edit(request, pk):
     )
     if not can_edit:
         messages.error(request, "This transfer can no longer be edited.")
-        return redirect("ui:transfer_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:transfer_detail", pk))
 
     if request.method == "POST":
         try:
@@ -6164,7 +6207,7 @@ def transfer_edit(request, pk):
                 user=request.user,
             )
             messages.success(request, f"Transfer {transfer.voucher_no} updated.")
-            return redirect("ui:transfer_detail", pk=pk)
+            return redirect(_safe_next(request, "ui:transfer_detail", pk))
         except (AccountingError, ValidationError) as exc:
             messages.error(request, str(exc))
 
@@ -6185,7 +6228,7 @@ def transfer_submit(request, pk):
         messages.success(request, f"Transfer {transfer.voucher_no} submitted for approval.")
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:transfer_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:transfer_detail", pk))
 
 
 @login_required
@@ -6207,7 +6250,7 @@ def transfer_approve(request, pk):
         messages.success(request, f"Transfer {transfer.voucher_no} approved — entry in GL.")
     except (AccountingError, ValidationError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:transfer_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:transfer_detail", pk))
 
 
 @login_required
@@ -6227,7 +6270,7 @@ def transfer_reject(request, pk):
         messages.success(request, f"Transfer {transfer.voucher_no} returned to the preparer.")
     except (AccountingError, ValidationError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:transfer_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:transfer_detail", pk))
 
 
 @login_required
@@ -6244,7 +6287,7 @@ def transfer_revise(request, pk):
         return redirect("ui:transfer_edit", pk=pk)
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
-        return redirect("ui:transfer_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:transfer_detail", pk))
 
 
 def _transfer_type(transfer):
@@ -6472,6 +6515,68 @@ def _require_user_admin(request):
         )
 
 
+def _screen_access_context(request, *, editing=None):
+    """Screen Access checkbox grid data for the user create/edit form (ADR-047).
+
+    Checked state = the target's explicit grants, else their role template, so
+    the form always shows the truth even while storage is still null.
+    """
+    from . import screens as S
+    from apps.core.approvals import get_approval_role
+
+    actor = request.user
+    groups = []
+    current_section = object()
+    for key, label, section in S.SCREENS:
+        if section != current_section:
+            groups.append({"section": section, "items": []})
+            current_section = section
+        groups[-1]["items"].append({"key": key, "label": label})
+
+    if editing is not None:
+        checked = set(S.effective_screens(editing))
+        role = get_approval_role(editing) or ""
+        editable = S.can_edit_grants_for(actor, editing)
+        profile = getattr(editing, "profile", None)
+        custom = profile is not None and profile.screen_access is not None
+        role_selected = role
+    else:
+        checked = set(S.WORK_KEYS)
+        editable = True  # the form itself already requires user-admin access
+        custom = False
+        role_selected = "staff"
+
+    return {
+        "screen_groups": groups,
+        "screen_checked": checked,
+        "screen_editable": editable,
+        "screen_custom": custom,
+        "role_templates": {r: sorted(S.role_template(r)) for r in ("", "staff", "head", "coo")},
+        "screen_role_selected": role_selected,
+    }
+
+
+def _apply_screen_grants(request, target):
+    """Persist the Screen Access selection (ADR-047).
+
+    Only grant-editors touch this (superuser always; head for non-head,
+    non-self targets). A selection equal to the role template is stored as
+    NULL so the user keeps following the template if it evolves; the
+    dashboard is always on (landing safety).
+    """
+    from . import screens as S
+    from apps.foundation.models import UserProfile
+
+    if not S.can_edit_grants_for(request.user, target):
+        return
+    selected = {k for k in request.POST.getlist("screens") if k in S.SCREEN_KEYS}
+    profile, _ = UserProfile.objects.get_or_create(user=target)
+    role = profile.approval_role or ""
+    template = set(S.role_template(role)) | {"dashboard"}
+    profile.screen_access = None if selected | {"dashboard"} == template else sorted(selected | {"dashboard"})
+    profile.save(update_fields=["screen_access", "updated_at"])
+
+
 @login_required
 def user_management(request):
     """Users & approval roles — the single "who does what" screen.
@@ -6545,6 +6650,7 @@ def user_create(request):
                 role=request.POST.get("role", ""),
                 password=request.POST.get("password") or None,
             )
+            _apply_screen_grants(request, u)
             messages.success(request, f"Created login '{u.username}'.")
             return redirect("ui:user_management")
         except (IntegrityError, ValueError, ValidationError) as exc:
@@ -6552,7 +6658,10 @@ def user_create(request):
     return render(
         request,
         "ui/foundation/user_form.html",
-        {"role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES]},
+        {
+            "role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES],
+            **_screen_access_context(request),
+        },
     )
 
 
@@ -6588,6 +6697,7 @@ def user_update(request, pk):
                 is_active=is_active,
                 password=request.POST.get("password") or None,
             )
+            _apply_screen_grants(request, target)
             messages.success(request, f"Updated '{target.username}'.")
             return redirect("ui:user_management")
         except (ValueError, ValidationError) as exc:
@@ -6600,6 +6710,7 @@ def user_update(request, pk):
             "role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES],
             "editing": target,
             "editing_role": get_approval_role(target),
+            **_screen_access_context(request, editing=target),
         },
     )
 
@@ -7699,7 +7810,7 @@ def billing_create(request):
             )
             messages.success(request, f"Billing {billing.billing_no} created (draft).")
             return redirect("ui:billing_detail", pk=billing.id)
-        except (AccountingError, ValueError, KeyError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     return render(
         request,
@@ -7753,13 +7864,13 @@ def billing_submit(request, pk):
     billing = get_object_or_404(BillingDocument, pk=pk)
     if billing.created_by_id not in (None, request.user.id):
         messages.error(request, "Only the preparer may submit this billing.")
-        return redirect("ui:billing_detail", pk=pk)
+        return redirect(_safe_next(request, "ui:billing_detail", pk))
     try:
         BillingService.submit(billing, user=request.user)
         messages.success(request, f"Billing {billing.billing_no} submitted for approval.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:billing_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:billing_detail", pk))
 
 
 @login_required
@@ -7774,7 +7885,7 @@ def billing_approve(request, pk):
         messages.success(request, f"Billing {billing.billing_no} approved — ready to post.")
     except (AccountingError, ValueError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:billing_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:billing_detail", pk))
 
 
 @login_required
@@ -7791,7 +7902,7 @@ def billing_reject(request, pk):
         messages.success(request, f"Billing {billing.billing_no} returned for revision.")
     except (AccountingError, ValueError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:billing_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:billing_detail", pk))
 
 
 @login_required
@@ -7806,7 +7917,7 @@ def billing_post(request, pk):
         messages.success(request, f"Billing {billing.billing_no} posted as {entry.entry_no}.")
     except (AccountingError, ValueError, PermissionDenied) as exc:
         messages.error(request, str(exc))
-    return redirect("ui:billing_detail", pk=pk)
+    return redirect(_safe_next(request, "ui:billing_detail", pk))
 
 
 @login_required
