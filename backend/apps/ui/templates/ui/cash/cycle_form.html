@@ -7,21 +7,21 @@
 
   {% capture as form_fields %}
   <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
-    <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_segment">Segment</label>
+    <select name="segment" id="id_segment" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
     </select>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div>
-      <label class="block text-sm font-medium text-slate-700 mb-1" for="id_start_date">From (Tue)</label>
+      <label class="block text-sm font-medium text-surface-700 mb-1" for="id_start_date">From (Tue)</label>
       <input type="date" name="start_date" id="id_start_date" required
-             class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+             class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
     </div>
     <div>
-      <label class="block text-sm font-medium text-slate-700 mb-1" for="id_end_date">To</label>
+      <label class="block text-sm font-medium text-surface-700 mb-1" for="id_end_date">To</label>
       <input type="date" name="end_date" id="id_end_date" required
-             class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+             class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
     </div>
   </div>
   {% endcapture %}

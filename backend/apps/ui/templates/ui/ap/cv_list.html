@@ -1,16 +1,24 @@
 {% extends "ui/base.html" %}
+{% load ui_filters %}
 {% block title %}Check Vouchers{% endblock %}
 {% block content %}
 <div class="p-6">
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">Check Vouchers (CV-YYYY-####)</h1>
-      <p class="text-sm text-slate-500 mt-1">ACCTG-FOR-010; clears AP with WHT split (ADR-008, POSTING_RULES 7.4).</p>
+      <h1 class="text-xl font-semibold text-surface-900">Check Vouchers (CV-YYYY-####)</h1>
+      <p class="text-sm text-surface-500 mt-1">ACCTG-FOR-010; clears AP with WHT split (ADR-008, POSTING_RULES 7.4).</p>
     </div>
     <div class="flex items-center gap-3">
-      <a href="{% url 'ui:rfp_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← RFPs</a>
-      <a href="{% url 'ui:cv_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New check voucher</a>
+      <a href="{% url 'ui:rfp_list' %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">← RFPs</a>
+      <a href="{% url 'ui:cv_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ New check voucher</a>
     </div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% include "ui/partials/stat_card.html" with label="Total CVs" value=summary.total sub=summary.total_gross|peso icon="banknotes" %}
+    {% include "ui/partials/stat_card.html" with label="Drafts (unsent)" value=summary.created tone="rose" sub="not yet submitted" icon="document-text" %}
+    {% include "ui/partials/stat_card.html" with label="For head signature" value=summary.approved tone="amber" sub="approved = signed" icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Cleared (in GL)" value=summary.cleared tone="emerald" sub=summary.cleared_net|peso icon="check" %}
   </div>
 
   {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#cv-table' filter_grid='md:grid-cols-4' %}

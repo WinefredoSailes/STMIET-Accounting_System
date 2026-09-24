@@ -5,36 +5,20 @@
 <div class="p-6">
   <div class="flex items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold text-slate-900">Purchase Orders</h1>
-      <p class="text-sm text-slate-500 mt-1">YYYY-SEQ — commitment document ahead of the RFP: prepared → checked → acctg → fin → [CNR] → approved → closed (PO module)</p>
+      <h1 class="text-2xl font-bold text-surface-900">Purchase Orders</h1>
+      <p class="text-sm text-surface-500 mt-1">YYYY-SEQ — commitment document ahead of the RFP: prepared → checked → acctg → fin → [CNR] → approved → closed (PO module)</p>
     </div>
     <div class="flex items-center gap-3 shrink-0">
-      <a href="{% url 'ui:po_create' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ New PO</a>
-      <a href="{% url 'ui:supplier_list' %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Suppliers</a>
+      <a href="{% url 'ui:po_create' %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">+ New PO</a>
+      <a href="{% url 'ui:supplier_list' %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-100">Suppliers</a>
     </div>
   </div>
 
   <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Total POs</div>
-      <div class="mt-1 text-2xl font-bold text-slate-900">{{ summary.total }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.total_amount|money }}</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Pending approval</div>
-      <div class="mt-1 text-2xl font-bold text-amber-600">{{ summary.pending }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.pending_amount|money }}</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Approved (for RFP funding)</div>
-      <div class="mt-1 text-2xl font-bold text-violet-600">{{ summary.approved }}</div>
-      <div class="text-xs text-slate-500 mt-1">₱ {{ summary.approved_amount|money }}</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Billed via posted RFPs</div>
-      <div class="mt-1 text-2xl font-bold text-emerald-600">{{ summary.billed_amount|money }}</div>
-      <div class="text-xs text-slate-500 mt-1">amount drawn so far</div>
-    </div>
+    {% include "ui/partials/stat_card.html" with label="Total POs" value=summary.total sub=summary.total_amount|peso icon="shopping-cart" %}
+    {% include "ui/partials/stat_card.html" with label="Pending approval" value=summary.pending tone="amber" sub=summary.pending_amount|peso icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Approved (for RFP funding)" value=summary.approved tone="violet" sub=summary.approved_amount|peso icon="document-text" %}
+    {% include "ui/partials/stat_card.html" with label="Billed via posted RFPs" value=summary.billed_amount|peso tone="emerald" sub="amount drawn so far" icon="check" %}
   </div>
 
   {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#po-table' filter_grid='md:grid-cols-4' %}

@@ -4,23 +4,23 @@
 {% block content %}
 <div class="p-6">
   {% capture as actions %}
-  <a href="{% url 'ui:receipt_detail' receipt.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Back to receipt</a>
+  <a href="{% url 'ui:receipt_detail' receipt.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Back to receipt</a>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="Record Deposit" subtitle="ACCTG-FOR-005 · bank deposit" back_url_name="ui:receipt_detail" back_label="Receipts" actions=actions %}
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 p-6">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 p-6">
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
-      <div><div class="text-xs text-slate-500">Receipt No</div><div class="mt-0.5 font-mono font-medium">{{ receipt.receipt_no }}</div></div>
-      <div><div class="text-xs text-slate-500">Date</div><div class="mt-0.5">{{ receipt.transaction_date|date:"M d, Y" }}</div></div>
-      <div><div class="text-xs text-slate-500">Customer</div><div class="mt-0.5 font-medium">{{ receipt.customer.name }}</div></div>
-      <div><div class="text-xs text-slate-500">Amount</div><div class="mt-0.5 font-semibold tabular-nums">₱{{ receipt.amount|money }}</div></div>
+      <div><div class="text-xs text-surface-500">Receipt No</div><div class="mt-0.5 font-mono font-medium">{{ receipt.receipt_no }}</div></div>
+      <div><div class="text-xs text-surface-500">Date</div><div class="mt-0.5">{{ receipt.transaction_date|date:"M d, Y" }}</div></div>
+      <div><div class="text-xs text-surface-500">Customer</div><div class="mt-0.5 font-medium">{{ receipt.customer.name }}</div></div>
+      <div><div class="text-xs text-surface-500">Amount</div><div class="mt-0.5 font-semibold tabular-nums">{{receipt.amount|peso}}</div></div>
     </div>
 
     <form method="post" class="space-y-4">
       {% csrf_token %}
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_bank_account">Bank account (Cr)</label>
-        <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=bank" data-search-value="id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_bank_account">Bank account (Cr)</label>
+        <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=bank" data-search-value="id" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <option value="">— select —</option>
           {% for a in banks %}
           <option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>
@@ -28,15 +28,15 @@
         </select>
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_transaction_date">Deposit date</label>
-        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ receipt.transaction_date|date:"Y-m-d" }}" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_transaction_date">Deposit date</label>
+        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ receipt.transaction_date|date:"Y-m-d" }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_reference">Reference <span class="text-slate-400">(optional)</span></label>
-        <input type="text" name="reference" id="id_reference" maxlength="64" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_reference">Reference <span class="text-surface-400">(optional)</span></label>
+        <input type="text" name="reference" id="id_reference" maxlength="64" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div class="flex justify-end gap-3 pt-2">
-        <a href="{% url 'ui:receipt_detail' receipt.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</a>
+        <a href="{% url 'ui:receipt_detail' receipt.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</a>
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Record Deposit</button>
       </div>
     </form>

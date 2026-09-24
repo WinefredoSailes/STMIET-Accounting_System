@@ -98,7 +98,7 @@ urlpatterns = [
     path("ar/invoices/<int:pk>/submit/", views.si_submit, name="si_submit"),
     path("ar/invoices/<int:pk>/approve/", views.si_approve, name="si_approve"),
     path("ar/invoices/<int:pk>/reject/", views.si_reject, name="si_reject"),
-    path("ar/aging/", views.aging, name="aging"),
+    path("ar/aging/", views.ar_aging, name="ar_aging"),
     path("ar/aging/export/", views.aging_export, name="aging_export"),
     path("ar/ledger/", views.ar_ledger, name="ar_ledger"),
     path("ar/ledger/export/", views.ar_ledger_export, name="ar_ledger_export"),
@@ -224,8 +224,13 @@ urlpatterns = [
     path("assets/depreciate-all/", views.asset_depreciate_all, name="asset_depreciate_all"),
     path("assets/<int:pk>/reverse/", views.asset_reverse, name="asset_reverse"),
     path("assets/<int:pk>/dispose/", views.asset_dispose, name="asset_dispose"),
-    # User management (superadmin)
+    # User management (superadmin + Accounting & Finance Head)
     path("settings/users/", views.user_management, name="user_management"),
     path("settings/users/new/", views.user_create, name="user_create"),
     path("settings/users/<int:pk>/update/", views.user_update, name="user_update"),
+    path(
+        "settings/users/<int:pk>/toggle-active/",
+        views.user_deactivate,
+        name="user_deactivate",
+    ),
 ]

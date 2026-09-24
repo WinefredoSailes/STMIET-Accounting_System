@@ -4,36 +4,36 @@
 <div class="p-4 sm:p-6 max-w-7xl">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">USER MANAGEMENT</h1>
-      <p class="text-sm text-slate-500 mt-1">Who does what — the people behind every approval. Superadmin only.</p>
+      <h1 class="text-xl font-semibold text-surface-900">USER MANAGEMENT</h1>
+      <p class="text-sm text-surface-500 mt-1">Who does what — the people behind every approval. Superadmin only.</p>
     </div>
-    <a href="#new-user" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Add user</a>
+    <a href="{% url 'ui:user_create' %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Add user</a>
   </div>
 
   <!-- Approval hierarchy -->
   <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-400">Accounting Staff</div>
-      <div class="mt-1 text-xl font-semibold text-slate-900">Prepares &amp; submits</div>
-      <p class="mt-1 text-xs text-slate-500">Bookkeeper / cashier / assistant — enters customer receipts, RFPs, CVs, PCF and cash work.</p>
+    <div class="bg-white rounded-xl border border-surface-200 p-5">
+      <div class="text-xs uppercase tracking-wider text-surface-400">Accounting Staff</div>
+      <div class="mt-1 text-xl font-semibold text-surface-900">Prepares &amp; submits</div>
+      <p class="mt-1 text-xs text-surface-500">Bookkeeper / cashier / assistant — enters customer receipts, RFPs, CVs, PCF and cash work.</p>
     </div>
-    <div class="bg-white rounded-xl border border-indigo-200 p-5">
-      <div class="text-xs uppercase tracking-wider text-indigo-400">Accounting &amp; Finance Head</div>
-      <div class="mt-1 text-xl font-semibold text-slate-900">Checks &amp; approves</div>
-      <p class="mt-1 text-xs text-slate-500">Reviews and approves every RFP, CV and cash-short — first-line authorization for everything.</p>
+    <div class="bg-white rounded-xl border border-brand-200 p-5">
+      <div class="text-xs uppercase tracking-wider text-brand-500">Accounting &amp; Finance Head</div>
+      <div class="mt-1 text-xl font-semibold text-surface-900">Checks &amp; approves</div>
+      <p class="mt-1 text-xs text-surface-500">Reviews and approves every RFP, CV and cash-short — first-line authorization for everything.</p>
     </div>
-    <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-400">COO (CNR)</div>
-      <div class="mt-1 text-xl font-semibold text-slate-900">Above P100k</div>
-      <p class="mt-1 text-xs text-slate-500">Second signature for RFPs/disbursements above ₱100,000 and on check vouchers.</p>
+    <div class="bg-white rounded-xl border border-surface-200 p-5">
+      <div class="text-xs uppercase tracking-wider text-surface-400">COO (CNR)</div>
+      <div class="mt-1 text-xl font-semibold text-surface-900">Above P100k</div>
+      <p class="mt-1 text-xs text-surface-500">Second signature for RFPs/disbursements above &#8369;100,000 and on check vouchers.</p>
     </div>
   </div>
-  <div class="mt-2 text-xs text-slate-500">Flow: <span class="font-medium text-slate-700">staff → head → coo</span>. The head is the checker at every step; the COO only above ₱100,000 (ADR-020 / ADR-036).</div>
+  <div class="mt-2 text-xs text-surface-500">Flow: <span class="font-medium text-surface-700">staff &rarr; head &rarr; coo</span>. The head is the checker at every step; the COO only above &#8369;100,000 (ADR-020 / ADR-036).</div>
 
   <!-- User list -->
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[820px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-3">User</th>
           <th class="px-4 py-3">Name / contact</th>
@@ -43,25 +43,25 @@
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for r in rows %}
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-surface-50">
           <td class="px-4 py-2.5">
             <div class="font-medium">{{ r.user.username }}</div>
-            <div class="text-xs text-slate-400">{% if r.user.is_superuser %}Superadmin{% endif %}</div>
+            <div class="text-xs text-surface-400">{% if r.user.is_superuser %}Superadmin{% endif %}</div>
           </td>
           <td class="px-4 py-2.5">
-            <div class="text-slate-700">{{ r.user.get_full_name|default:"—" }}</div>
-            <div class="text-xs text-slate-400">{{ r.user.email|default:"" }}</div>
+            <div class="text-surface-700">{{ r.user.get_full_name|default:"—" }}</div>
+            <div class="text-xs text-surface-400">{{ r.user.email|default:"" }}</div>
           </td>
           <td class="px-4 py-2.5">
             {% if r.role %}
             <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium
-              {% if r.role == 'head' %}bg-indigo-100 text-indigo-800
+              {% if r.role == 'head' %}bg-brand-100 text-brand-800
               {% elif r.role == 'coo' %}bg-amber-100 text-amber-800
-              {% else %}bg-slate-100 text-slate-700{% endif %}">{{ r.role_label }}</span>
+              {% else %}bg-surface-100 text-surface-700{% endif %}">{{ r.role_label }}</span>
             {% else %}
-            <span class="text-xs text-slate-400">Unassigned</span>
+            <span class="text-xs text-surface-400">Unassigned</span>
             {% endif %}
           </td>
           <td class="px-4 py-2.5">
@@ -69,72 +69,43 @@
             <div class="flex flex-wrap gap-1">
               {% for fc in r.pcf_funds %}<span class="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono text-emerald-700">{{ fc }}</span>{% endfor %}
             </div>
-            {% else %}<span class="text-xs text-slate-400">—</span>{% endif %}
+            {% else %}<span class="text-xs text-surface-400">—</span>{% endif %}
           </td>
           <td class="px-4 py-2.5">
             {% if r.user.is_active %}
             <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Active</span>
             {% else %}
-            <span class="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Deactivated</span>
+            <span class="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">Deactivated</span>
             {% endif %}
           </td>
           <td class="px-4 py-2.5 text-right">
-            <form method="post" action="{% url 'ui:user_update' r.user.pk %}" class="flex items-center justify-end gap-2">
-              {% csrf_token %}
-              <select name="role" class="rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-                <option value="" {% if not r.role %}selected{% endif %}>No approval role</option>
-                {% for value, label in role_choices %}
-                <option value="{{ value }}" {% if r.role == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-              <label class="inline-flex items-center gap-1 text-xs text-slate-500">
-                <input type="checkbox" name="is_active" value="1" {% if r.user.is_active %}checked{% endif %} class="rounded border-slate-300"> Active
-              </label>
-              <button class="rounded-md bg-slate-800 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700">Save</button>
-            </form>
+            <div class="flex items-center justify-end gap-2">
+              {% if r.can_edit %}
+              <a href="{% url 'ui:user_update' r.user.pk %}"
+                 class="rounded-md border border-surface-300 px-2.5 py-1 text-xs font-medium text-surface-700 hover:bg-surface-50">Edit</a>
+              {% endif %}
+              {% if r.can_toggle %}
+              <form method="post" action="{% url 'ui:user_deactivate' r.user.pk %}" class="inline">
+                {% csrf_token %}
+                {% if r.user.is_active %}
+                <button type="submit" class="rounded-md border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                        onclick="return confirm('Deactivate {{ r.user.username|escapejs }}?\nThey will no longer be able to sign in.')">Deactivate</button>
+                {% else %}
+                <button type="submit" class="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Activate</button>
+                {% endif %}
+              </form>
+              {% endif %}
+            </div>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No logins yet.</td></tr>
+        <tr><td colspan="6" class="px-4 py-8 text-center text-surface-400">No logins yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% if pcf_count %}
-  <p class="mt-2 text-xs text-slate-500">{{ pcf_count }} petty cash fund(s) are linked to a custodian login above.</p>
+  <p class="mt-2 text-xs text-surface-500">{{ pcf_count }} petty cash fund(s) are linked to a custodian login above.</p>
   {% endif %}
-
-  <!-- New user -->
-  <div id="new-user" class="mt-8 bg-white rounded-xl border border-slate-200 p-5">
-    <h2 class="text-sm font-semibold text-slate-900">Add a new staff login</h2>
-    <p class="text-xs text-slate-500 mt-0.5">Creates a username + password so the person can sign in, and assigns their approval role / custodian expectation.</p>
-    <form method="post" action="{% url 'ui:user_create' %}" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {% csrf_token %}
-      <label class="block text-xs text-slate-500">Username<span class="text-red-500">*</span>
-        <input type="text" name="username" required class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      </label>
-      <label class="block text-xs text-slate-500">First name
-        <input type="text" name="first_name" class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      </label>
-      <label class="block text-xs text-slate-500">Last name
-        <input type="text" name="last_name" class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      </label>
-      <label class="block text-xs text-slate-500">Email
-        <input type="email" name="email" class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      </label>
-      <label class="block text-xs text-slate-500">Approval role
-        <select name="role" class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-          <option value="">No approval role (e.g. custodian)</option>
-          {% for value, label in role_choices %}
-          <option value="{{ value }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="block text-xs text-slate-500">Password
-        <input type="password" name="password" placeholder="random if blank" class="mt-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm w-full focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-      </label>
-      <button type="submit" class="self-end rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Create user</button>
-    </form>
-  </div>
 </div>
 {% endblock %}

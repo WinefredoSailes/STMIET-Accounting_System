@@ -1,0 +1,81 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}{% if editing %}Edit User — {{ editing.username }}{% else %}New User{% endif %}{% endblock %}
+{% block content %}
+<div class="p-6 max-w-3xl">
+  {% if editing %}
+  {% include "ui/partials/page_header.html" with title="Edit user" subtitle="Update names, contact details, approval role and status. Username is immutable." back_url_name="ui:user_management" back_label="User management" %}
+  {% else %}
+  {% include "ui/partials/page_header.html" with title="Add a new staff login" subtitle="Creates a username + password so the person can sign in, and assigns their approval role / custodian expectation." back_url_name="ui:user_management" back_label="User management" %}
+  {% endif %}
+
+  {% capture as fields_html %}
+  <div>
+    <label class="form-label" for="id_username">Username {% if not editing %}<span class="text-rose-500">*</span>{% endif %}</label>
+    {% if editing %}
+    <input type="text" id="id_username" name="username" value="{{ editing.username }}" disabled
+           class="form-field bg-surface-50 text-surface-400 cursor-not-allowed">
+    {% else %}
+    <input type="text" id="id_username" name="username" required
+           class="form-field" placeholder="e.g. juan.delacruz" autocomplete="off">
+    {% endif %}
+  </div>
+  <div>
+    <label class="form-label" for="id_first_name">First name</label>
+    <input type="text" id="id_first_name" name="first_name"
+           class="form-field" value="{{ editing.first_name|default:'' }}">
+  </div>
+  <div>
+    <label class="form-label" for="id_last_name">Last name</label>
+    <input type="text" id="id_last_name" name="last_name"
+           class="form-field" value="{{ editing.last_name|default:'' }}">
+  </div>
+  <div>
+    <label class="form-label" for="id_email">Email</label>
+    <input type="email" id="id_email" name="email" class="form-field"
+           value="{{ editing.email|default:'' }}">
+  </div>
+  <div>
+    <label class="form-label" for="id_role">Approval role</label>
+    <select id="id_role" name="role" class="form-field">
+      <option value="">No approval role (e.g. custodian)</option>
+      {% for value, label in role_choices %}
+      <option value="{{ value }}" {% if editing_role == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label" for="id_password">Password</label>
+    <input type="password" id="id_password" name="password" class="form-field" autocomplete="new-password"
+           placeholder="{% if editing %}Leave blank to keep current password{% else %}Random if blank{% endif %}">
+    <p class="form-hint">{% if editing %}Leave blank to keep the current password.{% else %}Leave blank to generate a random password automatically.{% endif %}</p>
+  </div>
+  {% if editing %}
+  <div class="flex items-center gap-2 self-end">
+    <div class="flex items-center gap-2">
+      <label class="inline-flex items-center gap-2 text-sm font-medium text-surface-700">
+        <input type="checkbox" name="is_active" value="1" {% if editing.is_active %}checked{% endif %}
+               class="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500"
+               {% if editing.pk == request.user.pk %}disabled{% endif %}>
+        Active login
+      </label>
+      <p class="form-hint">Uncheck to deactivate (deactivated users cannot sign in, history is kept).</p>
+    </div>
+  </div>
+  {% endif %}
+  {% endcapture %}
+
+  {% capture as footer_html %}
+  <p class="text-xs text-surface-500">
+    The approval chain is <span class="font-medium text-surface-700">staff &rarr; head &rarr; coo</span>;
+    the head checks every document, the COO signs above &#8369;100,000 (ADR-020 / ADR-036).
+  </p>
+  {% endcapture %}
+
+  {% if editing %}
+  {% include "ui/partials/form_card.html" with action_href=request.path fields_html=fields_html footer_html=footer_html submit_label="Save changes" cancel_url_name="ui:user_management" %}
+  {% else %}
+  {% include "ui/partials/form_card.html" with action_url="ui:user_create" fields_html=fields_html footer_html=footer_html submit_label="Create user" cancel_url_name="ui:user_management" %}
+  {% endif %}
+</div>
+{% endblock %}

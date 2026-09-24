@@ -1,21 +1,21 @@
 {% load ui_filters %}
 {# One check-voucher row — swapped on inline HTMX approve/clear transitions. #}
-<tr class="hover:bg-slate-50">
+<tr class="hover:bg-surface-50">
   <td class="px-4 py-2 font-mono text-xs">
-    <a href="{% url 'ui:cv_detail' cv.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ cv.cv_number }}</a>
+    <a href="{% url 'ui:cv_detail' cv.id %}" class="font-medium text-brand-600 hover:text-brand-800">{{ cv.cv_number }}</a>
   </td>
   <td class="px-4 py-2">{{ cv.cv_date|date:"M d, Y" }}</td>
   <td class="px-4 py-2">{{ cv.payee.name }}</td>
   <td class="px-4 py-2 font-mono text-xs">{{ cv.rfp.ap_number|default:"—" }}</td>
   <td class="px-4 py-2 font-mono text-xs">{{ cv.check_no|default:"—" }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td>
-  <td class="px-4 py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td>
-  <td class="px-4 py-2 text-right font-medium tabular-nums">{{ cv.net_amount|money }}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{cv.gross_amount|peso}}</td>
+  <td class="px-4 py-2 text-right tabular-nums">{{cv.withheld_tax|peso}}</td>
+  <td class="px-4 py-2 text-right font-medium tabular-nums">{{cv.net_amount|peso}}</td>
   <td class="px-4 py-2">
     <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
       {% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800
-      {% elif cv.status == 'created' %}bg-slate-100 text-slate-600
-      {% elif cv.status == 'rejected' %}bg-red-100 text-red-800
+      {% elif cv.status == 'created' %}bg-surface-100 text-surface-600
+      {% elif cv.status == 'rejected' %}bg-rose-100 text-rose-800
       {% else %}bg-amber-100 text-amber-800{% endif %}">
       {{ cv.status }}
     </span>
@@ -23,17 +23,17 @@
   <td class="px-4 py-2 whitespace-nowrap">
     {% if cv.status == "created" %}
     <button type="button" hx-post="{% url 'ui:cv_approve' cv.id %}" hx-target="closest tr" hx-swap="outerHTML"
-      hx-confirm="Approve {{ cv.cv_number }}?" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Approve</button>
+      hx-confirm="Approve {{ cv.cv_number }}?" class="text-sm font-medium text-brand-600 hover:text-brand-800">Approve</button>
     {% elif cv.status == "approved" %}
-    <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Clear…</a>
+    <a href="{% url 'ui:cv_detail' cv.id %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">Clear…</a>
     {% elif cv.status == "rejected" %}
     {% if request.user.id == cv.created_by_id %}
-    <a href="{% url 'ui:cv_revise' cv.id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Revise</a>
+    <a href="{% url 'ui:cv_revise' cv.id %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">Revise</a>
     {% else %}
-    <span class="text-xs text-slate-400">—</span>
+    <span class="text-xs text-surface-400">—</span>
     {% endif %}
     {% else %}
-    <span class="text-xs text-slate-400">—</span>
+    <span class="text-xs text-surface-400">—</span>
     {% endif %}
   </td>
 </tr>

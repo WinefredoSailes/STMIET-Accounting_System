@@ -5,59 +5,59 @@
 <div class="p-4 sm:p-6">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">CASH FLOW STATEMENT</h1>
-      <p class="text-sm text-slate-500 mt-1">Generated from weekly cycle activities (ADR-031).</p>
+      <h1 class="text-xl font-semibold text-surface-900">CASH FLOW STATEMENT</h1>
+      <p class="text-sm text-surface-500 mt-1">Generated from weekly cycle activities (ADR-031).</p>
     </div>
     <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-      <select name="month" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <select name="month" required class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
         {% for m in months %}
         <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>
         {% endfor %}
       </select>
-      <select name="year" required class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+      <select name="year" required class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
         {% for y in years %}
         <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
         {% endfor %}
       </select>
-      <select name="format" data-format-redirect data-export-url="{% url 'ui:cash_flow_export' %}?year={{ year }}&month={{ month }}" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+      <select name="format" data-format-redirect data-export-url="{% url 'ui:cash_flow_export' %}?year={{ year }}&month={{ month }}" class="rounded-md border border-surface-300 px-2 py-1.5 text-sm">
         <option value="xlsx" {% if format == 'xlsx' %}selected{% endif %}>XLSX</option>
         <option value="csv" {% if format == 'csv' %}selected{% endif %}>CSV</option>
         <option value="pdf" {% if format == 'pdf' %}selected{% endif %}>PDF</option>
       </select>
-      <button type="submit" name="export" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Generate</button>
-      <a href="{% url 'ui:cash_flow_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/40">Print</a>
+      <button type="submit" name="export" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Generate</button>
+      <a href="{% url 'ui:cash_flow_print' %}" class="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700 focus:outline-none focus:ring-2 focus:ring-surface-500/40">Print</a>
     </form>
   </div>
 
   {% if latest %}
   <div class="mt-4 flex flex-wrap items-center gap-3 text-sm">
-    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium {% if latest.identity_holds %}bg-emerald-100 text-emerald-800{% else %}bg-red-100 text-red-800{% endif %}">
+    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium {% if latest.identity_holds %}bg-emerald-100 text-emerald-800{% else %}bg-rose-100 text-rose-800{% endif %}">
       Identity: {{ latest.identity_holds|yesno:"OK,FAILED" }}
     </span>
-    <span class="text-slate-500">{{ latest.period_start|date:"M d, Y" }} – {{ latest.period_end|date:"M d, Y" }} · generated {{ latest.generated_at|timesince }} ago</span>
+    <span class="text-surface-500">{{ latest.period_start|date:"M d, Y" }} – {{ latest.period_end|date:"M d, Y" }} · generated {{ latest.generated_at|timesince }} ago</span>
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm min-w-[560px]">
-      <tbody class="divide-y divide-slate-100">
-        <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">OPERATING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Collections (Distribution + Other)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.collections|money }}</td></tr>
-        <tr><td class="px-4 py-1.5">Payments to Depot / Outflows</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.payments_to_depot|money }})</td></tr>
-        <tr class="font-semibold"><td class="px-4 py-1.5">Net Cash from Operating Activities</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ nets.operating|money }}</td></tr>
-        <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">INVESTING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Asset Acquisitions (CAPEX)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.asset_acquisitions|money }})</td></tr>
-        <tr class="bg-indigo-50 font-semibold"><td class="px-4 py-2">FINANCING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
-        <tr><td class="px-4 py-1.5">Loans Proceeds (Borrowed)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.loan_proceeds|money }}</td></tr>
-        <tr><td class="px-4 py-1.5">Loan / Fuel Checks Cleared</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{ latest.loan_repayments|money }})</td></tr>
-        <tr class="font-semibold border-t-2 border-slate-200"><td class="px-4 py-2">NET CHANGE IN CASH</td><td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{ latest.net_change|money }}</td></tr>
-        <tr><td class="px-4 py-1.5">Cash — Beginning</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.beginning_cash|money }}</td></tr>
-        <tr><td class="px-4 py-1.5">Cash — End (less ADB maintained)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{ latest.ending_cash|money }}</td></tr>
-        <tr class="bg-slate-50"><td class="px-4 py-1.5 text-slate-500">ADB Adjustments (reporting, not a cash movement)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-500">{{ latest.adb_adjustments|money }}</td></tr>
+      <tbody class="divide-y divide-surface-100">
+        <tr class="bg-brand-50 font-semibold"><td class="px-4 py-2">OPERATING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
+        <tr><td class="px-4 py-1.5">Collections (Distribution + Other)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{latest.collections|peso}}</td></tr>
+        <tr><td class="px-4 py-1.5">Payments to Depot / Outflows</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{latest.payments_to_depot|peso}})</td></tr>
+        <tr class="font-semibold"><td class="px-4 py-1.5">Net Cash from Operating Activities</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{nets.operating|peso}}</td></tr>
+        <tr class="bg-brand-50 font-semibold"><td class="px-4 py-2">INVESTING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
+        <tr><td class="px-4 py-1.5">Asset Acquisitions (CAPEX)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{latest.asset_acquisitions|peso}})</td></tr>
+        <tr class="bg-brand-50 font-semibold"><td class="px-4 py-2">FINANCING ACTIVITIES</td><td class="px-4 py-2 text-right"></td></tr>
+        <tr><td class="px-4 py-1.5">Loans Proceeds (Borrowed)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{latest.loan_proceeds|peso}}</td></tr>
+        <tr><td class="px-4 py-1.5">Loan / Fuel Checks Cleared</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">({{latest.loan_repayments|peso}})</td></tr>
+        <tr class="font-semibold border-t-2 border-surface-200"><td class="px-4 py-2">NET CHANGE IN CASH</td><td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{latest.net_change|peso}}</td></tr>
+        <tr><td class="px-4 py-1.5">Cash — Beginning</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{latest.beginning_cash|peso}}</td></tr>
+        <tr><td class="px-4 py-1.5">Cash — End (less ADB maintained)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">{{latest.ending_cash|peso}}</td></tr>
+        <tr class="bg-surface-50"><td class="px-4 py-1.5 text-surface-500">ADB Adjustments (reporting, not a cash movement)</td><td class="px-4 py-1.5 text-right tabular-nums whitespace-nowrap text-surface-500">{{latest.adb_adjustments|peso}}</td></tr>
       </tbody>
     </table>
   </div>
   {% else %}
-  <div class="mt-8 text-center text-slate-400">No statement yet. Pick a month + year and click Generate (requires generated weekly cycles).</div>
+  <div class="mt-8 text-center text-surface-400">No statement yet. Pick a month + year and click Generate (requires generated weekly cycles).</div>
   {% endif %}
 </div>
 {% endblock %}

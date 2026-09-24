@@ -6,21 +6,21 @@
   {% capture as tb_subtitle %}Signed balances from posted GL (ADR-005) as of {{ as_of }}.{% endcapture %}
   {% capture as run_controls %}
   <form method="get" class="flex items-center gap-2">
-    <input type="date" name="as_of" value="{{ as_of }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
-    <select name="segment" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+    <input type="date" name="as_of" value="{{ as_of }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+    <select name="segment" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm">
       <option value="">All segments</option>
       {% for seg in segments %}<option value="{{ seg.code }}" {% if segment == seg.code %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
     </select>
-    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Run</button>
+    <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Run</button>
   </form>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="Trial Balance" subtitle=tb_subtitle actions=run_controls %}
   {% capture as tb_export_url %}{% url 'ui:trial_balance_export' %}?as_of={{ as_of }}{% endcapture %}
   {% include "ui/partials/report_toolbar.html" with format_select=True formats="xlsx csv pdf" format=format export_button=True export_url=tb_export_url print_url_name="ui:trial_balance_print" %}
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
     <table class="w-full text-sm min-w-[1300px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-3">Code</th>
           <th class="px-4 py-3">Account</th>
@@ -29,24 +29,24 @@
           <th class="px-4 py-3 text-right">Credit</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for row in rows %}
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-surface-50">
           <td class="px-4 py-2 font-mono text-xs">{{ row.code }}</td>
-          <td class="px-4 py-2"><a class="text-indigo-600 hover:underline" href="{% url 'ui:ledger_account_detail' row.id %}?start={{ as_of|slice:":4" }}-01-01&amp;end={{ as_of }}{% if segment %}&amp;segment={{ segment }}{% endif %}">{{ row.name }}</a></td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ row.segment }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "debit" %}{{ row.balance|money }}{% endif %}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "credit" %}{{ row.balance|money }}{% endif %}</td>
+          <td class="px-4 py-2"><a class="text-brand-600 hover:underline" href="{% url 'ui:ledger_account_detail' row.id %}?start={{ as_of|slice:":4" }}-01-01&amp;end={{ as_of }}{% if segment %}&amp;segment={{ segment }}{% endif %}">{{ row.name }}</a></td>
+          <td class="px-4 py-2 text-xs text-surface-500">{{ row.segment }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "debit" %}{{row.balance|peso}}{% endif %}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{% if row.normal_balance == "credit" %}{{row.balance|peso}}{% endif %}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No balances for this period.</td></tr>
+        <tr><td colspan="5" class="px-4 py-8 text-center text-surface-400">No balances for this period.</td></tr>
         {% endfor %}
       </tbody>
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-surface-50 font-semibold">
         <tr>
           <td colspan="3" class="px-4 py-3 text-right">TOTALS</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ debit|money }}</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ credit|money }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{debit|peso}}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{credit|peso}}</td>
         </tr>
       </tfoot>
     </table>

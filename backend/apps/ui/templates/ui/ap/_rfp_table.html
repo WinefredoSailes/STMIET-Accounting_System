@@ -1,8 +1,8 @@
 {% load ui_filters %}
 {# Requests-for-Payment table fragment — swapped by #rfp-table on HTMX filter updates. #}
-<div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+<div class="hidden md:block mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
   <table class="w-full text-sm min-w-[900px]">
-    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
       <tr>
         <th class="px-4 py-3">AP No</th>
         <th class="px-4 py-3">Date</th>
@@ -13,19 +13,19 @@
         <th class="px-4 py-3">Status</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody class="divide-y divide-surface-100">
       {% for rfp in page_obj %}
       {% include "ui/ap/_rfp_row.html" %}
       {% empty %}
       <tr>
         <td colspan="7" class="px-6 py-14">
           <div class="mx-auto max-w-sm text-center">
-            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">📋</div>
-            <h2 class="mt-3 text-sm font-semibold text-slate-800">No requests for payment match</h2>
-            <p class="mt-1 text-xs text-slate-500">Try clearing the filters, or start with a supplier and create an RFP with its distribution charges.</p>
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-100 text-xl">📋</div>
+            <h2 class="mt-3 text-sm font-semibold text-surface-800">No requests for payment match</h2>
+            <p class="mt-1 text-xs text-surface-500">Try clearing the filters, or start with a supplier and create an RFP with its distribution charges.</p>
             <div class="mt-4 flex items-center justify-center gap-2">
-              <a href="{% url 'ui:rfp_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ New RFP</a>
-              <a href="{% url 'ui:supplier_create' %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">Add a supplier</a>
+              <a href="{% url 'ui:rfp_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">+ New RFP</a>
+              <a href="{% url 'ui:supplier_create' %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">Add a supplier</a>
             </div>
           </div>
         </td>
@@ -33,5 +33,27 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="md:hidden mt-4 space-y-3">
+  {% for rfp in page_obj %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <a href="{% url 'ui:rfp_detail' rfp.id %}" class="mobile-card-title text-brand-600 hover:text-brand-800">{{ rfp.ap_number }}</a>
+      {% include "ui/partials/status_badge.html" with status=rfp.status %}
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Date</span><span class="mobile-card-v">{{ rfp.rfp_date|date:"M d, Y" }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Payee</span><span class="mobile-card-v font-medium">{{ rfp.payee.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ rfp.segment.code }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Purpose</span><span class="mobile-card-v">{{ rfp.particulars|truncatechars:40 }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Amount</span><span class="mobile-card-v font-semibold tabular-nums">{{rfp.amount|peso}}</span></div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No requests for payment match. Try clearing the filters.</div>
+  {% endfor %}
 </div>
 {% include "ui/partials/pagination.html" %}

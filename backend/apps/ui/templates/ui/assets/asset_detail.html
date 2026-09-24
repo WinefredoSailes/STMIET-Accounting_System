@@ -5,85 +5,85 @@
 <div class="p-6">
   {% capture as asset_badge_color %}
   {% if asset.status == 'active' %}bg-emerald-100 text-emerald-800
-  {% elif asset.status == 'disposed' %}bg-slate-100 text-slate-500
+  {% elif asset.status == 'disposed' %}bg-surface-100 text-surface-500
   {% else %}bg-amber-100 text-amber-800{% endif %}
   {% endcapture %}
   {% capture as asset_title %}{{ asset.asset_no }} · {{ asset.name }}{% endcapture %}
   {% capture as asset_actions %}
   {% include "ui/partials/status_badge.html" with status=asset.status color=asset_badge_color %}
-  <a href="{% url 'ui:asset_export' asset.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
-  <a href="{% url 'ui:asset_export' asset.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
-  <a href="{% url 'ui:asset_export' asset.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+  <a href="{% url 'ui:asset_export' asset.id 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
+  <a href="{% url 'ui:asset_export' asset.id 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
+  <a href="{% url 'ui:asset_export' asset.id 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=asset_title back_url_name="ui:asset_list" back_label="Assets" actions=asset_actions %}
 
   <dl class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Category</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Category</dt>
       <dd class="mt-1 font-medium">{{ asset.category.name }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Segment</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Segment</dt>
       <dd class="mt-1 font-medium">{{ asset.segment.code }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Acquired</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Acquired</dt>
       <dd class="mt-1 font-medium">{{ asset.acquisition_date|date:"M d, Y" }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Funding</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Funding</dt>
       <dd class="mt-1 font-medium capitalize">{{ asset.funding_source }}{% if asset.financed_loan_reference %} · {{ asset.financed_loan_reference }}{% endif %}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Cost</dt>
-      <dd class="mt-1 font-medium tabular-nums">₱ {{ asset.cost|money }}</dd>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Cost</dt>
+      <dd class="mt-1 font-medium tabular-nums">{{asset.cost|peso}}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Accumulated depreciation</dt>
-      <dd class="mt-1 font-medium tabular-nums">₱ {{ accumulated|money }}</dd>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Accumulated depreciation</dt>
+      <dd class="mt-1 font-medium tabular-nums">{{accumulated|peso}}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Net book value</dt>
-      <dd class="mt-1 font-semibold tabular-nums">₱ {{ nbv|money }}</dd>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Net book value</dt>
+      <dd class="mt-1 font-semibold tabular-nums">{{nbv|peso}}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Useful life</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Useful life</dt>
       <dd class="mt-1 font-medium">{{ asset.category.useful_life_years }} years</dd>
     </div>
   </dl>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <div class="px-4 py-3 border-b border-slate-200 text-sm font-semibold">Depreciation schedule</div>
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
+    <div class="px-4 py-3 border-b border-surface-200 text-sm font-semibold">Depreciation schedule</div>
     <table class="w-full text-sm min-w-[760px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-2.5">Period</th>
           <th class="px-4 py-2.5 text-right">Amount</th>
           <th class="px-4 py-2.5">Status</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for row in schedule %}
         <tr>
           <td class="px-4 py-2">{{ row.period_start|date:"M Y" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ row.amount|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{row.amount|peso}}</td>
           <td class="px-4 py-2">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if row.status == 'posted' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ row.status }}</span>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="3" class="px-4 py-8 text-center text-slate-400">No depreciation posted yet.</td></tr>
+        <tr><td colspan="3" class="px-4 py-8 text-center text-surface-400">No depreciation posted yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
     {% if asset.status == "active" %}
-    <div class="px-4 py-3 border-t border-slate-200">
+    <div class="px-4 py-3 border-t border-surface-200">
       <form method="post" action="{% url 'ui:asset_depreciate' asset.id %}" class="flex items-end gap-2">
         {% csrf_token %}
         <div>
-          <label class="block text-xs font-medium text-slate-500 mb-1" for="id_period_start">Post month</label>
+          <label class="block text-xs font-medium text-surface-500 mb-1" for="id_period_start">Post month</label>
           <input type="date" name="period_start" id="id_period_start" required
-                 class="rounded-md border border-slate-300 px-3 py-1.5 text-sm">
+                 class="rounded-md border border-surface-300 px-3 py-1.5 text-sm">
         </div>
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
           Post depreciation
@@ -95,17 +95,17 @@
 
   <div class="mt-4 flex items-center gap-3">
     <a href="{% url 'ui:asset_dispose' asset.id %}"
-       class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+       class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">
       Dispose asset
     </a>
     {% if asset.status != "disposed" %}
     <a href="{% url 'ui:asset_reverse' asset.id %}"
-       class="rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+       class="rounded-md border border-rose-200 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">
       Reverse overstatement
     </a>
     {% endif %}
     {% if asset.acquisition_journal_id %}
-    <a href="{% url 'ui:je_detail' asset.acquisition_journal_id %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+    <a href="{% url 'ui:je_detail' asset.acquisition_journal_id %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">
       Acquisition JE →
     </a>
     {% endif %}

@@ -3,17 +3,17 @@
 {% block title %}{% if editing %}Edit Journal Entry {{ editing.entry_no }}{% else %}New Journal Entry{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:je_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr; Journal entries</a>
-  <h1 class="text-xl font-semibold text-slate-900 mt-1">{% if editing %}Edit{% else %}New{% endif %} Journal Entry</h1>
-  <p class="text-sm text-slate-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
+  <a href="{% url 'ui:je_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr; Journal entries</a>
+  <h1 class="text-xl font-semibold text-surface-900 mt-1">{% if editing %}Edit{% else %}New{% endif %} Journal Entry</h1>
+  <p class="text-sm text-surface-500 mt-1">Debits must equal credits — the system never force-balances (ADR-002).</p>
 
   {% if editing.rejection_note %}
-  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-    <div class="text-sm font-semibold text-red-800">
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">
       Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by|default:"approver" }} — needs revision
     </div>
-    <div class="text-xs text-slate-500 mt-1">{{ editing.rejected_at|date:"M d, Y H:i" }}</div>
-    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
+    <div class="text-xs text-surface-500 mt-1">{{ editing.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
   </div>
   {% endif %}
 
@@ -21,25 +21,25 @@
     {% csrf_token %}
 
     <!-- ===================== DOCUMENT METADATA ===================== -->
-    <div class="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+    <div class="rounded-xl border border-surface-200 bg-white px-6 py-5 shadow-sm">
       <!-- Two-sided document metadata -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3">
         <!-- LEFT SIDE -->
         <div class="space-y-3">
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_entry_no">Voucher Ref #</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_entry_no">Voucher Ref #</label>
             <input type="text" id="id_entry_no" value="{{ editing.entry_no|default:'—' }}" readonly
-                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-600 focus:outline-none">
+                   class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-1.5 text-sm font-medium text-surface-600 focus:outline-none">
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_supplier_picker">Supplier / Customer</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_supplier_picker">Supplier / Customer</label>
             <div class="flex flex-col gap-1 min-w-0">
               <select id="id_supplier_picker" data-searchable data-search-compact
                       data-search-placeholder="Pick from recorded suppliers / customers…"
                       data-search-url="{% url 'ui:party_options' %}{% if editing and editing.supplier_name %}?selected={{ editing.supplier_name|urlencode }}{% endif %}"
                       data-search-value="id"
                       title="Pick from recorded suppliers / customers…"
-                      class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {% if editing and editing.supplier_name %}
                 <option value="{{ editing.supplier_name }}" selected>{{ editing.supplier_name }}</option>
                 {% else %}
@@ -50,56 +50,56 @@
             </div>
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_po">PO</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_po">PO</label>
             <input type="text" name="po" id="id_po" maxlength="128"
                    value="{{ editing.po|default:'' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_ref_number">REF #</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_ref_number">REF #</label>
             <input type="text" name="ref_number" id="id_ref_number" maxlength="128"
                    value="{{ editing.ref_number|default:'' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
         </div>
 
         <!-- RIGHT SIDE -->
         <div class="space-y-3">
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_transaction_date">Date</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_transaction_date">Date</label>
             <input type="date" name="transaction_date" id="id_transaction_date" required
                    value="{{ editing.transaction_date|date:'Y-m-d'|default:today|date:'Y-m-d' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_cycle">Cycle</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_cycle">Cycle</label>
             {% if editing %}
             <input type="text" id="id_cycle" readonly
                    value="{{ editing.transaction_date|cycle_label:company }}"
-                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600">
+                   class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-1.5 text-sm text-surface-600">
             {% else %}
             <input type="text" id="id_cycle" readonly
                    value="{{ today|cycle_label:company }}"
-                   class="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600">
+                   class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-1.5 text-sm text-surface-600">
             {% endif %}
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_source_doc_type">Source Type</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_source_doc_type">Source Type</label>
             <input type="text" name="source_doc_type" id="id_source_doc_type" list="source-types"
                    maxlength="16"
                    value="{{ editing.source_doc_type|default:'' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             <datalist id="source-types">
               <option value="AR"><option value="AP"><option value="CV"><option value="PCV">
               <option value="RFP"><option value="DEP"><option value="ADJ"><option value="JE">
             </datalist>
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-slate-700" for="id_source_doc_no">Source No.</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_source_doc_no">Source No.</label>
             <input type="text" name="source_doc_no" id="id_source_doc_no"
                    maxlength="32"
                    value="{{ editing.source_doc_no|default:'' }}"
-                   class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
         </div>
       </div>
@@ -107,9 +107,9 @@
 
     <!-- ===================== ACCOUNT DISTRIBUTION ===================== -->
     <div>
-      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-700 mb-3">Account Distribution</div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Account Distribution</div>
 
-      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+      <div class="rounded-xl border border-surface-200 bg-white shadow-sm overflow-x-auto">
         <table class="line-table w-full text-sm" style="min-width: 1210px;">
           <colgroup>
             <col style="width:44px"><!-- # -->
@@ -121,7 +121,7 @@
             <col style="width:170px"><!-- Debit -->
             <col style="width:170px"><!-- Credit -->
           </colgroup>
-          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+          <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
             <tr>
               <th class="px-3 py-3">#</th>
               <th class="px-3 py-3">COA</th>
@@ -135,59 +135,59 @@
           </thead>
           <tbody id="lines-body" data-line-grid="je"
                  data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
-                 class="divide-y divide-slate-100">
+                 class="divide-y divide-surface-100">
             {% if editing %}
             {% for line in editing.lines.all %}
             <tr>
-              <td class="px-3 py-2 text-slate-400 line-no overflow-hidden">{{ line.line_no }}</td>
+              <td class="px-3 py-2 text-surface-400 line-no overflow-hidden">{{ line.line_no }}</td>
               <td class="px-3 py-2 overflow-hidden"><span class="coa-display font-mono text-xs whitespace-nowrap">{{ line.account.code }}</span></td>
               <td class="px-3 py-2 overflow-hidden">
-                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" title="{{ line.account.code }} — {{ line.account.name }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all&selected={{ line.account.code }}" data-search-value="id" title="{{ line.account.code }} — {{ line.account.name }}" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                   <option value="{{ line.account.id }}" selected>{{ line.account.code }} {{ line.account.name }}</option>
                 </select>
               </td>
               <td class="px-3 py-2 overflow-hidden">
-                <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                <select name="line_segment" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                   {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
                 </select>
               </td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-surface-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word">{{ line.description }}</textarea></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" value="{{ line.debit|money }}" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" value="{{ line.credit|money }}" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
             </tr>
             {% endfor %}
             {% else %}
             <tr>
-              <td class="px-3 py-2 text-slate-400 line-no overflow-hidden">1</td>
+              <td class="px-3 py-2 text-surface-400 line-no overflow-hidden">1</td>
               <td class="px-3 py-2 overflow-hidden"><span class="coa-display font-mono text-xs whitespace-nowrap"></span></td>
               <td class="px-3 py-2 overflow-hidden">
-                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" title="— select —" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                <select name="account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" title="— select —" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                   <option value="">— select —</option>
                 </select>
               </td>
               <td class="px-3 py-2 overflow-hidden">
-                <select name="line_segment" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                <select name="line_segment" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                   {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
                 </select>
               </td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS — offsite, GEN-FUEL" class="block w-full max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"></td>
-              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-slate-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
-              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS — offsite, GEN-FUEL" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2 overflow-hidden"><textarea name="line_description" data-autogrow rows="1" class="block w-full resize-none overflow-hidden rounded-md border border-surface-300 px-2 py-1.5 text-xs leading-5" style="word-break:break-word"></textarea></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="debit" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="credit" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
             </tr>
             {% endif %}
           </tbody>
-          <tfoot class="bg-slate-50">
-            <tr class="border-t-2 border-slate-300">
-              <td colspan="6" class="px-3 py-3 text-right text-sm font-bold uppercase tracking-wider text-slate-700">Totals</td>
+          <tfoot class="bg-surface-50">
+            <tr class="border-t-2 border-surface-300">
+              <td colspan="6" class="px-3 py-3 text-right text-sm font-bold uppercase tracking-wider text-surface-700">Totals</td>
               <td id="total-debit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
               <td id="total-credit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
             </tr>
             <tr>
               <td colspan="8" class="px-3 py-2">
                 <button type="button" id="add-line" data-add-row
-                        class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                        class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">
                   + Add line
                 </button>
               </td>
@@ -202,13 +202,13 @@
 
     <!-- ===================== ACTIONS ===================== -->
     <div class="flex flex-wrap items-center gap-3">
-      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
         {% if editing %}Save changes{% else %}Save draft{% endif %}
       </button>
       {% if editing %}
-      <a href="{% url 'ui:je_pdf_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export PDF</a>
-      <a href="{% url 'ui:je_xlsx_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>
-      <a href="{% url 'ui:je_csv_export' editing.id %}" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export CSV</a>
+      <a href="{% url 'ui:je_pdf_export' editing.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export PDF</a>
+      <a href="{% url 'ui:je_xlsx_export' editing.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export Excel</a>
+      <a href="{% url 'ui:je_csv_export' editing.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export CSV</a>
       {% endif %}
       <span id="balance-hint" class="text-sm"></span>
     </div>
@@ -217,14 +217,14 @@
     <div class="pt-8">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-16">
         <div>
-          <div class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-8">Prepared By:</div>
-          <div class="border-b border-slate-400 mb-1 h-10"></div>
-          <div class="text-xs text-slate-500">Signature over Printed Name</div>
+          <div class="text-sm font-semibold text-surface-700 uppercase tracking-wide mb-8">Prepared By:</div>
+          <div class="border-b border-surface-400 mb-1 h-10"></div>
+          <div class="text-xs text-surface-500">Signature over Printed Name</div>
         </div>
         <div>
-          <div class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-8">Approved By:</div>
-          <div class="border-b border-slate-400 mb-1 h-10"></div>
-          <div class="text-xs text-slate-500">Signature over Printed Name</div>
+          <div class="text-sm font-semibold text-surface-700 uppercase tracking-wide mb-8">Approved By:</div>
+          <div class="border-b border-surface-400 mb-1 h-10"></div>
+          <div class="text-xs text-surface-500">Signature over Printed Name</div>
         </div>
       </div>
     </div>

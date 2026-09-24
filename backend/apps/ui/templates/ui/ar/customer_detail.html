@@ -7,36 +7,36 @@
     <div>
       {% capture as ledger_title %}Customer Ledger — {{ customer.code }} {{ customer.name }}{% endcapture %}
       {% include "ui/partials/page_header.html" with title=ledger_title subtitle=customer.group|default:"" actions="" %}
-      <p class="mt-2 text-sm text-slate-500">TIN: {{ customer.tin|default:"—" }}</p>
+      <p class="mt-2 text-sm text-surface-500">TIN: {{ customer.tin|default:"—" }}</p>
     </div>
     <div class="flex items-end">
-      <label class="block text-sm font-medium text-slate-700 mb-1">As-of date</label>
-      <input type="date" name="as_of" value="{{ as_of|date:'Y-m-d' }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none" id="as_of_selector">
+      <label class="block text-sm font-medium text-surface-700 mb-1">As-of date</label>
+      <input type="date" name="as_of" value="{{ as_of|date:'Y-m-d' }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none" id="as_of_selector">
     </div>
   </div>
 
   <div class="mt-6">
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
       {% for bucket_name, amount in aging.buckets.items %}
-      <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <div class="text-xs uppercase tracking-wider text-slate-500">{{ bucket_name }}</div>
-        <div class="mt-1 text-lg font-semibold tabular-nums whitespace-nowrap {% if amount > 0 %}text-amber-700{% else %}text-slate-400{% endif %}">₱{{ amount|money }}</div>
+      <div class="bg-white rounded-xl border border-surface-200 p-4">
+        <div class="text-xs uppercase tracking-wider text-surface-500">{{ bucket_name }}</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums whitespace-nowrap {% if amount > 0 %}text-amber-700{% else %}text-surface-400{% endif %}">{{amount|peso}}</div>
       </div>
       {% endfor %}
-      <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <div class="text-xs uppercase tracking-wider text-slate-500">Total</div>
-        <div class="mt-1 text-lg font-semibold tabular-nums whitespace-nowrap">₱{{ aging.register_total|money }}</div>
+      <div class="bg-white rounded-xl border border-surface-200 p-4">
+        <div class="text-xs uppercase tracking-wider text-surface-500">Total</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums whitespace-nowrap">{{aging.register_total|peso}}</div>
       </div>
     </div>
 
     {% if aging.not_yet_due %}
-    <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-      <div class="px-4 py-3 border-b border-slate-200">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-700">Not yet due</h2>
-        <p class="text-xs text-slate-500 mt-1">Dated after {{ as_of|date:"M d, Y" }}; excluded from aging buckets.</p>
+    <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+      <div class="px-4 py-3 border-b border-surface-200">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-surface-700">Not yet due</h2>
+        <p class="text-xs text-surface-500 mt-1">Dated after {{ as_of|date:"M d, Y" }}; excluded from aging buckets.</p>
       </div>
       <table class="w-full text-sm min-w-[720px]">
-        <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+        <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
           <tr>
             <th class="px-4 py-3">Invoice #</th>
             <th class="px-4 py-3">Customer</th>
@@ -46,24 +46,24 @@
             <th class="px-4 py-3 text-right">Balance</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100">
+        <tbody class="divide-y divide-surface-100">
           {% for r in aging.not_yet_due %}
-          <tr class="hover:bg-slate-50">
+          <tr class="hover:bg-surface-50">
             <td class="px-4 py-2 font-mono text-xs">{{ r.invoice_no }}</td>
             <td class="px-4 py-2">{{ r.customer }}</td>
             <td class="px-4 py-2">{{ r.date|date:"Y-m-d" }}</td>
             <td class="px-4 py-2">{{ r.segment }}</td>
             <td class="px-4 py-2">{{ r.status }}</td>
-            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ r.balance|money }}</td>
+            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{{r.balance|peso}}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No invoices due after {{ as_of|date:"M d, Y" }}.</td></tr>
+          <tr><td colspan="5" class="px-4 py-8 text-center text-surface-400">No invoices due after {{ as_of|date:"M d, Y" }}.</td></tr>
           {% endfor %}
         </tbody>
-        <tfoot class="bg-slate-50 font-semibold">
+        <tfoot class="bg-surface-50 font-semibold">
           <tr>
-            <td colspan="5" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-slate-500">Total not yet due</td>
-            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ aging.not_yet_due_total|money }}</td>
+            <td colspan="5" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-surface-500">Total not yet due</td>
+            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{aging.not_yet_due_total|peso}}</td>
           </tr>
         </tfoot>
       </table>
@@ -71,9 +71,9 @@
     {% endif %}
   </div>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-3">Invoice #</th>
           <th class="px-4 py-3">Customer</th>
@@ -84,27 +84,27 @@
           <th class="px-4 py-3 text-right">Balance</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for r in aging_page %}
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-surface-50">
           <td class="px-4 py-2 font-mono text-xs">{{ r.invoice_no }}</td>
           <td class="px-4 py-2">{{ r.customer }}</td>
           <td class="px-4 py-2">{{ r.date|date:"Y-m-d" }}</td>
           <td class="px-4 py-2">{{ r.segment }}</td>
           <td class="px-4 py-2">
-            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.age_days > 90 %}bg-red-100 text-red-800{% elif r.age_days > 60 %}bg-amber-100 text-amber-800{% else %}bg-slate-100 text-slate-700{% endif %}">{{ r.status }}</span>
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.age_days > 90 %}bg-rose-100 text-rose-800{% elif r.age_days > 60 %}bg-amber-100 text-amber-800{% else %}bg-surface-100 text-surface-700{% endif %}">{{ r.status }}</span>
           </td>
           <td class="px-4 py-2 text-right tabular-nums">{{ r.age_days|default:"—" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ r.balance|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{{r.balance|peso}}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No open invoices as of {{ as_of|date:"M d, Y" }}.</td></tr>
+        <tr><td colspan="7" class="px-4 py-8 text-center text-surface-400">No open invoices as of {{ as_of|date:"M d, Y" }}.</td></tr>
         {% endfor %}
       </tbody>
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-surface-50 font-semibold">
         <tr>
-          <td colspan="6" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-slate-500">Total outstanding</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ aging.register_total|money }}</td>
+          <td colspan="6" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-surface-500">Total outstanding</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{aging.register_total|peso}}</td>
         </tr>
       </tfoot>
     </table>
@@ -113,17 +113,17 @@
   {% include "ui/partials/pagination.html" with page_obj=aging_page %}
 
   <div class="mt-4 flex justify-end">
-    <a href="{% url 'ui:ar_customer_ledger' customer.pk %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Statement of Account →</a>
+    <a href="{% url 'ui:ar_customer_ledger' customer.pk %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Statement of Account →</a>
   </div>
 
   {% if ledger %}
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-    <div class="px-4 py-3 border-b border-slate-200">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-700">Cycle Over/(Short) Ledger</h2>
-      <p class="text-xs text-slate-500 mt-1">Per weekly cycle: collections vs billings and the running cumulative (ADR-013).</p>
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+    <div class="px-4 py-3 border-b border-surface-200">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-surface-700">Cycle Over/(Short) Ledger</h2>
+      <p class="text-xs text-surface-500 mt-1">Per weekly cycle: collections vs billings and the running cumulative (ADR-013).</p>
     </div>
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-3">Cycle Start</th>
           <th class="px-4 py-3 text-right">Billed</th>
@@ -132,14 +132,14 @@
           <th class="px-4 py-3 text-right">Cumulative</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for row in ledger %}
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-surface-50">
           <td class="px-4 py-2 whitespace-nowrap">{{ row.cycle_start|date:"Y-m-d" }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ row.billed|money }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">₱{{ row.paid|money }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap {% if row.over_short < 0 %}text-red-600{% else %}text-emerald-700{% endif %}">₱{{ row.over_short|money }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ row.cumulative|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{row.billed|peso}}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{row.paid|peso}}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap {% if row.over_short < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">{{row.over_short|peso}}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{{row.cumulative|peso}}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -148,13 +148,13 @@
   {% endif %}
 
   {% if receipts %}
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-    <div class="px-4 py-3 border-b border-slate-200">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-700">Acknowledgment Receipts</h2>
-      <p class="text-xs text-slate-500 mt-1">All collection documents for this customer; only approved ones post to the GL.</p>
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+    <div class="px-4 py-3 border-b border-surface-200">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-surface-700">Acknowledgment Receipts</h2>
+      <p class="text-xs text-surface-500 mt-1">All collection documents for this customer; only approved ones post to the GL.</p>
     </div>
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-4 py-3">Receipt #</th>
           <th class="px-4 py-3">Date</th>
@@ -163,17 +163,17 @@
           <th class="px-4 py-3 text-right">Amount</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for r in receipts %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ r.receipt_no }}</a></td>
+        <tr class="hover:bg-surface-50">
+          <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></td>
           <td class="px-4 py-2">{{ r.transaction_date|date:"Y-m-d" }}</td>
           <td class="px-4 py-2">{{ r.segment.code }}</td>
           <td class="px-4 py-2">{{ r.get_status_display }}</td>
-          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">₱{{ r.amount|money }}</td>
+          <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{{r.amount|peso}}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No receipts recorded for this customer.</td></tr>
+        <tr><td colspan="5" class="px-4 py-8 text-center text-surface-400">No receipts recorded for this customer.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -181,7 +181,7 @@
   {% endif %}
 
   <div class="mt-6 flex justify-end gap-3">
-    <a href="{% url 'ui:customer_list' %}" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Back to customers</a>
+    <a href="{% url 'ui:customer_list' %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Back to customers</a>
     <a href="{% url 'ui:receipt_list' %}" class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">View receipts →</a>
   </div>
 </div>

@@ -5,7 +5,7 @@ directly — mutations go through the context services (via views.py), exactly
 as the DRF API does.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -36,6 +36,294 @@ def month_end_close_context():
     if not period:
         return None
     return MonthEndCloseService.get_or_create(period)
+
+
+# ---------------------------------------------------------------------------
+# Executive dashboard (4 zones)
+# ---------------------------------------------------------------------------
+
+COGS_PREFIXES = ("50", "51", "52")
+
+
+def _fiscal_window(company, today):
+    """(fy_start, fy_end) for the fiscal year containing today (ADR-013)."""
+    from apps.foundation.models import FiscalYear
+
+    fy = (
+        FiscalYear.objects.filter(
+            company=company, start_date__lte=today, end_date__gte=today
+        )
+        .order_by("-start_date")
+        .first()
+    )
+    if fy:
+        return fy.start_date, fy.end_date
+    return date(today.year, 1, 1), date(today.year, 12, 31)
+
+
+def _annual_segment_keys(balances, account_codes):
+    """Sum one account group across selected accounts per GL segment key."""
+    totals = {}
+    for acc in account_codes:
+        per_seg = balances.get(acc.code, {})
+        for seg, val in per_seg.items():
+            key = seg or "ALL"
+            totals[key] = totals.get(key, Decimal("0.00")) + val
+    return totals
+
+
+def executive_dashboard_context(*, segment=None, user=None):
+    """The executive finance view: 8 KPIs, 4 charts, 2 aging snapshots,
+    2 operational panels — all derived live from the posted GL.
+
+    ``segment`` filters GL-derived figures to one Segment.code (None = all).
+    """
+    from apps.core.approvals import pending_approval_count
+    from apps.foundation.models import Account, Company
+    from apps.posting.models import GeneralLedger
+    from apps.posting.services import ReversalService
+
+    company = Company.objects.first()
+    today = date.today()
+    fy_start, fy_end = _fiscal_window(company, today)
+    period_end = min(today, fy_end)
+
+    # ---- GL balances: activity (revenue/expense) + ending (cash position) --
+    ytd = TBSvc.segment_balances(company, start=fy_start, end=period_end)
+    ending = TBSvc.segment_balances(company, end=period_end)
+
+    accounts = list(Account.objects.filter(is_postable=True))
+    accounts_by_code = {a.code: a for a in accounts}
+    revenue_codes = [a for a in accounts if a.account_type == "revenue"]
+    expense_codes = [a for a in accounts if a.account_type == "expense"]
+    cogs_codes = [a for a in expense_codes if a.code.startswith(COGS_PREFIXES)]
+    cash_codes = [
+        a for a in accounts
+        if a.account_type == "asset" and a.code.startswith("10")
+    ]
+
+    def segment_total(bal_map, account_list):
+        """Signed sum over the requested account list, honoring the segment filter."""
+        total = Decimal("0.00")
+        for acc in account_list:
+            per_seg = bal_map.get(acc.code, {})
+            if segment:
+                total += per_seg.get(segment, Decimal("0.00"))
+            else:
+                total += sum(per_seg.values())
+        return money(total)
+
+    revenue_ytd = segment_total(ytd, revenue_codes)
+    revenue_sales_ytd = segment_total(
+        ytd,
+        [a for a in revenue_codes if not a.code.startswith(("405", "415", "425"))],
+    )
+    expenses_ytd = segment_total(ytd, expense_codes)
+    cogs_ytd = segment_total(ytd, cogs_codes)
+    cash_position = segment_total(ending, cash_codes)
+    net_income_ytd = money(revenue_ytd - expenses_ytd)
+    gpm = money((revenue_sales_ytd - cogs_ytd) * 100 / revenue_sales_ytd) if revenue_sales_ytd else Decimal("0.00")
+    npm = money(net_income_ytd * 100 / revenue_ytd) if revenue_ytd else Decimal("0.00")
+
+    # ---- Monthly series (rolling 12 months ending this month) --------------
+    months = []
+    origin = date(today.year, today.month, 1)
+    for _ in range(12):
+        months.append((origin.year, origin.month))
+        origin = (origin.replace(day=1) - timedelta(days=1)).replace(day=1)
+    months.reverse()
+
+    revenue_series, expense_series = [], []
+    cash_in_series, cash_out_series = [], []
+    for yy, mm in months:
+        first = date(yy, mm, 1)
+        last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        if last > today:
+            revenue_series.append(0.0)
+            expense_series.append(0.0)
+            cash_in_series.append(0.0)
+            cash_out_series.append(0.0)
+            continue
+        mbal = TBSvc.segment_balances(company, start=first, end=last)
+        rev = segment_total(mbal, revenue_codes)
+        exp = segment_total(mbal, expense_codes)
+        revenue_series.append(float(rev))
+        expense_series.append(float(exp))
+        # Cash movement straight from GL debits/credits on 10xxx accounts.
+        qs = GeneralLedger.objects.filter(
+            entry__status__in=GL_EFFECTIVE_STATUSES,
+            entry__company=company,
+            account__code__startswith="10",
+            account__account_type="asset",
+            transaction_date__gte=first,
+            transaction_date__lte=last,
+        )
+        if segment:
+            qs = qs.filter(segment__code=segment)
+        agg = qs.aggregate(d=Sum("debit"), c=Sum("credit"))
+        cash_in_series.append(float(agg["d"] or 0))
+        cash_out_series.append(float(agg["c"] or 0))
+
+    # Prior-month trend for the KPI arrows (this month vs last month).
+    last_full = revenue_series[-2] if len(revenue_series) >= 2 else None
+
+    def trend(current, prior):
+        if prior is None or not prior:
+            return {"dir": "flat", "pct": 0.0}
+        pct = (current - prior) / abs(prior) * 100
+        return {"dir": "up" if pct > 0.1 else ("down" if pct < -0.1 else "flat"), "pct": round(pct, 1)}
+
+    # ---- Segment performance -----------------------------------------------
+    seg_rev = _annual_segment_keys(ytd, revenue_codes)
+    seg_exp = _annual_segment_keys(ytd, expense_codes)
+    segment_codes_list = [s.code for s in Segment.objects.order_by("code")]
+    seg_revenue_series = [float(seg_rev.get(code, 0)) for code in segment_codes_list]
+    seg_expense_series = [float(seg_exp.get(code, 0)) for code in segment_codes_list]
+
+    # ---- Expense breakdown (by category name, top 6 + Other) ---------------
+    def category_of(acc):
+        return (acc.category or "").strip() or "Other"
+
+    bucket = {}
+    for acc in expense_codes:
+        per_seg = ytd.get(acc.code, {})
+        value = per_seg.get(segment, Decimal("0.00")) if segment else sum(per_seg.values())
+        if not value:
+            continue
+        bucket[category_of(acc)] = bucket.get(category_of(acc), Decimal("0.00")) + value
+    ranked = sorted(bucket.items(), key=lambda kv: kv[1], reverse=True)
+    top, rest = ranked[:6], ranked[6:]
+    doughnut_labels = [k for k, _ in top]
+    doughnut_values = [float(v) for _, v in top]
+    if rest:
+        doughnut_labels.append("Other")
+        doughnut_values.append(float(sum(v for _, v in rest)))
+
+    # ---- AR / AP outstanding + aging snapshots ------------------------------
+    from apps.ar.models import ARInvoice
+    from apps.ap.models import CheckVoucher, RFPDocument
+
+    ar_qs = ARInvoice.objects.filter(status__in=("open", "partially_paid"))
+    if segment:
+        ar_qs = ar_qs.filter(segment__code=segment)
+    ar_outstanding = money(sum((inv.balance for inv in ar_qs), Decimal("0.00")))
+    ar_count = ar_qs.count()
+
+    cleared = {
+        row["rfp_id"]: (row["paid"] or Decimal("0.00"))
+        for row in (
+            CheckVoucher.objects.filter(journal_entry__isnull=False)
+            .exclude(rfp__isnull=True)
+            .values("rfp_id")
+            .annotate(paid=Sum("gross_amount"))
+        )
+    }
+    rfp_qs = RFPDocument.objects.filter(status="posted")
+    if segment:
+        rfp_qs = rfp_qs.filter(segment__code=segment)
+    ap_outstanding = money(
+        sum((rfp.amount - cleared.get(rfp.id, Decimal("0.00")) for rfp in rfp_qs), Decimal("0.00"))
+    )
+    ap_count = rfp_qs.count()
+
+    ar_aging = aging_context(today)
+    ap_aging = ap_aging_context(today)
+
+    # ---- Pipeline + close status -------------------------------------------
+    pipeline = rfp_summary()
+    close = month_end_close_context()
+    reversal_pending = ReversalService.pending_count()
+    waiting_on_you = pending_approval_count(user) if user else 0
+
+    kpis = [
+        {
+            "key": "revenue", "label": "Revenue YTD", "value": revenue_ytd,
+            "trend": trend(revenue_series[-1], last_full),
+            "href_name": "ui:statement", "href_args": ["is"],
+            "sub": f"FY {fy_start:%Y}",
+            "icon": "trending-up", "accent": "bg-emerald-500", "bubble": "bg-emerald-50 text-emerald-600",
+        },
+        {
+            "key": "expenses", "label": "Expenses YTD", "value": expenses_ytd,
+            "trend": trend(expense_series[-1], expense_series[-2] if len(expense_series) >= 2 else None),
+            "href_name": "ui:statement", "href_args": ["te"],
+            "sub": f"of which COS \u20b1{cogs_ytd:,.2f}",
+            "icon": "trending-down", "accent": "bg-rose-500", "bubble": "bg-rose-50 text-rose-600",
+        },
+        {
+            "key": "net_income", "label": "Net Income YTD", "value": net_income_ytd,
+            "trend": {"dir": "up" if net_income_ytd >= 0 else "down", "pct": float(npm)},
+            "href_name": "ui:statement", "href_args": ["is"],
+            "sub": f"{abs(npm)}% of revenue",
+            "icon": "document-chart-bar", "accent": "bg-brand-500", "bubble": "bg-brand-50 text-brand-600",
+        },
+        {
+            "key": "cash", "label": "Cash Position", "value": cash_position,
+            "trend": {"dir": "flat", "pct": 0.0}, "trend_note": "Today",
+            "href_name": "ui:bank_list", "href_args": [],
+            "sub": "Banks + PCF + cash on hand",
+            "icon": "banknotes", "accent": "bg-amber-500", "bubble": "bg-amber-50 text-amber-600",
+        },
+        {
+            "key": "gpm", "label": "Gross Profit Margin", "value": gpm, "suffix": "%",
+            "trend": {"dir": "flat", "pct": 0.0}, "trend_note": "FY ratio",
+            "href_name": "ui:statement", "href_args": ["is"],
+            "sub": "(Net sales − COS) ÷ net sales",
+            "icon": "calculator", "accent": "bg-emerald-500", "bubble": "bg-emerald-50 text-emerald-600",
+        },
+        {
+            "key": "npm", "label": "Net Profit Margin", "value": npm, "suffix": "%",
+            "trend": {"dir": "flat", "pct": 0.0}, "trend_note": "FY ratio",
+            "href_name": "ui:statement", "href_args": ["is"],
+            "sub": "Net income ÷ revenue",
+            "icon": "document-chart-bar", "accent": "bg-brand-500", "bubble": "bg-brand-50 text-brand-600",
+        },
+        {
+            "key": "ar", "label": "AR Outstanding", "value": ar_outstanding,
+            "trend": {"dir": "flat", "pct": 0.0}, "trend_note": "As of today",
+            "href_name": "ui:ar_aging", "href_args": [],
+            "sub": f"{ar_count} open invoice(s)",
+            "icon": "clock", "accent": "bg-amber-500", "bubble": "bg-amber-50 text-amber-600",
+        },
+        {
+            "key": "ap", "label": "AP Outstanding", "value": ap_outstanding,
+            "trend": {"dir": "flat", "pct": 0.0}, "trend_note": "As of today",
+            "href_name": "ui:ap_aging", "href_args": [],
+            "sub": f"{ap_count} posted RFP(s)",
+            "icon": "credit-card", "accent": "bg-rose-500", "bubble": "bg-rose-50 text-rose-600",
+        },
+    ]
+
+    chart = {
+        "labels": [f"{yy}-{mm:02d}" for yy, mm in months],
+        "month_labels": [date(yy, mm, 1).strftime("%b") for yy, mm in months],
+        "revenue": revenue_series,
+        "expenses": expense_series,
+        "cash_in": cash_in_series,
+        "cash_out": cash_out_series,
+        "segment_codes": segment_codes_list,
+        "segment_revenue": seg_revenue_series,
+        "segment_expenses": seg_expense_series,
+        "expense_labels": doughnut_labels,
+        "expense_values": doughnut_values,
+    }
+
+    return {
+        "kpis": kpis,
+        "chart": chart,
+        "ar_aging": ar_aging,
+        "ap_aging": ap_aging,
+        "pipeline": pipeline,
+        "close": close,
+        "reversal_pending_count": reversal_pending,
+        "waiting_on_you": waiting_on_you,
+        "segments": segment_codes_list,
+        "segment": segment or "",
+        "fy_label": f"{fy_start:%Y}",
+        "fy_start": fy_start,
+        "fy_end": fy_end,
+        "pending_count": pending_count(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +464,43 @@ def list_receipts(*, limit=100):
     from apps.ar.models import AcknowledgmentReceipt
 
     return AcknowledgmentReceipt.objects.select_related("customer", "segment").order_by("-transaction_date")[:limit]
+
+
+def receipt_summary():
+    """Counts/amounts by stage for the AR receipts stat cards."""
+    from django.db.models import Sum
+
+    from apps.ar.models import AcknowledgmentReceipt
+
+    qs = AcknowledgmentReceipt.objects
+    return {
+        "total": qs.count(),
+        "total_amount": qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "posted": qs.filter(status="posted").count(),
+        "posted_amount": qs.filter(status="posted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "submitted": qs.filter(status="submitted").count(),
+        "submitted_amount": qs.filter(status="submitted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "draft": qs.filter(status="draft").count(),
+        "draft_amount": qs.filter(status="draft").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+    }
+
+
+def si_summary():
+    """Counts/amounts by state for the Sales Invoices stat cards."""
+    from django.db.models import Sum
+
+    from apps.ar.models import ARInvoice
+
+    qs = ARInvoice.objects
+    open_qs = qs.filter(status__in=("open", "partially_paid"))
+    return {
+        "total": qs.count(),
+        "total_amount": qs.aggregate(t=Sum("total"))["t"] or Decimal("0.00"),
+        "open": open_qs.count(),
+        "overdue_count": sum(1 for inv in open_qs if (date.today() - inv.transaction_date).days > 60),
+        "paid": qs.filter(status="paid").count(),
+        "posted": qs.filter(status="posted").count(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +694,19 @@ def list_cycles(*, limit=20):
     return WeeklyCashCycle.objects.order_by("-cycle_start")[:limit]
 
 
+def cycle_summary():
+    """Counts by lock state for the Weekly Cycle stat cards."""
+    from apps.cash.models import WeeklyCashCycle
+
+    qs = WeeklyCashCycle.objects
+    return {
+        "total": qs.count(),
+        "open": qs.filter(status="open").count(),
+        "reconciled": qs.filter(status="reconciled").count(),
+        "locked": qs.filter(status="locked").count(),
+    }
+
+
 def list_pcf_funds():
     from apps.cash.models import PettyCashFund
 
@@ -383,10 +721,46 @@ def list_pcf_replenishments(*, limit=100):
     ).order_by("-request_date")[:limit]
 
 
+def pcf_replenishment_summary():
+    """Counts/amounts by stage for the PCF Vouchers stat cards."""
+    from django.db.models import Sum
+
+    from apps.cash.models import PCFReplenishment
+
+    qs = PCFReplenishment.objects
+    return {
+        "total": qs.count(),
+        "total_amount": qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "requested": qs.filter(status="requested").count(),
+        "requested_amount": qs.filter(status="requested").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "approved": qs.filter(status="approved").count(),
+        "posted": qs.filter(status="posted").count(),
+        "posted_amount": qs.filter(status="posted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+    }
+
+
 def list_cv(*, limit=100):
     from apps.ap.models import CheckVoucher
 
     return CheckVoucher.objects.select_related("payee", "bank_account", "rfp").order_by("-cv_date")[:limit]
+
+
+def cv_summary():
+    """Counts/amounts by stage for the Check Voucher stat cards."""
+    from django.db.models import Sum
+
+    from apps.ap.models import CheckVoucher
+
+    qs = CheckVoucher.objects
+    return {
+        "total": qs.count(),
+        "total_gross": qs.aggregate(t=Sum("gross_amount"))["t"] or Decimal("0.00"),
+        "created": qs.filter(status="created").count(),
+        "created_gross": qs.filter(status="created").aggregate(t=Sum("gross_amount"))["t"] or Decimal("0.00"),
+        "approved": qs.filter(status="approved").count(),
+        "cleared": qs.filter(status="cleared").count(),
+        "cleared_net": qs.filter(status="cleared").aggregate(t=Sum("net_amount"))["t"] or Decimal("0.00"),
+    }
 
 
 def bank_accounts():
@@ -429,6 +803,23 @@ def list_conso(*, limit=50):
     from apps.ap.models import CONSOBatch
 
     return CONSOBatch.objects.prefetch_related("rfps").order_by("-conso_date")[:limit]
+
+
+def conso_summary():
+    """Counts/amounts by stage for the CONSO batch stat cards."""
+    from django.db.models import Sum
+
+    from apps.ap.models import CONSOBatch
+
+    qs = CONSOBatch.objects
+    return {
+        "total": qs.count(),
+        "open": qs.filter(status="open").count(),
+        "open_amount": qs.filter(status="open").aggregate(t=Sum("total_amount"))["t"] or Decimal("0.00"),
+        "reviewed": qs.filter(status="reviewed").count(),
+        "posted": qs.filter(status="posted").count(),
+        "posted_amount": qs.filter(status="posted").aggregate(t=Sum("total_amount"))["t"] or Decimal("0.00"),
+    }
 
 
 def pending_documents():
@@ -545,6 +936,25 @@ def list_billings(*, limit=100):
     )
 
 
+def billing_summary():
+    """Counts/amounts by stage for the Billing stat cards."""
+    from django.db.models import Sum
+
+    from apps.billing.models import BillingDocument
+
+    qs = BillingDocument.objects
+    return {
+        "total": qs.count(),
+        "total_amount": qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "draft": qs.filter(status="draft").count(),
+        "submitted": qs.filter(status="submitted").count(),
+        "submitted_amount": qs.filter(status="submitted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "approved": qs.filter(status="approved").count(),
+        "posted": qs.filter(status="posted").count(),
+        "posted_amount": qs.filter(status="posted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+    }
+
+
 def billing_basis_rfps():
     """Posted RFPs that can serve as the basis of a billing transaction.
 
@@ -575,6 +985,34 @@ def list_recons(*, limit=100):
     from apps.cash.models import BankReconciliation
 
     return BankReconciliation.objects.select_related("cycle", "bank_account").order_by("-cycle__cycle_start")[:limit]
+
+
+def recon_summary():
+    """Counts by stage for the Bank Reconciliation stat cards."""
+    from apps.cash.models import BankReconciliation
+
+    qs = BankReconciliation.objects
+    return {
+        "total": qs.count(),
+        "open": qs.filter(status="open").count(),
+        "resolved": qs.filter(status="resolved").count(),
+        "escalated": qs.filter(status="escalated").count(),
+    }
+
+
+def cash_short_summary():
+    """Counts/variance by stage for the Cash Short stat cards."""
+    from django.db.models import Sum
+    from apps.cash.models import CashShortExcessWorksheet
+
+    qs = CashShortExcessWorksheet.objects
+    return {
+        "total": qs.count(),
+        "open": qs.filter(status="open").count(),
+        "open_variance": qs.filter(status="open").aggregate(t=Sum("variance"))["t"] or Decimal("0.00"),
+        "approved": qs.filter(status="approved").count(),
+        "adjusted": qs.filter(status="adjusted").count(),
+    }
 
 
 def list_cash_shorts(*, limit=100):
@@ -771,6 +1209,21 @@ def list_assets(*, limit=100, q="", category="", segment="", status=""):
     return rows[:limit]
 
 
+def asset_summary():
+    """Counts/net cost by register state for the Fixed Assets stat cards."""
+    from apps.assets.models import Asset
+    from django.db.models import Sum
+
+    qs = Asset.objects
+    return {
+        "total": qs.count(),
+        "total_cost": qs.aggregate(t=Sum("cost"))["t"] or Decimal("0.00"),
+        "active": qs.filter(status="active").count(),
+        "fully_depreciated": qs.filter(status="fully_depreciated").count(),
+        "disposed": qs.filter(status="disposed").count(),
+    }
+
+
 def asset_context(asset):
     """Detail facts for the asset screen: schedule rows + net book value."""
     return {
@@ -957,6 +1410,7 @@ def aging_context(as_of: date) -> dict:
         "as_of": as_of,
         "buckets": buckets,
         "bucket_total": sum(b["amount"] for b in buckets),
+        "bucket_max": max([b["amount"] for b in buckets] + [Decimal("0.01")]),
         "register": register,
         "register_total": sum(r["balance"] for r in register),
         "not_yet_due": not_yet_due,
@@ -1330,6 +1784,7 @@ def ap_aging_context(as_of: date) -> dict:
         "as_of": as_of,
         "buckets": [{"bucket": k, "amount": money(v)} for k, v in buckets.items()],
         "bucket_total": sum(buckets.values()),
+        "bucket_max": max(list(buckets.values()) + [Decimal("0.01")]),
         "register": register,
         "register_total": sum(r["balance"] for r in register),
         "not_yet_due": not_yet_due,
@@ -1580,10 +2035,23 @@ def transfers_context():
     """Inter-account transfers + bank accounts for the transfer form."""
     from apps.cash.models import BankAccount, InterAccountTransfer
 
+    from django.db.models import Sum
+
     banks = BankAccount.objects.filter(is_active=True).select_related("company", "gl_account").order_by("code")
+    transfers = InterAccountTransfer.objects.select_related("from_account", "to_account", "journal_entry")
+    summary = {
+        "total": transfers.count(),
+        "total_amount": transfers.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "requested": transfers.filter(status__in=("requested", "rejected")).count(),
+        "submitted": transfers.filter(status="submitted").count(),
+        "submitted_amount": transfers.filter(status="submitted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "approved": transfers.filter(status="approved").count(),
+        "approved_amount": transfers.filter(status="approved").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+    }
     return {
         "banks": banks,
-        "transfers": InterAccountTransfer.objects.select_related("from_account", "to_account", "journal_entry").order_by("-transfer_date"),
+        "summary": summary,
+        "transfers": transfers.order_by("-transfer_date"),
     }
 
 
@@ -1963,8 +2431,15 @@ def advances_context():
                 "status_label": adv.status.replace("_", " ").title(),
             }
         )
+    outstanding = sum(r["outstanding"] for r in rows)
     return {
         "rows": rows,
-        "total_outstanding": sum(r["outstanding"] for r in rows),
+        "total_outstanding": outstanding,
         "segments": list(Segment.objects.order_by("code")),
+        "summary": {
+            "total": len(rows),
+            "active": sum(1 for r in rows if r["outstanding"] > 0),
+            "liquidated": sum(1 for r in rows if r["outstanding"] <= 0),
+            "total_outstanding": outstanding,
+        },
     }

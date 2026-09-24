@@ -4,7 +4,7 @@ Params: export_url (required) — dispatch endpoint; base.js appends
 ?format=<ext>. label (optional) — button text, default "Export".
 {% endcomment %}
 <div class="flex items-center gap-2">
-  <select name="format" data-format-redirect data-export-url="{{ export_url }}" aria-label="Export format" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+  <select name="format" data-format-redirect data-export-url="{{ export_url }}" aria-label="Export format" class="rounded-md border border-surface-300 px-2 py-1.5 text-sm">
     <option value="xlsx">XLSX</option>
     <option value="csv">CSV</option>
     <option value="pdf">PDF</option>

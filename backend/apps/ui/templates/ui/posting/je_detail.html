@@ -4,28 +4,28 @@
 {% block content %}
 <div class="p-6">
   {% capture as entry_badge_color %}
-  {% if entry.status == 'approved' %}bg-blue-100 text-blue-800
-  {% elif entry.status == 'reversed' %}bg-red-100 text-red-800
+  {% if entry.status == 'approved' %}bg-brand-100 text-brand-800
+  {% elif entry.status == 'reversed' %}bg-rose-100 text-rose-800
   {% else %}{{ entry.status|status_color_class }}{% endif %}
   {% endcapture %}
   {% capture as entry_actions %}
   {% include "ui/partials/status_badge.html" with status=entry.status label=entry.get_status_display color=entry_badge_color %}
   {% if source_doc %}
-  <a href="{% url source_doc.detail source_doc.pk %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Open {{ source_doc.label }} →</a>
+  <a href="{% url source_doc.detail source_doc.pk %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Open {{ source_doc.label }} →</a>
   {% else %}
   {% if entry.status == 'draft' and entry.created_by_id == request.user.id %}
   <form method="post" action="{% url 'ui:je_submit' entry.id %}" class="inline">
     {% csrf_token %}
-    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Submit for approval</button>
+    <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for approval</button>
   </form>
-  <a href="{% url 'ui:je_edit' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Edit</a>
+  <a href="{% url 'ui:je_edit' entry.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Edit</a>
   {% elif entry.status == 'submitted' %}
   {% if request.user|approval_role_of == "head" %}
   <form method="post" action="{% url 'ui:je_approve' entry.id %}" class="inline">
     {% csrf_token %}
     <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve</button>
   </form>
-  <button type="button" onclick="openRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject</button>
+  <button type="button" onclick="openRejectModal()" class="inline rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">Reject</button>
   {% endif %}
   {% elif entry.status == 'approved' %}
   <form method="post" action="{% url 'ui:je_post' entry.id %}" class="inline">
@@ -34,10 +34,10 @@
   </form>
   {% endif %}
   {% endif %}
-<a href="{% url 'ui:je_pdf_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export PDF</a>
-  <a href="{% url 'ui:je_xlsx_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export Excel</a>
-  <a href="{% url 'ui:je_csv_export' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Export CSV</a>
-<a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Print</a>
+<a href="{% url 'ui:je_pdf_export' entry.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export PDF</a>
+  <a href="{% url 'ui:je_xlsx_export' entry.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export Excel</a>
+  <a href="{% url 'ui:je_csv_export' entry.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Export CSV</a>
+<a href="{% url 'ui:je_print' entry.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Print</a>
   {% if can_request_reversal and not source_doc %}
   <button type="button" onclick="openReversalModal()" class="inline rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100">Request reversal</button>
   {% endif %}
@@ -45,36 +45,36 @@
 {% include "ui/partials/page_header.html" with title=entry.entry_no subtitle=entry.description back_url_name="ui:je_list" back_label="Journal entries" actions=entry_actions %}
 
   {% if source_doc %}
-  <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-    <div class="text-sm font-semibold text-slate-800">Generated from {{ source_doc.label }}</div>
-    <div class="text-xs text-slate-500 mt-1">This entry is part of {{ source_doc.label }} and is actioned from that document — correct or reverse it there, not in the Journal Entries module.</div>
-    <a href="{% url source_doc.detail source_doc.pk %}" class="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">Open {{ source_doc.label }} →</a>
+  <div class="mt-4 rounded-lg border border-surface-200 bg-surface-50 px-4 py-3">
+    <div class="text-sm font-semibold text-surface-800">Generated from {{ source_doc.label }}</div>
+    <div class="text-xs text-surface-500 mt-1">This entry is part of {{ source_doc.label }} and is actioned from that document — correct or reverse it there, not in the Journal Entries module.</div>
+    <a href="{% url source_doc.detail source_doc.pk %}" class="inline-block mt-2 text-sm font-medium text-brand-600 hover:text-brand-800">Open {{ source_doc.label }} →</a>
   </div>
   {% endif %}
 
   {% if entry.rejection_note %}
-  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-    <div class="text-sm font-semibold text-red-800">
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">
       Returned by {{ entry.rejected_by.get_full_name|default:entry.rejected_by|default:"approver" }} — needs revision
     </div>
-    <div class="text-xs text-slate-500 mt-1">{{ entry.rejected_at|date:"M d, Y H:i" }}</div>
-    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ entry.rejection_note }}</div>
+    <div class="text-xs text-surface-500 mt-1">{{ entry.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ entry.rejection_note }}</div>
     {% if entry.status == 'draft' and entry.created_by_id == request.user.id %}
-    <a href="{% url 'ui:je_edit' entry.id %}" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise &amp; resubmit</a>
+    <a href="{% url 'ui:je_edit' entry.id %}" class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Revise &amp; resubmit</a>
     {% endif %}
   </div>
   {% endif %}
 
   {% if reversed_by_request %}
-  <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-    <div class="text-sm font-semibold text-red-800">Reversed — correcting entry posted</div>
-    <div class="text-xs text-slate-500 mt-1">
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">Reversed — correcting entry posted</div>
+    <div class="text-xs text-surface-500 mt-1">
       Approved by {{ reversed_by_request.approved_by.get_full_name|default:reversed_by_request.approved_by|default:"—" }}
       · {{ reversed_by_request.approved_at|date:"M d, Y H:i" }}
     </div>
-    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ reversed_by_request.reason }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ reversed_by_request.reason }}</div>
     {% if reversed_by_request.reversal_entry %}
-    <a href="{% url 'ui:je_detail' reversed_by_request.reversal_entry.id %}" class="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">Reversing entry {{ reversed_by_request.reversal_entry.entry_no }} →</a>
+    <a href="{% url 'ui:je_detail' reversed_by_request.reversal_entry.id %}" class="inline-block mt-2 text-sm font-medium text-brand-600 hover:text-brand-800">Reversing entry {{ reversed_by_request.reversal_entry.entry_no }} →</a>
     {% endif %}
   </div>
   {% endif %}
@@ -82,18 +82,18 @@
   {% if pending_reversal %}
   <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
     <div class="text-sm font-semibold text-amber-900">Reversal requested — awaiting approval</div>
-    <div class="text-xs text-slate-500 mt-1">
+    <div class="text-xs text-surface-500 mt-1">
       Requested by {{ pending_reversal.requested_by.get_full_name|default:pending_reversal.requested_by|default:"—" }}
       · {{ pending_reversal.requested_at|date:"M d, Y H:i" }}
     </div>
-    <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ pending_reversal.reason }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ pending_reversal.reason }}</div>
     {% if can_approve_reversal %}
     <div class="mt-3 flex items-center gap-3">
       <form method="post" action="{% url 'ui:je_reversal_approve' pending_reversal.id %}" class="inline">
         {% csrf_token %}
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve reversal</button>
       </form>
-      <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Reject reversal</button>
+      <button type="button" onclick="openReversalRejectModal()" class="inline rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">Reject reversal</button>
     </div>
     {% elif request.user|approval_role_of == "head" %}
     <p class="mt-2 text-xs text-amber-700">You requested this reversal — it must be approved by a different approver.</p>
@@ -102,40 +102,40 @@
   {% endif %}
 
   <dl class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Voucher Ref #</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Voucher Ref #</dt>
       <dd class="mt-1 font-medium font-mono text-xs">{{ entry.entry_no }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Supplier / Customer</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Supplier / Customer</dt>
       <dd class="mt-1 font-medium">{{ entry.supplier_name|default:"—" }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">PO / REF #</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">PO / REF #</dt>
       <dd class="mt-1 font-medium">{{ entry.po|default:"—" }}{% if entry.po %}{% endif %} / {{ entry.ref_number|default:"—" }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Date</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Date</dt>
       <dd class="mt-1 font-medium">{{ entry.transaction_date|date:"M d, Y" }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Cycle</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Cycle</dt>
       <dd class="mt-1 font-medium">{{ entry.transaction_date|cycle_label:entry.company|default:"—" }}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Source</dt>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Source</dt>
       <dd class="mt-1 font-medium">{{ entry.source_doc_type|default:"—" }}{% if entry.source_doc_no %} {{ entry.source_doc_no }}{% endif %}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-slate-200 px-4 py-3">
-      <dt class="text-xs text-slate-500">Balance</dt>
-      <dd class="mt-1 font-medium {% if entry.is_balanced %}text-emerald-700{% else %}text-red-700{% endif %}">
-        {{ entry.total_debit|money }} = {{ entry.total_credit|money }}
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Balance</dt>
+      <dd class="mt-1 font-medium {% if entry.is_balanced %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        {{entry.total_debit|peso}} = {{entry.total_credit|peso}}
         {% if not entry.is_balanced %} <span class="text-xs">(unbalanced)</span>{% endif %}
       </dd>
     </div>
   </dl>
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
     <table class="line-table w-full text-sm" style="min-width: 1210px;">
       <colgroup>
         <col style="width: 44px;"><!-- # -->
@@ -147,7 +147,7 @@
         <col style="width: 170px;"><!-- Debit -->
         <col style="width: 170px;"><!-- Credit -->
       </colgroup>
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-2.5">#</th>
           <th class="px-3 py-2.5">COA</th>
@@ -159,25 +159,25 @@
           <th class="px-3 py-2.5 text-right">Credit</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for line in entry.lines.all %}
         <tr>
-          <td class="px-3 py-2.5 text-slate-400">{{ line.line_no }}</td>
+          <td class="px-3 py-2.5 text-surface-400">{{ line.line_no }}</td>
           <td class="px-3 py-2.5 font-mono text-xs">{{ line.account.code }}</td>
-          <td class="px-3 py-2.5 text-slate-700">{{ line.account.name }}</td>
-          <td class="px-3 py-2.5 text-slate-600">{% if line.segment %}{{ line.segment.code }}{% else %}{{ entry.segment.code }}{% endif %}</td>
-          <td class="px-3 py-2.5 text-slate-600">{{ line.cost_center|default:"—" }}</td>
-          <td class="px-3 py-2.5 text-slate-600">{{ line.description|default:"—" }}</td>
-          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.debit|money }}</td>
-          <td class="px-3 py-2.5 text-right tabular-nums">{{ line.credit|money }}</td>
+          <td class="px-3 py-2.5 text-surface-700">{{ line.account.name }}</td>
+          <td class="px-3 py-2.5 text-surface-600">{% if line.segment %}{{ line.segment.code }}{% else %}{{ entry.segment.code }}{% endif %}</td>
+          <td class="px-3 py-2.5 text-surface-600">{{ line.cost_center|default:"—" }}</td>
+          <td class="px-3 py-2.5 text-surface-600">{{ line.description|default:"—" }}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{line.debit|peso}}</td>
+          <td class="px-3 py-2.5 text-right tabular-nums">{{line.credit|peso}}</td>
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-surface-50 font-semibold">
         <tr>
-          <td colspan="6" class="px-3 py-3 text-right font-bold uppercase tracking-wider text-slate-700">Totals</td>
-          <td class="px-3 py-3 text-right tabular-nums">{{ entry.total_debit|money }}</td>
-          <td class="px-3 py-3 text-right tabular-nums">{{ entry.total_credit|money }}</td>
+          <td colspan="6" class="px-3 py-3 text-right font-bold uppercase tracking-wider text-surface-700">Totals</td>
+          <td class="px-3 py-3 text-right tabular-nums">{{entry.total_debit|peso}}</td>
+          <td class="px-3 py-3 text-right tabular-nums">{{entry.total_credit|peso}}</td>
         </tr>
       </tfoot>
     </table>
@@ -188,20 +188,20 @@
   <!-- Reject Modal -->
   <div id="reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-      <div class="px-6 py-4 border-b border-slate-200">
-        <h3 class="text-lg font-semibold text-slate-900">Reject Journal Entry</h3>
+      <div class="px-6 py-4 border-b border-surface-200">
+        <h3 class="text-lg font-semibold text-surface-900">Reject Journal Entry</h3>
       </div>
       <form method="post" action="{% url 'ui:je_reject' entry.id %}">
         {% csrf_token %}
         <div class="p-6">
-          <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
+          <label class="block text-sm font-medium text-surface-700 mb-2">Rejection note (required)</label>
           <textarea name="note" data-autogrow rows="4" required
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             placeholder="Enter reason for rejection..."></textarea>
         </div>
-        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-          <button type="button" onclick="closeRejectModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Reject</button>
+        <div class="px-6 py-4 border-t border-surface-200 flex justify-end gap-3">
+          <button type="button" onclick="closeRejectModal()" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Reject</button>
         </div>
       </form>
     </div>
@@ -211,20 +211,20 @@
   <!-- Request Reversal Modal -->
   <div id="reversal-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-      <div class="px-6 py-4 border-b border-slate-200">
-        <h3 class="text-lg font-semibold text-slate-900">Request Reversal</h3>
+      <div class="px-6 py-4 border-b border-surface-200">
+        <h3 class="text-lg font-semibold text-surface-900">Request Reversal</h3>
       </div>
       <form method="post" action="{% url 'ui:je_reverse' entry.id %}">
         {% csrf_token %}
         <div class="p-6">
-          <label class="block text-sm font-medium text-slate-700 mb-2">Reason (required)</label>
+          <label class="block text-sm font-medium text-surface-700 mb-2">Reason (required)</label>
           <textarea name="reason" data-autogrow rows="4" required
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             placeholder="Why must this posted entry be reversed? (e.g. duplicate posting, wrong account)"></textarea>
-          <p class="mt-2 text-xs text-slate-500">A posted entry is never deleted — a correcting reversing entry is posted once the head approves.</p>
+          <p class="mt-2 text-xs text-surface-500">A posted entry is never deleted — a correcting reversing entry is posted once the head approves.</p>
         </div>
-        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-          <button type="button" onclick="closeReversalModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+        <div class="px-6 py-4 border-t border-surface-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalModal()" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</button>
           <button type="submit" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Request reversal</button>
         </div>
       </form>
@@ -235,21 +235,21 @@
   <!-- Reject Reversal Modal -->
   <div id="reversal-reject-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-      <div class="px-6 py-4 border-b border-slate-200">
-        <h3 class="text-lg font-semibold text-slate-900">Reject Reversal</h3>
+      <div class="px-6 py-4 border-b border-surface-200">
+        <h3 class="text-lg font-semibold text-surface-900">Reject Reversal</h3>
       </div>
       {% if pending_reversal %}
       <form method="post" action="{% url 'ui:je_reversal_reject' pending_reversal.id %}">
         {% csrf_token %}
         <div class="p-6">
-          <label class="block text-sm font-medium text-slate-700 mb-2">Rejection note (required)</label>
+          <label class="block text-sm font-medium text-surface-700 mb-2">Rejection note (required)</label>
           <textarea name="note" data-autogrow rows="4" required
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             placeholder="Why is this reversal being refused?"></textarea>
         </div>
-        <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-          <button type="button" onclick="closeReversalRejectModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Reject reversal</button>
+        <div class="px-6 py-4 border-t border-surface-200 flex justify-end gap-3">
+          <button type="button" onclick="closeReversalRejectModal()" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</button>
+          <button type="submit" class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Reject reversal</button>
         </div>
       </form>
       {% endif %}

@@ -4,14 +4,14 @@
 <div class="p-6 max-w-7xl">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">CHART OF ACCOUNTS</h1>
-      <p class="text-sm text-slate-500 mt-1">{{ page_obj.paginator.count }} postable account(s).</p>
+      <h1 class="text-xl font-semibold text-surface-900">CHART OF ACCOUNTS</h1>
+      <p class="text-sm text-surface-500 mt-1">{{ page_obj.paginator.count }} postable account(s).</p>
     </div>
   <div class="flex items-center gap-2">
      {% url 'ui:coa_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
-     <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+     <a href="{% url 'ui:coa_print' %}" class="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700">Print</a>
      {% if can_create_master %}
-     <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New</a>
+     <a href="{% url 'ui:coa_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ New</a>
      {% endif %}
    </div>
  </div>

@@ -4,11 +4,11 @@ the reject-toggle/reject-form pair is wired by toggle-block.js.{% endcomment %}
 {% if transfer.status == "requested" %}
 <div class="mt-4 flex items-center gap-3">
   {% if can_edit %}
-  <a href="{% url 'ui:transfer_edit' transfer.id %}" class="inline-block rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Edit</a>
+  <a href="{% url 'ui:transfer_edit' transfer.id %}" class="inline-block rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-100">Edit</a>
   {% endif %}
   <form method="post" action="{% url 'ui:transfer_submit' transfer.id %}">
     {% csrf_token %}
-    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Submit for approval</button>
+    <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for approval</button>
   </form>
 </div>
 {% elif transfer.status == "submitted" %}
@@ -19,31 +19,31 @@ the reject-toggle/reject-form pair is wired by toggle-block.js.{% endcomment %}
       {% csrf_token %}
       <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve</button>
     </form>
-    <button type="button" id="reject-toggle" data-toggle-target="#reject-form" class="inline-block rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject with note</button>
+    <button type="button" id="reject-toggle" data-toggle-target="#reject-form" class="inline-block rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject with note</button>
   </div>
   <form method="post" action="{% url 'ui:transfer_reject' transfer.id %}" id="reject-form" class="mt-3 hidden">
     {% csrf_token %}
-    <textarea name="note" data-autogrow rows="3" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The preparer will see this note before revising."></textarea>
-    <button type="submit" class="mt-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Return transfer to preparer</button>
+    <textarea name="note" data-autogrow rows="3" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm" placeholder="Why is this being returned? The preparer will see this note before revising."></textarea>
+    <button type="submit" class="mt-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Return transfer to preparer</button>
   </form>
   {% else %}
-  <p class="text-sm text-slate-500">The approve button is shown to the {{ awaiting.label }} only.</p>
+  <p class="text-sm text-surface-500">The approve button is shown to the {{ awaiting.label }} only.</p>
   {% endif %}
 </div>
 {% elif transfer.status == "approved" %}
 <p class="mt-4 text-sm text-emerald-700">Approved — the transfer JE is posted to the GL.</p>
 {% elif transfer.status == "rejected" %}
-<div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-  <div class="text-sm font-semibold text-red-800">Rejected — returned for revision</div>
-  <div class="text-xs text-slate-500 mt-1">Returned by {{ transfer.rejected_by.get_full_name|default:transfer.rejected_by }} · {{ transfer.rejected_at|date:"M d, Y H:i" }}</div>
-  <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{{ transfer.rejection_note }}</div>
+<div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+  <div class="text-sm font-semibold text-rose-800">Rejected — returned for revision</div>
+  <div class="text-xs text-surface-500 mt-1">Returned by {{ transfer.rejected_by.get_full_name|default:transfer.rejected_by }} · {{ transfer.rejected_at|date:"M d, Y H:i" }}</div>
+  <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ transfer.rejection_note }}</div>
   {% if can_edit %}
   <form method="post" action="{% url 'ui:transfer_revise' transfer.id %}" class="inline">
     {% csrf_token %}
-    <button type="submit" class="inline-block mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revise &amp; resubmit</button>
+    <button type="submit" class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Revise &amp; resubmit</button>
   </form>
   {% else %}
-  <p class="mt-2 text-xs text-slate-500">Only the preparer can revise this transfer.</p>
+  <p class="mt-2 text-xs text-surface-500">Only the preparer can revise this transfer.</p>
   {% endif %}
 </div>
 {% endif %}

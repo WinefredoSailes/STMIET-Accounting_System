@@ -178,3 +178,13 @@ def supplier_choices(request=None):
     from apps.ap.models import Supplier
 
     return [(str(s.id), s.name) for s in Supplier.objects.order_by("name")]
+
+
+def asset_category_choices(request=None):
+    """Active fixed-asset categories keyed by PK."""
+    from apps.assets.models import AssetCategory
+
+    return [
+        (str(c.id), f"{c.code} — {c.name}")
+        for c in AssetCategory.objects.filter(is_active=True).order_by("code")
+    ]

@@ -4,56 +4,56 @@
 {% block content %}
 <div class="p-6">
   {% capture as doc_title %}PO {{ po.po_number }}{% endcapture %}
-  {% capture as badge_color %}{% if po.status == 'approved' or po.status == 'closed' %}bg-emerald-100 text-emerald-800{% elif po.status == 'checked' or po.status == 'acctg_approved' or po.status == 'fin_approved' or po.status == 'cnr_approved' %}bg-amber-100 text-amber-800{% elif po.status == 'rejected' %}bg-red-100 text-red-700{% else %}bg-slate-100 text-slate-700{% endif %}{% endcapture %}
-  {% capture as actions %}{% include "ui/partials/status_badge.html" with status=po.status color=badge_color %}<a href="{% url 'ui:po_print' po.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print PO</a>{% endcapture %}
+  {% capture as badge_color %}{% if po.status == 'approved' or po.status == 'closed' %}bg-emerald-100 text-emerald-800{% elif po.status == 'checked' or po.status == 'acctg_approved' or po.status == 'fin_approved' or po.status == 'cnr_approved' %}bg-amber-100 text-amber-800{% elif po.status == 'rejected' %}bg-rose-100 text-rose-700{% else %}bg-surface-100 text-surface-700{% endif %}{% endcapture %}
+  {% capture as actions %}{% include "ui/partials/status_badge.html" with status=po.status color=badge_color %}<a href="{% url 'ui:po_print' po.id %}" class="rounded-md bg-surface-800 px-4 py-2 text-sm font-medium text-white hover:bg-surface-700">Print PO</a>{% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:po_list" back_label="Purchase Orders" actions=actions %}
 
   {% capture as shell_meta %}
-  <div>PO NO.: <span class="font-mono font-medium text-slate-800">{{ po.po_number }}</span></div>
+  <div>PO NO.: <span class="font-mono font-medium text-surface-800">{{ po.po_number }}</span></div>
   {% endcapture %}
   {% capture as shell_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div><div class="text-xs text-slate-500">VENDOR</div><div class="mt-0.5 font-medium">{{ po.supplier.name }}</div></div>
-    <div><div class="text-xs text-slate-500">VENDOR ADDRESS</div><div class="mt-0.5">{{ po.supplier.address|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">VENDOR TIN</div><div class="mt-0.5 font-mono text-xs">{{ po.supplier.tin|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">PO DATE</div><div class="mt-0.5">{{ po.po_date|date:"M d, Y" }}</div></div>
-    <div><div class="text-xs text-slate-500">SEGMENT</div><div class="mt-0.5">{{ po.segment.code }}</div></div>
-    <div><div class="text-xs text-slate-500">GRAND TOTAL</div><div class="mt-0.5 font-semibold tabular-nums">₱ {{ po.amount|money }}</div></div>
-    <div><div class="text-xs text-slate-500">BILLED (posted RFPs)</div><div class="mt-0.5 tabular-nums text-emerald-700">₱ {{ po.billed_amount|money }}</div></div>
-    <div><div class="text-xs text-slate-500">AVAILABLE</div><div class="mt-0.5 tabular-nums {% if po.available_amount <= 0 %}text-red-600{% else %}text-slate-800{% endif %}">₱ {{ po.available_amount|money }}</div></div>
+    <div><div class="text-xs text-surface-500">VENDOR</div><div class="mt-0.5 font-medium">{{ po.supplier.name }}</div></div>
+    <div><div class="text-xs text-surface-500">VENDOR ADDRESS</div><div class="mt-0.5">{{ po.supplier.address|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">VENDOR TIN</div><div class="mt-0.5 font-mono text-xs">{{ po.supplier.tin|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">PO DATE</div><div class="mt-0.5">{{ po.po_date|date:"M d, Y" }}</div></div>
+    <div><div class="text-xs text-surface-500">SEGMENT</div><div class="mt-0.5">{{ po.segment.code }}</div></div>
+    <div><div class="text-xs text-surface-500">GRAND TOTAL</div><div class="mt-0.5 font-semibold tabular-nums">{{po.amount|peso}}</div></div>
+    <div><div class="text-xs text-surface-500">BILLED (posted RFPs)</div><div class="mt-0.5 tabular-nums text-emerald-700">{{po.billed_amount|peso}}</div></div>
+    <div><div class="text-xs text-surface-500">AVAILABLE</div><div class="mt-0.5 tabular-nums {% if po.available_amount <= 0 %}text-rose-600{% else %}text-surface-800{% endif %}">{{po.available_amount|peso}}</div></div>
     <div class="col-span-2 md:col-span-4">
-      <div class="text-xs text-slate-500">PARTICULARS</div>
+      <div class="text-xs text-surface-500">PARTICULARS</div>
       <div class="mt-0.5">{{ po.particulars|default:"—" }}</div>
     </div>
     {% if po.payment_terms or po.contract_duration %}
     <div class="col-span-2 md:col-span-2">
-      <div class="text-xs text-slate-500">PAYMENT TERMS</div><div class="mt-0.5">{{ po.payment_terms|default:"—" }}</div>
+      <div class="text-xs text-surface-500">PAYMENT TERMS</div><div class="mt-0.5">{{ po.payment_terms|default:"—" }}</div>
     </div>
     <div class="col-span-2 md:col-span-2">
-      <div class="text-xs text-slate-500">CONTRACT DURATION</div><div class="mt-0.5">{{ po.contract_duration|default:"—" }}</div>
+      <div class="text-xs text-surface-500">CONTRACT DURATION</div><div class="mt-0.5">{{ po.contract_duration|default:"—" }}</div>
     </div>
     {% endif %}
     {% if po.ship_to_company or po.ship_to_address or po.contact_person %}
     <div class="col-span-2 md:col-span-4">
-      <div class="text-xs text-slate-500">DELIVER TO</div>
+      <div class="text-xs text-surface-500">DELIVER TO</div>
       <div class="mt-0.5">{{ po.ship_to_company|default:"" }}{% if po.ship_to_company and po.ship_to_address %}, {% endif %}{{ po.ship_to_address|default:"" }}{% if po.contact_person %} — {{ po.contact_person }}{% endif %}</div>
     </div>
     {% endif %}
     {% if po.revision_count %}
     <div class="col-span-2 md:col-span-4">
-      <span class="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">Revised {{ po.revision_count }}×</span>
+      <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Revised {{ po.revision_count }}×</span>
     </div>
     {% endif %}
     {% if po.finance_notes %}
     <div class="col-span-2 md:col-span-4">
-      <div class="text-xs text-slate-500">FINANCE NOTES (for Ellen/COO issuance)</div>
-      <div class="mt-0.5 whitespace-pre-wrap text-slate-700">{{ po.finance_notes }}</div>
+      <div class="text-xs text-surface-500">FINANCE NOTES (for Ellen/COO issuance)</div>
+      <div class="mt-0.5 whitespace-pre-wrap text-surface-700">{{ po.finance_notes }}</div>
     </div>
     {% endif %}
   </div>
 
   <div class="px-6 pb-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Line items</div>
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">Line items</div>
     <table class="line-table w-full text-sm" style="min-width: 900px;">
       <colgroup>
         <col style="width: 40px;"><!-- # -->
@@ -64,7 +64,7 @@
         <col style="width: 140px;"><!-- UNIT PRICE -->
         <col style="width: 150px;"><!-- AMOUNT -->
       </colgroup>
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-2">#</th>
           <th class="px-3 py-2">PR No.</th>
@@ -75,39 +75,39 @@
           <th class="px-3 py-2 text-right">Amount</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for line in po.lines.all %}
         <tr>
-          <td class="px-3 py-2 text-slate-400">{{ line.line_no }}</td>
+          <td class="px-3 py-2 text-surface-400">{{ line.line_no }}</td>
           <td class="px-3 py-2 font-mono text-xs">{{ line.pr_number|default:"—" }}</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ line.qty }}</td>
           <td class="px-3 py-2 text-xs">{{ line.unit|default:"—" }}</td>
-          <td class="px-3 py-2 text-slate-600">{{ line.description }}{% if line.account %}<div class="pt-0.5 text-xs text-slate-400">{{ line.account.code }} — {{ line.account.name }}</div>{% endif %}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ line.unit_price|money }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ line.amount|money }}</td>
+          <td class="px-3 py-2 text-surface-600">{{ line.description }}{% if line.account %}<div class="pt-0.5 text-xs text-surface-400">{{ line.account.code }} — {{ line.account.name }}</div>{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{line.unit_price|peso}}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{line.amount|peso}}</td>
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-surface-50 font-semibold">
         <tr>
           <td colspan="6" class="px-3 py-2 text-right">DISCOUNT</td>
-          <td class="px-3 py-2 text-right tabular-nums">({{ po.discount|money }})</td>
+          <td class="px-3 py-2 text-right tabular-nums">({{po.discount|peso}})</td>
         </tr>
         <tr>
           <td colspan="6" class="px-3 py-2 text-right">SUBTOTAL</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ po.subtotal|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{po.subtotal|peso}}</td>
         </tr>
-        <tr class="font-normal text-slate-600">
+        <tr class="font-normal text-surface-600">
           <td colspan="6" class="px-3 py-2 text-right">VAT</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ po.vat_amount|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{po.vat_amount|peso}}</td>
         </tr>
-        <tr class="font-normal text-slate-600">
+        <tr class="font-normal text-surface-600">
           <td colspan="6" class="px-3 py-2 text-right">OTHERS</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ po.other_charges|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{po.other_charges|peso}}</td>
         </tr>
         <tr>
           <td colspan="6" class="px-3 py-2 text-right">TOTAL (PHP)</td>
-          <td class="px-3 py-2 text-right tabular-nums border-t border-slate-300">{{ po.amount|money }}</td>
+          <td class="px-3 py-2 text-right tabular-nums border-t border-surface-300">{{po.amount|peso}}</td>
         </tr>
       </tfoot>
     </table>
@@ -115,9 +115,9 @@
 
   {% if po.rfps.all %}
   <div class="px-6 pb-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">RFPs drawn against this PO</div>
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">RFPs drawn against this PO</div>
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-2">AP No</th>
           <th class="px-3 py-2">Date</th>
@@ -126,13 +126,13 @@
           <th class="px-3 py-2">Status</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for rfp in po.rfps.all %}
         <tr>
-          <td class="px-3 py-2"><a href="{% url 'ui:rfp_detail' rfp.id %}" class="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-800">{{ rfp.ap_number }}</a></td>
+          <td class="px-3 py-2"><a href="{% url 'ui:rfp_detail' rfp.id %}" class="font-mono text-xs font-semibold text-brand-600 hover:text-brand-800">{{ rfp.ap_number }}</a></td>
           <td class="px-3 py-2 text-xs">{{ rfp.rfp_date|date:"M d, Y" }}</td>
-          <td class="px-3 py-2 text-slate-600 max-w-md truncate">{{ rfp.particulars }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ rfp.amount|money }}</td>
+          <td class="px-3 py-2 text-surface-600 max-w-md truncate">{{ rfp.particulars }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{rfp.amount|peso}}</td>
           <td class="px-3 py-2"><span class="text-xs font-medium">{{ rfp.status|upper }}</span></td>
         </tr>
         {% endfor %}
@@ -143,8 +143,8 @@
   {% endcapture %}
   {% include "ui/partials/document_shell.html" with doc_title="PURCHASE ORDER" doc_form_id="SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING" doc_meta_html=shell_meta doc_body_html=shell_body %}
 
-  <div class="mt-4 bg-white rounded-xl border border-slate-200 p-6">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Approval chain</div>
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 p-6">
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-3">Approval chain</div>
     {% if awaiting %}
     <div class="mb-4 flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
       <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
@@ -166,14 +166,14 @@
       <li class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
         {% if step.state == 'done' %}border-emerald-200 bg-emerald-50
         {% elif step.state == 'current' %}border-amber-300 bg-amber-50
-        {% else %}border-slate-200 bg-white{% endif %}">
-        <span class="w-2 h-2 rounded-full {% if step.state == 'done' %}bg-emerald-500{% elif step.state == 'current' %}bg-amber-500{% else %}bg-slate-300{% endif %}"></span>
+        {% else %}border-surface-200 bg-white{% endif %}">
+        <span class="w-2 h-2 rounded-full {% if step.state == 'done' %}bg-emerald-500{% elif step.state == 'current' %}bg-amber-500{% else %}bg-surface-300{% endif %}"></span>
         <div>
           <div class="font-medium">{{ step.label }}</div>
-          <div class="text-xs text-slate-500">{{ step.holder|default:"—" }}</div>
+          <div class="text-xs text-surface-500">{{ step.holder|default:"—" }}</div>
         </div>
       </li>
-      {% if not forloop.last %}<span class="text-slate-300 self-center">→</span>{% endif %}
+      {% if not forloop.last %}<span class="text-surface-300 self-center">→</span>{% endif %}
       {% endfor %}
     </ol>
 

@@ -1,0 +1,57 @@
+{% load ui_filters %}
+{# Bank reconciliation table fragment — swapped by #recon-table on HTMX filter updates. #}
+<div class="hidden md:block mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+  <table class="w-full text-sm min-w-[700px]">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+      <tr>
+        <th class="px-4 py-3">Cycle</th>
+        <th class="px-4 py-3">Bank</th>
+        <th class="px-4 py-3 text-right">Book</th>
+        <th class="px-4 py-3 text-right">Bank statement</th>
+        <th class="px-4 py-3 text-right">Difference</th>
+        <th class="px-4 py-3">Status</th>
+        <th class="px-4 py-3">Reconciled by</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-surface-100">
+      {% for r in page_obj %}
+      <tr class="hover:bg-surface-50">
+        <td class="px-4 py-2">{{ r.cycle.cycle_start|date:"M d" }}–{{ r.cycle.cycle_end|date:"M d" }}</td>
+        <td class="px-4 py-2 font-mono text-xs">{{ r.bank_account.code }}</td>
+        <td class="px-4 py-2 text-right tabular-nums">{{r.book_balance|peso}}</td>
+        <td class="px-4 py-2 text-right tabular-nums">{{r.bank_statement_balance|peso}}</td>
+        <td class="px-4 py-2 text-right tabular-nums {% if r.difference %}text-rose-600{% else %}text-emerald-700{% endif %}">{{r.difference|peso}}</td>
+        <td class="px-4 py-2">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.status == 'resolved' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ r.status }}</span>
+        </td>
+        <td class="px-4 py-2 text-xs">{{ r.reconciled_by.username|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="px-4 py-8 text-center text-surface-400">No reconciliations match. Try clearing the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="md:hidden mt-4 space-y-3">
+  {% for r in page_obj %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <span class="mobile-card-title">{{ r.bank_account.code }}</span>
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if r.status == 'resolved' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ r.status }}</span>
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Cycle</span><span class="mobile-card-v">{{ r.cycle.cycle_start|date:"M d" }}–{{ r.cycle.cycle_end|date:"M d" }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Book</span><span class="mobile-card-v tabular-nums">{{r.book_balance|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Statement</span><span class="mobile-card-v tabular-nums">{{r.bank_statement_balance|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Difference</span><span class="mobile-card-v tabular-nums {% if r.difference %}text-rose-600{% else %}text-emerald-700{% endif %}">{{r.difference|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Reconciled by</span><span class="mobile-card-v">{{ r.reconciled_by.username|default:"—" }}</span></div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No reconciliations match. Try clearing the filters.</div>
+  {% endfor %}
+</div>
+{% include "ui/partials/pagination.html" %}

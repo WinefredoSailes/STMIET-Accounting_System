@@ -8,7 +8,7 @@ The format-dropdown redirect JS is global (tryFormatRedirect in base.js) and
 triggers on change of a select[data-format-redirect].{% endcomment %}
 <div class="flex items-center gap-2 mt-2">
   {% if format_select %}
-  <select name="format" data-format-redirect{% if export_url %} data-export-url="{{ export_url }}"{% endif %} class="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+  <select name="format" data-format-redirect{% if export_url %} data-export-url="{{ export_url }}"{% endif %} class="rounded-md border border-surface-300 px-2 py-1.5 text-sm">
     {% for f in formats|split:" " %}<option value="{{ f }}" {% if format == f %}selected{% endif %}>{{ f|upper }}</option>{% endfor %}
   </select>
   {% endif %}
@@ -20,10 +20,10 @@ triggers on change of a select[data-format-redirect].{% endcomment %}
     {% endif %}
   {% endif %}
   {% if print_href %}
-  <a href="{{ print_href }}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  <a href="{{ print_href }}" class="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700">Print</a>
   {% else %}
   {% if print_url_name %}
-  <a href="{% url print_url_name %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+  <a href="{% url print_url_name %}" class="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700">Print</a>
   {% endif %}
   {% endif %}
 </div>

@@ -1,0 +1,29 @@
+{% comment %}
+Reusable stat card for list screens: label + big number + optional sub + tone.
+Params: label, value, sub, tone (default|amber|violet|emerald|rose|brand),
+icon (optional icon name). Values are plain text (caller formats w/ peso).
+{% endcomment %}
+<div class="bg-white rounded-xl border border-surface-200 px-4 py-3 shadow-sm">
+  <div class="flex items-center gap-2">
+    {% if icon %}
+    <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface-100 text-surface-500">
+      <svg class="h-4 w-4" aria-hidden="true"><use href="#i-{{ icon }}"/></svg>
+    </span>
+    {% endif %}
+    <div class="text-xs uppercase tracking-wider text-surface-500">{{ label }}</div>
+  </div>
+  {% if tone == 'amber' %}
+  <div class="mt-1.5 text-2xl font-bold text-amber-600">{{ value }}</div>
+  {% elif tone == 'violet' %}
+  <div class="mt-1.5 text-2xl font-bold text-violet-600">{{ value }}</div>
+  {% elif tone == 'emerald' %}
+  <div class="mt-1.5 text-2xl font-bold text-emerald-600">{{ value }}</div>
+  {% elif tone == 'rose' %}
+  <div class="mt-1.5 text-2xl font-bold text-rose-600">{{ value }}</div>
+  {% elif tone == 'brand' %}
+  <div class="mt-1.5 text-2xl font-bold text-brand-600">{{ value }}</div>
+  {% else %}
+  <div class="mt-1.5 text-2xl font-bold text-surface-900">{{ value }}</div>
+  {% endif %}
+  {% if sub %}<div class="mt-0.5 text-xs text-surface-500">{{ sub }}</div>{% endif %}
+</div>

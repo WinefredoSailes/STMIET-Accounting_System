@@ -7,54 +7,54 @@
 
   {% capture as form_fields %}
   <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Name</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_name">Name</label>
     <input type="text" name="name" id="id_name" required maxlength="255"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_category">Category</label>
-    <select name="category" id="id_category" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_category">Category</label>
+    <select name="category" id="id_category" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.code }} — {{ cat.name }} ({{ cat.useful_life_years }} yrs)</option>{% endfor %}
     </select>
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_segment">Segment</label>
-    <select name="segment" id="id_segment" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_segment">Segment</label>
+    <select name="segment" id="id_segment" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
     </select>
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_acquisition_date">Acquisition date</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_acquisition_date">Acquisition date</label>
     <input type="date" name="acquisition_date" id="id_acquisition_date" required
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_cost">Cost (₱)</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_cost">Cost (₱)</label>
     <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="cost" id="id_cost" required
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_residual_value">Residual value (₱)</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_residual_value">Residual value (₱)</label>
     <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="residual_value" id="id_residual_value" value="0.00"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_acquisition_fees">Acquisition fees (₱)</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_acquisition_fees">Acquisition fees (₱)</label>
     <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="acquisition_fees" id="id_acquisition_fees" value="0.00"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-right tabular-nums">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
   </div>
   <div>
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_funding_source">Funding source</label>
-    <select name="funding_source" id="id_funding_source" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_funding_source">Funding source</label>
+    <select name="funding_source" id="id_funding_source" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       <option value="cash">Cash</option>
       <option value="ap">Accounts Payable</option>
       <option value="loan">Loan</option>
     </select>
   </div>
   <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="id_financed_loan_reference">Loan reference (if financed)</label>
+    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_financed_loan_reference">Loan reference (if financed)</label>
     <input type="text" name="financed_loan_reference" id="id_financed_loan_reference"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
   </div>
   {% endcapture %}
   {% include "ui/partials/form_card.html" with fields_html=form_fields submit_label="Acquire asset" %}

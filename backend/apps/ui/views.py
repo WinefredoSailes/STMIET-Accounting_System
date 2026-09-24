@@ -44,12 +44,18 @@ from .services import (
     aging_context,
     approved_rfps,
     asset_context,
+    asset_summary,
+    billing_summary,
     book_balance,
     cash_flow_options,
+    cash_short_summary,
     collectibles_cycle_options,
     conso_context,
-    daily_collections,
+    conso_summary,
     customer_aging_context,
+    cv_summary,
+    cycle_summary,
+    daily_collections,
     list_assets,
     list_banks,
     list_cash_shorts,
@@ -66,10 +72,14 @@ from .services import (
     list_rfps,
     list_suppliers,
     month_end_close_context,
+    pcf_replenishment_summary,
     po_summary,
     po_timeline,
+    receipt_summary,
+    recon_summary,
     rfp_summary,
     rfp_timeline,
+    si_summary,
     transfers_context,
     unassigned_approved_rfps,
 )
@@ -306,7 +316,7 @@ def login_view(request):
     if request.method == "POST" and form.is_valid():
         login(request, form.get_user())
         return redirect("ui:dashboard")
-    return render(request, "ui/login.html", {"form": form})
+    return render(request, "ui/home/login.html", {"form": form})
 
 
 @require_POST
@@ -378,7 +388,7 @@ def my_approvals(request):
     queue_page = _page(request, queues)
     return render(
         request,
-        "ui/approvals.html",
+        "ui/home/approvals.html",
         {
             "grouped": group_by_role(queue_page.object_list),
             "total": len(queues),
@@ -404,38 +414,12 @@ def my_approvals(request):
 
 @login_required
 def dashboard(request):
-    today = date.today()
-    period = (
-        FiscalPeriod.objects.filter(
-            start_date__lte=today, end_date__gte=today, is_closed=False
-        )
-        .order_by("-period_no")
-        .first()
-    )
-    counts = dict(
-        JournalEntry.objects.aggregate(
-            total=Count("id"),
-            posted=Count("id", filter=Q(status=PostingStatus.POSTED)),
-            draft=Count("id", filter=Q(status=PostingStatus.DRAFT)),
-        )
-    )
-    close = month_end_close_context()
-    recent = list_entries(limit=8)
-    from .services import pending_count
-    from apps.posting.services import ReversalService
+    """Executive dashboard — 4-zone finance view (live GL-derived figures)."""
+    from .services import executive_dashboard_context
 
-    return render(
-        request,
-        "ui/dashboard.html",
-        {
-            "current_period": period,
-            "entry_counts": counts,
-            "close": close,
-            "recent_entries": recent,
-            "pending_count": pending_count(),
-            "reversal_pending_count": ReversalService.pending_count(),
-        },
-    )
+    segment = (request.GET.get("segment") or "").strip()
+    ctx = executive_dashboard_context(segment=segment or None, user=request.user)
+    return render(request, "ui/home/dashboard.html", ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -1719,6 +1703,7 @@ def receipt_list(request):
     ctx = {
         "page_obj": _page(request, qs),
         "filters": spec.context(request.GET, request),
+        "summary": receipt_summary(),
     }
     template = (
         "ui/ar/_receipt_table.html"
@@ -1912,37 +1897,64 @@ def rfp_list(request):
 
 @login_required
 def bank_list(request):
-    return render(request, "ui/cash/bank_list.html", {"page_obj": _page(request, list_banks())})
+    from apps.cash.models import BankAccount
+
+    from .filter_specs import bank_filter_spec
+
+    spec = bank_filter_spec()
+    qs = spec.apply(BankAccount.objects.order_by("bank_name", "name"), request.GET)
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/cash/_bank_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/bank_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
 def cycle_list(request):
-    return render(request, "ui/cash/cycle_list.html", {"page_obj": _page(request, list_cycles(limit=None))})
+    from apps.cash.models import WeeklyCashCycle
+
+    from .filter_specs import cycle_filter_spec
+
+    spec = cycle_filter_spec()
+    qs = spec.apply(
+        WeeklyCashCycle.objects.select_related("segment").order_by("-cycle_start"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": cycle_summary(),
+    }
+    template = (
+        "ui/cash/_cycle_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/cycle_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
 def asset_list(request):
     """Fixed Assets register — search + category/segment/status filters (HTMX)."""
-    from apps.assets.models import AssetCategory, AssetStatus
+    from apps.assets.models import Asset
 
+    from .filter_specs import asset_filter_spec
+
+    spec = asset_filter_spec()
+    qs = spec.apply(
+        Asset.objects.select_related("category", "segment").order_by("asset_no"),
+        request.GET,
+    )
     ctx = {
-        "page_obj": _page(
-            request,
-            list_assets(
-                limit=None,
-                q=request.GET.get("q", "").strip(),
-                category=request.GET.get("category", "").strip(),
-                segment=request.GET.get("segment", "").strip(),
-                status=request.GET.get("status", "").strip(),
-            ),
-        ),
-        "q": request.GET.get("q", "").strip(),
-        "category_sel": request.GET.get("category", "").strip(),
-        "segment_sel": request.GET.get("segment", "").strip(),
-        "status_sel": request.GET.get("status", "").strip(),
-        "categories": AssetCategory.objects.filter(is_active=True).order_by("code"),
-        "segments": Segment.objects.order_by("code"),
-        "statuses": AssetStatus.choices,
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": asset_summary(),
     }
     template = (
         "ui/assets/_asset_rows.html"
@@ -2256,32 +2268,26 @@ def si_list(request):
     """Sales Invoices register — search + status filter."""
     from apps.ar.models import ARInvoice
 
-    qs = ARInvoice.objects.select_related("customer", "segment").order_by(
-        "-transaction_date", "-invoice_no"
+    from .filter_specs import si_filter_spec
+
+    spec = si_filter_spec()
+    qs = spec.apply(
+        ARInvoice.objects.select_related("customer", "segment").order_by(
+            "-transaction_date", "-invoice_no"
+        ),
+        request.GET,
     )
-    status = request.GET.get("status", "")
-    if status:
-        qs = qs.filter(status=status)
-    q = request.GET.get("q", "").strip()
-    if q:
-        qs = qs.filter(
-            Q(invoice_no__icontains=q)
-            | Q(customer__name__icontains=q)
-            | Q(customer__code__icontains=q)
-        )
-    pagination_params = {}
-    if status:
-        pagination_params["status"] = status
-    if q:
-        pagination_params["q"] = q
     ctx = {
         "page_obj": _page(request, qs),
-        "status": status,
-        "q": q,
-        "pagination_params": pagination_params,
-        "statuses": ("draft", "submitted", "posted", "open", "partially_paid", "paid"),
+        "filters": spec.context(request.GET, request),
+        "summary": si_summary(),
     }
-    return render(request, "ui/ar/si_list.html", ctx)
+    template = (
+        "ui/ar/_si_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ar/si_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -3740,6 +3746,7 @@ def cv_list(request):
     ctx = {
         "page_obj": _page(request, qs),
         "filters": spec.context(request.GET, request),
+        "summary": cv_summary(),
     }
     template = (
         "ui/ap/_cv_table.html"
@@ -4079,7 +4086,25 @@ def cv_revise(request, pk):
 
 @login_required
 def pcf_list(request):
-    return render(request, "ui/cash/pcf_list.html", {"page_obj": _page(request, list_pcf_funds())})
+    from apps.cash.models import PettyCashFund
+
+    from .filter_specs import pcf_fund_filter_spec
+
+    spec = pcf_fund_filter_spec()
+    qs = spec.apply(
+        PettyCashFund.objects.select_related("gl_account", "company", "custodian").order_by("fund_code"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+    }
+    template = (
+        "ui/cash/_pcf_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/pcf_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -4162,7 +4187,28 @@ def pcf_replenish(request):
 
 @login_required
 def pcf_replenishment_list(request):
-    return render(request, "ui/cash/pcf_replenishment_list.html", {"page_obj": _page(request, list_pcf_replenishments(limit=None))})
+    from apps.cash.models import PCFReplenishment
+
+    from .filter_specs import pcf_replenishment_filter_spec
+
+    spec = pcf_replenishment_filter_spec()
+    qs = spec.apply(
+        PCFReplenishment.objects.select_related(
+            "fund__custodian", "fund__company", "requested_by"
+        ).order_by("-request_date"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": pcf_replenishment_summary(),
+    }
+    template = (
+        "ui/cash/_pcf_replenishment_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/pcf_replenishment_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -4414,7 +4460,26 @@ def pcf_update(request, pk):
 
 @login_required
 def conso_list(request):
-    return render(request, "ui/ap/conso_list.html", {"page_obj": _page(request, list_conso(limit=None))})
+    from apps.ap.models import CONSOBatch
+
+    from .filter_specs import conso_filter_spec
+
+    spec = conso_filter_spec()
+    qs = spec.apply(
+        CONSOBatch.objects.prefetch_related("rfps").order_by("-conso_date"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": conso_summary(),
+    }
+    template = (
+        "ui/ap/_conso_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ap/conso_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -4530,7 +4595,26 @@ def conso_post(request, pk):
 
 @login_required
 def recon_list(request):
-    return render(request, "ui/cash/recon_list.html", {"page_obj": _page(request, list_recons(limit=None))})
+    from apps.cash.models import BankReconciliation
+
+    from .filter_specs import recon_filter_spec
+
+    spec = recon_filter_spec()
+    qs = spec.apply(
+        BankReconciliation.objects.select_related("cycle", "bank_account").order_by("-cycle__cycle_start"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": recon_summary(),
+    }
+    template = (
+        "ui/cash/_recon_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/recon_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -4571,7 +4655,26 @@ def recon_create(request):
 
 @login_required
 def cash_short_list(request):
-    return render(request, "ui/cash/cash_short_list.html", {"page_obj": _page(request, list_cash_shorts(limit=None))})
+    from apps.cash.models import CashShortExcessWorksheet
+
+    from .filter_specs import cash_short_filter_spec
+
+    spec = cash_short_filter_spec()
+    qs = spec.apply(
+        CashShortExcessWorksheet.objects.select_related("cycle", "segment").order_by("-cycle__cycle_start"),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": cash_short_summary(),
+    }
+    template = (
+        "ui/cash/_cash_short_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/cash/cash_short_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required
@@ -5373,7 +5476,7 @@ def collectibles(request):
 
 
 @login_required
-def aging(request):
+def ar_aging(request):
     """AR aging buckets 30/60/90/120+ + per-invoice register as of a date."""
     from .services import aging_context
 
@@ -5381,7 +5484,7 @@ def aging(request):
     ctx = aging_context(as_of)
     ctx["export_url"] = _export_url("ui:aging_export", as_of=as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
-    return render(request, "ui/ar/aging.html", ctx)
+    return render(request, "ui/ar/ar_aging.html", ctx)
 
 
 @login_required
@@ -5402,7 +5505,7 @@ def ar_ledger(request):
     )
     ctx["page_obj"] = _page(request, ctx.pop("rows"))
     ctx["filter_url"] = request.GET.urlencode()
-    return render(request, "ui/ar/ledger_summary.html", ctx)
+    return render(request, "ui/ar/customer_ledger_summary.html", ctx)
 
 
 @login_required
@@ -5537,7 +5640,7 @@ def ap_aging(request):
     ctx = ap_aging_context(as_of)
     ctx["export_url"] = _export_url("ui:ap_aging_export", as_of=as_of)
     ctx["page_obj"] = _page(request, ctx.pop("register"))
-    return render(request, "ui/ap/aging.html", ctx)
+    return render(request, "ui/ap/ap_aging.html", ctx)
 
 
 @login_required
@@ -5555,7 +5658,7 @@ def ap_ledger(request):
     ctx["export_url"] = _export_url("ui:ap_ledger_export", q=q, filter="outstanding" if outstanding_only else "")
     ctx["page_obj"] = _page(request, ctx.pop("rows"))
     ctx["filter_url"] = request.GET.urlencode()
-    return render(request, "ui/ap/ledger_summary.html", ctx)
+    return render(request, "ui/ap/supplier_ledger_summary.html", ctx)
 
 
 @login_required
@@ -5866,7 +5969,7 @@ def advances(request):
     """Advances to Employees ledger (ADR-021) with liquidation form."""
     ctx = advances_context()
     ctx["page_obj"] = _page(request, ctx.pop("rows"))
-    return render(request, "ui/ap/advances.html", ctx)
+    return render(request, "ui/ap/advance_list.html", ctx)
 
 
 @login_required
@@ -5916,7 +6019,7 @@ def transfers(request):
     template = (
         "ui/cash/_transfers_table.html"
         if request.headers.get("HX-Request")
-        else "ui/cash/transfers.html"
+        else "ui/cash/transfer_list.html"
     )
     return render(request, template, ctx)
 
@@ -6357,24 +6460,42 @@ def _require_superuser(request):
         raise PermissionDenied("Superadmin access required for user management.")
 
 
+def _require_user_admin(request):
+    """Gate user management to the superadmin or the Accounting & Finance Head."""
+    if request.user.is_superuser:
+        return
+    from apps.core.approvals import get_approval_role
+
+    if get_approval_role(request.user) != "head":
+        raise PermissionDenied(
+            "Superadmin or Accounting & Finance Head access required for user management."
+        )
+
+
 @login_required
 def user_management(request):
     """Users & approval roles — the single "who does what" screen.
 
-    Superadmin only. Lists every login with its approval role (staff -> head
-    -> coo) and any petty-cash funds the user is custodian of, and posts role
-    / active changes inline.
+    Superadmin and the Accounting & Finance Head. Lists every login with its
+    approval role (staff -> head -> coo) and any petty-cash funds the user is
+    custodian of, and posts role / active changes inline.
     """
-    _require_superuser(request)
+    _require_user_admin(request)
     from apps.core.approvals import APPROVAL_ROLES, ROLE_LABELS
     from apps.foundation.services import UserManagementService
     from apps.cash.models import PettyCashFund
 
+    rows = UserManagementService.list_users()
+    for row in rows:
+        u = row["user"]
+        can_edit = request.user.is_superuser or not u.is_superuser
+        row["can_edit"] = can_edit
+        row["can_toggle"] = can_edit and u.pk != request.user.pk
     return render(
         request,
         "ui/foundation/user_management.html",
         {
-            "rows": UserManagementService.list_users(),
+            "rows": rows,
             "role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES],
             "pcf_count": PettyCashFund.objects.exclude(custodian=None).count(),
         },
@@ -6383,46 +6504,104 @@ def user_management(request):
 
 @login_required
 @require_POST
-def user_create(request):
-    """Create a new login (optionally with an approval role)."""
-    _require_superuser(request)
+def user_deactivate(request, pk):
+    """Toggle a user's active flag (soft deactivate / reactivate)."""
+    _require_user_admin(request)
     from apps.foundation.services import UserManagementService
 
+    user = get_object_or_404(get_user_model(), pk=pk)
+    if not request.user.is_superuser and user.is_superuser:
+        messages.error(request, "Only a superadmin can manage another superadmin's account.")
+        return redirect("ui:user_management")
+    if user.pk == request.user.pk:
+        messages.error(request, "You cannot deactivate your own login.")
+        return redirect("ui:user_management")
     try:
-        u = UserManagementService.create_user(
-            username=request.POST.get("username", ""),
-            first_name=request.POST.get("first_name", ""),
-            last_name=request.POST.get("last_name", ""),
-            email=request.POST.get("email", ""),
-            role=request.POST.get("role", ""),
-            password=request.POST.get("password") or None,
-        )
-        messages.success(request, f"Created login '{u.username}'.")
-    except (IntegrityError, ValueError, ValidationError) as exc:
+        UserManagementService.set_active(user=user, is_active=not user.is_active)
+        state = "reactivated" if user.is_active else "deactivated"
+        messages.success(request, f"'{user.username}' {state}.")
+    except (ValueError, ValidationError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:user_management")
 
 
 @login_required
-@require_POST
-def user_update(request, pk):
-    """Update an existing user's approval role / active flag."""
-    _require_superuser(request)
-    from apps.foundation.services import UserManagementService
-    from apps.foundation.models import UserProfile
+def user_create(request):
+    """Create a new login (optionally with an approval role).
 
-    user = get_object_or_404(get_user_model(), pk=pk)
-    try:
-        UserManagementService.assign_role(user=user, role=request.POST.get("role", ""))
-        active = request.POST.get("is_active") == "1"
-        if user.is_active != active:
-            UserManagementService.set_active(user=user, is_active=active)
-        messages.success(
-            request, f"Updated '{user.username}' (role: {request.POST.get('role', '') or 'unassigned'})."
-        )
-    except (UserProfile.DoesNotExist, ValueError, ValidationError) as exc:
-        messages.error(request, str(exc))
-    return redirect("ui:user_management")
+    GET renders the standalone create form; POST creates the user.
+    """
+    _require_user_admin(request)
+    from apps.core.approvals import APPROVAL_ROLES, ROLE_LABELS
+    from apps.foundation.services import UserManagementService
+
+    if request.method == "POST":
+        try:
+            u = UserManagementService.create_user(
+                username=request.POST.get("username", ""),
+                first_name=request.POST.get("first_name", ""),
+                last_name=request.POST.get("last_name", ""),
+                email=request.POST.get("email", ""),
+                role=request.POST.get("role", ""),
+                password=request.POST.get("password") or None,
+            )
+            messages.success(request, f"Created login '{u.username}'.")
+            return redirect("ui:user_management")
+        except (IntegrityError, ValueError, ValidationError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/foundation/user_form.html",
+        {"role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES]},
+    )
+
+
+@login_required
+def user_update(request, pk):
+    """Edit an existing user (names, email, role, active) — GET form + POST save.
+
+    Superadmin or Head. Heads cannot manage superadmin accounts; nobody may
+    deactivate their own login from here.
+    """
+    _require_user_admin(request)
+    from apps.core.approvals import get_approval_role
+    from apps.core.approvals import APPROVAL_ROLES, ROLE_LABELS
+    from apps.foundation.services import UserManagementService
+
+    target = get_object_or_404(get_user_model(), pk=pk)
+    if not request.user.is_superuser and target.is_superuser:
+        messages.error(request, "Only a superadmin can edit another superadmin's account.")
+        return redirect("ui:user_management")
+
+    if request.method == "POST":
+        if target.pk == request.user.pk and request.POST.get("is_active") != "1":
+            messages.error(request, "You cannot deactivate your own login.")
+            return redirect("ui:user_management")
+        is_active = True if target.pk == request.user.pk else request.POST.get("is_active") == "1"
+        try:
+            UserManagementService.update_user(
+                user=target,
+                first_name=request.POST.get("first_name", ""),
+                last_name=request.POST.get("last_name", ""),
+                email=request.POST.get("email", ""),
+                role=request.POST.get("role", ""),
+                is_active=is_active,
+                password=request.POST.get("password") or None,
+            )
+            messages.success(request, f"Updated '{target.username}'.")
+            return redirect("ui:user_management")
+        except (ValueError, ValidationError) as exc:
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/foundation/user_form.html",
+        {
+            "role_choices": [(r, ROLE_LABELS[r]) for r in APPROVAL_ROLES],
+            "editing": target,
+            "editing_role": get_approval_role(target),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -6497,7 +6676,7 @@ def ledger_index(request):
     )
     return render(
         request,
-        "ui/reporting/ledger_index.html",
+        "ui/reporting/gl_index.html",
         _ledger_ctx(request, data),
     )
 
@@ -6522,7 +6701,7 @@ def ledger_account_detail(request, pk):
     )
     return render(
         request,
-        "ui/reporting/ledger_account.html",
+        "ui/reporting/gl_account.html",
         _ledger_ctx(request, reg),
     )
 
@@ -6541,7 +6720,7 @@ def ledger_print(request):
     )
     return render(
         request,
-        "ui/reporting/ledger_index_print.html",
+        "ui/reporting/gl_index_print.html",
         _ledger_ctx(request, data),
     )
 
@@ -6562,7 +6741,7 @@ def ledger_account_print(request, pk):
     )
     return render(
         request,
-        "ui/reporting/ledger_account_print.html",
+        "ui/reporting/gl_account_print.html",
         _ledger_ctx(request, reg),
     )
 
@@ -7424,14 +7603,28 @@ def _billing_lines_from_form(request):
 @login_required
 def billing_list(request):
     """Billing transactions register (Intercompany STPC / Third-Party)."""
-    from .services import list_billings
+    from apps.billing.models import BillingDocument
 
-    rows = list_billings()
-    return render(
-        request,
-        "ui/billing/billing_list.html",
-        {"page_obj": _page(request, rows, per_page=50)},
+    from .filter_specs import billing_filter_spec
+
+    spec = billing_filter_spec()
+    qs = spec.apply(
+        BillingDocument.objects.select_related("segment", "rfp", "created_by", "approved_by")
+        .prefetch_related("lines")
+        .order_by("-billing_date", "-billing_no"),
+        request.GET,
     )
+    ctx = {
+        "page_obj": _page(request, qs, per_page=50),
+        "filters": spec.context(request.GET, request),
+        "summary": billing_summary(),
+    }
+    template = (
+        "ui/billing/_billing_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/billing/billing_list.html"
+    )
+    return render(request, template, ctx)
 
 
 @login_required

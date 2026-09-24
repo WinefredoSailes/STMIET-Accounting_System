@@ -1,0 +1,75 @@
+{% load ui_filters %}
+{# Bank accounts table fragment — swapped by #bank-table on HTMX filter updates. #}
+<div class="hidden md:block mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+  <table class="w-full text-sm min-w-[800px]">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+      <tr>
+        <th class="px-4 py-3">Code</th>
+        <th class="px-4 py-3">Name</th>
+        <th class="px-4 py-3">Type</th>
+        <th class="px-4 py-3">Bank</th>
+        <th class="px-4 py-3">Segment</th>
+        <th class="px-4 py-3">GL Account</th>
+        <th class="px-4 py-3 text-right">ADB Req.</th>
+        <th class="px-4 py-3">Active</th>
+        {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-surface-100">
+      {% for b in page_obj %}
+      <tr class="hover:bg-surface-50">
+        <td class="px-4 py-2 font-mono text-xs">{{ b.code }}</td>
+        <td class="px-4 py-2">{{ b.name }}</td>
+        <td class="px-4 py-2 text-xs">{{ b.get_account_type_display }}</td>
+        <td class="px-4 py-2 text-xs">{{ b.bank_name|default:"-" }}</td>
+        <td class="px-4 py-2 text-xs">{{ b.company.code }}</td>
+        <td class="px-4 py-2 font-mono text-xs">{{ b.gl_account.code }}</td>
+        <td class="px-4 py-2 text-right">{{b.adb_required|peso}}</td>
+        <td class="px-4 py-2">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if b.is_active %}bg-emerald-100 text-emerald-800{% else %}bg-surface-100 text-surface-500{% endif %}">
+            {{ b.is_active|yesno:"Active,Inactive" }}
+          </span>
+        </td>
+        {% if can_edit_master %}
+        <td class="px-4 py-2 text-right">
+          <a href="{% url 'ui:bank_update' b.pk %}" class="rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">Edit</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if can_edit_master %}9{% else %}8{% endif %}" class="px-4 py-8 text-center text-surface-400">No bank accounts match. Try clearing the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Mobile cards -->
+<div class="md:hidden mt-4 space-y-3">
+  {% for b in page_obj %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <span class="mobile-card-title">{{ b.code }}</span>
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if b.is_active %}bg-emerald-100 text-emerald-800{% else %}bg-surface-100 text-surface-500{% endif %}">
+        {{ b.is_active|yesno:"Active,Inactive" }}
+      </span>
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Name</span><span class="mobile-card-v">{{ b.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Type</span><span class="mobile-card-v">{{ b.get_account_type_display }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Bank</span><span class="mobile-card-v">{{ b.bank_name|default:"-" }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">GL Account</span><span class="mobile-card-v font-mono">{{ b.gl_account.code }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">ADB Req.</span><span class="mobile-card-v tabular-nums">{{b.adb_required|peso}}</span></div>
+      </div>
+    </div>
+    {% if can_edit_master %}
+    <div class="mobile-card-foot">
+      <a href="{% url 'ui:bank_update' b.pk %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">Edit</a>
+    </div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No bank accounts match. Try clearing the filters.</div>
+  {% endfor %}
+</div>
+{% include "ui/partials/pagination.html" %}

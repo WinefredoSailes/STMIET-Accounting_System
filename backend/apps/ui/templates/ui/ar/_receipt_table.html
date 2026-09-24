@@ -1,8 +1,8 @@
 {% load ui_filters %}
 {# Acknowledgment Receipts table fragment — swapped by #receipt-table on HTMX filter updates. #}
-<div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+<div class="hidden md:block mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
   <table class="w-full text-sm min-w-[900px]">
-    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
       <tr>
         <th class="px-4 py-3">Receipt No</th>
         <th class="px-4 py-3">Date</th>
@@ -13,38 +13,74 @@
         <th class="px-4 py-3 text-right">Amount</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody class="divide-y divide-surface-100">
       {% for r in page_obj %}
-      <tr class="hover:bg-slate-50">
-        <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ r.receipt_no }}</a></td>
+      <tr class="hover:bg-surface-50">
+        <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></td>
         <td class="px-4 py-2">{{ r.transaction_date|date:"M d, Y" }}</td>
         <td class="px-4 py-2">{{ r.customer.name }}</td>
         <td class="px-4 py-2 text-xs">{{ r.segment.code }}</td>
         <td class="px-4 py-2 text-xs">
           {{ r.get_payment_method_display }}
-          {% if r.check_no %}<span class="text-slate-400">· {{ r.check_no }}</span>{% endif %}
+          {% if r.check_no %}<span class="text-surface-400">· {{ r.check_no }}</span>{% endif %}
         </td>
         <td class="px-4 py-2">
           <div class="flex items-center gap-2 justify-start">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
               {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
               {% elif r.status == 'submitted' %}bg-amber-100 text-amber-800
-              {% elif r.status == 'draft' and r.rejection_note %}bg-red-100 text-red-700
-              {% else %}bg-slate-100 text-slate-600{% endif %}">
+              {% elif r.status == 'draft' and r.rejection_note %}bg-rose-100 text-rose-700
+              {% else %}bg-surface-100 text-surface-600{% endif %}">
               {% if r.status == 'draft' and r.rejection_note %}Returned
               {% else %}{{ r.get_status_display }}{% endif %}
             </span>
             {% if r.status == 'draft' and request.user.id == r.created_by_id %}
-            <a href="{% url 'ui:receipt_edit' r.pk %}" class="text-xs font-medium text-indigo-600 hover:text-indigo-800">{% if r.rejection_note %}Revise{% else %}Edit{% endif %}</a>
+            <a href="{% url 'ui:receipt_edit' r.pk %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">{% if r.rejection_note %}Revise{% else %}Edit{% endif %}</a>
             {% endif %}
           </div>
         </td>
-        <td class="px-4 py-2 text-right font-medium">{{ r.amount|money }}</td>
+        <td class="px-4 py-2 text-right font-medium">{{r.amount|peso}}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No receipts match. Try clearing the filters.</td></tr>
+      <tr><td colspan="7" class="px-4 py-8 text-center text-surface-400">No receipts match. Try clearing the filters.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<!-- Mobile cards -->
+<div class="md:hidden mt-4 space-y-3">
+  {% for r in page_obj %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <span class="mobile-card-title"><a href="{% url 'ui:receipt_detail' r.pk %}" class="text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></span>
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+        {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
+        {% elif r.status == 'submitted' %}bg-amber-100 text-amber-800
+        {% elif r.status == 'draft' and r.rejection_note %}bg-rose-100 text-rose-700
+        {% else %}bg-surface-100 text-surface-600{% endif %}">
+        {% if r.status == 'draft' and r.rejection_note %}Returned
+        {% else %}{{ r.get_status_display }}{% endif %}
+      </span>
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Date</span><span class="mobile-card-v">{{ r.transaction_date|date:"M d, Y" }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v">{{ r.customer.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ r.segment.code }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Method</span><span class="mobile-card-v">{{ r.get_payment_method_display }}{% if r.check_no %} · {{ r.check_no }}{% endif %}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Amount</span><span class="mobile-card-v tabular-nums">{{r.amount|peso}}</span></div>
+      </div>
+    </div>
+    <div class="mobile-card-foot">
+      <a href="{% url 'ui:receipt_detail' r.pk %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">View detail</a>
+      {% if r.status == 'draft' and request.user.id == r.created_by_id %}
+      <a href="{% url 'ui:receipt_edit' r.pk %}" class="ml-auto text-xs font-medium text-brand-600 hover:text-brand-800">{% if r.rejection_note %}Revise{% else %}Edit{% endif %}</a>
+      {% endif %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No receipts match. Try clearing the filters.</div>
+  {% endfor %}
 </div>
 {% include "ui/partials/pagination.html" %}

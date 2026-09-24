@@ -2,36 +2,29 @@
 {% load static ui_filters %}
 {% block title %}CONSO Batches{% endblock %}
 {% block content %}
-{% capture as actions %}
-{% url 'ui:conso_list_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
-<a href="{% url 'ui:rfp_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← RFPs</a>
-<a href="{% url 'ui:conso_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New batch</a>
-{% endcapture %}
-{% capture as table_head %}
-<tr>
-  <th class="px-4 py-3">Batch No</th>
-  <th class="px-4 py-3">Date</th>
-  <th class="px-4 py-3 text-right">Members</th>
-  <th class="px-4 py-3 text-right">Total</th>
-  <th class="px-4 py-3">Status</th>
-</tr>
-{% endcapture %}
-{% capture as table_body %}
-{% for b in page_obj %}
-<tr class="hover:bg-slate-50">
-  <td class="px-4 py-2 font-mono text-xs">
-    <a href="{% url 'ui:conso_detail' b.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ b.batch_no }}</a>
-  </td>
-  <td class="px-4 py-2">{{ b.conso_date|date:"M d, Y" }}</td>
-  <td class="px-4 py-2 text-right">{{ b.rfps.count }}</td>
-  <td class="px-4 py-2 text-right font-medium tabular-nums">{{ b.total_amount|money }}</td>
-  <td class="px-4 py-2">
-    {% include "ui/partials/status_badge.html" with status=b.status %}
-  </td>
-</tr>
-{% empty %}
-<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No CONSO batches yet.</td></tr>
-{% endfor %}
-{% endcapture %}
-{% include "ui/partials/list_card.html" with title="CONSO Batches (CONSO-YYYY-##)" subtitle="Reviewed by the Accounting Head; posting posts every member RFP's JE atomically (ADR-018, 7.3)." min_width="800" actions=actions table_head=table_head table_body=table_body show_pagination=True %}
+<div class="p-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-surface-900">CONSO Batches (CONSO-YYYY-##)</h1>
+      <p class="text-sm text-surface-500 mt-1">Reviewed by the Accounting Head; posting posts every member RFP's JE atomically (ADR-018, 7.3).</p>
+    </div>
+    <div class="flex items-center gap-3">
+      {% url 'ui:conso_list_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
+      <a href="{% url 'ui:rfp_list' %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">← RFPs</a>
+      <a href="{% url 'ui:conso_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ New batch</a>
+    </div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% include "ui/partials/stat_card.html" with label="Total batches" value=summary.total icon="folder-open" %}
+    {% include "ui/partials/stat_card.html" with label="Open" value=summary.open tone="amber" sub=summary.open_amount|peso icon="document-text" %}
+    {% include "ui/partials/stat_card.html" with label="Reviewed" value=summary.reviewed tone="violet" sub="ready to post" icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Posted" value=summary.posted tone="emerald" sub=summary.posted_amount|peso icon="check" %}
+  </div>
+
+  {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#conso-table' filter_grid='md:grid-cols-4' %}
+  <div id="conso-table">
+    {% include "ui/ap/_conso_table.html" %}
+  </div>
+</div>
 {% endblock %}

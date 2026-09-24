@@ -1,0 +1,58 @@
+{% load ui_filters %}
+{# Cash short table fragment — swapped by #cash-short-table on HTMX filter updates. #}
+<div class="hidden md:block mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+  <table class="w-full text-sm min-w-[700px]">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+      <tr>
+        <th class="px-4 py-3">Cycle</th>
+        <th class="px-4 py-3">Segment</th>
+        <th class="px-4 py-3 text-right">Expected</th>
+        <th class="px-4 py-3 text-right">Actual</th>
+        <th class="px-4 py-3 text-right">Variance</th>
+        <th class="px-4 py-3">Cause</th>
+        <th class="px-4 py-3">Status</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-surface-100">
+      {% for ws in page_obj %}
+      {% include "ui/cash/_cash_short_row.html" %}
+      {% empty %}
+      <tr><td colspan="8" class="px-4 py-8 text-center text-surface-400">No variances match. Try clearing the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="md:hidden mt-4 space-y-3">
+  {% for ws in page_obj %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <span class="mobile-card-title">{{ ws.cycle.cycle_start|date:"M d" }}–{{ ws.cycle.cycle_end|date:"M d" }}</span>
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+        {% if ws.status == 'approved' %}bg-emerald-100 text-emerald-800
+        {% else %}bg-amber-100 text-amber-800{% endif %}">{{ ws.status }}</span>
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ ws.segment.code }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Expected</span><span class="mobile-card-v tabular-nums">{{ws.expected_cash|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Actual</span><span class="mobile-card-v tabular-nums">{{ws.actual_cash|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Variance</span><span class="mobile-card-v font-medium tabular-nums {% if ws.variance < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">{{ws.variance|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Cause</span><span class="mobile-card-v">{{ ws.cause|default:"—" }}</span></div>
+      </div>
+    </div>
+    {% if ws.status == "open" %}
+    <div class="mobile-card-foot">
+      <form method="post" action="{% url 'ui:cash_short_approve' ws.id %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="text-sm font-medium text-emerald-600 hover:text-emerald-800">Approve</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No variances match. Try clearing the filters.</div>
+  {% endfor %}
+</div>
+{% include "ui/partials/pagination.html" %}

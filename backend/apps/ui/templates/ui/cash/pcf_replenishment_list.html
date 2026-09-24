@@ -5,54 +5,25 @@
 <div class="p-6">
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">Petty Cash Vouchers / Replenishments</h1>
-      <p class="text-sm text-slate-500 mt-1">Imprest replenishment requests (ACCTG-FOR-002); posted JE: Dr expenses | Cr cash.</p>
+      <h1 class="text-xl font-semibold text-surface-900">Petty Cash Vouchers / Replenishments</h1>
+      <p class="text-sm text-surface-500 mt-1">Imprest replenishment requests (ACCTG-FOR-002); posted JE: Dr expenses | Cr cash.</p>
     </div>
     <div class="flex items-center gap-3">
-      <a href="{% url 'ui:pcf_list' %}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Funds</a>
-      <a href="{% url 'ui:pcf_replenish' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New petty cash voucher</a>
+      <a href="{% url 'ui:pcf_list' %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">← Funds</a>
+      <a href="{% url 'ui:pcf_replenish' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ New petty cash voucher</a>
     </div>
   </div>
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <table class="w-full text-sm min-w-[900px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3">Voucher No.</th>
-          <th class="px-4 py-3">Date</th>
-          <th class="px-4 py-3">Fund</th>
-          <th class="px-4 py-3">Payee</th>
-          <th class="px-4 py-3">Requested By</th>
-          <th class="px-4 py-3">Reference</th>
-          <th class="px-4 py-3 text-right">Amount</th>
-          <th class="px-4 py-3">Status</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for r in page_obj %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2 font-mono text-xs">
-            <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="font-medium text-indigo-600 hover:text-indigo-800">{% if r.voucher_no %}{{ r.voucher_no }}{% else %}PCF-{{ r.id }}{% endif %}</a>
-          </td>
-          <td class="px-4 py-2">{{ r.request_date|date:"M d, Y" }}</td>
-          <td class="px-4 py-2 text-xs">{{ r.fund.get_fund_code_display }}</td>
-          <td class="px-4 py-2">{{ r.payee_name|default:"—" }}</td>
-          <td class="px-4 py-2 text-xs">{% if r.requested_by %}{{ r.requested_by.get_full_name|default:r.requested_by.username }}{% else %}—{% endif %}</td>
-          <td class="px-4 py-2 text-xs">{{ r.reference|default:"—" }}</td>
-          <td class="px-4 py-2 text-right font-medium tabular-nums">{{ r.amount|money }}</td>
-          <td class="px-4 py-2">
-            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-              {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800
-              {% else %}bg-amber-100 text-amber-800{% endif %}">
-              {{ r.status }}
-            </span>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No replenishments yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% include "ui/partials/stat_card.html" with label="Total vouchers" value=summary.total sub=summary.total_amount|peso icon="receipt" %}
+    {% include "ui/partials/stat_card.html" with label="Requested" value=summary.requested tone="amber" sub=summary.requested_amount|peso icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Approved" value=summary.approved tone="violet" sub="ready to post" icon="document-text" %}
+    {% include "ui/partials/stat_card.html" with label="Posted" value=summary.posted tone="emerald" sub=summary.posted_amount|peso icon="check" %}
+  </div>
+
+  {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#pcf-repl-table' filter_grid='md:grid-cols-4' %}
+  <div id="pcf-repl-table">
+    {% include "ui/cash/_pcf_replenishment_table.html" %}
   </div>
 </div>
-  {% include "ui/partials/pagination.html" %}
 {% endblock %}

@@ -8,27 +8,27 @@
 
   {% capture as form_fields %}
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_code">Code</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_code">Code</label>
         <input type="text" name="code" id="id_code" maxlength="32"
                value="{{ supplier.code|default:'' }}" {% if supplier %}disabled title="Code is fixed on an existing supplier"{% endif %}
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm{% if supplier %} bg-slate-50 text-slate-500{% endif %}"
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm{% if supplier %} bg-surface-50 text-surface-500{% endif %}"
                placeholder="Auto-generated (S001, S002, ...)">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_name">Business Name</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_name">Business Name</label>
         <input type="text" name="name" id="id_name" required maxlength="255"
                value="{{ supplier.name|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_owner_name">Owner/Representative/President</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_owner_name">Owner/Representative/President</label>
         <input type="text" name="owner_name" id="id_owner_name" maxlength="255"
                value="{{ supplier.owner_name|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_supplier_type">Type</label>
-        <select name="supplier_type" id="id_supplier_type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_supplier_type">Type</label>
+        <select name="supplier_type" id="id_supplier_type" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <option value="depot" {% if supplier.supplier_type == 'depot' %}selected{% endif %}>Depot</option>
           <option value="equipment" {% if supplier.supplier_type == 'equipment' %}selected{% endif %}>Equipment</option>
           <option value="service" {% if supplier.supplier_type == 'service' %}selected{% endif %}>Service</option>
@@ -37,67 +37,67 @@
         </select>
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_email">Email Address</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_email">Email Address</label>
         <input type="email" name="email" id="id_email"
                value="{{ supplier.email|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_default_segment">Default segment</label>
-        <select name="default_segment" id="id_default_segment" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_default_segment">Default segment</label>
+        <select name="default_segment" id="id_default_segment" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <option value="">— none —</option>
           {% for seg in segments %}<option value="{{ seg.id }}" {% if supplier.default_segment_id == seg.id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
         </select>
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_tin">TIN</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_tin">TIN</label>
         <input type="text" name="tin" id="id_tin" maxlength="32"
                value="{{ supplier.tin|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_person">Contact Person</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_contact_person">Contact Person</label>
         <input type="text" name="contact_person" id="id_contact_person" maxlength="255"
                value="{{ supplier.contact_person|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_position">Position</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_position">Position</label>
         <input type="text" name="position" id="id_position" maxlength="128"
                value="{{ supplier.position|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_contact_no">Contact Numbers</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_contact_no">Contact Numbers</label>
         <input type="text" name="contact_no" id="id_contact_no" maxlength="255"
                value="{{ supplier.contact_no|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div class="flex items-end">
-        <label class="flex items-center gap-2 text-sm text-slate-700">
+        <label class="flex items-center gap-2 text-sm text-surface-700">
           <input type="checkbox" name="attachments_required" id="id_attachments_required" value="1"
                  {% if supplier.attachments_required %}checked{% endif %}
-                 class="rounded border-slate-300 text-indigo-600">
+                 class="rounded border-surface-300 text-brand-600">
           Attachment needed (BIR-COR, DTI/SEC, Business Permit)
         </label>
       </div>
       <div class="md:col-span-2">
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="id_address">Business Address</label>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_address">Business Address</label>
         <input type="text" name="address" id="id_address" maxlength="255"
                value="{{ supplier.address|default:'' }}"
-               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
   {% endcapture %}
   {% capture as footer_html %}
 
-    <div class="border-t border-slate-200 pt-4 mt-4">
+    <div class="border-t border-surface-200 pt-4 mt-4">
       <div class="flex items-center justify-between">
         <div>
-          <label class="block text-sm font-medium text-slate-700">Contact Persons</label>
-          <p class="text-xs text-slate-500">Multiple contact people per supplier, each with their own phone (ADR-038 §6).</p>
+          <label class="block text-sm font-medium text-surface-700">Contact Persons</label>
+          <p class="text-xs text-surface-500">Multiple contact people per supplier, each with their own phone (ADR-038 §6).</p>
         </div>
         <button type="button" id="add-contact" data-add-template-row
-                class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                class="rounded-md border border-surface-300 px-3 py-1.5 text-sm text-surface-700 hover:bg-surface-50">
           + Add contact
         </button>
       </div>
@@ -106,12 +106,12 @@
           {% for c in supplier.contacts.all %}
           <div data-template-row class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
             <input type="text" name="contact_name" value="{{ c.name }}"
-                   placeholder="Name" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                   placeholder="Name" class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
             <input type="text" name="contact_position" value="{{ c.position }}"
-                   placeholder="Position" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                   placeholder="Position" class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
             <input type="text" name="contact_phone" value="{{ c.phone }}"
-                   placeholder="Phone" class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-            <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+                   placeholder="Phone" class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+            <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">Remove</button>
           </div>
           {% endfor %}
         {% endif %}
@@ -119,12 +119,12 @@
       <template id="contact-row-template">
         <div data-template-row class="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
           <input type="text" name="contact_name" placeholder="Name"
-                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                 class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <input type="text" name="contact_position" placeholder="Position"
-                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                 class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <input type="text" name="contact_phone" placeholder="Phone"
-                 class="c-input w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-          <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50">Remove</button>
+                 class="c-input w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          <button type="button" data-remove-template-row class="remove-contact c-remove rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">Remove</button>
         </div>
       </template>
   {% endcapture %}

@@ -1,0 +1,64 @@
+{% load ui_filters %}
+{# Sales Invoices table fragment — swapped by #si-table on HTMX filter updates. #}
+<div class="hidden md:block mt-4 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
+  <table class="w-full text-sm min-w-[780px]">
+    <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+      <tr>
+        <th class="px-4 py-3">Invoice No</th>
+        <th class="px-4 py-3">Date</th>
+        <th class="px-4 py-3">Customer</th>
+        <th class="px-4 py-3">Segment</th>
+        <th class="px-4 py-3 text-right">Total</th>
+        <th class="px-4 py-3 text-right">Due</th>
+        <th class="px-4 py-3">Mode</th>
+        <th class="px-4 py-3">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-surface-100">
+      {% for inv in page_obj.object_list %}
+      <tr class="hover:bg-surface-50">
+        <td class="px-4 py-2.5">
+          <a class="text-brand-600 hover:underline font-mono text-xs" href="{% url 'ui:si_detail' inv.id %}">{{ inv.invoice_no }}</a>
+        </td>
+        <td class="px-4 py-2.5">{{ inv.transaction_date|date:"M d, Y" }}</td>
+        <td class="px-4 py-2.5">{{ inv.customer.code }} {{ inv.customer.name }}</td>
+        <td class="px-4 py-2.5 text-xs">{{ inv.segment.code }}</td>
+        <td class="px-4 py-2.5 text-right tabular-nums">{{inv.total|peso}}</td>
+        <td class="px-4 py-2.5 text-right tabular-nums">{% if inv.is_paid_on_delivery %}—{% else %}{{inv.balance|peso}}{% endif %}</td>
+        <td class="px-4 py-2.5 text-xs">{% if inv.is_paid_on_delivery %}On delivery{% else %}Credit{% endif %}</td>
+        <td class="px-4 py-2.5">{% include "ui/partials/status_badge.html" with status=inv.status %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="px-4 py-10 text-center text-surface-400">No sales invoices match. Try clearing the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Mobile cards -->
+<div class="md:hidden mt-4 space-y-3">
+  {% for inv in page_obj.object_list %}
+  <div class="mobile-card">
+    <div class="mobile-card-head">
+      <span class="mobile-card-title"><a class="text-brand-600 hover:underline font-mono text-xs" href="{% url 'ui:si_detail' inv.id %}">{{ inv.invoice_no }}</a></span>
+      {% include "ui/partials/status_badge.html" with status=inv.status %}
+    </div>
+    <div class="mobile-card-body">
+      <div class="mobile-card-rows">
+        <div class="mobile-card-row"><span class="mobile-card-k">Date</span><span class="mobile-card-v">{{ inv.transaction_date|date:"M d, Y" }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v">{{ inv.customer.code }} {{ inv.customer.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ inv.segment.code }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Mode</span><span class="mobile-card-v">{% if inv.is_paid_on_delivery %}On delivery{% else %}Credit{% endif %}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Total</span><span class="mobile-card-v tabular-nums">{{inv.total|peso}}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Due</span><span class="mobile-card-v tabular-nums">{% if inv.is_paid_on_delivery %}—{% else %}{{inv.balance|peso}}{% endif %}</span></div>
+      </div>
+    </div>
+    <div class="mobile-card-foot">
+      <a href="{% url 'ui:si_detail' inv.id %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">View detail</a>
+    </div>
+  </div>
+  {% empty %}
+  <div class="mobile-card p-6 text-center text-sm text-surface-400">No sales invoices match. Try clearing the filters.</div>
+  {% endfor %}
+</div>
+{% include "ui/partials/pagination.html" with page_obj=page_obj %}

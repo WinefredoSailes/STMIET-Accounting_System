@@ -4,28 +4,28 @@
 {% block content %}
 <div class="p-6">
   {% capture as doc_title %}CV {{ cv.cv_number }}{% endcapture %}
-  {% capture as actions %}<a href="{% url 'ui:cv_export' cv.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a><a href="{% url 'ui:cv_export' cv.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a><a href="{% url 'ui:cv_export' cv.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a><a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print CV</a>{% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}{% endcapture %}
+  {% capture as actions %}<a href="{% url 'ui:cv_export' cv.id 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a><a href="{% url 'ui:cv_export' cv.id 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a><a href="{% url 'ui:cv_export' cv.id 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a><a href="{% url 'ui:cv_print' cv.id %}" class="rounded-md bg-surface-800 px-4 py-2 text-sm font-medium text-white hover:bg-surface-700">Print CV</a>{% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}{% endcapture %}
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:cv_list" back_label="Check vouchers" actions=actions %}
   {% include "ui/partials/reversed_banner.html" with entry=cv.journal_entry %}
   {% include "ui/partials/reversal_ui.html" with entry=cv.journal_entry %}
 
   {% capture as shell_meta %}
-  {% capture as badge_color %}{% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800{% elif cv.status == 'created' %}bg-slate-100 text-slate-700{% else %}bg-amber-100 text-amber-800{% endif %}{% endcapture %}
+  {% capture as badge_color %}{% if cv.status == 'cleared' %}bg-emerald-100 text-emerald-800{% elif cv.status == 'created' %}bg-surface-100 text-surface-700{% else %}bg-amber-100 text-amber-800{% endif %}{% endcapture %}
   {% include "ui/partials/status_badge.html" with status=cv.status color=badge_color %}
-  <div class="text-xs text-slate-500 mt-1">Document No.: <span class="font-mono text-slate-800">ACCTG-FOR-010</span></div>
+  <div class="text-xs text-surface-500 mt-1">Document No.: <span class="font-mono text-surface-800">ACCTG-FOR-010</span></div>
   {% endcapture %}
   {% capture as shell_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div><div class="text-xs text-slate-500">CV NUMBER</div><div class="mt-0.5 font-mono font-medium">{{ cv.cv_number }}</div></div>
-    <div><div class="text-xs text-slate-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
-    <div><div class="text-xs text-slate-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
-    <div><div class="text-xs text-slate-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
-    <div><div class="text-xs text-slate-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
+    <div><div class="text-xs text-surface-500">CV NUMBER</div><div class="mt-0.5 font-mono font-medium">{{ cv.cv_number }}</div></div>
+    <div><div class="text-xs text-surface-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
+    <div><div class="text-xs text-surface-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
+    <div><div class="text-xs text-surface-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
   </div>
 
   <div class="px-6 pb-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">Distribution Charges</div>
     {% if cv.rfp_id %}
     <table class="line-table w-full text-sm" style="min-width: 1150px;">
       <colgroup>
@@ -37,7 +37,7 @@
         <col style="width: 170px;"><!-- DEBIT -->
         <col style="width: 170px;"><!-- CREDIT -->
       </colgroup>
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-2">GL ACCOUNT</th>
           <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
@@ -48,34 +48,34 @@
           <th class="px-3 py-2 text-right">CREDIT</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for line in cv.rfp.lines.all %}
         <tr>
-          <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }} <span class="font-sans text-slate-500">{{ line.account.name }}</span></td>
+          <td class="px-3 py-2 font-mono text-xs">{{ line.account.code }} <span class="font-sans text-surface-500">{{ line.account.name }}</span></td>
           <td class="px-3 py-2">{{ line.description|default:cv.rfp.particulars }}</td>
           <td class="px-3 py-2">{{ line.segment.code }}</td>
           <td class="px-3 py-2">{{ cv.rfp.purpose|default:"OS" }}</td>
           
-          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'dr' %}{{ line.amount|money }}{% endif %}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'cr' %}{{ line.amount|money }}{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'dr' %}{{line.amount|peso}}{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if line.side == 'cr' %}{{line.amount|peso}}{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot class="bg-slate-50">
-        <tr><td colspan="6" class="px-3 py-2 text-xs text-slate-500">RFP {{ cv.rfp.ap_number }} — {{ cv.rfp.particulars }}</td></tr>
+      <tfoot class="bg-surface-50">
+        <tr><td colspan="6" class="px-3 py-2 text-xs text-surface-500">RFP {{ cv.rfp.ap_number }} — {{ cv.rfp.particulars }}</td></tr>
       </tfoot>
     </table>
     {% else %}
-    <p class="text-sm text-slate-400">Standalone voucher — no linked RFP.</p>
+    <p class="text-sm text-surface-400">Standalone voucher — no linked RFP.</p>
     {% endif %}
 
     <table class="mt-4 ml-auto w-72 text-sm">
-      <tbody class="divide-y divide-slate-100">
-        <tr><td class="py-2 text-slate-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{ cv.gross_amount|money }}</td></tr>
-        <tr><td class="py-2 text-slate-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{ cv.withheld_tax|money }}</td></tr>
-        <tr class="bg-slate-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{ cv.net_amount|money }}</td></tr>
+      <tbody class="divide-y divide-surface-100">
+        <tr><td class="py-2 text-surface-600">GROSS AMOUNT</td><td class="py-2 text-right tabular-nums">{{cv.gross_amount|peso}}</td></tr>
+        <tr><td class="py-2 text-surface-600">WITHHOLDING TAX</td><td class="py-2 text-right tabular-nums">{{cv.withheld_tax|peso}}</td></tr>
+        <tr class="bg-surface-50 font-semibold"><td class="px-3 py-2 text-right">NET AMOUNT</td><td class="px-3 py-2 text-right tabular-nums">{{cv.net_amount|peso}}</td></tr>
       {% if payable %}
-        <tr class="font-semibold text-indigo-700"><td class="px-3 py-2 text-right">TOTAL PAYABLE (A/P)</td><td class="px-3 py-2 text-right tabular-nums">{{ payable|money }}</td></tr>
+        <tr class="font-semibold text-brand-700"><td class="px-3 py-2 text-right">TOTAL PAYABLE (A/P)</td><td class="px-3 py-2 text-right tabular-nums">{{payable|peso}}</td></tr>
       {% endif %}
       </tbody>
     </table>
@@ -83,25 +83,25 @@
 
   <div class="px-6 pb-4">
     <div class="grid grid-cols-5 gap-2 text-center text-xs">
-      <div class="border-t border-slate-300 pt-2">
+      <div class="border-t border-surface-300 pt-2">
         <div class="font-medium">{{ signatories.prepared|default:"—" }}</div>
-        <div class="text-slate-500">PREPARED BY · Print Name/Sign/Date</div>
+        <div class="text-surface-500">PREPARED BY · Print Name/Sign/Date</div>
       </div>
-      <div class="border-t border-slate-300 pt-2">
+      <div class="border-t border-surface-300 pt-2">
         <div class="font-medium">{{ signatories.requested|default:"—" }}</div>
-        <div class="text-slate-500">REQUESTED BY · Print Name/Sign/Date</div>
+        <div class="text-surface-500">REQUESTED BY · Print Name/Sign/Date</div>
       </div>
-      <div class="border-t border-slate-300 pt-2">
+      <div class="border-t border-surface-300 pt-2">
         <div class="font-medium">{{ signatories.checked|default:"—" }}</div>
-        <div class="text-slate-500">CHECKED BY · Finance &amp; Acctg. Head / Sign and Date</div>
+        <div class="text-surface-500">CHECKED BY · Finance &amp; Acctg. Head / Sign and Date</div>
       </div>
-      <div class="border-t border-slate-300 pt-2">
+      <div class="border-t border-surface-300 pt-2">
         <div class="font-medium">{{ signatories.approved|default:"—" }}</div>
-        <div class="text-slate-500">APPROVED BY · COO</div>
+        <div class="text-surface-500">APPROVED BY · COO</div>
       </div>
-      <div class="border-t border-slate-300 pt-2">
+      <div class="border-t border-surface-300 pt-2">
         <div class="font-medium">{{ signatories.received|default:"—" }}</div>
-        <div class="text-slate-500">PAYMENT RECEIVED BY · Signature Over Printed Name/Date</div>
+        <div class="text-surface-500">PAYMENT RECEIVED BY · Signature Over Printed Name/Date</div>
       </div>
     </div>
   </div>

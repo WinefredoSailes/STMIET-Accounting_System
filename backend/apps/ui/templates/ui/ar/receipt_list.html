@@ -3,11 +3,17 @@
 {% block title %}Receipts{% endblock %}
 {% block content %}
 {% capture as list_actions %}
-<a href="{% url 'ui:ar_receipts_export' 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
-<a href="{% url 'ui:ar_receipts_export' 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
-<a href="{% url 'ui:ar_receipts_export' 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
+<a href="{% url 'ui:ar_receipts_export' 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
+<a href="{% url 'ui:ar_receipts_export' 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
+<a href="{% url 'ui:ar_receipts_export' 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
 {% endcapture %}
 {% include "ui/partials/page_header.html" with title="Acknowledgment Receipts" subtitle="AR-YYYY-SEQ numbered receipts that post on creation (ADR-007)." primary_url_name="ui:receipt_create" primary_label="+ New receipt" link_url_name="ui:customer_list" link_label="← Customers" actions=list_actions %}
+<div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+  {% include "ui/partials/stat_card.html" with label="Total receipts" value=summary.total sub=summary.total_amount|peso icon="receipt" %}
+  {% include "ui/partials/stat_card.html" with label="Drafts" value=summary.draft tone="rose" sub="not yet submitted" icon="document-text" %}
+  {% include "ui/partials/stat_card.html" with label="For head approval" value=summary.submitted tone="amber" sub=summary.submitted_amount|peso icon="clock" %}
+  {% include "ui/partials/stat_card.html" with label="Posted (collected)" value=summary.posted tone="emerald" sub=summary.posted_amount|peso icon="check" %}
+</div>
 {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#receipt-table' filter_grid='md:grid-cols-4' %}
 <div id="receipt-table">
   {% include "ui/ar/_receipt_table.html" %}

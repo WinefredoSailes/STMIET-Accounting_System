@@ -5,7 +5,7 @@
 {% capture as actions %}
 {% url 'ui:supplier_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
 {% if can_create_master %}
-<a href="{% url 'ui:supplier_create' %}" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">+ New supplier</a>
+<a href="{% url 'ui:supplier_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ New supplier</a>
 {% endif %}
 {% endcapture %}
 {% include "ui/partials/page_header.html" with title="Suppliers" subtitle="Vendor master for RFP → CONSO → CV workflows (ADR-008)." link_url_name="ui:rfp_list" link_label="RFPs →" actions=actions %}

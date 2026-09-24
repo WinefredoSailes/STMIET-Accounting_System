@@ -5,24 +5,24 @@
 <div class="p-4 sm:p-6 max-w-7xl">
   {% capture as ledger_filters %}
   <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-    <input type="date" name="start" value="{{ start }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-    <span class="text-slate-400">to</span>
-    <input type="date" name="end" value="{{ end }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none">
-    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">Apply Filter</button>
-    {% if filter_qs %}<a href="?{{ filter_qs }}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Clear filters</a>{% endif %}
+    <input type="date" name="start" value="{{ start }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+    <span class="text-surface-400">to</span>
+    <input type="date" name="end" value="{{ end }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+    <button type="submit" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Apply Filter</button>
+    {% if filter_qs %}<a href="?{{ filter_qs }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">Clear filters</a>{% endif %}
   </form>
   <div class="flex items-center gap-2">
-    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=xlsx{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
-    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=pdf{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
-    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=csv{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
-    <a href="{% url 'ui:ap_supplier_ledger_print' supplier.pk %}{% if start or end or filter_qs %}?{% if start %}start={{ start }}&{% endif %}{% if end %}end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}{% endif %}" class="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Print</a>
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=xlsx{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=pdf{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
+    <a href="{% url 'ui:ap_supplier_ledger_export' supplier.pk %}?format=csv{% if start %}&start={{ start }}{% endif %}{% if end %}&end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
+    <a href="{% url 'ui:ap_supplier_ledger_print' supplier.pk %}{% if start or end or filter_qs %}?{% if start %}start={{ start }}&{% endif %}{% if end %}end={{ end }}{% endif %}{% if filter_qs %}&{{ filter_qs }}{% endif %}{% endif %}" class="rounded-md bg-surface-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-surface-700">Print</a>
   </div>
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="STATEMENT OF ACCOUNT" subtitle=supplier.name actions=ledger_filters %}
 
-  <div class="mt-6 bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">
     <table class="w-full text-sm min-w-[1100px]">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-3">Date</th>
           <th class="px-3 py-3">Ref #</th>
@@ -33,70 +33,70 @@
           <th class="px-3 py-3 text-right">Balance</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% if page_obj.brought_dr is none and page_obj.brought_cr is none %}
-        <tr class="bg-slate-100/60 font-semibold">
-          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
+        <tr class="bg-surface-100/60 font-semibold">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-surface-600">
             Balance Brought Forward {% if page_obj.has_previous %}(from Page {{ page_obj.previous_page_number }}){% else %}(All Dates){% endif %}
           </td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"></td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"></td>
-          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"><span class="text-slate-300">—</span></td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap"><span class="text-surface-300">—</span></td>
         </tr>
         {% else %}
-        <tr class="bg-slate-100/60 font-semibold">
-          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
+        <tr class="bg-surface-100/60 font-semibold">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-surface-600">
             Balance Brought Forward {% if page_obj.has_previous %}(from Page {{ page_obj.previous_page_number }}){% elif start %}{{ start }}{% else %}(all prior activity){% endif %}
           </td>
           <td class="px-3 py-2"></td>
           <td class="px-3 py-2"></td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-            {% if page_obj.brought_cr is not None %}<span class="font-medium text-amber-700">{{ page_obj.brought_cr|money }}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
-            {% elif page_obj.brought_dr is not None %}<span class="font-medium text-teal-700">{{ page_obj.brought_dr|money }}</span> <span class="text-xs font-medium text-teal-700">Dr</span>
-            {% else %}<span class="text-slate-300">—</span>{% endif %}
+            {% if page_obj.brought_cr is not None %}<span class="font-medium text-amber-700">{{page_obj.brought_cr|peso}}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
+            {% elif page_obj.brought_dr is not None %}<span class="font-medium text-brand-700">{{page_obj.brought_dr|peso}}</span> <span class="text-xs font-medium text-brand-700">Dr</span>
+            {% else %}<span class="text-surface-300">—</span>{% endif %}
           </td>
         </tr>
         {% endif %}
         {% for row in page_obj %}
-        <tr class="hover:bg-slate-50">
+        <tr class="hover:bg-surface-50">
           <td class="px-3 py-1.5 whitespace-nowrap">{{ row.date|date:"Y-m-d" }}</td>
           <td class="px-3 py-1.5 whitespace-nowrap font-medium">
-            <a href="{% url 'ui:rfp_detail' row.ref_pk %}" class="text-indigo-600 hover:text-indigo-800 hover:underline">{{ row.ref }}</a>
-            {% if row.ref_url == "ui:cv_detail" %}| <a href="{% url 'ui:cv_detail' row.ref_pk %}" class="text-indigo-600 hover:text-indigo-800 hover:underline">CV</a>{% endif %}
+            <a href="{% url 'ui:rfp_detail' row.ref_pk %}" class="text-brand-600 hover:text-brand-800 hover:underline">{{ row.ref }}</a>
+            {% if row.ref_url == "ui:cv_detail" %}| <a href="{% url 'ui:cv_detail' row.ref_pk %}" class="text-brand-600 hover:text-brand-800 hover:underline">CV</a>{% endif %}
           </td>
           <td class="px-3 py-1.5 whitespace-nowrap">{{ row.type }}</td>
-          <td class="px-3 py-1.5">{{ row.description|truncatechars:70 }}{% if row.ref_url %} <span class="text-xs text-slate-400">— {{ row.ref }}</span>{% endif %}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.debit|money }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{ row.credit|money }}</td>
+          <td class="px-3 py-1.5">{{ row.description|truncatechars:70 }}{% if row.ref_url %} <span class="text-xs text-surface-400">— {{ row.ref }}</span>{% endif %}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{row.debit|peso}}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{{row.credit|peso}}</td>
           <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">
-            {% if row.balance_cr is not None %}<span class="font-medium text-amber-700">{{ row.balance_cr|money }}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
-            {% elif row.balance_dr is not None %}<span class="font-medium text-teal-700">{{ row.balance_dr|money }}</span> <span class="text-xs font-medium text-teal-700">Dr</span>
-            {% else %}<span class="text-slate-300">—</span>{% endif %}
+            {% if row.balance_cr is not None %}<span class="font-medium text-amber-700">{{row.balance_cr|peso}}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
+            {% elif row.balance_dr is not None %}<span class="font-medium text-brand-700">{{row.balance_dr|peso}}</span> <span class="text-xs font-medium text-brand-700">Dr</span>
+            {% else %}<span class="text-surface-300">—</span>{% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No transactions for this supplier in the selected period.</td></tr>
+        <tr><td colspan="7" class="px-4 py-8 text-center text-surface-400">No transactions for this supplier in the selected period.</td></tr>
         {% endfor %}
         {% if page_obj.is_last %}
-        <tr class="bg-slate-50 font-semibold border-t-2 border-slate-200">
-          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-500">Period Totals</td>
-          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ period_debit|money }}</td>
-          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{ period_credit|money }}</td>
+        <tr class="bg-surface-50 font-semibold border-t-2 border-surface-200">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-surface-500">Period Totals</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{period_debit|peso}}</td>
+          <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{{period_credit|peso}}</td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-            {% if closing_cr is not None %}<span class="font-medium text-amber-700">{{ closing_cr|money }}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
-            {% elif closing_dr is not None %}<span class="font-medium text-teal-700">{{ closing_dr|money }}</span> <span class="text-xs font-medium text-teal-700">Dr</span>
-            {% else %}<span class="text-slate-300">—</span>{% endif %}
+            {% if closing_cr is not None %}<span class="font-medium text-amber-700">{{closing_cr|peso}}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
+            {% elif closing_dr is not None %}<span class="font-medium text-brand-700">{{closing_dr|peso}}</span> <span class="text-xs font-medium text-brand-700">Dr</span>
+            {% else %}<span class="text-surface-300">—</span>{% endif %}
           </td>
         </tr>
         {% else %}
-        <tr class="bg-slate-100/60 font-semibold border-t-2 border-slate-200">
-          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">Balance Carried Forward to Page {{ page_obj.next_page_number }}</td>
+        <tr class="bg-surface-100/60 font-semibold border-t-2 border-surface-200">
+          <td colspan="4" class="px-3 py-2 text-xs uppercase tracking-wider text-surface-600">Balance Carried Forward to Page {{ page_obj.next_page_number }}</td>
           <td class="px-3 py-2"></td>
           <td class="px-3 py-2"></td>
           <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-            {% if page_obj.carried_cr is not None %}<span class="font-medium text-amber-700">{{ page_obj.carried_cr|money }}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
-            {% elif page_obj.carried_dr is not None %}<span class="font-medium text-teal-700">{{ page_obj.carried_dr|money }}</span> <span class="text-xs font-medium text-teal-700">Dr</span>
-            {% else %}<span class="text-slate-300">—</span>{% endif %}
+            {% if page_obj.carried_cr is not None %}<span class="font-medium text-amber-700">{{page_obj.carried_cr|peso}}</span> <span class="text-xs font-medium text-amber-700">Cr</span>
+            {% elif page_obj.carried_dr is not None %}<span class="font-medium text-brand-700">{{page_obj.carried_dr|peso}}</span> <span class="text-xs font-medium text-brand-700">Dr</span>
+            {% else %}<span class="text-surface-300">—</span>{% endif %}
           </td>
         </tr>
         {% endif %}
@@ -104,6 +104,6 @@
     </table>
   </div>
   {% include "ui/partials/pagination.html" %}
-  <p class="mt-3 text-xs text-slate-500">Posted payables (Credit) and cleared payments (Debit), from the GL projection (ADR-005). A <span class="font-medium text-amber-700">Cr</span> balance is owed to the supplier; a <span class="font-medium text-teal-700">Dr</span> balance is an advance paid in excess of posted payables. Click Ref # to open the originating RFP or CV document.</p>
+  <p class="mt-3 text-xs text-surface-500">Posted payables (Credit) and cleared payments (Debit), from the GL projection (ADR-005). A <span class="font-medium text-amber-700">Cr</span> balance is owed to the supplier; a <span class="font-medium text-brand-700">Dr</span> balance is an advance paid in excess of posted payables. Click Ref # to open the originating RFP or CV document.</p>
 </div>
 {% endblock %}

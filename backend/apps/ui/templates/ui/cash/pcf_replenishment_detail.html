@@ -3,7 +3,7 @@
 {% block title %}PCF Voucher {{ replen.id }}{% endblock %}
 {% block content %}
 <div class="p-6">
-  <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm text-slate-500 hover:text-slate-700">&larr;
+  <a href="{% url 'ui:pcf_replenishment_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr;
     Replenishments</a>
 
   {% capture as doc_badge_color %}
@@ -12,34 +12,34 @@
   {% endcapture %}
   {% capture as doc_meta %}
   {% include "ui/partials/status_badge.html" with status=replen.status color=doc_badge_color %}
-  <div class="text-xs text-slate-500 mt-1 font-mono">{% if replen.voucher_no %}{{ replen.voucher_no }}{% else %}PCF-{{ replen.id }}{% endif %}</div>
+  <div class="text-xs text-surface-500 mt-1 font-mono">{% if replen.voucher_no %}{{ replen.voucher_no }}{% else %}PCF-{{ replen.id }}{% endif %}</div>
   {% endcapture %}
   {% capture as doc_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div>
-      <div class="text-xs text-slate-500">NAME</div>
+      <div class="text-xs text-surface-500">NAME</div>
       <div class="mt-0.5 font-medium">{{ replen.payee_name|default:"—" }}</div>
     </div>
     <div>
-      <div class="text-xs text-slate-500">DATE OF REQUEST</div>
+      <div class="text-xs text-surface-500">DATE OF REQUEST</div>
       <div class="mt-0.5">{{ replen.request_date|date:"M d, Y" }}</div>
     </div>
     <div>
-      <div class="text-xs text-slate-500">REFERENCE</div>
+      <div class="text-xs text-surface-500">REFERENCE</div>
       <div class="mt-0.5">{{ replen.reference|default:"—" }}</div>
     </div>
     <div>
-      <div class="text-xs text-slate-500">FUND</div>
+      <div class="text-xs text-surface-500">FUND</div>
       <div class="mt-0.5 text-xs">{{ replen.fund.get_fund_code_display }} ({{ replen.fund.custodian.username }})</div>
     </div>
     <div>
-      <div class="text-xs text-slate-500">REQUESTED BY</div>
+      <div class="text-xs text-surface-500">REQUESTED BY</div>
       <div class="mt-0.5">{% if replen.requested_by %}{{ replen.requested_by.get_full_name|default:replen.requested_by.username }}{% else %}—{% endif %}</div>
     </div>
   </div>
 
   <div class="px-6 pb-4">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Distribution Charges</div>
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">Distribution Charges</div>
     <table class="line-table w-full text-sm" style="min-width: 1580px;">
       <colgroup>
         <col style="width: 250px;"><!-- BUSINESS NAME -->
@@ -52,7 +52,7 @@
         <col style="width: 170px;"><!-- CREDIT -->
       </colgroup>
 
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
         <tr>
           <th class="px-3 py-2">BUSINESS NAME</th>
           <th class="px-3 py-2">TIN</th>
@@ -65,7 +65,7 @@
         </tr>
       </thead>
 
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-surface-100">
         {% for exp in replen.expenses %}
         <tr>
           <td class="px-3 py-2 overflow-hidden">
@@ -98,26 +98,26 @@
 
           <td class="px-2 py-2 text-right tabular-nums">
             {% if exp.side != 'cr' %}
-            {{ exp.amount|money }}
+            {{exp.amount|peso}}
             {% endif %}
           </td>
 
           <td class="px-3 py-2 text-right tabular-nums">
             {% if exp.side == 'cr' %}
-            {{ exp.amount|money }}
+            {{exp.amount|peso}}
             {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
 
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-surface-50 font-semibold">
         <tr>
           <td colspan="6" class="px-3 py-2 text-right">
             TOTAL AMOUNT
           </td>
           <td class="px-3 py-2 text-right tabular-nums">
-            {{ replen.amount|money }}
+            {{replen.amount|peso}}
           </td>
           <td class="px-3 py-2"></td>
         </tr>
@@ -125,7 +125,7 @@
     </table>
   </div>
   {% endcapture %}
-  {% include "ui/partials/document_shell.html" with doc_title="PETTY CASH VOUCHER" doc_title_class="text-lg font-bold text-slate-900" doc_form_id="ACCOUNTING DEPARTMENT · ACCTG-FOR-002" doc_meta_html=doc_meta doc_body_html=doc_body %}
+  {% include "ui/partials/document_shell.html" with doc_title="PETTY CASH VOUCHER" doc_title_class="text-lg font-bold text-surface-900" doc_form_id="ACCOUNTING DEPARTMENT · ACCTG-FOR-002" doc_meta_html=doc_meta doc_body_html=doc_body %}
   {% include "ui/partials/reversed_banner.html" with entry=replen.journal_entry %}
   {% include "ui/partials/reversal_ui.html" with entry=replen.journal_entry %}
 
@@ -135,7 +135,7 @@
       <form method="post" action="{% url 'ui:pcf_replenishment_approve' replen.id %}">
         {% csrf_token %}
         <button type="submit"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Approve &amp;
+          class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Approve &amp;
           batch to CONSO</button>
       </form>
       <form method="post" action="{% url 'ui:pcf_replenishment_post' replen.id %}">
@@ -148,19 +148,19 @@
       <span class="text-sm text-amber-700">Submitted — awaiting Accounting &amp; Finance Head approval.</span>
       {% endif %}
     {% elif replen.status == "approved" %}
-    <span class="text-sm text-slate-600">Approved — <a href="{% url 'ui:conso_detail' replen.conso_id %}"
-        class="font-medium text-indigo-600 hover:text-indigo-800">{{ replen.conso.batch_no }} →</a></span>
+    <span class="text-sm text-surface-600">Approved — <a href="{% url 'ui:conso_detail' replen.conso_id %}"
+        class="font-medium text-brand-600 hover:text-brand-800">{{ replen.conso.batch_no }} →</a></span>
     {% endif %}
     {% if replen.journal_entry_id %}
     <a href="{% url 'ui:je_detail' replen.journal_entry_id %}"
-      class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Replenishment JE →</a>
+      class="text-sm font-medium text-brand-600 hover:text-brand-800">Replenishment JE →</a>
     {% endif %}
     {% include "ui/partials/reversal_button.html" with can_request_reversal=can_request_reversal %}
-    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'pdf' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">PDF</a>
-    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'xlsx' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Excel</a>
-    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'csv' %}" class="inline rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">CSV</a>
+    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
+    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
+    <a href="{% url 'ui:pcf_replenishment_export' replen.id 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
     <a href="{% url 'ui:pcf_replenishment_print' replen.id %}"
-      class="ml-auto rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print
+      class="ml-auto rounded-md bg-surface-800 px-4 py-2 text-sm font-medium text-white hover:bg-surface-700">Print
       Replenishment</a>
   </div>
 </div>

@@ -117,6 +117,27 @@ class UserManagementService:
         return profile
 
     @staticmethod
+    def update_user(*, user, first_name="", last_name="", email="", role="", is_active=True, password=None):
+        """Update a login's name/email/role/active state (and optionally
+        reset its password). Username is immutable."""
+        role = (role or "").strip()
+        if role and role not in APPROVAL_ROLES:
+            raise ValidationError(f"Unknown approval role '{role}'.")
+
+        with transaction.atomic():
+            user.email = (email or "").strip()
+            user.first_name = (first_name or "").strip()
+            user.last_name = (last_name or "").strip()
+            user.is_active = bool(is_active)
+            if password:
+                user.set_password(password)
+            user.save(update_fields=["email", "first_name", "last_name", "is_active", "password"])
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.approval_role = role
+            profile.save(update_fields=["approval_role", "updated_at"])
+            return user
+
+    @staticmethod
     def set_active(*, user, is_active):
         """Deactivate / reactivate a login (soft — keeps history)."""
         user.is_active = bool(is_active)
