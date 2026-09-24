@@ -72,6 +72,23 @@ the week** — 52 verses (stewardship/work themes mixed with the gospel) cycle
 by ISO week, one per week for the whole year (`apps/ui/verses.py`). ESV®
 attribution is shown via the tooltip on the mark.
 
+### Role-based screen access (ADR-047)
+
+Each account carries **checkbox grants** (user management → Screen access)
+that decide which modules it can open — enforced everywhere: the sidebar only
+lists granted screens, and anything else answers **403**, even a hand-typed
+URL, an HTMX fragment, an export or the API.
+
+- **Head** prevails as overall approver and viewer: all screens by default
+  (a superadmin may still narrow an account deliberately).
+- **Staff** gets the full work set; **Settings** and **User Management**
+  belong to the superadmin and the Head.
+- The **COO** can be locked to just Dashboard + My Approvals and still signs
+  CNR items — Approve/Clear/Reject-with-note live inside the inbox
+  (`_safe_next` keeps every redirect same-site).
+- Leaving the grid at a role's defaults stores nothing, so the account keeps
+  following the role template as it evolves.
+
 ### 2. Journal (`/journal/`)
 
 - **General Journal** (`/journal/general/`) — the posted-entry register in

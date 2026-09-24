@@ -89,9 +89,23 @@ pattern outside AP: `apps/cash/services.py::TransferService`,
 - **Dashboard:** `/` is the 4-zone executive dashboard
   (`apps/ui/services.py::executive_dashboard_context`, Chart.js self-hosted in
   `static/js/vendor/`). KPI math mirrors the statement builders exactly.
+- **Universal confirm:** every immediate workflow action (approve, reject,
+  submit, post, close, void, ...) routes through ONE shared modal —
+  `static/js/confirm-core.js` (pure rules: explicit `data-confirm` text wins;
+  note-textarea forms ARE their own confirmation; otherwise the button's
+  first verb decides) + the delegated guard/modal in `base.js`, which also
+  captures `htmx:confirm` so row buttons share the same dialog. Node-tested.
 - **Guards:** `apps/ui/test_frontend_conventions.py` pins these invariants —
   nav config, dual-view fragments, self-hosted charts, palette discipline,
   user-management access (superadmin + Head CRUD).
+- **Screen access (ADR-047):** `apps/ui/screens.py` maps every UI route and
+  API resource to a screen; `UserProfile.screen_access` (NULL = role
+  template) plus `ScreenAccessMiddleware` hard-403 anything off a user's
+  desk — hidden means unreachable, deep URLs and API included. Assignment is
+  the checkbox grid in the user create/edit forms; the COO signs CNR items
+  inline from My Approvals without owning any register. Guards:
+  `test_screens_registry.py`, `test_screen_access_enforcement.py`,
+  `test_inbox_actions.py`.
 
 ## Environments
 
