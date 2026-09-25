@@ -6749,12 +6749,14 @@ AVATAR_MAX_BYTES = 2 * 1024 * 1024
 AVATAR_PX = 256
 
 
-def _avatar_from_upload(upload):
+def _avatar_from_upload(upload, name):
     """Validate + normalize an uploaded image into a 256px square JPEG.
 
-    Fully local (Pillow, per ADR-048 — no external service): verify it opens
-    as an image, center-crop to square, downscale, re-encode. Raises
-    ValueError with a user-facing reason for anything unusable.
+    Fully local (Pillow, per ADR-048 — no external/paid service): verify it
+    opens as an image, center-crop to square, downscale, re-encode under a
+    deterministic per-user name so re-uploads replace cleanly instead of
+    accumulating avatar_XXXX.jpg suffixed orphans. Raises ValueError with a
+    user-facing reason for anything unusable.
     """
     import io
 
@@ -6778,7 +6780,7 @@ def _avatar_from_upload(upload):
     ).resize((AVATAR_PX, AVATAR_PX), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=88)
-    return ContentFile(buf.getvalue(), name=f"avatar.jpg")
+    return ContentFile(buf.getvalue(), name=name)
 
 
 @login_required
@@ -6836,7 +6838,12 @@ def profile(request):
                     upload = request.FILES.get("avatar")
                     if not upload:
                         raise ValueError("Choose an image file first.")
-                    uprofile.avatar = _avatar_from_upload(upload)
+                    # Delete the current file first so the deterministic name
+                    # replaces it (legacy suffixed names get cleaned up too)
+                    # instead of storage appending another random suffix.
+                    if uprofile.avatar:
+                        uprofile.avatar.delete(save=False)
+                    uprofile.avatar = _avatar_from_upload(upload, f"avatar-{me.pk}.jpg")
                     uprofile.save(update_fields=["avatar"])
                     messages.success(request, "Profile photo updated.")
             elif action == "theme":

@@ -324,6 +324,24 @@ class UserProfile(AuditableModel):
     )
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
 
+    @property
+    def avatar_url(self):
+        """URL of the stored photo, or "" when there is no file on disk.
+
+        The DB reference can outlive the file (ephemeral deploy disks, manual
+        media cleanup), which would render an <img> that 404s every page
+        view. Templates gate on this property so the UI quietly falls back
+        to the initials circle instead.
+        """
+        if not self.avatar:
+            return ""
+        try:
+            if self.avatar.storage.exists(self.avatar.name):
+                return self.avatar.url
+        except (OSError, ValueError):
+            return ""
+        return ""
+
     class Meta:
         ordering = ["user__username"]
 

@@ -1,4 +1,4 @@
-{% extends "ui/base.html" %}
+﻿{% extends "ui/base.html" %}
 {% load static ui_filters %}
 {% block title %}My Profile{% endblock %}
 {% block content %}
@@ -7,21 +7,21 @@
   <p class="mt-1 text-sm text-surface-500">
     Your own details, password, photo and the colors of the whole system.
     Your approval role and screen access are managed by your
-    administrator — they are listed here read-only.
+    administrator â€” they are listed here read-only.
   </p>
 
   <!-- Identity -->
   <div class="card mt-5 p-5 flex items-center gap-4">
     <span class="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-lg font-semibold text-brand-700 ring-2 ring-brand-500/40">
-      {% if uprofile.avatar %}
-        <img src="{{ uprofile.avatar.url }}" alt="Profile photo" class="h-full w-full object-cover">
+      {% if uprofile.avatar_url %}
+        <img src="{{ uprofile.avatar_url }}" alt="Profile photo" class="h-full w-full object-cover">
       {% else %}
         {{ request.user|initials }}
       {% endif %}
     </span>
     <div class="min-w-0">
       <div class="text-base font-semibold text-surface-900">{{ request.user.get_full_name|default:request.user.username }}</div>
-      <div class="text-xs text-surface-500">@{{ request.user.username }} · {{ role_label }}</div>
+      <div class="text-xs text-surface-500">@{{ request.user.username }} Â· {{ role_label }}</div>
       <p class="mt-1.5 text-xs text-surface-500">
         Your open screens:
         <span class="text-surface-700">
@@ -64,7 +64,7 @@
     </div>
     <div class="card-body">
       <p class="text-xs text-surface-500 -mt-1 mb-3">
-        Picks the color of the whole system for you — buttons, navigation, links.
+        Picks the color of the whole system for you â€” buttons, navigation, links.
         Click a card to preview it instantly; press <em>Save theme</em> to keep it.
         Printed documents and red/green status colors never change.
       </p>
@@ -101,7 +101,7 @@
     <div class="card-body">
       <p class="text-xs text-surface-500 -mt-1 mb-3">
         Square-cropped and resized automatically; JPG/PNG/WEBP, up to 2 MB.
-        Stored on this server — nothing is shared.
+        Stored on this server â€” nothing is shared.
       </p>
       <form method="post" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3">
         {% csrf_token %}

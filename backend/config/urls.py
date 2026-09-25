@@ -3,10 +3,8 @@
 Versioned API namespace: /api/v1/ per ADR-010 (API-first). Schema at /api/schema.
 """
 
-from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -76,5 +74,19 @@ urlpatterns = [
     ),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Uploaded media (profile avatars). Served in every environment, not just
+# DEBUG: on Render the WhiteNoise layer only covers STATIC_ROOT, so without
+# this route /media/... would 404 even when the file is present. Django's
+# serve() restricts unsafe content types by default. Resolved through
+# default_storage so an overridden storage backend (tests) stays coherent.
+from django.core.files.storage import default_storage
+from django.views.static import serve as _static_serve
+
+
+def _media_serve(request, path):
+    return _static_serve(request, path, document_root=default_storage.location)
+
+
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", _media_serve),
+]

@@ -1,4 +1,4 @@
-{% load static ui_filters %}
+﻿{% load static ui_filters %}
 <!DOCTYPE html>
 <html lang="en" data-theme="{{ request.user.profile.theme|default:'teal' }}" class="h-full bg-surface-50">
 <head>
@@ -33,7 +33,7 @@
           <svg class="h-4 w-4" aria-hidden="true"><use href="#i-panel-left"/></svg>
         </button>
         <button onclick="toggleSidebar(false)" aria-label="Close menu"
-          class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-surface-400 hover:text-surface-900 hover:bg-surface-100 text-lg leading-none">×</button>
+          class="ml-auto lg:hidden rounded-md px-1.5 py-0.5 text-surface-400 hover:text-surface-900 hover:bg-surface-100 text-lg leading-none">Ã—</button>
       </div>
       <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-2 text-sm">
         {% include "ui/_sidebar.html" %}
@@ -41,7 +41,7 @@
       <div class="px-3 py-3 border-t border-surface-200 text-xs sidebar-footer">
         <a href="{% url 'ui:profile' %}" title="My Profile" class="flex items-center gap-2.5 rounded-md px-1 py-1.5 hover:text-surface-900">
           <span class="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-[10px] font-semibold text-brand-700">
-            {% if request.user.profile.avatar %}<img src="{{ request.user.profile.avatar.url }}" alt="" class="h-full w-full object-cover">{% else %}{{ request.user|initials }}{% endif %}
+            {% if request.user.profile.avatar_url %}<img src="{{ request.user.profile.avatar_url }}" alt="" class="h-full w-full object-cover">{% else %}{{ request.user|initials }}{% endif %}
           </span>
           <span class="sidebar-label truncate text-surface-600">{{ request.user.get_full_name|default:request.user.username }}</span>
         </a>
@@ -60,10 +60,10 @@
       {% if request.user.is_authenticated %}
       <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-white border-b border-surface-200 px-4 py-3 shadow-sm">
         <button onclick="toggleSidebar(true)" aria-label="Open menu"
-          class="rounded-md px-2 py-1 text-surface-600 hover:text-surface-900 hover:bg-surface-100">☰</button>
+          class="rounded-md px-2 py-1 text-surface-600 hover:text-surface-900 hover:bg-surface-100">â˜°</button>
         <span class="font-semibold text-surface-900 text-sm"><a href="{% url 'ui:dashboard' %}">Accounting System</a></span>
         <a href="{% url 'ui:profile' %}" title="My Profile" class="ml-auto flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-[10px] font-semibold text-brand-700">
-          {% if request.user.profile.avatar %}<img src="{{ request.user.profile.avatar.url }}" alt="" class="h-full w-full object-cover">{% else %}{{ request.user|initials }}{% endif %}
+          {% if request.user.profile.avatar_url %}<img src="{{ request.user.profile.avatar_url }}" alt="" class="h-full w-full object-cover">{% else %}{{ request.user|initials }}{% endif %}
         </a>
       </header>
       {% endif %}

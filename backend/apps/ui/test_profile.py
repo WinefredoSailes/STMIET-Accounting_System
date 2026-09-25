@@ -18,6 +18,20 @@ pytestmark = pytest.mark.django_db
 NEW_PW = "Str0ng-Choice-2026!"
 
 
+@pytest.fixture(autouse=True)
+def isolated_media(tmp_path, settings):
+    """Avatar files go to a per-test directory: the dev machine's real
+    media/avatars/ must never gain test orphans (which once caused the
+    deterministic-name assertion to trip over leftovers)."""
+    settings.STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(tmp_path / "media"), "base_url": settings.MEDIA_URL},
+        },
+        "staticfiles": settings.STORAGES["staticfiles"],
+    }
+
+
 @pytest.fixture
 def clerk(db):
     u = User.objects.create_user("clerk9", password="old-pass-123", first_name="Cly", last_name="Deput")
@@ -197,3 +211,37 @@ def test_user_management_list_shows_avatars_and_initials(client, db):
     assert "/media/avatars/" in body          # the uploaded avatar shows
     assert "PP" in body                        # initials fallback for photog
     assert 'alt=""' in body                    # avatar imgs alt-decorative
+
+
+def test_missing_avatar_file_falls_back_to_initials(client, clerk):
+    """The Render bug: DB reference outliving the file must never render a
+    404-inducing <img>."""
+    import os
+
+    _login(client, clerk)
+    client.post("/profile/", {"action": "avatar", "avatar": _img()})
+    clerk.profile.refresh_from_db()
+    os.remove(clerk.profile.avatar.path)  # simulate the ephemeral disk wiping it
+
+    assert clerk.profile.avatar_url == ""          # raw reference still set...
+    assert bool(clerk.profile.avatar)              # ...so "Remove" stays available
+    body = client.get("/").content.decode()
+    assert "/media/avatars" not in body            # no <img> emitted anywhere
+    assert "CD" in body                            # initials instead
+    assert "/media/avatars" not in client.get("/profile/").content.decode()
+    assert "/media/avatars" not in client.get("/approvals/").content.decode()
+
+
+def test_avatar_reupload_uses_one_deterministic_file(client, clerk):
+    _login(client, clerk)
+    client.post("/profile/", {"action": "avatar", "avatar": _img()})
+    clerk.profile.refresh_from_db()
+    first = clerk.profile.avatar.name
+    assert first == f"avatars/avatar-{clerk.pk}.jpg"
+
+    client.post("/profile/", {"action": "avatar", "avatar": _img("JPEG", (120, 120), (10, 20, 30))})
+    clerk.profile.refresh_from_db()
+    assert clerk.profile.avatar.name == first      # replaced, no avatar_XXXX suffix
+
+    # and the URL really serves (the prod /media route):
+    assert client.get(clerk.profile.avatar.url).status_code == 200
