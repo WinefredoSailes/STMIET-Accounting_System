@@ -292,6 +292,19 @@ class UserProfile(AuditableModel):
         HEAD = "head", "Accounting & Finance Head"
         COO = "coo", "COO (CNR)"
 
+    class Theme(models.TextChoices):
+        # ADR-048: brand+accent hue presets (light UI). Validated against the
+        # [data-theme] blocks in static/css by test_theme_contrast.py; the
+        # default TEAL keeps the palette pixel-identical to the old app.
+        TEAL = "teal", "Teal (default)"
+        OCEAN = "ocean", "Ocean"
+        INDIGO = "indigo", "Indigo"
+        PLUM = "plum", "Plum"
+        SUNSET = "sunset", "Sunset"
+        FOREST = "forest", "Forest"
+        BLOSSOM = "blossom", "Blossom"
+        CRIMSON = "crimson", "Crimson"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
     )
@@ -302,6 +315,14 @@ class UserProfile(AuditableModel):
     # apps.ui.screens. NULL means "inherit the role template" so enabling the
     # feature changes nothing until someone edits a user's checkboxes.
     screen_access = models.JSONField(null=True, blank=True)
+    # My Profile (ADR-048): self-service fields. The theme is stored here so
+    # it persists per user across devices/sessions; base.html renders it as
+    # data-theme on <html>. See apps.ui.theming + the [data-theme] blocks in
+    # static's input.css for the palette definitions.
+    theme = models.CharField(
+        max_length=16, choices=Theme.choices, blank=True, default=Theme.TEAL
+    )
+    avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
 
     class Meta:
         ordering = ["user__username"]

@@ -6716,6 +6716,136 @@ def user_update(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# My Profile (ADR-048) — own details / password / photo / theme.
+# ---------------------------------------------------------------------------
+
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_PX = 256
+
+
+def _avatar_from_upload(upload):
+    """Validate + normalize an uploaded image into a 256px square JPEG.
+
+    Fully local (Pillow, per ADR-048 — no external service): verify it opens
+    as an image, center-crop to square, downscale, re-encode. Raises
+    ValueError with a user-facing reason for anything unusable.
+    """
+    import io
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, UnidentifiedImageError
+
+    if upload.size and upload.size > AVATAR_MAX_BYTES:
+        raise ValueError("Photo is too large — the maximum is 2 MB.")
+    try:
+        img = Image.open(upload)
+        img.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("That file is not a readable image.") from exc
+    if (img.format or "").upper() not in ("JPEG", "PNG", "WEBP", "GIF", "BMP"):
+        raise ValueError("Please use a JPG, PNG or WEBP image.")
+    img = img.convert("RGB")
+    w, h = img.size
+    side = min(w, h)
+    img = img.crop(
+        ((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side)
+    ).resize((AVATAR_PX, AVATAR_PX), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)
+    return ContentFile(buf.getvalue(), name=f"avatar.jpg")
+
+
+@login_required
+def profile(request):
+    """My Profile: every user edits their OWN name/email, password, avatar and
+    theme (ADR-048). A shared route — never screen-gated. Approval role and
+    screen grants are read-only here; they live in User Management."""
+    from django.contrib.auth import update_session_auth_hash
+    from django.contrib.auth.forms import PasswordChangeForm
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from django.core.validators import validate_email
+
+    from apps.core.approvals import ROLE_LABELS, get_approval_role
+    from apps.foundation.models import UserProfile
+    from apps.ui.screens import SCREENS, effective_screens
+    from apps.ui.theming import THEMES
+
+    me = request.user
+    # getattr silently absorbs RelatedObjectDoesNotExist (legacy logins).
+    uprofile = getattr(me, "profile", None) or UserProfile.objects.create(user=me)
+
+    password_form = None
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        try:
+            if action == "details":
+                first = request.POST.get("first_name", "").strip()
+                last = request.POST.get("last_name", "").strip()
+                email = request.POST.get("email", "").strip()
+                if not (first or last):
+                    raise ValueError("Enter at least one name.")
+                if email:
+                    validate_email(email)
+                me.first_name, me.last_name, me.email = first, last, email
+                me.save(update_fields=["first_name", "last_name", "email"])
+                messages.success(request, "Your details have been saved.")
+            elif action == "password":
+                password_form = PasswordChangeForm(me, request.POST)
+                if password_form.is_valid():
+                    password_form.save()
+                    update_session_auth_hash(request, password_form.user)
+                    messages.success(request, "Password changed — you're still signed in.")
+                    password_form = None
+                else:
+                    # Re-render bound so per-field errors show inline; the
+                    # generic fallback toast below explains why nothing saved.
+                    raise ValueError("")
+            elif action == "avatar":
+                if request.POST.get("remove_avatar"):
+                    if uprofile.avatar:
+                        uprofile.avatar.delete()
+                        uprofile.save(update_fields=["avatar"])
+                    messages.success(request, "Profile photo removed.")
+                else:
+                    upload = request.FILES.get("avatar")
+                    if not upload:
+                        raise ValueError("Choose an image file first.")
+                    uprofile.avatar = _avatar_from_upload(upload)
+                    uprofile.save(update_fields=["avatar"])
+                    messages.success(request, "Profile photo updated.")
+            elif action == "theme":
+                theme = request.POST.get("theme", "")
+                if theme not in THEMES:
+                    raise ValueError("Unknown theme choice.")
+                uprofile.theme = theme
+                uprofile.save(update_fields=["theme"])
+                messages.success(request, f"Theme set to {THEMES[theme]['label']}.")
+        except (ValueError, DjangoValidationError) as exc:
+            msgs = getattr(exc, "messages", None)
+            text = msgs[0] if msgs else str(exc)
+            messages.error(
+                request,
+                text or "The password was not changed — fix the highlighted fields.",
+            )
+
+    allowed = effective_screens(me)
+    screen_names = [
+        label for key, label, _section in SCREENS if key in allowed and key != "dashboard"
+    ]
+    return render(
+        request,
+        "ui/foundation/profile.html",
+        {
+            "uprofile": uprofile,
+            "theme_choices": THEMES.items(),
+            "role_label": ROLE_LABELS.get(get_approval_role(me), "no approval role"),
+            "screen_names": screen_names,
+            "password_form": password_form if password_form is not None else PasswordChangeForm(user=me),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # General Ledger — COA-grouped index + classic per-account running balance
 # ---------------------------------------------------------------------------
 

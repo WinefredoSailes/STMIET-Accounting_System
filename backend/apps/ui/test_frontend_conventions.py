@@ -206,3 +206,35 @@ def test_dashboard_chart_vendor_is_self_hosted(client):
     dash = (TEMPLATES / "home" / "dashboard.html").read_text(encoding="utf-8")
     assert "vendor/chart.umd.min.js" in dash
     assert "cdn." not in dash and "jsdelivr" not in dash
+
+def test_page_widths_are_unified():
+    """All pages — lists, dashboards AND forms — run full width so large
+    screens are used (responsive grids inside handle field widths). Banned
+    max-w-6xl/7xl/8xl/screen*: 7xl wastes widescreen space and 8xl isn't
+    even a real Tailwind class. Small caps (max-w-sm..3xl) are allowed only
+    on inner text blocks like verse_footer, never on page wrappers."""
+    banned = ("max-w-6xl", "max-w-7xl", "max-w-8xl", "max-w-screen")
+    offenders = []
+    for f in TEMPLATES.rglob("*.html"):
+        body = f.read_text(encoding="utf-8")
+        for token in banned:
+            if token in body:
+                offenders.append(f"{f.name}:{token}")
+    assert not offenders, f"width caps returned: {offenders}"
+
+
+def test_back_to_top_button_is_universal():
+    """Every authenticated page ships the floating back-to-top control:
+    markup in base.html, arrow-up sprite symbol, and the pure decision fn
+    in base.js that the node tests cover."""
+    from pathlib import Path
+
+    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    assert 'data-back-to-top' in base
+    assert "#i-arrow-up" in base
+    assert "no-print" in base
+    icons = (TEMPLATES / "partials" / "icons.html").read_text(encoding="utf-8")
+    assert 'id="i-arrow-up"' in icons
+    js = (Path(__file__).resolve().parents[2] / "static" / "js" / "base.js").read_text(encoding="utf-8")
+    assert "backToTopShouldShow" in js
+    assert "prefers-reduced-motion" in js

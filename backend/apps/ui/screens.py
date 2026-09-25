@@ -71,6 +71,7 @@ PUBLIC_UI_URLS = frozenset({"login", "logout"})
 #: Shared pickers/options every module's forms use — gated as "any authed user"
 #: on purpose: a supplier picker is not a screen.
 SHARED_UI_URL_NAMES = frozenset({
+    "profile",  # ADR-048: everyone's own My Profile
     "account_options",
     "supplier_options",
     "party_options",

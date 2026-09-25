@@ -233,4 +233,6 @@ urlpatterns = [
         views.user_deactivate,
         name="user_deactivate",
     ),
+    # My Profile (ADR-048): shared — every authenticated user, any grants.
+    path("profile/", views.profile, name="profile"),
 ]

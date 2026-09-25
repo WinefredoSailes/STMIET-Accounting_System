@@ -2,7 +2,7 @@
 {% load ui_filters %}
 {% block title %}{% if editing %}Edit{% else %}Create{% endif %} COA Account{% endblock %}
 {% block content %}
-<div class="p-6 sm:p-8 max-w-2xl">
+<div class="p-4 sm:p-6">
   {% capture as coa_title %}{% if editing %}Edit{% else %}Create{% endif %} COA Account{% endcapture %}
   {% capture as submit_label %}{% if editing %}Update{% else %}Save{% endif %}{% endcapture %}
   {% capture as coa_action_href %}{% if editing %}{% url 'ui:coa_update' account.pk %}{% else %}{% url 'ui:coa_create' %}{% endif %}{% endcapture %}

@@ -17,16 +17,32 @@
   }
   if (!data) return;
 
-  var TEAL = '#0d9488';
-  var TEAL_DARK = '#0f766e';
+  // ADR-048: brand colors follow the user's theme (CSS vars on <html>);
+  // semantic colors (rose/emerald/amber/surface) are fixed so money/status
+  // charts never change meaning between presets.
+  function tri(name) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || null;
+  }
+  function cssColor(name, fallback) {
+    var t = tri(name);
+    return t ? 'rgb(' + t.replace(/\s+/g, ',') + ')' : fallback;
+  }
+  function cssAlpha(name, a, fallback) {
+    var t = tri(name);
+    return t ? 'rgba(' + t.replace(/\s+/g, ',') + ',' + a + ')' : fallback;
+  }
+
+  var TEAL = cssColor('--brand-600', '#0f766e');
+  var TEAL_DARK = cssColor('--brand-700', '#115e59');
+  var TEAL_LIGHT = cssColor('--brand-400', '#2dd4bf');
   var ROSE = '#f43f5e';
   var AMBER = '#f59e0b';
   var EMERALD = '#10b981';
-  var INDIGO = '#6366f1';
   var SLATE_400 = '#a8a29e';
   var SLATE_500 = '#78716c';
   var SLATE_200 = '#e7e5e4';
-  var PIE_PALETTE = [TEAL, ROSE, AMBER, EMERALD, INDIGO, '#14b8a6', '#f97316', SLATE_400];
+  var PIE_PALETTE = [TEAL, ROSE, AMBER, EMERALD, TEAL_LIGHT, TEAL_DARK, '#f97316', SLATE_400];
 
   Chart.defaults.font.family = 'ui-sans-serif, system-ui, sans-serif';
   Chart.defaults.color = SLATE_400;
@@ -103,7 +119,7 @@
           borderColor: TEAL, borderWidth: 2.5, tension: 0.35,
           pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#fff', pointBorderColor: TEAL, pointBorderWidth: 2,
           fill: true,
-          backgroundColor: function (c) { return areaGradient(c.chart.ctx, 'rgba(13,148,136,0.28)', 'rgba(13,148,136,0.02)'); },
+          backgroundColor: function (c) { return areaGradient(c.chart.ctx, cssAlpha('--brand-600', 0.28, 'rgba(15,118,110,0.28)'), cssAlpha('--brand-600', 0.02, 'rgba(15,118,110,0.02)')); },
         },
         {
           label: 'Expenses', data: data.expenses,

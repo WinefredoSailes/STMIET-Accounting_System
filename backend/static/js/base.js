@@ -28,6 +28,34 @@ document.body.addEventListener('showToast', function (e) {
   setTimeout(function () { d.remove(); }, 4200);
 });
 
+// ---- Back to top (ADR-048 chrome): pages run long (lists, mobile), so a
+// floating button appears once the user scrolls past the first screenful
+// and jumps them home. The show/hide decision is a pure function for
+// node tests; motion preference is respected (instant jump when reduced).
+var BACK_TOP_AT = 480;
+function backToTopShouldShow(scrollY) {
+  return scrollY > BACK_TOP_AT;
+}
+(function backToTop() {
+  var btn = document.getElementById('back-to-top');
+  if (!btn) return;
+  var visible = false;
+  function sync() {
+    var show = backToTopShouldShow(window.scrollY || document.documentElement.scrollTop || 0);
+    if (show === visible) return;
+    visible = show;
+    btn.classList.toggle('hidden', !show);
+    btn.classList.toggle('flex', show);
+  }
+  window.addEventListener('scroll', sync, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
+  btn.addEventListener('click', function () {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  });
+})();
+
 // ---- Sidebar toggle (mobile + desktop close) ----
 function toggleSidebar(force) {
   var sb = document.getElementById('sidebar');
@@ -49,8 +77,7 @@ if (sbNav) {
   });
 }
 
-// ---- Sidebar rail collapse (desktop): icon-only width, persisted ----
-var RAIL_KEY = 'sidebar-rail-collapsed';
+// ---- Sidebar rail collapse (desktop): icon-only width, persisted ----var RAIL_KEY = 'sidebar-rail-collapsed';
 function setRailToggleIcon(collapsed) {
   var btn = document.querySelector('.sidebar-rail-toggle use');
   if (btn) btn.setAttribute('href', collapsed ? '#i-panel-right' : '#i-panel-left');

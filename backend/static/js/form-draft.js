@@ -64,7 +64,9 @@
   function capture(form) {
     var headers = [];
     form.querySelectorAll(FIELDS_SELECTOR).forEach(function (el) {
+      // Passwords NEVER go into localStorage drafts (ADR-048 safety rule).
       if (el.name === 'csrfmiddlewaretoken' || el.disabled || inGrid(el)) return;
+      if ((el.type || '').toLowerCase() === 'password') return;
       var item = fieldItem(el);
       // Unnamed display-only pickers (JE/Billing party comboboxes) are keyed
       // by '#<id>' so restore can rehydrate the visible widget, not just the

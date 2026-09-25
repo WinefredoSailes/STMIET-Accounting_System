@@ -2,7 +2,7 @@
 {% load ui_filters %}
 {% block title %}Ledger — {{ account.code }} {{ account.name }}{% endblock %}
 {% block content %}
-<div class="p-4 sm:p-6 max-w-7xl">
+<div class="p-4 sm:p-6">
   {% capture as ledger_filters %}
   <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
     <select name="month" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">

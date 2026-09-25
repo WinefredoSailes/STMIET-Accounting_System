@@ -183,3 +183,11 @@ def do_capture(parser, token):
     nodelist = parser.parse(("endcapture",))
     parser.delete_first_token()
     return CaptureNode(nodelist, bits[2])
+
+@register.filter
+def initials(user):
+    """One- or two-letter avatar fallback for the sidebar/footer circle."""
+    parts = [p for p in (user.first_name, user.last_name) if p]
+    if not parts:
+        return (user.username or "?")[:1].upper()
+    return "".join(p[0] for p in parts[:2]).upper()

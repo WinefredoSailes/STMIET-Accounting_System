@@ -2,7 +2,7 @@
 {% load ui_filters %}
 {% block title %}{% if editing %}Edit User — {{ editing.username }}{% else %}New User{% endif %}{% endblock %}
 {% block content %}
-<div class="p-6 max-w-3xl">
+<div class="p-4 sm:p-6">
   {% if editing %}
   {% include "ui/partials/page_header.html" with title="Edit user" subtitle="Update names, contact details, approval role, screen access and status. Username is immutable." back_url_name="ui:user_management" back_label="User management" %}
   {% else %}
