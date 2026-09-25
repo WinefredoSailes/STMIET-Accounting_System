@@ -252,6 +252,7 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
     opt.textContent = r.text;
     opt.dataset.tin = r.tin || '';
     opt.dataset.kind = r.kind || '';
+    if (r.prefill) opt.dataset.prefill = r.prefill;  // form-level autofill payloads (ADR-049: SI→AR)
     select.appendChild(opt);
     list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin, r.kind));
   });
@@ -290,11 +291,12 @@ function applyAsyncFilter(wrap, panel, query) {
   req.then(function (resp) { return resp.json(); })
      .then(function (results) {
        if (wrap._abort !== ctrl) return; // stale response
-var normalized = (results || []).map(function (r) {
+        var normalized = (results || []).map(function (r) {
           var v = (valueField === 'id') ? r.id : r.code;
           return {
             value: String(v), code: String(r.code || ''), text: String(r.text || r.code),
             tin: String(r.tin || ''), kind: String(r.kind || ''),
+            prefill: String(r.prefill || ''),
           };
         });
        renderAsyncItems(panel, normalized, selected, selectedText);

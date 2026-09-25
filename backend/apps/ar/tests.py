@@ -119,6 +119,43 @@ class TestCollectionPosting:
                 segment=segment,
             )
 
+    def test_over_application_rejected(self, customer, bank_account, segment, invoice):
+        # ADR-049 polish: applying more than the outstanding balance would
+        # hide a phantom prepayment inside a "paid" invoice.
+        with pytest.raises(ValidationError, match="exceeds the outstanding balance"):
+            CollectionService.record_collection(
+                receipt_no="AR-2026-00009",
+                customer=customer,
+                transaction_date=date(2026, 1, 16),
+                amount="6000.00",
+                cash_account=bank_account,
+                applied_to=invoice,
+                segment=segment,
+            )
+        invoice.refresh_from_db()
+        assert invoice.status == "open"
+
+    def test_update_draft_over_application_rejected(self, customer, bank_account, segment, invoice):
+        from apps.ar.services import segment_ar_account
+
+        draft = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 16),
+            cash_account=bank_account,
+            amount="3000.00",
+            segment=segment,
+            applied_to=invoice,
+        )
+        ar = segment_ar_account(segment)
+        with pytest.raises(ValidationError, match="exceeds the outstanding balance"):
+            CollectionService.update_draft(
+                receipt=draft,
+                lines=[
+                    {"account": bank_account, "segment": segment, "debit": "6000.00", "credit": "0"},
+                    {"account": ar, "segment": segment, "debit": "0", "credit": "6000.00"},
+                ],
+            )
+
     def test_zero_amount_rejected(self, customer, bank_account, segment):
         with pytest.raises(ValidationError):
             CollectionService.record_collection(

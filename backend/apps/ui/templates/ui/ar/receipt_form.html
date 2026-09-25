@@ -44,6 +44,7 @@
               {% endif %}
             </select>
             <p class="col-start-2 text-xs text-surface-500">Optional. Applying a collection marks the chosen invoice paid and requires the credit to hit Accounts-Receivable.</p>
+            <p id="ar-due-hint" class="col-start-2 hidden text-xs"></p>
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
             <label class="text-sm font-semibold text-surface-700" for="id_transaction_date">Date of AR</label>
@@ -283,27 +284,75 @@
   (function () {
     var inv = document.getElementById('id_applied_to');
     var cust = document.getElementById('id_customer');
+    var linesBody = document.getElementById('ar-lines-body');
+    var due = document.getElementById('ar-due-hint');
     if (!inv) return;
     var AR_MAP = {};
     var mapEl = document.getElementById('ar-invoice-map');
     if (mapEl) { try { AR_MAP = JSON.parse(mapEl.textContent || '{}') || {}; } catch (e) { AR_MAP = {}; } }
     var baseUrl = (inv.dataset.searchUrl || '').split('?')[0];
+    var autoCust = false;  // customer just filled BY the invoice pick: keep the selection
 
     function scopeInvoiceUrl(customerId) {
       inv.dataset.searchUrl = baseUrl + '?customer=' + encodeURIComponent(customerId || '');
     }
+    function setDue(data, warn) {
+      if (!due) return;
+      if (!data) { due.classList.add('hidden'); due.textContent = ''; return; }
+      due.textContent = warn || ('₱' + data.balance + ' still outstanding on ' + data.invoice_no + '.');
+      due.classList.remove('hidden');
+      due.classList.toggle('text-rose-600', !!warn);
+      due.classList.toggle('text-surface-500', !warn);
+    }
+    function clearInvoice() {
+      if (window.setSearchableValue) {
+        setSearchableValue(inv, '', '— advance / no invoice —');
+      } else {
+        inv.value = '';
+      }
+      setDue(null);
+    }
     if (cust) {
       cust.addEventListener('change', function () {
         scopeInvoiceUrl(cust.value);
-        if (inv.value) {
-          if (window.setSearchableValue) {
-            setSearchableValue(inv, '', '— advance / no invoice —');
-          } else {
-            inv.value = '';
-          }
-        }
+        if (autoCust) { autoCust = false; return; }
+        if (inv.value) clearInvoice();
       });
       if (cust.value) scopeInvoiceUrl(cust.value);
+    }
+
+    // Prefill source: the picked option's data-prefill (async picker ships
+    // the full payload) with the embedded page map as fallback, so autofill
+    // works for ANY open invoice, not just the first 200 embedded.
+    function invoiceData(id) {
+      if (!id) return null;
+      var opt = inv.querySelector('option[value="' + id + '"]');
+      if (opt && opt.dataset.prefill) {
+        try { return JSON.parse(opt.dataset.prefill); } catch (e) { /* fall through */ }
+      }
+      return AR_MAP[String(id)] || null;
+    }
+
+    function appliedToInvoice(data) {
+      if (!linesBody) return 0;
+      var total = 0;
+      linesBody.querySelectorAll('select[name="account"]').forEach(function (acct) {
+        var row = acct.closest('tr');
+        var amt = row ? row.querySelector('input[name="credit"]') : null;
+        if (amt && String(acct.value) === String(data.ar_account_id)) {
+          total += parseFloat(String(amt.value || '0').replace(/,/g, '')) || 0;
+        }
+      });
+      return total;
+    }
+
+    function checkBalance(data) {
+      if (!data || !data.ar_account_id) { setDue(null); return; }
+      var bal = parseFloat(data.balance) || 0;
+      var applied = appliedToInvoice(data);
+      setDue(data, applied > bal + 0.004
+        ? 'Applying ₱' + applied.toFixed(2) + ' exceeds the ₱' + bal.toFixed(2) + ' balance on ' + data.invoice_no + '.'
+        : null);
     }
 
     function findEmptyCreditRow(tbody) {
@@ -346,9 +395,33 @@
     }
 
     inv.addEventListener('change', function () {
-      var data = AR_MAP[String(inv.value)];
-      if (data) prefillCreditRow(data);
+      var data = invoiceData(inv.value);
+      if (!data) { setDue(null); return; }
+      if (cust && cust.value && String(cust.value) !== String(data.customer_id)) {
+        setDue(data, 'That invoice belongs to ' + data.customer_code + ' ' + data.customer_name + ' — set the customer first.');
+        clearInvoice();
+        return;
+      }
+      if (cust && !cust.value && data.customer_id) {
+        autoCust = true;
+        if (window.setSearchableValue) {
+          setSearchableValue(cust, data.customer_id, data.customer_code + ' — ' + data.customer_name);
+        } else {
+          cust.value = data.customer_id;
+          autoCust = false;
+        }
+        scopeInvoiceUrl(data.customer_id);
+      }
+      prefillCreditRow(data);
+      checkBalance(data);
     });
+
+    // Live "exceeds balance" hint while the preparer edits the credit lines.
+    if (linesBody) {
+      linesBody.addEventListener('input', function () {
+        checkBalance(invoiceData(inv.value));
+      });
+    }
   })();
 
   (function () {

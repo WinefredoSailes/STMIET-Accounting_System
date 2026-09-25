@@ -819,7 +819,7 @@ def _ar_invoice_prefill_map(customer=None):
 
     qs = ARInvoice.objects.filter(
         status__in=("open", "partially_paid")
-    ).select_related("segment").order_by("-transaction_date", "invoice_no")
+    ).select_related("segment", "customer").order_by("-transaction_date", "invoice_no")
     if customer is not None:
         qs = qs.filter(customer=customer)
     ar_cache = {}
@@ -831,6 +831,8 @@ def _ar_invoice_prefill_map(customer=None):
         ar = ar_cache[seg.code]
         out[str(inv.id)] = {
             "customer_id": inv.customer_id,
+            "customer_code": inv.customer.code,
+            "customer_name": inv.customer.name,
             "segment_id": seg.id,
             "ar_account_id": str(ar.id) if ar else "",
             "ar_account_code": ar.code if ar else "",
@@ -5107,15 +5109,19 @@ def ar_invoice_options(request):
     Lists open / partially-paid sales invoices, scoped to ``?customer=<id>``
     so a preparer cannot apply a collection to the wrong customer (the service
     still validates it). ``?selected=`` re-attaches an existing selection when
-    editing. Search matches invoice_no; value is the invoice id."""
+    editing. Search matches invoice_no; value is the invoice id. Each row also
+    ships a ``prefill`` JSON blob (customer, segment, AR account, balance) so
+    the receipt form can auto-populate for ANY invoice the picker surfaces,
+    not only the ones in the embedded page map."""
     from apps.ar.models import ARInvoice
+    from apps.ar.services import segment_ar_account
 
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
     customer_id = (request.GET.get("customer") or "").strip()
     qs = ARInvoice.objects.filter(
         status__in=("open", "partially_paid")
-    ).select_related("customer").order_by("-transaction_date", "invoice_no")
+    ).select_related("customer", "segment").order_by("-transaction_date", "invoice_no")
     if customer_id.isdigit():
         qs = qs.filter(customer_id=int(customer_id))
     if q:
@@ -5125,8 +5131,14 @@ def ar_invoice_options(request):
         keep = ARInvoice.objects.filter(pk=selected).first()
         if keep:
             rows.insert(0, keep)
-    return JsonResponse(
-        [
+    ar_cache = {}
+    payload = []
+    for inv in rows:
+        seg = inv.segment
+        if seg.pk not in ar_cache:
+            ar_cache[seg.pk] = segment_ar_account(seg)
+        ar = ar_cache[seg.pk]
+        payload.append(
             {
                 "id": inv.id,
                 "code": inv.invoice_no,
@@ -5134,11 +5146,22 @@ def ar_invoice_options(request):
                     f"{inv.invoice_no} — ₱{inv.balance:,.2f} due "
                     f"({inv.customer.code} {inv.customer.name})"
                 ),
+                "prefill": json.dumps(
+                    {
+                        "customer_id": inv.customer_id,
+                        "customer_code": inv.customer.code,
+                        "customer_name": inv.customer.name,
+                        "segment_id": seg.id,
+                        "ar_account_id": str(ar.id) if ar else "",
+                        "ar_account_code": ar.code if ar else "",
+                        "ar_account_name": ar.name if ar else "",
+                        "invoice_no": inv.invoice_no,
+                        "balance": f"{inv.balance:.2f}",
+                    }
+                ),
             }
-            for inv in rows
-        ],
-        safe=False,
-    )
+        )
+    return JsonResponse(payload, safe=False)
 
 
 @login_required
@@ -6302,6 +6325,8 @@ def _ftv_context(transfer):
     from apps.cash.services import TransferService
     from apps.core.approvals import role_assignee, signatory_name
 
+    from .services import voucher_line_order
+
     entry = transfer.journal_entry
     prepared_by = signatory_name(
         transfer.initiated_by or (entry.created_by if entry else None)
@@ -6317,7 +6342,7 @@ def _ftv_context(transfer):
         "voucher_no": TransferService.ensure_voucher_no(transfer),
         "transfer_type": _transfer_type(transfer),
         "entry": entry,
-        "lines": list(entry.lines.order_by("line_no")) if entry else [],
+        "lines": voucher_line_order(entry.lines.all()) if entry else [],
         "total": entry.total_debit if entry else transfer.amount,
         "total_credit": entry.total_credit if entry else transfer.amount,
         "prepared_by": prepared_by,
@@ -6425,6 +6450,7 @@ def transfer_export(request, pk, fmt):
     """
     from apps.core.exports import Column, TableSpec, table_export
     from .pdf import build_fund_transfer_voucher_pdf
+    from .services import voucher_line_order
 
     transfer = _ftv_get(request, pk)
     ctx = _ftv_context(transfer)
@@ -6446,7 +6472,7 @@ def transfer_export(request, pk, fmt):
 
     entry = ctx["entry"]
     lines = (
-        list(entry.lines.select_related("account", "segment").order_by("line_no"))
+        voucher_line_order(entry.lines.select_related("account", "segment"))
         if entry
         else []
     )

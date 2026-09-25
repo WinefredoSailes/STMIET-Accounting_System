@@ -231,6 +231,30 @@ def _default_lines(*, customer, segment, amount, cash_account, applied_to, recei
     ]
 
 
+def _check_applied_within_balance(applied_to, norm_lines):
+    """Credits aimed at the applied invoice's AR account must not exceed its
+    outstanding balance (over-application would leave a phantom prepayment
+    hidden inside a "paid" invoice — the AR subledger must stay truthful).
+    Matches any configured AR code so segment-mapped variants (other/fuel)
+    are all caught."""
+    if applied_to is None:
+        return
+    ar_codes = {code for entry in SEGMENT_ACCOUNTS.values() for code in entry[1:]}
+    applied_amt = sum(
+        (
+            l["credit"]
+            for l in norm_lines
+            if getattr(l["account"], "code", None) in ar_codes
+        ),
+        Decimal("0.00"),
+    )
+    if applied_amt > applied_to.balance:
+        raise ValidationError(
+            f"Applying {money(applied_amt)} exceeds the outstanding balance "
+            f"{money(applied_to.balance)} of invoice {applied_to.invoice_no}."
+        )
+
+
 class CollectionService:
     """Owns the AR receipt lifecycle and the `cash.collection` posting event."""
 
@@ -287,6 +311,8 @@ class CollectionService:
             )
         else:
             norm_lines = _normalize_lines(lines)
+
+        _check_applied_within_balance(applied_to, norm_lines)
 
         debit_total = sum((l["debit"] for l in norm_lines), Decimal("0.00"))
         credit_total = sum((l["credit"] for l in norm_lines), Decimal("0.00"))
@@ -383,6 +409,10 @@ class CollectionService:
                 raise ValidationError("Applied invoice belongs to a different customer.")
             if applied_to.balance <= 0:
                 raise ValidationError(f"Invoice {applied_to.invoice_no} is fully paid.")
+        _check_applied_within_balance(
+            receipt.applied_to if applied_to is _APPLIED_UNSET else applied_to,
+            norm_lines,
+        )
         with transaction.atomic():
             saved_fields = []
             receipt.lines.all().delete()
