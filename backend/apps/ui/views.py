@@ -1408,11 +1408,16 @@ def statement_export(request, statement_type):
     company = Company.objects.first()
 
     # Period defaults: fall back to the latest generated statement for this
-    # company/type so the export URL never 500s without full params.
-    if request.GET.get("period_start") and request.GET.get("period_end"):
-        period_start = date.fromisoformat(request.GET["period_start"])
-        period_end = date.fromisoformat(request.GET["period_end"])
-    else:
+    # company/type so the export URL never 500s without (valid) full params.
+    ps, pe = request.GET.get("period_start"), request.GET.get("period_end")
+    period_start = period_end = None
+    try:
+        if ps and pe:
+            period_start = date.fromisoformat(ps)
+            period_end = date.fromisoformat(pe)
+    except ValueError:
+        period_start = period_end = None
+    if period_start is None or period_end is None:
         from apps.reporting.models import FinancialStatement
         latest = (
             FinancialStatement.objects.filter(
@@ -1424,8 +1429,8 @@ def statement_export(request, statement_type):
         if latest:
             period_start, period_end = latest.period_start, latest.period_end
         else:
-            period_start = date.fromisoformat(f"{date.today().year - 1}-01-01")
-            period_end = date.fromisoformat(date.today().replace(month=12, day=31))
+            period_start = date(date.today().year - 1, 1, 1)
+            period_end = date.today().replace(month=12, day=31)
 
     builders = {
         "is": ("INCOME-STATEMENT", build_income_statement),
@@ -1437,46 +1442,35 @@ def statement_export(request, statement_type):
     if statement_type not in builders:
         raise Http404
 
-    if fmt == "csv":
-        stem, builder = builders[statement_type]
+    if fmt in ("csv", "pdf"):
+        # CSV/PDF share one tabular render of the generated snapshot. The
+        # stored rows already carry segment-code-keyed amounts and follow the
+        # template's line order, so exports read them directly (hidden rows
+        # excluded) instead of recomputing anything.
+        stem, _builder = builders[statement_type]
         from apps.reporting.services import FinancialStatementService
-        StatementTemplateService.seed_defaults()
-        fs = FinancialStatementService.generate(
-            company=company, statement_type=StatementType(statement_type),
-            period_start=period_start, period_end=period_end,
-        )
-        rows = fs.rows_by_key()
-        header = ["Account"]
-        for seg in fs.segments:
-            header.append(seg.code)
-        header.append("GRAND")
-        data = []
-        for key in sorted(rows.keys()):
-            row = [fs.row_title(key)] if fs.row_title(key) else []
-            for seg in fs.segments:
-                row.append(rows[key]["amounts"].get(seg, "0.00"))
-            row.append(rows[key]["amounts"].get("GRAND", "0.00"))
-            data.append(row)
-        return csv_response(data, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.csv", header=header)
 
-    if fmt == "pdf":
-        stem, builder = builders[statement_type]
-        from apps.reporting.services import FinancialStatementService
         StatementTemplateService.seed_defaults()
         fs = FinancialStatementService.generate(
             company=company, statement_type=StatementType(statement_type),
             period_start=period_start, period_end=period_end,
         )
-        rows = fs.rows_by_key()
-        column_labels = ["Account"] + [seg.code for seg in fs.segments] + ["GRAND"]
-        data = []
-        for key in sorted(rows.keys()):
-            row = [fs.row_title(key)] if fs.row_title(key) else []
-            for seg in fs.segments:
-                row.append(rows[key]["amounts"].get(seg, "0.00"))
-            row.append(rows[key]["amounts"].get("GRAND", "0.00"))
-            data.append(row)
-        return pdf_response(stem, column_labels, data, f"{stem}-{period_start:%Y%m%d}-{period_end:%Y%m%d}.pdf")
+        codes = (
+            [s.code for s in Segment.objects.filter(company=company, is_active=True).order_by("code")]
+            if company
+            else []
+        )
+        columns = ["Account"] + codes + ["GRAND"]
+        data = [
+            [row.get("title") or ""]
+            + [row["amounts"].get(col, "0.00") for col in codes + ["GRAND"]]
+            for row in fs.data
+            if not row.get("is_hidden")
+        ]
+        stamp = f"{period_start:%Y%m%d}-{period_end:%Y%m%d}"
+        if fmt == "csv":
+            return csv_response(data, f"{stem}-{stamp}.csv", header=columns)
+        return pdf_response(stem, columns, data, f"{stem}-{stamp}.pdf")
 
     # default: XLSX (existing builder with net_profit if needed)
     stem, builder = builders[statement_type]
@@ -1497,8 +1491,17 @@ def statement_print(request, statement_type):
 
     company = Company.objects.first()
     StatementTemplateService.seed_defaults()
-    period_start = request.GET.get("period_start") or f"{date.today().year - 1}-01-01"
-    period_end = request.GET.get("period_end") or date.today().replace(month=12, day=31)
+    # GET params arrive as strings and MUST reach generate() as real dates
+    # (it subtracts a timedelta from them); bad/missing input falls back to
+    # the fiscal-year window instead of a 500.
+    try:
+        period_start = date.fromisoformat(request.GET.get("period_start") or "")
+    except ValueError:
+        period_start = date(date.today().year - 1, 1, 1)
+    try:
+        period_end = date.fromisoformat(request.GET.get("period_end") or "")
+    except ValueError:
+        period_end = date.today().replace(month=12, day=31)
 
     fs = FinancialStatementService.generate(
         company=company, statement_type=StatementType(statement_type),
@@ -1613,8 +1616,8 @@ def statement(request, statement_type):
         try:
             fs = StatementService.generate(
                 statement_type=statement_type,
-                period_start=request.POST["period_start"],
-                period_end=request.POST["period_end"],
+                period_start=request.POST.get("period_start", ""),
+                period_end=request.POST.get("period_end", ""),
                 user=request.user,
             )
             messages.success(request, f"Statement generated: {fs}.")
@@ -5438,7 +5441,7 @@ def cash_flow(request):
 
     if company:
         try:
-            if request.GET.get("period_start"):
+            if request.GET.get("period_start") and request.GET.get("period_end"):
                 latest = CashFlowService.generate(
                     period_start=date.fromisoformat(request.GET["period_start"]),
                     period_end=date.fromisoformat(request.GET["period_end"]),
@@ -5448,7 +5451,7 @@ def cash_flow(request):
             elif request.GET.get("month"):
                 latest = CashFlowService.generate_month(company, year, month)
                 messages.success(request, f"Cash flow generated for {company.code} — {month:02d}/{year}.")
-        except (ValueError, AccountingError) as exc:
+        except (ValueError, KeyError, AccountingError) as exc:
             messages.error(request, str(exc))
     ctx = cash_flow_options()
     nets = None
