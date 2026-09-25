@@ -89,6 +89,23 @@ URL, an HTMX fragment, an export or the API.
 - Leaving the grid at a role's defaults stores nothing, so the account keeps
   following the role template as it evolves.
 
+### My Profile (ADR-048)
+
+Every signed-in user — staff, COO, Head, superadmin — has **My Profile**
+(linked from the sidebar footer with their photo/initials):
+
+- **Details** — your own name and email; username, approval role and open
+  screens are shown read-only (admins assign access in User Management).
+- **Password** — change it yourself with your current password; you stay
+  signed in on this device.
+- **Photo** — optional; uploaded images are checked, square-cropped and
+  resized to 256 px locally (stored on this server, removable any time).
+- **Theme** — 8 color presets for the whole system (Teal default, Ocean,
+  Indigo, Plum, Sunset, Forest, Blossom pink, Crimson red). Click to preview
+  instantly, Save to keep it — it follows you to every device. Green/red
+  status meanings and printed documents never change, and every preset is
+  automatically tested for readable color contrast.
+
 ### 2. Journal (`/journal/`)
 
 - **General Journal** (`/journal/general/`) — the posted-entry register in

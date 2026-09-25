@@ -106,6 +106,12 @@ pattern outside AP: `apps/cash/services.py::TransferService`,
   inline from My Approvals without owning any register. Guards:
   `test_screens_registry.py`, `test_screen_access_enforcement.py`,
   `test_inbox_actions.py`.
+- **My Profile (ADR-048):** `/profile/` is a shared route (never screen-gated)
+  where everyone edits their own name/email, changes their own password,
+  uploads a locally-resized avatar, and picks one of 8 color presets.
+  Themes are server-rendered CSS variables (`html[data-theme]`, brand+accent
+  only — semantics/surfaces never retheme) and WCAG-AA enforced by
+  `test_theme_contrast.py` against the generated CSS.
 
 ## Environments
 
