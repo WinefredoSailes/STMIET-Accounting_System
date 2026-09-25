@@ -309,3 +309,41 @@ def test_transfers_register_is_clean(client, company, segment, accounts, role_us
     assert 'href="/cash/transfers/new/"' in body
     assert f'href="/cash/transfers/{transfer.id}/"' in body
     assert transfer.purpose in body
+
+# --------------------------------------------------------------------------- debit-first rows
+
+def _make_legacy_credit_first(transfer):
+    """Rewind the stored line order to the OLD credit-first layout, so we can
+    prove display layers normalize it for legacy vouchers like FTV-2026-0010."""
+    a, b = list(transfer.journal_entry.lines.order_by("line_no"))
+    assert a.debit and b.credit, "service must now store debit-first"
+    # (entry, line_no) is unique: swap via a temporary number.
+    a.line_no = 99
+    a.save(update_fields=["line_no"])
+    b.line_no = 1
+    b.save(update_fields=["line_no"])
+    a.line_no = 2
+    a.save(update_fields=["line_no"])
+
+
+def test_new_ftv_stores_debit_line_first(client, company, banks):
+    bank_from, bank_to, transfer = banks
+    lines = list(transfer.journal_entry.lines.order_by("line_no"))
+    assert lines[0].debit and lines[0].account_id == bank_to.gl_account_id
+    assert lines[1].credit and lines[1].account_id == bank_from.gl_account_id
+
+
+def test_print_and_detail_show_debit_first_even_for_legacy_rows(client, company, banks, role_users):
+    from django.urls import reverse
+
+    bank_from, bank_to, transfer = banks
+    _make_legacy_credit_first(transfer)
+    client.force_login(role_users["head"])
+
+    for url in (f"/cash/transfers/{transfer.id}/print/", f"/cash/transfers/{transfer.id}/"):
+        body = client.get(url).content.decode()
+        assert body.index(str(bank_to.gl_account.code)) < body.index(str(bank_from.gl_account.code)), url
+
+    csv = client.get(reverse("ui:transfer_export", args=[transfer.id, "csv"]))
+    rows = [r for r in csv.content.decode().splitlines() if str(bank_from.gl_account.code) in r or str(bank_to.gl_account.code) in r]
+    assert rows and str(bank_to.gl_account.code) in rows[0]

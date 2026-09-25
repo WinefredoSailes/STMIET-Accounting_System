@@ -482,12 +482,12 @@ class TransferService:
             created_by=user,
         )
         JournalEntryLine.objects.create(
-            entry=entry, line_no=1, account=from_account.gl_account,
-            credit=amount, description=purpose
+            entry=entry, line_no=1, account=to_account.gl_account,
+            debit=amount, description=purpose
         )
         JournalEntryLine.objects.create(
-            entry=entry, line_no=2, account=to_account.gl_account,
-            debit=amount, description=purpose
+            entry=entry, line_no=2, account=from_account.gl_account,
+            credit=amount, description=purpose
         )
         entry.recalc_totals()
         # Do NOT post here: the JE stays DRAFT until the finance head
@@ -558,12 +558,12 @@ class TransferService:
             )
             entry.lines.all().delete()
             JournalEntryLine.objects.create(
-                entry=entry, line_no=1, account=from_account.gl_account,
-                credit=amount, description=transfer.purpose,
+                entry=entry, line_no=1, account=to_account.gl_account,
+                debit=amount, description=transfer.purpose,
             )
             JournalEntryLine.objects.create(
-                entry=entry, line_no=2, account=to_account.gl_account,
-                debit=amount, description=transfer.purpose,
+                entry=entry, line_no=2, account=from_account.gl_account,
+                credit=amount, description=transfer.purpose,
             )
             entry.recalc_totals()
         _log_transfer(transfer, "revised", actor=user)

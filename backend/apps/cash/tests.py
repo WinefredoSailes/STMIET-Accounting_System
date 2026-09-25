@@ -240,8 +240,8 @@ class TestTransfers:
         assert tr.journal_entry.status == PostingStatus.DRAFT
         assert tr.journal_entry.is_balanced
         lines = {l.line_no: l for l in tr.journal_entry.lines.all()}
-        assert lines[1].credit == Decimal("5000.00")  # Cr from
-        assert lines[2].debit == Decimal("5000.00")  # Dr to
+        assert lines[1].debit == Decimal("5000.00")  # Dr to (debits first on vouchers)
+        assert lines[2].credit == Decimal("5000.00")  # Cr from
         # The preparer submits, then head approval posts the JE whatever the
         # amount (threshold removed).
         tr = TransferService.submit(tr, user=None)

@@ -2081,6 +2081,13 @@ def transfers_context():
     }
 
 
+def voucher_line_order(lines):
+    """Account-distribution presentation order: debits first, then stored
+    line_no (standard voucher layout; also normalizes legacy FTV rows that
+    were created credit-first)."""
+    return sorted(lines, key=lambda l: (0 if l.debit else 1, l.line_no))
+
+
 def transfer_timeline(transfer):
     """[(step, label, state, holder)] for the FTV document screen (ADR-030).
 

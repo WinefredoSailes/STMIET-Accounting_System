@@ -437,9 +437,11 @@ def _ftv_distribution_table(entry, fallback_amount):
     debit_total = fallback_amount
     credit_total = fallback_amount
     if entry is not None:
+        from .services import voucher_line_order
+
         debit_total = entry.total_debit
         credit_total = entry.total_credit
-        for line in entry.lines.order_by("line_no"):
+        for line in voucher_line_order(entry.lines.all()):
             rows.append(
                 [
                     Paragraph(line.account.code, cell),
