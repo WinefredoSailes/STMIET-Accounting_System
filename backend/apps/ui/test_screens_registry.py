@@ -176,3 +176,31 @@ def test_can_edit_grants_matrix(db):
     assert S.can_edit_grants_for(head, head2) is False      # no peer head edits
     assert S.can_edit_grants_for(head, head) is False       # no self-escalation
     assert S.can_edit_grants_for(staff, staff) is False     # staff edits nothing
+
+
+def test_picker_endpoints_are_shared_not_gated():
+    """Every *_options typeahead endpoint must resolve as shared (None).
+
+    Pickers are not screens: CV/receipt/SI forms call them for users who may
+    not own the register they read from. A url-name prefix like "rfp_" or
+    "customer_" silently capturing one shipped a prod 403 (empty RFP picker
+    on Check Voucher creation) - this guard makes that class impossible."""
+    from django.urls import get_resolver
+
+    from apps.ui import screens as S
+
+    def walk(patterns, acc):
+        for p in patterns:
+            if hasattr(p, "url_patterns"):
+                walk(p.url_patterns, acc)
+            elif getattr(p, "name", None):
+                acc.append(p.name)
+        return acc
+
+    names = walk(get_resolver("apps.ui.urls").url_patterns, [])
+    pickers = [n for n in names if n.endswith("_options")]
+    assert pickers, "resolver walk found no option endpoints - test broken"
+    for n in pickers:
+        assert S.screen_for_url_name(n) is None, (
+            f"{n} is gated as {S.screen_for_url_name(n)!r}; add it to SHARED_UI_URL_NAMES"
+        )

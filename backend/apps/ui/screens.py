@@ -78,6 +78,13 @@ SHARED_UI_URL_NAMES = frozenset({
     "po_options",
     "billing_rfp_options",
     "ar_invoice_options",
+    # Typeahead pickers used by OTHER modules' forms: a CV preparer needs the
+    # RFP picker without owning the RFP register, a cashier needs the customer
+    # picker without owning Customers (prod 403, Sep-2026: "rfp_"/"customer_"
+    # prefixes silently gated these - keep every *_options endpoint shared;
+    # test_picker_endpoints_are_shared enforces it).
+    "rfp_options",
+    "customer_options",
 })
 
 #: Approve-side actions belong to the My Approvals screen, so an approver who

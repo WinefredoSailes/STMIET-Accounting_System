@@ -132,3 +132,16 @@ def test_role_home_respects_narrowed_grants(db):
     assert _post_login(narrowed) == "/approvals/"  # no journal desk → inbox
     stripped = _user("lx", role="staff", grants=["dashboard", "cv_list"])
     assert _post_login(stripped) == "/"            # no inbox either → dashboard
+
+
+def test_narrowed_users_still_reach_shared_pickers(client):
+    """Prod 403 regression (Sep-2026): the CV form's RFP typeahead and the
+    receipt/SI customer picker were captured by the "rfp_"/"customer_"
+    prefix rules, so a narrowed preparer got Forbidden -> empty picker.
+    Pickers are shared; the registers themselves stay gated."""
+    u = _user("cvclerk", role="staff", grants=["dashboard", "cv_list"])
+    client.force_login(u)
+    assert client.get("/ap/rfp-options/").status_code == 200
+    assert client.get("/foundation/customer-options/").status_code == 200
+    assert client.get("/ap/rfps/").status_code == 403   # RFP register stays gated
+    assert client.get("/ar/customers/").status_code == 403  # ...and Customers too
