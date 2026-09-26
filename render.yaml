@@ -11,6 +11,9 @@ services:
     rootDir: backend                 # Docker build context = backend/ (Dockerfile lives here)
     dockerfilePath: ./Dockerfile
     dockerCommand: sh ./entrypoint.sh
+    healthCheckPath: /health/      # blue-green waits for a real 200 before
+                                   # tearing down the old instance (no more
+                                   # deploy-time Bad Gateway)
     envVars:
       - key: SECRET_KEY
         sync: false                  # Fill in the Render Dashboard during first deploy

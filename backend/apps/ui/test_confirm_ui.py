@@ -175,3 +175,19 @@ def test_favicon_and_robots_are_answered(client):
     robots = client.get("/robots.txt")
     assert robots.status_code == 200
     assert b"Disallow: /" in robots.content
+
+
+def test_health_endpoint_answers_for_everyone(client, db):
+    """Render's zero-downtime gate: anonymous 200, and a custom-grant user is
+    never screened by the middleware on it."""
+    from django.contrib.auth import get_user_model
+
+    from apps.foundation.models import UserProfile
+
+    assert client.get("/health/").status_code == 200
+    u = get_user_model().objects.create_user("probe", password="x")
+    UserProfile.objects.create(user=u, approval_role="staff", screen_access=["dashboard"])
+    client.force_login(u)
+    resp = client.get("/health/")
+    assert resp.status_code == 200
+    assert resp.content == b"ok"

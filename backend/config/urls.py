@@ -17,6 +17,23 @@ def _favicon(request):
     return redirect("/static/img/logo.svg")
 
 
+def _health(request):
+    """Render health-check target: proves the process can answer AND reach the
+    DB before the router swaps traffic onto a fresh deploy (without this, the
+    old instance is torn down while gunicorn is still binding -> deploy-time
+    Bad Gateway)."""
+    from django.db import close_old_connections, connection
+
+    close_old_connections()
+    try:
+        with connection.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+    except Exception:
+        return HttpResponse("degraded", status=503)
+    return HttpResponse("ok", content_type="text/plain")
+
+
 def _robots(request):
     """Internal system: politely tell crawlers to stay away (kills the
     recurring /robots.txt 404 noise in the prod logs too)."""
@@ -25,6 +42,7 @@ def _robots(request):
 
 urlpatterns = [
     path("favicon.ico", _favicon),
+    path("health/", _health, name="health"),
     path("robots.txt", _robots),
     path("admin/", admin.site.urls),
     # Server-rendered UI (HTMX + Tailwind). Not versioned — it is the staff app.
