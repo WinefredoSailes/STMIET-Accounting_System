@@ -22,6 +22,14 @@ services:
         fromDatabase:
           name: stmiet-accounting-db
           property: connectionString
+      # Uploaded media (profile avatars) on the persistent disk. The disk is
+      # attached in the Dashboard (Mount Path /var/data); Django's FileSystem-
+      # Storage then writes /var/data/media/avatars/ so uploads survive
+      # redeploys. Declared here so a blueprint sync cannot drop it.
+      # (disks: in this file are intentionally not declared: the disk already
+      # exists on the service, and re-declaring can make Render recreate it.)
+      - key: MEDIA_ROOT
+        value: /var/data/media
 
 # ── PostgreSQL (managed by Render) ──────────────────────────────────────
 databases:
