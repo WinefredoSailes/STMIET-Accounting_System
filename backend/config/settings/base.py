@@ -180,7 +180,9 @@ STORAGES = {
     },
 }
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# Env-overridable so Render can point uploads at a persistent disk
+# (MEDIA_ROOT=/var/data/media) instead of the container's ephemeral FS.
+MEDIA_ROOT = Path(env.str("MEDIA_ROOT", str(BASE_DIR / "media")))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
