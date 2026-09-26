@@ -4,6 +4,8 @@ Versioned API namespace: /api/v1/ per ADR-010 (API-first). Schema at /api/schema
 """
 
 from django.contrib import admin
+from django.http import HttpResponse
+from django.shortcuts import redirect
 from django.urls import include, path, re_path
 
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -11,7 +13,19 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 API_PREFIX = "api/v1"
 
+def _favicon(request):
+    return redirect("/static/img/logo.svg")
+
+
+def _robots(request):
+    """Internal system: politely tell crawlers to stay away (kills the
+    recurring /robots.txt 404 noise in the prod logs too)."""
+    return HttpResponse("User-agent: *\nDisallow: /\n", content_type="text/plain")
+
+
 urlpatterns = [
+    path("favicon.ico", _favicon),
+    path("robots.txt", _robots),
     path("admin/", admin.site.urls),
     # Server-rendered UI (HTMX + Tailwind). Not versioned — it is the staff app.
     path("", include("apps.ui.urls")),

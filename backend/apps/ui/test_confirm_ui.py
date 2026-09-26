@@ -165,3 +165,13 @@ def test_dashboard_links_respect_screen_grants(client, company, segment, account
     body = client.get("/").content.decode()
     assert "/reports/is/" in body                 # head keeps the drill-downs
     assert "/ar/aging/" in body
+
+
+def test_favicon_and_robots_are_answered(client):
+    """Prod-log hygiene: /favicon.ico redirects to the app logo and robots.txt
+    disallows crawlers - no more 404 noise from probes, and no anonymous
+    auth-wall redirects."""
+    assert client.get("/favicon.ico").status_code == 302
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200
+    assert b"Disallow: /" in robots.content
