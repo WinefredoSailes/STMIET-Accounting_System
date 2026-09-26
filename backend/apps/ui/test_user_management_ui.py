@@ -318,3 +318,17 @@ def test_narrow_grants_then_relogin_landing_nav_and_403(client, role_users):
     for url in ("/journal/", "/ap/rfps/", "/ar/aging/", "/settings/users/"):
         assert client.get(url).status_code == 403, url
     assert client.get("/approvals/").status_code == 200
+
+
+def test_action_column_aligned_and_single_confirm(client, role_users):
+    """Edit/Activate/Deactivate share one left-aligned rail (no text-right
+    float) and the toggle uses ONLY the universal modal (the old native
+    confirm() double-prompted against the verb-guard)."""
+    staffer = role_users["staffer"]
+    _login(client, role_users["boss"])
+    client.post(f"/settings/users/{staffer.pk}/toggle-active/")  # one inactive row
+    body = client.get("/settings/users/").content.decode()
+    assert "return confirm(" not in body
+    assert 'data-confirm="Deactivate' in body
+    assert 'data-confirm="Reactivate' in body
+    assert 'class="px-4 py-2.5 text-right"' not in body  # old right-floored cell gone
