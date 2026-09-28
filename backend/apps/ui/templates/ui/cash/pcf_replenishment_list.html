@@ -14,9 +14,10 @@
     </div>
   </div>
 
-  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-5 gap-4">
     {% include "ui/partials/stat_card.html" with label="Total vouchers" value=summary.total sub=summary.total_amount|peso icon="receipt" %}
     {% include "ui/partials/stat_card.html" with label="Requested" value=summary.requested tone="amber" sub=summary.requested_amount|peso icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Rejected" value=summary.rejected tone="rose" sub="returned to custodian" icon="alert-circle" %}
     {% include "ui/partials/stat_card.html" with label="Approved" value=summary.approved tone="violet" sub="ready to post" icon="document-text" %}
     {% include "ui/partials/stat_card.html" with label="Posted" value=summary.posted tone="emerald" sub=summary.posted_amount|peso icon="check" %}
   </div>

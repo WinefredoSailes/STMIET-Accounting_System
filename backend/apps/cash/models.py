@@ -229,8 +229,22 @@ class PCFReplenishment(AuditableModel):
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
     )
-    status = models.CharField(max_length=16, default="requested")  # requested / approved / posted
+    status = models.CharField(
+        max_length=16, default="requested",
+        choices=[
+            ("requested", "Requested"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+            ("posted", "Posted"),
+        ],
+    )  # requested / approved / rejected / posted
     approved_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_pcf_replenishments"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-request_date"]

@@ -88,6 +88,14 @@ def customer_list_filter_spec():
                 "pricing_tier", "Pricing Tier", kind="choice",
                 choices=lambda req: PricingTier.choices,
             ),
+            FilterField(
+                "approval_status", "Approval", kind="choice",
+                choices=lambda req: [
+                    ("pending", "Pending approval"),
+                    ("approved", "Approved"),
+                    ("rejected", "Rejected"),
+                ],
+            ),
         ]
     )
 
@@ -449,6 +457,7 @@ def pcf_fund_filter_spec():
 
 PCF_REPLENISHMENT_STATUS_CHOICES = [
     ("requested", "Requested"),
+    ("rejected", "Rejected"),
     ("approved", "Approved"),
     ("posted", "Posted"),
 ]

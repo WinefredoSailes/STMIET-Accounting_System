@@ -73,6 +73,12 @@ class BillingViewSet(viewsets.ModelViewSet):
 
         rfp = RFPDocument.objects.filter(pk=data.get("rfp")).first() if data.get("rfp") else None
         customer = Customer.objects.filter(pk=data.get("customer")).first() if data.get("customer") else None
+        if customer is not None and not customer.is_approved:
+            raise ValidationError(
+                f"Customer {customer.code} is not approved yet "
+                f"({customer.get_approval_status_display()}); only approved "
+                "customers can be linked to billing."
+            )
         supplier = Supplier.objects.filter(pk=data.get("supplier")).first() if data.get("supplier") else None
 
         party_name = (data.get("party_name") or "").strip()

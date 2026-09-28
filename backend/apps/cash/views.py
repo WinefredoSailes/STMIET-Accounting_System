@@ -92,6 +92,35 @@ class PCFReplenishmentViewSet(viewsets.ModelViewSet):
         out = self.get_serializer(replen)
         return Response(out.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """requested -> approved (head only; auto-batches to CONSO)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        replen = self.get_object()
+        replen = PCFService.approve_replenishment(replen, user=request.user)
+        return Response(self.get_serializer(replen).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """requested -> rejected (head only, note required)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        replen = self.get_object()
+        replen = PCFService.reject_replenishment(
+            replen, user=request.user, note=request.data.get("note", "")
+        )
+        return Response(self.get_serializer(replen).data)
+
+    @action(detail=True, methods=["post"])
+    def revise(self, request, pk=None):
+        """rejected -> requested: reopen for the custodian to edit/resubmit."""
+        replen = self.get_object()
+        replen = PCFService.revise_replenishment(replen, user=request.user)
+        return Response(self.get_serializer(replen).data)
+
 
 class InterAccountTransferViewSet(viewsets.ModelViewSet):
     queryset = InterAccountTransfer.objects

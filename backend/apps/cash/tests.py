@@ -221,8 +221,67 @@ class TestPCF:
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
         PCFService.approve_replenishment(replen)
-        with pytest.raises(ValidationError, match="batched to CONSO"):
+        with pytest.raises(ValidationError):
             PCFService.post_replenishment(replen)
+
+    def test_reject_flips_to_rejected_with_note(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.reject_replenishment(replen, user=user, note="Missing receipts")
+        replen.refresh_from_db()
+        assert replen.status == "rejected"
+        assert replen.rejected_by_id == user.id
+        assert replen.rejected_at is not None
+        assert replen.rejection_note == "Missing receipts"
+
+    def test_reject_requires_note(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        with pytest.raises(ValidationError):
+            PCFService.reject_replenishment(replen, user=user, note="  ")
+
+    def test_reject_only_from_requested(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.approve_replenishment(replen)
+        with pytest.raises(ValidationError):
+            PCFService.reject_replenishment(replen, user=user, note="Too late")
+
+    def test_rejected_cannot_be_approved_or_posted(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.reject_replenishment(replen, user=user, note="Fix the lines")
+        with pytest.raises(ValidationError):
+            PCFService.approve_replenishment(replen)
+        with pytest.raises(ValidationError):
+            PCFService.post_replenishment(replen)
+
+    def test_revise_reopens_and_clears_rejection(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.reject_replenishment(replen, user=user, note="Fix the lines")
+        PCFService.revise_replenishment(replen, user=user)
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        assert replen.rejected_by_id is None
+        assert replen.rejected_at is None
+        assert replen.rejection_note == ""
+        # back in the head's queue: approval works again
+        PCFService.approve_replenishment(replen)
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+
+    def test_revise_only_from_rejected(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        with pytest.raises(ValidationError):
+            PCFService.revise_replenishment(replen, user=user)
 
 
 class TestTransfers:

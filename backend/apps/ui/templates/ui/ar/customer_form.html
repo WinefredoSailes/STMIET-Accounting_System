@@ -3,10 +3,18 @@
 {% block title %}{% if editing %}Edit Customer{% else %}New Customer{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
-  {% capture as customer_title %}{% if editing %}Edit Customer{% else %}New Customer{% endif %}{% endcapture %}
-  {% capture as submit_label %}{% if editing %}Save changes{% else %}Create customer{% endif %}{% endcapture %}
+  {% capture as customer_title %}{% if creator_revise %}Edit &amp; Resubmit Customer{% elif editing %}Edit Customer{% else %}New Customer{% endif %}{% endcapture %}
+  {% capture as submit_label %}{% if creator_revise %}Save &amp; resubmit for approval{% elif editing %}Save changes{% else %}Create customer{% endif %}{% endcapture %}
   {% capture as banner_html %}
-  {% if not can_edit_master %}
+  {% if creator_revise %}
+  <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">This customer was rejected by the Accounting &amp; Finance Head</div>
+    <div class="mt-1 text-sm text-surface-700 whitespace-pre-wrap">{{ customer.rejection_note }}</div>
+    <div class="mt-1 text-xs text-surface-500">Fix what is called out above and save — the customer re-enters the Head's approval queue.</div>
+  </div>
+  {% elif not editing %}
+  <p class="text-sm text-amber-700">Accounting staff can add customers; a staff-added customer awaits <strong>Accounting &amp; Finance Head</strong> approval before it can be used on transactions. Customers the Head adds are approved immediately.</p>
+  {% elif not can_edit_master %}
   <p class="text-sm text-amber-700">Accounting staff can add customers; edits are reserved for the <strong>Accounting &amp; Finance Head</strong>.</p>
   {% endif %}
   {% endcapture %}

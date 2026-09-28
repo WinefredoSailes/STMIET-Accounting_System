@@ -8,6 +8,7 @@
         <th class="px-4 py-3">Business Name</th>
         <th class="px-4 py-3">Owner</th>
         <th class="px-4 py-3">Contact</th>
+        <th class="px-4 py-3">Status</th>
         {% if can_edit_master %}<th class="px-4 py-3">Actions</th>{% endif %}
       </tr>
     </thead>
@@ -19,11 +20,16 @@
         <td class="px-4 py-2 text-xs">{{ c.owner_name|default:"—" }}</td>
         <td class="px-4 py-2 text-xs text-surface-500">{{ c.contact_no|default:"—" }}</td>
         <td class="px-4 py-2">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if c.approval_status == 'approved' %}bg-emerald-100 text-emerald-800{% elif c.approval_status == 'rejected' %}bg-rose-100 text-rose-800{% else %}bg-amber-100 text-amber-800{% endif %}">
+            {{ c.approval_status }}
+          </span>
+        </td>
+        <td class="px-4 py-2">
           <a href="{% url 'ui:customer_detail' c.pk %}" class="text-xs font-medium text-brand-600 hover:text-brand-800">View</a>
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if can_edit_master %}5{% else %}4{% endif %}" class="px-4 py-8 text-center text-surface-400">No customers match. Try clearing the filters.</td></tr>
+      <tr><td colspan="{% if can_edit_master %}6{% else %}5{% endif %}" class="px-4 py-8 text-center text-surface-400">No customers match. Try clearing the filters.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -35,6 +41,7 @@
   <div class="mobile-card">
     <div class="mobile-card-head">
       <span class="mobile-card-title">{{ c.code }}</span>
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if c.approval_status == 'approved' %}bg-emerald-100 text-emerald-800{% elif c.approval_status == 'rejected' %}bg-rose-100 text-rose-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ c.get_approval_status_display }}</span>
     </div>
     <div class="mobile-card-body">
       <div class="mobile-card-rows">

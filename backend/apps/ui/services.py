@@ -759,6 +759,7 @@ def pcf_replenishment_summary():
         "total_amount": qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
         "requested": qs.filter(status="requested").count(),
         "requested_amount": qs.filter(status="requested").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "rejected": qs.filter(status="rejected").count(),
         "approved": qs.filter(status="approved").count(),
         "posted": qs.filter(status="posted").count(),
         "posted_amount": qs.filter(status="posted").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),

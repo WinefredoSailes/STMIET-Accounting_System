@@ -4,6 +4,13 @@
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:pcf_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr; Petty cash funds</a>
+  {% if editing %}
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">Rejected voucher — edit and resubmit</div>
+    <div class="text-xs text-surface-500 mt-1">Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by }} · {{ editing.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
+  </div>
+  {% endif %}
   <div class="mt-4 bg-white rounded-xl border border-surface-200 overflow-x-auto">
     <div class="px-6 py-4 border-b border-surface-200 flex items-center justify-between">
       <div>
@@ -16,7 +23,7 @@
       </div>
     </div>
 
-    <form method="post" class="p-6 space-y-4" data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}">
+    <form method="post" class="p-6 space-y-4"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
       {% csrf_token %}
       <fieldset class="space-y-3">
         <legend class="text-xs uppercase tracking-wider text-surface-500 font-medium">Payee Information</legend>
@@ -26,7 +33,7 @@
             <select name="fund" id="id_fund" required
               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
               {% for fund in funds %}
-              <option value="{{ fund.id }}">{{ fund.fund_code }} — {{ fund.name }} — {% if fund.custodian %}{{ fund.custodian.get_full_name|default:fund.custodian.username }}{% else %}No custodian{% endif %} ({{fund.imprest_amount|peso}})</option>
+              <option value="{{ fund.id }}" {% if editing and editing.fund_id == fund.id %}selected{% endif %}>{{ fund.fund_code }} — {{ fund.name }} — {% if fund.custodian %}{{ fund.custodian.get_full_name|default:fund.custodian.username }}{% else %}No custodian{% endif %} ({{fund.imprest_amount|peso}})</option>
               {% endfor %}
             </select>
             {% if not funds %}
@@ -36,17 +43,17 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-surface-700 mb-1" for="id_payee_name">NAME</label>
-            <input type="text" name="payee_name" id="id_payee_name" maxlength="255"
+            <input type="text" name="payee_name" id="id_payee_name" maxlength="255" value="{{ editing.payee_name|default:'' }}"
               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           </div>
           <div>
             <label class="block text-sm font-medium text-surface-700 mb-1" for="id_request_date">DATE OF REQUEST</label>
-            <input type="date" name="request_date" id="id_request_date" required value="{{ today|date:'Y-m-d' }}"
+            <input type="date" name="request_date" id="id_request_date" required value="{% if editing %}{{ editing.request_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           </div>
           <div>
             <label class="block text-sm font-medium text-surface-700 mb-1" for="id_reference">REFERENCE</label>
-            <input type="text" name="reference" id="id_reference" maxlength="64" placeholder="e.g. OR no. / PO no."
+            <input type="text" name="reference" id="id_reference" maxlength="64" placeholder="e.g. OR no. / PO no." value="{{ editing.reference|default:'' }}"
               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           </div>
           <div>
@@ -128,6 +135,60 @@
               <td class="px-1 py-2"><button type="button" data-remove-row
                   class="text-xs text-surface-400 hover:text-rose-600">✕</button></td>
             </tr>
+            {% if editing %}
+            {% for exp in editing.expenses %}
+            <tr>
+              <td class="px-1 py-2 overflow-hidden">
+                {% if exp.supplier_id %}
+                <select name="exp_supplier" data-searchable data-search-compact data-search-value="id"
+                  data-search-placeholder="Search supplier…" data-search-url="{% url 'ui:supplier_options' %}?selected={{ exp.supplier_id }}" required
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  <option value="{{ exp.supplier_id }}" selected>{{ exp.business_name }}</option>
+                </select>
+                {% else %}
+                <select name="exp_supplier" data-searchable data-search-compact data-search-value="id"
+                  data-search-placeholder="Search supplier…" data-search-url="{% url 'ui:supplier_options' %}" required
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  <option value="" selected>— select —</option>
+                </select>
+                {% endif %}
+              </td>
+              <td class="px-1 py-2">
+                <input type="text" name="exp_tin" maxlength="32" value="{{ exp.tin }}" placeholder="—" readonly tabindex="-1"
+                  class="w-full rounded-md border border-surface-300 bg-surface-50 px-2 py-1.5 text-xs">
+              </td>
+              <td class="px-1 py-2"><textarea name="exp_description" data-autogrow rows="1"
+                  placeholder="PTO cable for MAW7645"
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">{{ exp.description }}</textarea></td>
+              <td class="px-1 py-2">
+                <select name="exp_segment" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.code }}" {% if exp.segment == seg.code %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-1 py-2">
+                <input type="text" name="exp_cost_center" maxlength="64" list="cost_center_options" value="{{ exp.cost_center }}" placeholder="e.g. OS, GEN-FUEL"
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+              </td>
+              <td class="px-1 py-2">
+                <select name="exp_account" data-searchable data-search-compact
+                  data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?selected={{ exp.account_code }}"
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  <option value="{{ exp.account_code }}" selected>{{ exp.account_code }} — {{ account_names|get_item:exp.account_code }}</option>
+                </select>
+              </td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount
+                  pattern="[0-9,]*[.]?[0-9]*" name="exp_debit" {% if exp.side != 'cr' %}value="{{ exp.amount }}"{% endif %}
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr">
+              </td>
+              <td class="px-1 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount
+                  pattern="[0-9,]*[.]?[0-9]*" name="exp_credit" {% if exp.side == 'cr' %}value="{{ exp.amount }}"{% endif %}
+                  class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr">
+              </td>
+              <td class="px-1 py-2"><button type="button" data-remove-row
+                  class="text-xs text-surface-400 hover:text-rose-600">✕</button></td>
+            </tr>
+            {% endfor %}
+            {% endif %}
           </tbody>
           <tfoot class="bg-surface-50">
             <tr>
@@ -177,11 +238,20 @@
         </div>
       </div>
 
-      <div class="flex justify-end">
+      <div class="flex items-center justify-end gap-3">
+        {% if editing %}
+        <a href="{% url 'ui:pcf_replenishment_detail' editing.id %}"
+          class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-100">Cancel</a>
+        <button type="submit" data-confirm="Resubmit this petty cash voucher for approval?"
+          class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          Save &amp; resubmit for approval
+        </button>
+        {% else %}
         <button type="submit"
           class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
           Request replenishment
         </button>
+        {% endif %}
       </div>
     </form>
   </div>

@@ -290,7 +290,57 @@ class PCFService:
         replen.conso = batch
         replen.status = "approved"
         replen.approved_by = user
-        replen.save(update_fields=["conso", "status", "approved_by", "updated_at"])
+        replen.approved_at = timezone.now()
+        replen.rejected_by = None
+        replen.rejected_at = None
+        replen.rejection_note = ""
+        replen.save(
+            update_fields=[
+                "conso", "status", "approved_by", "approved_at",
+                "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        return replen
+
+    @classmethod
+    @transaction.atomic
+    def reject_replenishment(
+        cls, replen: PCFReplenishment, *, user, note: str
+    ) -> PCFReplenishment:
+        """requested -> rejected: the head returns the voucher to the custodian
+        with a required note (same shape as TransferService.reject)."""
+        if replen.status != "requested":
+            raise ValidationError("Only requested replenishments can be rejected.")
+        if replen.conso_id:
+            raise ValidationError("This replenishment is already batched to CONSO.")
+        if not (note or "").strip():
+            raise ValidationError("A rejection note is required.")
+        replen.status = "rejected"
+        replen.rejected_by = user
+        replen.rejected_at = timezone.now()
+        replen.rejection_note = note.strip()
+        replen.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        return replen
+
+    @classmethod
+    @transaction.atomic
+    def revise_replenishment(cls, replen: PCFReplenishment, *, user) -> PCFReplenishment:
+        """rejected -> requested: reopen so the custodian can edit/resubmit."""
+        if replen.status != "rejected":
+            raise ValidationError("Only rejected replenishments can be revised.")
+        replen.status = "requested"
+        replen.rejected_by = None
+        replen.rejected_at = None
+        replen.rejection_note = ""
+        replen.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
         return replen
 
     @classmethod
@@ -303,6 +353,8 @@ class PCFService:
         """
         if replen.status == "posted":
             raise ValidationError("Replenishment is already posted.")
+        if replen.status == "rejected":
+            raise ValidationError("Rejected replenishments must be revised and resubmitted before posting.")
         if replen.conso_id:
             raise ValidationError("Replenishment is batched to CONSO — post it from the batch.")
         cls._post_je(replen, user=user, segment=segment)

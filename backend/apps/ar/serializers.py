@@ -16,7 +16,13 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = (
             "id", "code", "name", "group", "pricing_tier",
-            "tin", "address", "contact_no", "notes",
+            "tin", "address", "contact_no", "owner_name", "notes",
+            "approval_status", "approved_by", "approved_at",
+            "rejected_by", "rejected_at", "rejection_note",
+        )
+        read_only_fields = (
+            "approval_status", "approved_by", "approved_at",
+            "rejected_by", "rejected_at", "rejection_note",
         )
 
 
@@ -43,6 +49,15 @@ class ARInvoiceSerializer(serializers.ModelSerializer):
             "lines",
         )
         read_only_fields = ("status", "balance")
+
+    def validate_customer(self, value):
+        if not value.is_approved:
+            raise serializers.ValidationError(
+                f"Customer {value.code} is not approved yet "
+                f"({value.get_approval_status_display()}); only approved "
+                "customers can be invoiced."
+            )
+        return value
 
 
 class AcknowledgmentReceiptLineSerializer(serializers.ModelSerializer):

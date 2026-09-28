@@ -1,5 +1,5 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}PCF Voucher {{ replen.id }}{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -8,6 +8,7 @@
 
   {% capture as doc_badge_color %}
   {% if replen.status == 'posted' %}bg-emerald-100 text-emerald-800
+  {% elif replen.status == 'rejected' %}bg-rose-100 text-rose-800
   {% else %}bg-amber-100 text-amber-800{% endif %}
   {% endcapture %}
   {% capture as doc_meta %}
@@ -129,6 +130,20 @@
   {% include "ui/partials/reversed_banner.html" with entry=replen.journal_entry %}
   {% include "ui/partials/reversal_ui.html" with entry=replen.journal_entry %}
 
+  {% if replen.status == "rejected" %}
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">Rejected — returned for revision</div>
+    <div class="text-xs text-surface-500 mt-1">Returned by {{ replen.rejected_by.get_full_name|default:replen.rejected_by }} · {{ replen.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ replen.rejection_note }}</div>
+    {% if is_custodian %}
+    <a href="{% url 'ui:pcf_replenishment_edit' replen.id %}"
+       class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Edit &amp; resubmit</a>
+    {% else %}
+    <p class="mt-2 text-xs text-surface-500">Only the custodian who requested this voucher can revise it.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="mt-4 flex items-center gap-3">
     {% if replen.status == "requested" %}
       {% if request.user|approval_role_of == "head" %}
@@ -144,6 +159,8 @@
           class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post
           replenishment JE</button>
       </form>
+      <button type="button" data-toggle-target="#pcf-reject-form"
+        class="inline-block rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject with note</button>
       {% else %}
       <span class="text-sm text-amber-700">Submitted — awaiting Accounting &amp; Finance Head approval.</span>
       {% endif %}
@@ -163,5 +180,21 @@
       class="ml-auto rounded-md bg-surface-800 px-4 py-2 text-sm font-medium text-white hover:bg-surface-700">Print
       Replenishment</a>
   </div>
+
+  {% if replen.status == "requested" and request.user|approval_role_of == "head" %}
+  <form method="post" action="{% url 'ui:pcf_replenishment_reject' replen.id %}" id="pcf-reject-form"
+    class="mt-3 hidden max-w-xl">
+    {% csrf_token %}
+    <textarea name="note" data-autogrow rows="3" required
+      class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm"
+      placeholder="Why is this voucher being returned? The custodian will see this note before revising."></textarea>
+    <button type="submit"
+      class="mt-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Return voucher to custodian</button>
+  </form>
+  {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/toggle-block.js' %}"></script>
 {% endblock %}

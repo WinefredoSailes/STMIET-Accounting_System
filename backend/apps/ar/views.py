@@ -17,10 +17,82 @@ from .services import CollectionService, CycleLedgerService, DepositService
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
+    """Customer master. Staff-created customers land ``pending`` and must be
+    approved by the Accounting & Finance Head (same rule as the UI); the
+    Head's own creations are approved immediately."""
+
     queryset = Customer.objects
     serializer_class = CustomerSerializer
     search_fields = ["code", "name"]
-    filterset_fields = ["group", "pricing_tier"]
+    filterset_fields = ["group", "pricing_tier", "approval_status"]
+
+    def create(self, request, *args, **kwargs):
+        from apps.ar.services import CustomerService
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        customer = CustomerService.create_customer(
+            created_by=request.user, **serializer.validated_data
+        )
+        return Response(self.get_serializer(customer).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        from apps.core.approvals import can_edit_master
+
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        creator_revise = (
+            instance.approval_status == "rejected"
+            and instance.created_by_id == getattr(request.user, "id", None)
+        )
+        if not can_edit_master(request.user) and not creator_revise:
+            return Response(
+                {"detail": "Only the Accounting & Finance Head may edit customers."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        from apps.ar.services import CustomerService
+
+        customer = CustomerService.update_customer(
+            instance, user=request.user, **serializer.validated_data
+        )
+        return Response(self.get_serializer(customer).data)
+
+    partial_update = update
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """pending -> approved (head only)."""
+        from apps.ar.services import CustomerService
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        customer = self.get_object()
+        CustomerService.approve(customer, user=request.user)
+        return Response(self.get_serializer(customer).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """pending -> rejected (head only, note required)."""
+        from apps.ar.services import CustomerService
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        customer = self.get_object()
+        CustomerService.reject(
+            customer, user=request.user, note=request.data.get("note", "")
+        )
+        return Response(self.get_serializer(customer).data)
+
+    @action(detail=True, methods=["post"])
+    def resubmit(self, request, pk=None):
+        """rejected -> pending, so it re-enters the Head's queue."""
+        from apps.ar.services import CustomerService
+
+        customer = self.get_object()
+        CustomerService.resubmit(customer, user=request.user)
+        return Response(self.get_serializer(customer).data)
 
     @action(detail=True, methods=["get"])
     def ledger(self, request, pk=None):
@@ -55,6 +127,15 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
 
         data = request.data
         customer = get_object_or_404(Customer, pk=data.get("customer"))
+        if not customer.is_approved:
+            return Response(
+                {
+                    "detail": f"Customer {customer.code} is not approved yet "
+                    f"({customer.get_approval_status_display()}); collections "
+                    "require an approved customer."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         transaction_date = data.get("transaction_date")
         if not transaction_date:
             return Response(

@@ -35,6 +35,7 @@ from .models import (
     ARInvoice,
     ARInvoiceLine,
     Customer,
+    CustomerApprovalStatus,
     Deposit,
     PaymentMethod,
     ReceiptStatus,
@@ -1173,3 +1174,135 @@ class InvoiceService:
         )
         _log(invoice, "rejected", actor=user, note=note.strip())
         return invoice
+
+
+class CustomerService:
+    """Customer master approval lifecycle.
+
+    Staff-added customers land ``pending`` and stay out of every picker and
+    transaction until the Accounting & Finance Head approves them; the Head's
+    own creations are ``approved`` immediately (head self-approve allowed,
+    same pattern as JEs/transfers). A rejected customer returns to its
+    creator, who can edit and resubmit it."""
+
+    @classmethod
+    def initial_status(cls, user) -> str:
+        """pending for accounting staff, approved for the Head/admins."""
+        from apps.core.approvals import approval_role_of
+
+        if user is not None and user.is_superuser:
+            return CustomerApprovalStatus.APPROVED
+        if approval_role_of(user) == "head":
+            return CustomerApprovalStatus.APPROVED
+        return CustomerApprovalStatus.PENDING
+
+    @classmethod
+    def create_customer(cls, *, created_by, **fields) -> Customer:
+        status = cls.initial_status(created_by)
+        customer = Customer.objects.create(
+            created_by=created_by,
+            approval_status=status,
+            approved_by=created_by if status == CustomerApprovalStatus.APPROVED else None,
+            approved_at=timezone.now() if status == CustomerApprovalStatus.APPROVED else None,
+            **fields,
+        )
+        return customer
+
+    @classmethod
+    def update_customer(cls, customer: Customer, *, user, **fields) -> Customer:
+        """Head/admin edit; the creator may also edit *their own rejected*
+        customer, which resubmits it for another round of approval."""
+        from apps.core.approvals import can_edit_master
+
+        resubmit = (
+            customer.approval_status == CustomerApprovalStatus.REJECTED
+            and not can_edit_master(user)
+            and customer.created_by_id == user.id
+        )
+        if resubmit:
+            customer.approval_status = CustomerApprovalStatus.PENDING
+            customer.rejected_by = None
+            customer.rejected_at = None
+            customer.rejection_note = ""
+        for key, value in fields.items():
+            setattr(customer, key, value)
+        customer.updated_by = user
+        customer.save()
+        return customer
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, customer: Customer, *, user) -> Customer:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if customer.approval_status != CustomerApprovalStatus.PENDING:
+            raise ValidationError("Only pending customers can be approved.")
+        customer.approval_status = CustomerApprovalStatus.APPROVED
+        customer.approved_by = user
+        customer.approved_at = timezone.now()
+        customer.rejected_by = None
+        customer.rejected_at = None
+        customer.rejection_note = ""
+        customer.save(
+            update_fields=[
+                "approval_status", "approved_by", "approved_at",
+                "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        return customer
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, customer: Customer, *, user, note: str) -> Customer:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if customer.approval_status != CustomerApprovalStatus.PENDING:
+            raise ValidationError("Only pending customers can be rejected.")
+        if not (note and note.strip()):
+            raise ValidationError("A rejection note is required.")
+        customer.approval_status = CustomerApprovalStatus.REJECTED
+        customer.rejected_by = user
+        customer.rejected_at = timezone.now()
+        customer.rejection_note = note.strip()
+        customer.save(
+            update_fields=[
+                "approval_status", "rejected_by", "rejected_at",
+                "rejection_note", "updated_at",
+            ]
+        )
+        return customer
+
+    @classmethod
+    @transaction.atomic
+    def resubmit(cls, customer: Customer, *, user) -> Customer:
+        """rejected -> pending, so the customer re-enters the Head's queue."""
+        if customer.approval_status != CustomerApprovalStatus.REJECTED:
+            raise ValidationError("Only rejected customers can be resubmitted.")
+        from apps.core.approvals import can_edit_master
+
+        if not can_edit_master(user) and customer.created_by_id != user.id:
+            raise ValidationError("Only the creator can resubmit this customer.")
+        customer.approval_status = CustomerApprovalStatus.PENDING
+        customer.rejected_by = None
+        customer.rejected_at = None
+        customer.rejection_note = ""
+        customer.save(
+            update_fields=[
+                "approval_status", "rejected_by", "rejected_at",
+                "rejection_note", "updated_at",
+            ]
+        )
+        return customer
+
+    @classmethod
+    def require_approved(cls, customer: Customer) -> Customer:
+        """Gate for transacting with a customer (receipts, invoices, billing)."""
+        if customer.approval_status != CustomerApprovalStatus.APPROVED:
+            raise ValidationError(
+                f"Customer {customer.code} — {customer.name} is not approved yet "
+                f"(status: {customer.get_approval_status_display()}). "
+                "Only approved customers can be used on transactions."
+            )
+        return customer

@@ -102,7 +102,8 @@ APPROVAL_ACTIONS = frozenset({
     "billing_approve", "billing_reject",
     "cash_short_approve",
     "transfer_approve", "transfer_reject",
-    "pcf_replenishment_approve",
+    "pcf_replenishment_approve", "pcf_replenishment_reject",
+    "customer_approve", "customer_reject",
 })
 
 #: Exact UI url-name -> screen overrides (checked before prefixes).

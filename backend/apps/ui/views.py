@@ -338,6 +338,7 @@ KIND_LABELS = {
     "billing": "Billing",
     "cash_short": "Cash Short/Excess",
     "cv": "Check Vouchers",
+    "customer": "Customer Requests",
     "invoice": "Sales Invoices",
     "je": "Journal Entries",
     "pcf": "Petty Cash Replenishments",
@@ -371,6 +372,8 @@ def my_approvals(request):
         "cv": "ui:cv_reject",
         "billing": "ui:billing_reject",
         "transfer": "ui:transfer_reject",
+        "pcf": "ui:pcf_replenishment_reject",
+        "customer": "ui:customer_reject",
     }
 
     queues = pending_approval_queue(request.user)
@@ -2015,25 +2018,38 @@ def asset_list(request):
 # ---------------------------------------------------------------------------
 
 
+def _customer_fields_from_post(request):
+    return {
+        "code": request.POST["code"].strip(),
+        "name": request.POST["name"].strip(),
+        "group": request.POST["group"],
+        "pricing_tier": request.POST["pricing_tier"],
+        "tin": request.POST.get("tin", ""),
+        "address": request.POST.get("address", ""),
+        "contact_no": request.POST.get("contact_no", ""),
+        "owner_name": request.POST.get("owner_name", ""),
+        "notes": request.POST.get("notes", ""),
+    }
+
+
 @login_required
 def customer_create(request):
     require_can_create_master(request.user)
     if request.method == "POST":
         try:
-            from apps.ar.models import Customer
+            from apps.ar.services import CustomerService
 
-            Customer.objects.create(
-                code=request.POST["code"].strip(),
-                name=request.POST["name"].strip(),
-                group=request.POST["group"],
-                pricing_tier=request.POST["pricing_tier"],
-                tin=request.POST.get("tin", ""),
-                address=request.POST.get("address", ""),
-                contact_no=request.POST.get("contact_no", ""),
-                owner_name=request.POST.get("owner_name", ""),
-                notes=request.POST.get("notes", ""),
+            customer = CustomerService.create_customer(
+                created_by=request.user, **_customer_fields_from_post(request)
             )
-            messages.success(request, "Customer created.")
+            if customer.approval_status == "approved":
+                messages.success(request, "Customer created (approved by the Head).")
+            else:
+                messages.success(
+                    request,
+                    "Customer submitted — the Accounting & Finance Head must "
+                    "approve it before it can be used on transactions.",
+                )
             return redirect("ui:customer_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
@@ -2042,31 +2058,77 @@ def customer_create(request):
 
 @login_required
 def customer_update(request, pk):
-    from apps.ar.models import Customer
+    from apps.ar.models import Customer, CustomerApprovalStatus
+    from apps.ar.services import CustomerService
+    from apps.core.approvals import can_edit_master
 
-    require_can_edit_master(request.user)
     customer = get_object_or_404(Customer, pk=pk)
+    # Head/admin edits; the creator may also edit their own REJECTED customer
+    # (that edit doubles as the resubmit for another approval round).
+    creator_revise = (
+        customer.approval_status == CustomerApprovalStatus.REJECTED
+        and customer.created_by_id == request.user.id
+    )
+    if not can_edit_master(request.user) and not creator_revise:
+        from django.core.exceptions import PermissionDenied
+
+        raise PermissionDenied(
+            "Editing master data (COA, customers, suppliers, banks) is reserved "
+            "for the Accounting & Finance Head. Accounting staff can only add."
+        )
     if request.method == "POST":
         try:
-            customer.code = request.POST["code"].strip()
-            customer.name = request.POST["name"].strip()
-            customer.group = request.POST["group"]
-            customer.pricing_tier = request.POST["pricing_tier"]
-            customer.tin = request.POST.get("tin", "")
-            customer.address = request.POST.get("address", "")
-            customer.contact_no = request.POST.get("contact_no", "")
-            customer.owner_name = request.POST.get("owner_name", "")
-            customer.notes = request.POST.get("notes", "")
-            customer.save()
-            messages.success(request, "Customer updated.")
+            CustomerService.update_customer(
+                customer, user=request.user, **_customer_fields_from_post(request)
+            )
+            messages.success(
+                request,
+                "Customer resubmitted for Head approval."
+                if creator_revise
+                else "Customer updated.",
+            )
             return redirect("ui:customer_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
     return render(
         request,
         "ui/ar/customer_form.html",
-        {"customer": customer, "editing": True},
+        {"customer": customer, "editing": True, "creator_revise": creator_revise},
     )
+
+
+@login_required
+@require_POST
+def customer_approve(request, pk):
+    """pending -> approved (Head only): the customer becomes usable on AR."""
+    from apps.ar.models import Customer
+    from apps.ar.services import CustomerService
+
+    customer = get_object_or_404(Customer, pk=pk)
+    try:
+        CustomerService.approve(customer, user=request.user)
+        messages.success(request, f"Customer {customer.code} — {customer.name} approved.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:customer_detail", pk))
+
+
+@login_required
+@require_POST
+def customer_reject(request, pk):
+    """pending -> rejected (Head only, note required): back to the creator."""
+    from apps.ar.models import Customer
+    from apps.ar.services import CustomerService
+
+    customer = get_object_or_404(Customer, pk=pk)
+    try:
+        CustomerService.reject(
+            customer, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, f"Customer {customer.code} returned to its creator.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:customer_detail", pk))
 
 
 @login_required
@@ -2083,6 +2145,9 @@ def receipt_create(request):
             if not cash_id:
                 raise ValidationError("Select the cash / bank account received into.")
             customer = Customer.objects.get(pk=customer_id)
+            from apps.ar.services import CustomerService
+
+            CustomerService.require_approved(customer)
             cash_account = Account.objects.get(pk=cash_id)
             transaction_date = _parse_date(request.POST.get("transaction_date") or "")
             if transaction_date is None:
@@ -2373,6 +2438,9 @@ def si_create(request):
             if not customer_id:
                 raise ValidationError("Select a customer.")
             customer = Customer.objects.get(pk=customer_id)
+            from apps.ar.services import CustomerService
+
+            CustomerService.require_approved(customer)
             transaction_date = _parse_date(request.POST.get("transaction_date") or "")
             if transaction_date is None:
                 raise ValidationError("Date of SI is required.")
@@ -4154,55 +4222,83 @@ def pcf_list(request):
     return render(request, template, ctx)
 
 
+def _pcf_expenses_from_post(request):
+    """Build the PCV expense line list from the voucher form's POST."""
+    from apps.ap.models import Supplier
+
+    expenses = []
+    accounts = request.POST.getlist("exp_account")
+    segments = request.POST.getlist("exp_segment")
+    debits = request.POST.getlist("exp_debit")
+    credits = request.POST.getlist("exp_credit")
+    descs = request.POST.getlist("exp_description")
+    cost_centers = request.POST.getlist("exp_cost_center")
+    suppliers = request.POST.getlist("exp_supplier")
+    for i, acc_id in enumerate(accounts):
+        if not acc_id:
+            continue
+        debit = money((debits[i] if i < len(debits) else 0) or 0)
+        credit = money((credits[i] if i < len(credits) else 0) or 0)
+        if not debit and not credit:
+            continue
+        if debit and credit:
+            raise ValidationError(
+                f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+            )
+        supplier = None
+        supplier_id = suppliers[i] if i < len(suppliers) else ""
+        if supplier_id:
+            supplier = Supplier.objects.filter(pk=supplier_id).first()
+        if supplier is None:
+            raise ValidationError(f"Line {i + 1}: select a supplier (Business name).")
+        expenses.append(
+            {
+                "account_code": Account.objects.get(code=acc_id).code,
+                "side": "dr" if debit else "cr",
+                "amount": str(debit or credit),
+                "description": (descs[i] if i < len(descs) else "")[:500],
+                "segment": segments[i] if i < len(segments) else "",
+                "cost_center": (cost_centers[i] if i < len(cost_centers) else "")[:64],
+                "supplier_id": supplier.pk,
+                "business_name": supplier.name,
+                "tin": supplier.tin,
+            }
+        )
+    if not expenses:
+        raise ValueError("Add at least one expense line.")
+    return expenses
+
+
+def _pcf_form_context(request, *, editing=None):
+    """Shared context for the PCV create and revise forms."""
+    from apps.cash.models import PettyCashFund
+
+    funds = PettyCashFund.objects.filter(
+        custodian=request.user, is_active=True
+    ).select_related("gl_account", "company", "custodian").order_by("fund_code")
+    if editing is not None and editing.fund_id not in {f.id for f in funds}:
+        funds = funds | PettyCashFund.objects.filter(pk=editing.fund_id)
+    accounts = Account.objects.filter(is_postable=True).order_by("code")
+    return {
+        "funds": funds,
+        "segments": Segment.objects.order_by("code"),
+        "accounts": accounts,
+        "account_names": {a.code: a.name for a in accounts},
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        "today": date.today(),
+        "editing": editing,
+    }
+
+
 @login_required
 def pcf_replenish(request):
-    from apps.ap.models import Supplier
     from apps.cash.models import PettyCashFund
     from apps.cash.services import PCFService
 
     if request.method == "POST":
         try:
             fund = PettyCashFund.objects.get(pk=request.POST["fund"])
-            expenses = []
-            accounts = request.POST.getlist("exp_account")
-            segments = request.POST.getlist("exp_segment")
-            debits = request.POST.getlist("exp_debit")
-            credits = request.POST.getlist("exp_credit")
-            descs = request.POST.getlist("exp_description")
-            cost_centers = request.POST.getlist("exp_cost_center")
-            suppliers = request.POST.getlist("exp_supplier")
-            for i, acc_id in enumerate(accounts):
-                if not acc_id:
-                    continue
-                debit = money((debits[i] if i < len(debits) else 0) or 0)
-                credit = money((credits[i] if i < len(credits) else 0) or 0)
-                if not debit and not credit:
-                    continue
-                if debit and credit:
-                    raise ValidationError(
-                        f"Line {i + 1}: enter the amount in only one of Debit or Credit."
-                    )
-                supplier = None
-                supplier_id = suppliers[i] if i < len(suppliers) else ""
-                if supplier_id:
-                    supplier = Supplier.objects.filter(pk=supplier_id).first()
-                if supplier is None:
-                    raise ValidationError(f"Line {i + 1}: select a supplier (Business name).")
-                expenses.append(
-                    {
-                        "account_code": Account.objects.get(code=acc_id).code,
-                        "side": "dr" if debit else "cr",
-                        "amount": str(debit or credit),
-                        "description": (descs[i] if i < len(descs) else "")[:500],
-                        "segment": segments[i] if i < len(segments) else "",
-                        "cost_center": (cost_centers[i] if i < len(cost_centers) else "")[:64],
-                        "supplier_id": supplier.pk,
-                        "business_name": supplier.name,
-                        "tin": supplier.tin,
-                    }
-                )
-            if not expenses:
-                raise ValueError("Add at least one expense line.")
+            expenses = _pcf_expenses_from_post(request)
             replen = PCFService.request_replenishment(
                 fund,
                 expenses,
@@ -4220,15 +4316,59 @@ def pcf_replenish(request):
     return render(
         request,
         "ui/cash/pcf_replenish_form.html",
-        {
-            "funds": PettyCashFund.objects.filter(
-                custodian=request.user, is_active=True
-            ).select_related("gl_account", "company", "custodian").order_by("fund_code"),
-            "segments": Segment.objects.order_by("code"),
-            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
-            "today": date.today(),
-        },
+        _pcf_form_context(request),
+    )
+
+
+@login_required
+def pcf_replenishment_edit(request, pk):
+    """Edit & resubmit: revise a rejected petty cash voucher. Only the
+    custodian who requested it (or a superuser) may open it, only while the
+    voucher is ``rejected``; a successful save clears the rejection and the
+    voucher re-enters the Head's approval queue as ``requested``."""
+    from apps.cash.models import PCFReplenishment, PettyCashFund
+    from apps.cash.services import PCFService
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    is_custodian = request.user.is_superuser or (
+        replen.fund.custodian_id == request.user.id
+        or (replen.requested_by_id and replen.requested_by_id == request.user.id)
+    )
+    if not is_custodian:
+        raise PermissionDenied("Only the custodian who requested this voucher can revise it.")
+    if replen.status != "rejected":
+        messages.error(request, "Only rejected vouchers can be revised.")
+        return redirect("ui:pcf_replenishment_detail", pk=pk)
+    if request.method == "POST":
+        try:
+            fund = PettyCashFund.objects.get(pk=request.POST["fund"])
+            if fund.custodian_id != request.user.id and not request.user.is_superuser:
+                raise ValidationError("Select one of your own petty cash funds.")
+            expenses = _pcf_expenses_from_post(request)
+            PCFService.revise_replenishment(replen, user=request.user)
+            replen.fund = fund
+            replen.expenses = expenses
+            replen.amount = sum(money(e["amount"]) for e in expenses)
+            replen.payee_name = request.POST.get("payee_name", "")
+            replen.reference = request.POST.get("reference", "")
+            if request.POST.get("request_date"):
+                replen.request_date = date.fromisoformat(request.POST["request_date"])
+            replen.save(
+                update_fields=[
+                    "fund", "expenses", "amount", "payee_name",
+                    "reference", "request_date", "updated_at",
+                ]
+            )
+            messages.success(
+                request, f"PCF replenishment {replen.voucher_no} resubmitted for approval."
+            )
+            return redirect("ui:pcf_replenishment_detail", pk=pk)
+        except (AccountingError, ValidationError, ValueError, KeyError, ArithmeticError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/cash/pcf_replenish_form.html",
+        _pcf_form_context(request, editing=replen),
     )
 
 
@@ -4273,6 +4413,9 @@ def pcf_replenishment_detail(request, pk):
         "ui/cash/pcf_replenishment_detail.html",
         {
             "replen": replen,
+            "is_custodian": request.user.is_superuser
+            or replen.fund.custodian_id == request.user.id
+            or replen.requested_by_id == request.user.id,
             **_reversal_context(request, replen.journal_entry),
         },
     )
@@ -4429,6 +4572,27 @@ def pcf_replenishment_approve(request, pk):
         require_approval_role(request.user, "head")
         PCFService.approve_replenishment(replen, user=request.user)
         messages.success(request, f"Replenishment {replen.id} approved and batched to {replen.conso.batch_no}.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:pcf_replenishment_detail", pk))
+
+
+@login_required
+@require_POST
+def pcf_replenishment_reject(request, pk):
+    """requested -> rejected: the head returns the voucher to the custodian
+    with a required note (same gate as the transfer/RFP/CV rejects)."""
+    from apps.cash.models import PCFReplenishment
+    from apps.cash.services import PCFService
+    from apps.core.approvals import require_approval_role
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        PCFService.reject_replenishment(
+            replen, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, f"Voucher {replen.voucher_no or replen.id} returned to the custodian.")
     except (AccountingError, ValueError) as exc:
         messages.error(request, str(exc))
     return redirect(_safe_next(request, "ui:pcf_replenishment_detail", pk))
@@ -5072,15 +5236,19 @@ def supplier_options(request):
 def customer_options(request):
     """Type-ahead source for searchable customer pickers (server-side).
 
-    Returns the first ~30 active customers matching the query by code or name,
-    plus the currently-selected customer (when editing) so the picker keeps a
-    stable selection. ``?selected=`` accepts a customer code or id.
+    Returns the first ~30 approved customers matching the query by code or
+    name, plus the currently-selected customer (when editing) so the picker
+    keeps a stable selection. ``?selected=`` accepts a customer code or id.
+    Pending/rejected customers are hidden: they cannot be transacted with
+    until the Accounting & Finance Head approves them.
     """
-    from apps.ar.models import Customer
+    from apps.ar.models import Customer, CustomerApprovalStatus
 
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
-    qs = Customer.objects.order_by("code")
+    qs = Customer.objects.filter(
+        approval_status=CustomerApprovalStatus.APPROVED
+    ).order_by("code")
     if q:
         qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
     rows = list(qs[:30])
@@ -7198,13 +7366,14 @@ def customer_export(request):
             c.pricing_tier,
             c.address or "",
             c.notes or "",
+            c.get_approval_status_display(),
         ]
         for c in list_customers()
     ]
     return _table_response(
         "CUSTOMERS MASTER",
         ["Code", "Business Name", "Owner", "Contact", "TIN",
-         "Group", "Pricing Tier", "Address", "Notes"],
+         "Group", "Pricing Tier", "Address", "Notes", "Approval"],
         rows,
         fmt,
         "CUSTOMERS",
@@ -7948,6 +8117,12 @@ def billing_create(request):
                     supplier = Supplier.objects.filter(pk=party_id).first()
                 elif party_kind == "customer":
                     customer = Customer.objects.filter(pk=party_id).first()
+            if customer is not None and not customer.is_approved:
+                raise ValidationError(
+                    f"Customer {customer.code} is not approved yet "
+                    f"({customer.get_approval_status_display()}); wait for the "
+                    "Accounting & Finance Head to approve it."
+                )
             if not party_name and customer:
                 party_name = customer.name
             if not party_name and supplier:

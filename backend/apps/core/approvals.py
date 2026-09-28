@@ -628,6 +628,41 @@ def pcf_queue(user_roles):
     return out
 
 
+def customer_queue(user_roles):
+    """Customers waiting on the head (staff-added masters only).
+
+    A customer created by accounting staff lands ``pending`` and is unusable
+    on transactions until the Head approves it; the Head's own creations are
+    approved immediately and never enter this queue."""
+    if "head" not in user_roles:
+        return []
+    from apps.ar.models import Customer, CustomerApprovalStatus
+
+    out = []
+    docs = Customer.objects.filter(
+        approval_status=CustomerApprovalStatus.PENDING
+    ).select_related("created_by")
+    for customer in docs:
+        title = customer.name
+        if customer.owner_name:
+            title = f"{title} · {customer.owner_name}"
+        out.append(
+            {
+                "kind": "customer",
+                "role": "head",
+                "doc": customer,
+                "number": customer.code,
+                "title": title,
+                "date": customer.created_at.date() if customer.created_at else None,
+                "amount": "",
+                "detail": ("ui:customer_detail", customer.id),
+                "action": ("ui:customer_approve", customer.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pending_approval_queue(user):
     """All documents waiting on `user`, oldest first (My Approvals)."""
     role = approval_role_of(user)
@@ -645,6 +680,7 @@ def pending_approval_queue(user):
         + ar_invoice_queue({role})
         + billing_queue({role})
         + pcf_queue({role})
+        + customer_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
     return queues

@@ -32,9 +32,20 @@ class PricingTier(models.TextChoices):
     VOLUME = "volume", "Volume"
 
 
+class CustomerApprovalStatus(models.TextChoices):
+    PENDING = "pending", "Pending approval"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
 class Customer(SoftDeleteMixin, AuditableModel):
     """Centralized customer master (ADR-007). One-time migration cleans the
-    macro-era per-client sheets into a single registry."""
+    macro-era per-client sheets into a single registry.
+
+    Approval rule: a customer added by accounting staff lands ``pending`` and
+    is usable only after the Accounting & Finance Head approves it; a customer
+    the Head creates is ``approved`` immediately (head self-approve allowed,
+    same pattern as JEs/transfers)."""
 
     code = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=255)
@@ -45,12 +56,30 @@ class Customer(SoftDeleteMixin, AuditableModel):
     contact_no = models.CharField(max_length=32, blank=True)
     owner_name = models.CharField("Owner", max_length=255, blank=True)
     notes = models.TextField(blank=True)
+    approval_status = models.CharField(
+        max_length=16,
+        choices=CustomerApprovalStatus.choices,
+        default=CustomerApprovalStatus.APPROVED,
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_customers"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_customers"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return f"{self.code} {self.name}"
+
+    @property
+    def is_approved(self):
+        return self.approval_status == CustomerApprovalStatus.APPROVED
 
 
 class PriceSnapshot(AuditableModel):
