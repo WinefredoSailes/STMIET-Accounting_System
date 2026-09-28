@@ -2037,25 +2037,6 @@ def ap_supplier_ledger(*, supplier, start=None, end=None) -> dict:
         "closing_dr": closing_dr,
         "closing_cr": closing_cr,
     }
-    """AdvanceToEmployee ledger rows with outstanding balances."""
-    from apps.ap.models import AdvanceToEmployee
-
-    rows = []
-    for adv in AdvanceToEmployee.objects.select_related("segment", "rfp").order_by("-granted_date"):
-        rows.append(
-            {
-                "advance": adv,
-                "kind": adv.get_kind_display(),
-                "segment_code": adv.segment.code,
-                "outstanding": adv.outstanding,
-                "status_label": adv.status.replace("_", " ").title(),
-            }
-        )
-    return {
-        "rows": rows,
-        "total_outstanding": sum(r["outstanding"] for r in rows),
-        "segments": list(Segment.objects.order_by("code")),
-    }
 
 
 def transfers_context():
@@ -2447,6 +2428,160 @@ def _balance_cell(balance, normal_balance, column):
     if column == side:
         return abs(balance)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Advances subsidiary ledger (account 12070) — derived from the posted GL
+# ---------------------------------------------------------------------------
+
+#: The Advances to Employees account tree: the base asset account plus any
+#: modeled children (ADR-021 pairs with COA 12070).
+ADVANCE_ACCOUNT_MATCH = Q(code="12070") | Q(code__startswith="12070-")
+
+#: Per-employee balance state, read from the running net's sign (Dr normal).
+ADVANCE_LEDGER_STATUS_LABELS = {
+    "advances": "Advances to Employees",
+    "payable": "Payable to Employees",
+    "liquidated": "Liquidated / Fully Paid",
+}
+
+
+def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
+    """Derived subsidiary ledger for Advances to Employees (COA 12070).
+
+    Every row is a posted GL line touching account 12070 within the window;
+    ``net`` is the per-employee running balance, Dr positive (ADR-005), so a
+    reversal pair nets to zero. ``sections`` carry the per-employee summary
+    (opening, period Dr/Cr, closing, status). Parties resolve from the source
+    document masters like the General Journal register; rows with no resolvable
+    counterparty are grouped under ``(Unidentified)``.
+    """
+    from collections import defaultdict
+
+    from apps.foundation.models import Account
+    from apps.posting.models import GeneralLedger
+
+    advance_accounts = Account.objects.filter(ADVANCE_ACCOUNT_MATCH)
+    normals = {a.id: a.normal_balance or "debit" for a in advance_accounts}
+
+    gs = GeneralLedger.objects.filter(
+        entry__status__in=GL_EFFECTIVE_STATUSES,
+        entry__company=company,
+        account__in=advance_accounts,
+    )
+    if segment:
+        gs = gs.filter(segment__code=segment)
+
+    def _party(gl, parties):
+        name = parties.get(gl.entry.source_doc_no or "", "")
+        name = name.strip() or (gl.entry.supplier_name or "").strip()
+        return name or "(Unidentified)"
+
+    def _signed_for(gl):
+        return _signed(gl.debit, gl.credit, normals.get(gl.account_id, "debit"))
+
+    parties = _source_parties()
+
+    # Opening balance per employee = signed movement before the window start.
+    opening = defaultdict(Decimal)
+    if start:
+        for gl in gs.filter(transaction_date__lt=start).select_related("entry"):
+            opening[_party(gl, parties)] += _signed_for(gl)
+
+    window = gs.filter(transaction_date__gte=start) if start else gs
+    if end:
+        window = window.filter(transaction_date__lte=end)
+    window = window.order_by("transaction_date", "id").select_related(
+        "entry", "line__account", "segment"
+    )
+
+    running = defaultdict(Decimal)
+    sections = {party: {
+        "opening": opening[party],
+        "period_debit": Decimal("0.00"),
+        "period_credit": Decimal("0.00"),
+        "row_count": 0,
+    } for party in opening}
+
+    rows = []
+    period_debit = period_credit = Decimal("0.00")
+    for gl in window:
+        party = _party(gl, parties)
+        section = sections.setdefault(party, {
+            "opening": opening.get(party, Decimal("0.00")),
+            "period_debit": Decimal("0.00"),
+            "period_credit": Decimal("0.00"),
+            "row_count": 0,
+        })
+        section["period_debit"] += gl.debit
+        section["period_credit"] += gl.credit
+        section["row_count"] += 1
+        period_debit += gl.debit
+        period_credit += gl.credit
+
+        running[party] += _signed_for(gl)
+        net = running[party] + opening[party]
+        status = (
+            "advances" if net > 0 else "payable" if net < 0 else "liquidated"
+        )
+        rows.append(
+            {
+                "date": gl.transaction_date,
+                "ref": gl.entry.entry_no,
+                "entry_pk": gl.entry.id,
+                "source_type": gl.entry.source_doc_type or "",
+                "source_doc_no": gl.entry.source_doc_no or "",
+                "party": party,
+                "particulars": gl.line.description or gl.entry.description,
+                "segment": gl.segment.code if gl.segment else "",
+                "debit": gl.debit,
+                "credit": gl.credit,
+                "net": net,
+                "net_dr": _balance_cell(net, "debit", "debit") if net else None,
+                "net_cr": _balance_cell(net, "debit", "credit") if net else None,
+                "status": status,
+            }
+        )
+
+    section_list = []
+    for party in sorted(sections, key=str.casefold):
+        s = sections[party]
+        closing = s["opening"] + s["period_debit"] - s["period_credit"]
+        status = (
+            "advances" if closing > 0 else "payable" if closing < 0 else "liquidated"
+        )
+        section_list.append(
+            {
+                "party": party,
+                "opening": s["opening"],
+                "opening_dr": _balance_cell(s["opening"], "debit", "debit") if s["opening"] else None,
+                "opening_cr": _balance_cell(s["opening"], "debit", "credit") if s["opening"] else None,
+                "period_debit": s["period_debit"],
+                "period_credit": s["period_credit"],
+                "closing": closing,
+                "closing_dr": _balance_cell(closing, "debit", "debit") if closing else None,
+                "closing_cr": _balance_cell(closing, "debit", "credit") if closing else None,
+                "row_count": s["row_count"],
+                "status": status,
+            }
+        )
+
+    return {
+        "start": start,
+        "end": end,
+        "sections": section_list,
+        "rows": rows,
+        "period_debit": period_debit,
+        "period_credit": period_credit,
+        "total_net": period_debit - period_credit,
+        "total_net_dr": _balance_cell(period_debit - period_credit, "debit", "debit") if period_debit != period_credit else None,
+        "total_net_cr": _balance_cell(period_debit - period_credit, "debit", "credit") if period_debit != period_credit else None,
+        "status_counts": {
+            k: sum(1 for s in section_list if s["status"] == k)
+            for k in ADVANCE_LEDGER_STATUS_LABELS
+        },
+        "unidentified_count": sum(1 for s in section_list if s["party"] == "(Unidentified)"),
+    }
 
 
 def advances_context():

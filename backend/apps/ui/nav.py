@@ -50,6 +50,7 @@ NAV_SECTIONS = [
             {'name': 'ap_aging', 'label': 'AP Aging / Register', 'icon': 'inbox'},
             {'name': 'ap_ledger', 'label': 'AP Subsidiary Ledger', 'icon': 'archive-box'},
             {'name': 'advances', 'label': 'Advances to Employees', 'icon': 'hand-raised'},
+            {'name': 'advances_ledger', 'label': 'Advances Subsidiary Ledger', 'icon': 'clipboard-document-list'},
         ],
     },
     {

@@ -1,0 +1,191 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}Advances Subsidiary Ledger Print{% endblock %}
+{% block content %}
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .sl-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .sl-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .sl-paper td, .sl-paper th { padding: 1px 4px; }
+    .sl-paper tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    .sl-paper .keep-together { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #eef2f6; border-bottom: 1px solid #dce3ea;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .print-toolbar button:last-child:hover { background: #15803d; }
+  .sl-paper {
+    background: #fff; box-shadow: none;
+    margin: 0 auto; padding: 0; width: 100%;
+  }
+  .sl-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .sl-paper td, .sl-paper th { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
+  .sl-paper *, .sl-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  .sl-paper tr.sum-row td { background: #e2efda; }
+</style>
+
+<div class="no-print print-toolbar">
+  <button style="background:#1e293b; color:#fff" onclick="window.print()">Print</button>
+</div>
+
+<div class="sl-paper">
+  <!-- 14-column document grid: every row's colspans sum to exactly 14 -->
+  <table>
+    <colgroup>
+      <col><col><col><col><col><col><col><col><col><col><col><col><col><col>
+    </colgroup>
+    <tbody>
+
+      <!-- ═══ HEADER (3 rows: logo/title rowspan + 2 info rows) ═══ -->
+      <!-- Row 1: logo + title + dept  (3+7+4=14) -->
+      <tr>
+        <td colspan="3" style="text-align:center; vertical-align:middle">
+          <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
+        </td>
+        <td colspan="7" style="text-align:center; vertical-align:middle; font-size:15px; font-weight:900; letter-spacing:.08em; background:#e2efda">
+          ADVANCES SUBSIDIARY LEDGER
+        </td>
+        <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
+          ACCOUNTING DEPARTMENT
+        </td>
+      </tr>
+      <!-- Row 2: Account  (3+7+2+2=14) -->
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600; text-transform:uppercase; letter-spacing:.03em">Account:</td>
+        <td colspan="7" style="font-weight:700">12070 — Advances to Employees</td>
+        <td colspan="2" style="font-weight:600; text-align:right; text-transform:uppercase; letter-spacing:.03em">Segment:</td>
+        <td colspan="2" style="text-align:right">{{ segment_sel|default:"All" }}</td>
+      </tr>
+      <!-- Row 3: Period  (3+11=14) -->
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600; text-transform:uppercase; letter-spacing:.03em">Period:</td>
+        <td colspan="11">
+          {% if win.month %}{{ win.month }}{% elif start or end %}{{ start|default:"" }} to {{ end|default:"" }}{% else %}All posted activity{% endif %}
+        </td>
+      </tr>
+
+      <!-- ═══ PER-EMPLOYEE SUMMARY ═══ -->
+      <tr class="keep-together">
+        <td colspan="14" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Balance Summary — by Employee
+        </td>
+      </tr>
+      <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
+        <th colspan="3" style="font-weight:700; text-align:left">Employee</th>
+        <th colspan="2" style="font-weight:700; text-align:left">Opening</th>
+        <th colspan="2" style="font-weight:700; text-align:right">Debit</th>
+        <th colspan="2" style="font-weight:700; text-align:right">Credit</th>
+        <th colspan="3" style="font-weight:700; text-align:right">Closing</th>
+        <th colspan="2" style="font-weight:700; text-align:left">Status</th>
+      </tr>
+      {% for s in sections %}
+      <tr class="keep-together sum-row" style="font-size:10px; line-height:2; font-weight:600">
+        <td colspan="3">{{ s.party }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">
+          {% if s.opening_dr is not None %}{{ s.opening_dr|money }} <span style="font-size:8px">Dr</span>
+          {% elif s.opening_cr is not None %}{{ s.opening_cr|money }} <span style="font-size:8px">Cr</span>
+          {% else %}—{% endif %}
+        </td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ s.period_debit|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ s.period_credit|money }}</td>
+        <td colspan="3" style="text-align:right; font-variant-numeric:tabular-nums">
+          {% if s.closing_dr is not None %}{{ s.closing_dr|money }} <span style="font-size:8px">Dr</span>
+          {% elif s.closing_cr is not None %}{{ s.closing_cr|money }} <span style="font-size:8px">Cr</span>
+          {% else %}—{% endif %}
+        </td>
+        <td colspan="2">{{ status_labels|get_item:s.status }}</td>
+      </tr>
+      {% endfor %}
+
+      <!-- ═══ TRANSACTION LEDGER ═══ -->
+      <tr class="keep-together">
+        <td colspan="14" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+          Transaction Ledger
+        </td>
+      </tr>
+      <!-- Column headers  (2+2+2+3+1+1+2+1=14) -->
+      <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
+        <th colspan="2" style="font-weight:700; text-align:left; width:9%">Reference</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:8%">Date</th>
+        <th colspan="2" style="font-weight:700; text-align:left; width:12%">Supplier / Employee</th>
+        <th colspan="3" style="font-weight:700; text-align:left; width:28%">Particulars</th>
+        <th colspan="1" style="font-weight:700; text-align:right; width:9%">Debit</th>
+        <th colspan="1" style="font-weight:700; text-align:right; width:9%">Credit</th>
+        <th colspan="2" style="font-weight:700; text-align:right; width:13%">Net Amount</th>
+        <th colspan="1" style="font-weight:700; text-align:left; width:12%">Status</th>
+      </tr>
+      {% for row in rows %}
+      <tr style="font-size:10px; line-height:2;" class="line-row">
+        <td colspan="2" style="white-space:nowrap; font-weight:600">{{ row.ref }}</td>
+        <td colspan="2" style="white-space:nowrap">{{ row.date|date:"Y-m-d" }}</td>
+        <td colspan="2" style="white-space:nowrap">{{ row.party }}</td>
+        <td colspan="3" style="overflow:hidden; text-overflow:ellipsis; white-space:normal">{{ row.particulars|truncatechars:70 }}</td>
+        <td colspan="1" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.debit|money }}</td>
+        <td colspan="1" style="text-align:right; font-variant-numeric:tabular-nums">{{ row.credit|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if row.net_cr is not None %}{{ row.net_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif row.net_dr is not None %}{{ row.net_dr|money }} <span style="font-size:8px">Dr</span>
+          {% else %}—{% endif %}
+        </td>
+        <td colspan="1" style="font-size:9px">{{ status_labels|get_item:row.status }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="14" style="font-size:10px; color:#94a3b8">No posted GL activity touches account 12070 in the selected window.</td>
+      </tr>
+      {% endfor %}
+      <!-- Period Totals  (9 label+....: 2+2+2+3+1+1+2+1=14) -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#e2efda">
+        <td colspan="9" style="text-align:right; text-transform:uppercase; letter-spacing:.03em">Period Totals</td>
+        <td colspan="1" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_debit|money }}</td>
+        <td colspan="1" style="text-align:right; font-variant-numeric:tabular-nums">{{ period_credit|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600">
+          {% if total_net_cr is not None %}{{ total_net_cr|money }} <span style="font-size:8px">Cr</span>
+          {% elif total_net_dr is not None %}{{ total_net_dr|money }} <span style="font-size:8px">Dr</span>
+          {% else %}—{% endif %}
+        </td>
+        <td colspan="1"></td>
+      </tr>
+
+      <!-- ═══ SIGNATURE SECTION ═══ -->
+      <tr class="keep-together" style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em">
+        <td colspan="7">Prepared By:</td>
+        <td colspan="7">Reviewed By:</td>
+      </tr>
+      <tr class="keep-together" style="height:24px">
+        <td colspan="7" style="text-align:center; vertical-align:bottom; height:24px;"></td>
+        <td colspan="7" style="text-align:center; vertical-align:bottom; height:24px;"></td>
+      </tr>
+      <tr class="keep-together" style="font-size:8px; text-transform:uppercase; letter-spacing:.03em; color:#64748b">
+        <td colspan="7" style="text-align:center">Signature over Printed Name</td>
+        <td colspan="7" style="text-align:center">Signature over Printed Name</td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <p style="margin-top:6px; font-size:8px; color:#64748b; text-align:center">
+    All figures from the posted GL projection (ADR-005) on account 12070 — Advances to Employees (incl. posted reversals).
+    Net Amount: Dr = outstanding advance, Cr = payable back to the employee, zero = liquidated/full paid.
+  </p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>
+{% endblock %}

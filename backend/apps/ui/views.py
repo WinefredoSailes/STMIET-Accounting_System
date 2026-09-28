@@ -41,6 +41,8 @@ from .services import (
     StatementService,
     TrialBalanceService,
     advances_context,
+    advances_subsidiary_ledger,
+    ADVANCE_LEDGER_STATUS_LABELS,
     aging_context,
     approved_rfps,
     asset_context,
@@ -7768,6 +7770,90 @@ def advances_export(request):
         money_cols=(4, 5, 6),
         page="landscape",
         totals_row=["", "", "", "", "", "", ctx["total_outstanding"], ""],
+    )
+
+
+@login_required
+def advances_ledger(request):
+    """Derived subsidiary ledger for Advances to Employees (COA 12070).
+
+    Per-employee running net read from the posted GL; the table is the flat
+    register and the strips above summarize each employee's period."""
+    win = _ledger_ctx(request)["win"]
+    data = advances_subsidiary_ledger(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    rows = data.pop("rows")
+    page_obj = _page(request, rows)
+    page_obj.is_last = not page_obj.has_next()
+    data["page_obj"] = page_obj
+    data["status_labels"] = ADVANCE_LEDGER_STATUS_LABELS
+    return render(
+        request,
+        "ui/ap/advances_ledger.html",
+        _ledger_ctx(request, data),
+    )
+
+
+@login_required
+def advances_ledger_export(request):
+    """Exports the same register the screen shows (xlsx/pdf/csv), honoring the
+    shared window + segment filters. Net is signed: Dr positive, Cr negative."""
+    fmt = request.GET.get("format", "xlsx")
+    win = _ledger_ctx(request)["win"]
+    data = advances_subsidiary_ledger(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    rows = [
+        [
+            r["ref"],
+            r["date"].isoformat(),
+            r["party"],
+            r["particulars"],
+            r["debit"],
+            r["credit"],
+            r["net"],
+            ADVANCE_LEDGER_STATUS_LABELS.get(r["status"], r["status"]),
+        ]
+        for r in data["rows"]
+    ]
+    return _table_response(
+        "ADVANCES SUBSIDIARY LEDGER",
+        ["Reference", "Date", "Supplier / Employee", "Particulars", "Debit", "Credit", "Net Amount", "Status"],
+        rows,
+        fmt,
+        "ADVANCES-LEDGER",
+        sheet_title="ADVANCES LEDGER",
+        money_cols=(4, 5, 6),
+        page="landscape",
+        totals_row=[
+            "Period Totals", "", "", "",
+            data["period_debit"], data["period_credit"], data["total_net"], "",
+        ],
+    )
+
+
+@login_required
+def advances_ledger_print(request):
+    """Print-optimized copy of the advances register (browser print dialog)."""
+    win = _ledger_ctx(request)["win"]
+    data = advances_subsidiary_ledger(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+    )
+    data["status_labels"] = ADVANCE_LEDGER_STATUS_LABELS
+    return render(
+        request,
+        "ui/ap/advances_ledger_print.html",
+        _ledger_ctx(request, data),
     )
 
 
