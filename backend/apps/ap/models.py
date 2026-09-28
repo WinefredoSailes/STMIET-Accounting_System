@@ -276,27 +276,40 @@ class PurchaseOrder(AuditableModel):
 
     @property
     def billed_amount(self):
-        """Posted RFP amounts already drawn against this PO.
+        """Posted RFP amounts and posted acquisitions already drawn.
 
         Reversed RFPs are excluded — the payment was undone, so the PO balance
-        is restored (ADR-004 reversal recompute)."""
-        return sum(
+        is restored (ADR-004 reversal recompute). Posted Fixed Asset
+        acquisitions drawing on this PO also consume the balance.
+        """
+        billed = sum(
             (r.amount for r in self.rfps.all() if r.status == "posted" and not r.is_reversed),
             Decimal("0.00"),
         )
+        billed += sum(
+            (a.acquisition_amount for a in self.assets.all() if a.approval_status == "posted"),
+            Decimal("0.00"),
+        )
+        return billed
 
     @property
     def reserved_amount(self):
-        """Approved (fin/cnr) but not yet posted RFP amounts."""
-        return sum(
+        """Approved (fin/cnr) but not yet posted RFP amounts, plus approved
+        (awaiting-post) Fixed Asset acquisitions drawing on this PO."""
+        reserved = sum(
             (r.amount for r in self.rfps.all() if r.status in ("fin_approved", "cnr_approved")),
             Decimal("0.00"),
         )
+        reserved += sum(
+            (a.acquisition_amount for a in self.assets.all() if a.approval_status == "approved"),
+            Decimal("0.00"),
+        )
+        return reserved
 
     @property
     def available_amount(self):
         """Total still billable against this PO."""
-        return self.amount - self.billed_amount - self.reserved_amount
+        return Decimal(self.amount or 0) - self.billed_amount - self.reserved_amount
 
 
 class POLine(models.Model):
@@ -438,6 +451,7 @@ class ActionLog(models.Model):
         TRANSFER = "transfer", "Fund Transfer"
         JE = "je", "Journal Entry"
         BILL = "bill", "Billing"
+        ASSET = "asset", "Fixed Asset"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)

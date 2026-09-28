@@ -1224,7 +1224,9 @@ def coa_rows(*, q="", segment="", account_type=""):
 def list_assets(*, limit=100, q="", category="", segment="", status=""):
     from apps.assets.models import Asset
 
-    rows = Asset.objects.select_related("category", "segment").order_by("asset_no")
+    rows = Asset.objects.select_related(
+        "category", "segment", "supplier", "po", "asset_account", "acquisition_journal", "created_by",
+    ).order_by("asset_no")
     if q:
         rows = rows.filter(Q(name__icontains=q) | Q(asset_no__icontains=q))
     if category:
@@ -1258,6 +1260,8 @@ def asset_context(asset):
         "schedule": asset.depreciation_schedule.order_by("period_start"),
         "accumulated": asset.accumulated_depreciation,
         "nbv": asset.cost - asset.accumulated_depreciation,
+        "distribution": asset.lines.select_related("account", "segment").order_by("line_no"),
+        "purchase_order": asset.po if asset.po_id else None,
     }
 
 

@@ -85,7 +85,7 @@ urlpatterns = [
         include("apps.cash.urls"),
     ),
     path(
-        f"{API_PREFIX}/assets/",
+        f"{API_PREFIX}/",
         include("apps.assets.urls"),
     ),
     path(

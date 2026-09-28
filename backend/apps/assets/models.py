@@ -26,6 +26,24 @@ class AssetStatus(models.TextChoices):
     DISPOSED = "disposed", "Disposed"
 
 
+class AssetApprovalStatus(models.TextChoices):
+    """Acquisition approval lifecycle (mirrors BillingStatus ADR-020-style).
+
+    A new asset starts in ``draft``, is ``submitted`` by its preparer, and
+    waits for the Accounting & Finance Head to ``approved`` it before the
+    acquisition Journal Entry is ``posted``. A rejected acquisition returns
+    to ``draft`` with a rejection note. Existing register rows (pre-0004)
+    were posted under the old immediately-posted contract, so they carry
+    ``posted``.
+    """
+
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted for approval"
+    APPROVED = "approved", "Approved (ready to post)"
+    REJECTED = "rejected", "Rejected"
+    POSTED = "posted", "Posted to GL"
+
+
 class AssetCategory(SoftDeleteMixin, AuditableModel):
     """Asset classification with useful life and account defaults.
 
@@ -74,6 +92,33 @@ class Asset(SoftDeleteMixin, AuditableModel):
     acquisition_date = models.DateField(db_index=True)
     cost = models.DecimalField(max_digits=18, decimal_places=2)
     residual_value = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    # Acquisition metadata (Supplier / PO / Reference / Useful life in months).
+    supplier = models.ForeignKey(
+        "ap.Supplier", null=True, blank=True, on_delete=models.PROTECT, related_name="assets"
+    )
+    po = models.ForeignKey(
+        "ap.PurchaseOrder", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="assets", db_index=True,
+    )
+    reference = models.CharField(max_length=128, blank=True)
+    # Useful life in months overrides the category default (years * 12) when set.
+    useful_life_months = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Acquisition approval lifecycle (Accounting & Finance Head sign-off before
+    # the acquisition JE posts; see AssetApprovalStatus).
+    approval_status = models.CharField(
+        max_length=16, choices=AssetApprovalStatus.choices,
+        default=AssetApprovalStatus.POSTED, db_index=True,
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    revision_count = models.PositiveSmallIntegerField(default=0)
     # COA accounts (POSTING_RULES §9.2 mapping, overridable per asset).
     asset_account = models.ForeignKey(
         "foundation.Account", on_delete=models.PROTECT, related_name="assets_asset"
@@ -101,6 +146,33 @@ class Asset(SoftDeleteMixin, AuditableModel):
         ordering = ["-acquisition_date", "asset_no"]
 
     @property
+    def useful_life_in_months(self) -> int:
+        """Months of useful life: asset override, else category years * 12."""
+        return self.useful_life_months or (self.category.useful_life_years * 12)
+
+    @property
+    def debit_total(self) -> Decimal:
+        from django.db.models import Sum
+
+        return self.lines.aggregate(total=Sum("debit"))["total"] or Decimal("0.00")
+
+    @property
+    def credit_total(self) -> Decimal:
+        from django.db.models import Sum
+
+        return self.lines.aggregate(total=Sum("credit"))["total"] or Decimal("0.00")
+
+    @property
+    def is_balanced(self) -> bool:
+        return self.debit_total == self.credit_total
+
+    @property
+    def acquisition_amount(self) -> Decimal:
+        """Total acquisition JE debit (the full invoice amount incl. VAT/other
+        legs) — the amount drawn against a linked PO."""
+        return self.debit_total
+
+    @property
     def depreciable_base(self) -> Decimal:
         return self.cost - self.residual_value
 
@@ -108,8 +180,7 @@ class Asset(SoftDeleteMixin, AuditableModel):
     def monthly_depreciation(self) -> Decimal:
         from apps.core.money import money
 
-        months = self.category.useful_life_years * 12
-        return money(self.depreciable_base / months)
+        return money(self.depreciable_base / self.useful_life_in_months)
 
     @property
     def accumulated_depreciation(self) -> Decimal:
@@ -131,6 +202,42 @@ class Asset(SoftDeleteMixin, AuditableModel):
 
     def __str__(self):
         return f"{self.asset_no} {self.name} NBV {self.net_book_value} ({self.status})"
+
+
+class AssetLine(models.Model):
+    """One line of an Asset's Account Distribution (mirrors BillingLine).
+
+    Each row is a single line carrying exactly one side (Dr or Cr). The posted
+    acquisition Journal Entry is built from these rows as entered; debits must
+    equal credits. Lines are only editable while the asset is a draft.
+    """
+
+    class Side(models.TextChoices):
+        DEBIT = "dr", "Dr"
+        CREDIT = "cr", "Cr"
+
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="lines")
+    line_no = models.PositiveIntegerField()
+    side = models.CharField(max_length=2, choices=Side.choices, default=Side.DEBIT)
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, related_name="asset_lines"
+    )
+    account = models.ForeignKey(
+        "foundation.Account", on_delete=models.PROTECT, related_name="asset_lines"
+    )
+    cost_center = models.CharField("Cost Center/Ref", max_length=64, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["asset", "line_no"]
+        unique_together = ("asset", "line_no")
+
+    def __str__(self):
+        side = "Dr" if self.debit else "Cr"
+        amount = self.debit or self.credit
+        return f"{self.asset.asset_no} #{self.line_no} {side} {self.account.code} {amount}"
 
 
 class DepreciationSchedule(AuditableModel):

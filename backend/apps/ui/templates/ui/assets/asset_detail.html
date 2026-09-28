@@ -8,14 +8,37 @@
   {% elif asset.status == 'disposed' %}bg-surface-100 text-surface-500
   {% else %}bg-amber-100 text-amber-800{% endif %}
   {% endcapture %}
+  {% capture as approval_badge_color %}
+  {% if asset.approval_status == 'posted' %}bg-emerald-100 text-emerald-800
+  {% elif asset.approval_status == 'approved' %}bg-sky-100 text-sky-800
+  {% elif asset.approval_status == 'submitted' %}bg-amber-100 text-amber-800
+  {% else %}bg-surface-100 text-surface-500{% endif %}
+  {% endcapture %}
   {% capture as asset_title %}{{ asset.asset_no }} · {{ asset.name }}{% endcapture %}
+
   {% capture as asset_actions %}
+  {% include "ui/partials/status_badge.html" with status=asset.approval_status color=approval_badge_color %}
   {% include "ui/partials/status_badge.html" with status=asset.status color=asset_badge_color %}
+  {% if asset.acquisition_journal_id %}
   <a href="{% url 'ui:asset_export' asset.id 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
   <a href="{% url 'ui:asset_export' asset.id 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
   <a href="{% url 'ui:asset_export' asset.id 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
+  {% endif %}
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title=asset_title back_url_name="ui:asset_list" back_label="Assets" actions=asset_actions %}
+
+  {% if asset.rejection_note %}
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+    <span class="font-semibold">Returned for revision:</span> {{ asset.rejection_note }}
+  </div>
+  {% endif %}
+
+  {% if awaiting %}
+  <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+    <span class="font-semibold text-amber-800">Awaiting {{ awaiting.label }}</span>
+    <span class="text-amber-700"> — {{ awaiting.assignee|default:"the approver" }}</span>
+  </div>
+  {% endif %}
 
   <dl class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
@@ -35,8 +58,28 @@
       <dd class="mt-1 font-medium capitalize">{{ asset.funding_source }}{% if asset.financed_loan_reference %} · {{ asset.financed_loan_reference }}{% endif %}</dd>
     </div>
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Supplier</dt>
+      <dd class="mt-1 font-medium">{{ asset.supplier.name|default:"—" }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Purchase order</dt>
+      <dd class="mt-1 font-medium">{% if purchase_order %}<a href="{% url 'ui:po_detail' purchase_order.id %}" class="text-brand-600 hover:underline">{{ purchase_order.po_number }}</a>{% else %}—{% endif %}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Reference</dt>
+      <dd class="mt-1 font-medium">{{ asset.reference|default:"—" }}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Useful life</dt>
+      <dd class="mt-1 font-medium">{{ asset.useful_life_in_months }} months</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Cost</dt>
       <dd class="mt-1 font-medium tabular-nums">{{asset.cost|peso}}</dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Residual value</dt>
+      <dd class="mt-1 font-medium tabular-nums">{{asset.residual_value|peso}}</dd>
     </div>
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Accumulated depreciation</dt>
@@ -46,11 +89,37 @@
       <dt class="text-xs text-surface-500">Net book value</dt>
       <dd class="mt-1 font-semibold tabular-nums">{{nbv|peso}}</dd>
     </div>
-    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
-      <dt class="text-xs text-surface-500">Useful life</dt>
-      <dd class="mt-1 font-medium">{{ asset.category.useful_life_years }} years</dd>
-    </div>
   </dl>
+
+  {% if distribution %}
+  <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
+    <div class="px-4 py-3 border-b border-surface-200 text-sm font-semibold">Account distribution</div>
+    <table class="w-full text-sm min-w-[760px]">
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+        <tr>
+          <th class="px-4 py-2.5">COA</th>
+          <th class="px-4 py-2.5">Account</th>
+          <th class="px-4 py-2.5">Segment</th>
+          <th class="px-4 py-2.5">Description</th>
+          <th class="px-4 py-2.5 text-right">Debit</th>
+          <th class="px-4 py-2.5 text-right">Credit</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-surface-100">
+        {% for line in distribution %}
+        <tr>
+          <td class="px-4 py-2 font-mono text-xs">{{ line.account.code }}</td>
+          <td class="px-4 py-2">{{ line.account.name }}</td>
+          <td class="px-4 py-2">{{ line.segment.code }}</td>
+          <td class="px-4 py-2">{{ line.description }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ line.debit|default:"0.00"|peso }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ line.credit|default:"0.00"|peso }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">
     <div class="px-4 py-3 border-b border-surface-200 text-sm font-semibold">Depreciation schedule</div>
@@ -76,7 +145,7 @@
         {% endfor %}
       </tbody>
     </table>
-    {% if asset.status == "active" %}
+    {% if asset.status == "active" and asset.approval_status == "posted" %}
     <div class="px-4 py-3 border-t border-surface-200">
       <form method="post" action="{% url 'ui:asset_depreciate' asset.id %}" class="flex items-end gap-2">
         {% csrf_token %}
@@ -93,7 +162,37 @@
     {% endif %}
   </div>
 
-  <div class="mt-4 flex items-center gap-3">
+  <div class="mt-6 flex flex-wrap items-center gap-3">
+    {% if asset.approval_status == "draft" %}
+    {% if asset.created_by_id == request.user.id %}
+    <form method="post" action="{% url 'ui:asset_submit' asset.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for approval</button>
+    </form>
+    {% endif %}
+    {% endif %}
+
+    {% if asset.approval_status == "submitted" and awaiting.you_hold %}
+    <form method="post" action="{% url 'ui:asset_approve' asset.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve</button>
+    </form>
+    <form method="post" action="{% url 'ui:asset_reject' asset.id %}" class="flex items-center gap-2">
+      {% csrf_token %}
+      <input type="text" name="note" placeholder="Rejection note" required maxlength="500"
+             class="rounded-md border border-surface-300 px-3 py-2 text-sm">
+      <button type="submit" class="rounded-md border border-rose-200 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject</button>
+    </form>
+    {% endif %}
+
+    {% if asset.approval_status == "approved" and awaiting.you_hold %}
+    <form method="post" action="{% url 'ui:asset_post' asset.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Post acquisition</button>
+    </form>
+    {% endif %}
+
+    {% if asset.approval_status == "posted" %}
     <a href="{% url 'ui:asset_dispose' asset.id %}"
        class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">
       Dispose asset
@@ -104,11 +203,14 @@
       Reverse overstatement
     </a>
     {% endif %}
+    {% endif %}
     {% if asset.acquisition_journal_id %}
     <a href="{% url 'ui:je_detail' asset.acquisition_journal_id %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">
       Acquisition JE →
     </a>
     {% endif %}
   </div>
+
+  {% include "ui/partials/audit_trail.html" with audit_trail=audit_trail %}
 </div>
 {% endblock %}

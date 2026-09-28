@@ -2223,20 +2223,22 @@ class TestAssetScreen:
     def category(self, db, accounts):
         from apps.assets.models import AssetCategory
 
+        mach_acc = accounts.get("17010") or Account.objects.create(
+            code="17010", name="Machinery & Equipment", account_type="asset"
+        )
         return AssetCategory.objects.create(
             code="MACH",
             name="Machinery & Equipment",
             useful_life_years=5,
-            asset_account=accounts["10010"],
+            asset_account=mach_acc,
             depreciation_expense_account=accounts["61100"],
             accumulated_dep_account=accounts["10010"],
         )
 
     def test_asset_lifecycle(self, client, company, segment, accounts, fiscal_period,
-                             user, category):
+                             role_users, category):
         from apps.foundation.models import SegmentAccountMap
 
-        Account.objects.create(code="27000", name="Loans Payable - DHPP", account_type="liability")
         loss_acc = Account.objects.create(code="62000", name="Loss on Disposal", account_type="expense")
         # Data-driven segment default accounts (Phase 2): the COA slice here
         # lacks a loans/gain code, so map only the roles this test exercises.
@@ -2246,22 +2248,48 @@ class TestAssetScreen:
         SegmentAccountMap.objects.create(
             segment=segment, role=SegmentAccountMap.ROLE_DISPOSAL_LOSS, account=loss_acc
         )
+        client.force_login(role_users["staff"])
         resp = client.post("/assets/new/", {
             "name": "Diesel Generator",
             "category": category.id,
             "segment": segment.id,
             "acquisition_date": "2026-01-15",
-            "cost": "80000.00",
+            "useful_life_months": "60",
             "residual_value": "8000.00",
-            "acquisition_fees": "0.00",
-            "funding_source": "cash",
-            "financed_loan_reference": "",
+            "reference": "GEN-AQ-001",
+            "line_account": [str(category.asset_account_id), str(accounts["10010"].id)],
+            "line_segment": [str(segment.id), str(segment.id)],
+            "line_debit": ["80000.00", ""],
+            "line_credit": ["", "80000.00"],
+            "line_description": ["Purchase of generator", "Paid from cash"],
+            "line_cost_center": ["", ""],
         })
         assert resp.status_code == 302
         from apps.assets.models import Asset
 
         asset = Asset.objects.get()
         assert asset.asset_no == "FA-2026-0001"
+        assert asset.approval_status == "draft"
+        assert not asset.acquisition_journal_id
+        assert asset.cost == 80000
+        assert asset.useful_life_in_months == 60
+
+        resp = client.post(f"/assets/{asset.id}/submit/")
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.approval_status == "submitted"
+
+        client.force_login(role_users["head"])
+        resp = client.post(f"/assets/{asset.id}/approve/")
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.approval_status == "approved"
+        assert asset.approved_by_id == role_users["head"].id
+
+        resp = client.post(f"/assets/{asset.id}/post/")
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.approval_status == "posted"
         assert asset.status == "active"
         assert asset.acquisition_journal_id
         assert asset.acquisition_journal.is_posted
@@ -2282,6 +2310,199 @@ class TestAssetScreen:
         asset.refresh_from_db()
         assert asset.status == "disposed"
         assert asset.disposal.status == "posted"
+
+    def test_asset_po_reserved_billed(self, client, company, segment, accounts,
+                                      fiscal_period, role_users, category):
+        """Acquiring against a PO reserves at head approval and bills at post."""
+        from apps.ap.models import PurchaseOrder, Supplier
+        from apps.foundation.models import SegmentAccountMap
+        from apps.assets.models import Asset
+
+        SegmentAccountMap.objects.create(
+            segment=segment, role=SegmentAccountMap.ROLE_CASH, account=accounts["10010"]
+        )
+        supplier = Supplier.objects.create(code="S001", name="STPC Holdings", default_segment=segment)
+        po = PurchaseOrder.objects.create(
+            po_number="2026-0100", po_date="2026-01-05", supplier=supplier,
+            segment=segment, amount="120000.00", status="approved",
+        )
+        client.force_login(role_users["staff"])
+        resp = client.post("/assets/new/", {
+            "name": "Forklift",
+            "category": category.id,
+            "segment": segment.id,
+            "acquisition_date": "2026-01-15",
+            "useful_life_months": "36",
+            "residual_value": "8000.00",
+            "supplier": supplier.id,
+            "po": po.id,
+            "reference": "GEN / GB-DHPP-01-2026-0100",
+            "line_account": [str(category.asset_account_id), str(accounts["10010"].id)],
+            "line_segment": [str(segment.id), str(segment.id)],
+            "line_debit": ["90000.00", ""],
+            "line_credit": ["", "90000.00"],
+            "line_description": ["Purchase of forklift", "Paid from cash"],
+            "line_cost_center": ["", ""],
+        })
+        assert resp.status_code == 302
+        asset = Asset.objects.get()
+        assert asset.po_id == po.id
+        assert po.available_amount == Decimal("120000.00")
+
+        # Submitted assets join the head's "Fixed Asset" approval queue.
+        client.post(f"/assets/{asset.id}/submit/")
+        from apps.core.approvals import pending_approval_queue
+
+        items = [i for i in pending_approval_queue(role_users["head"]) if i["kind"] == "asset"]
+        assert [i["doc"].id for i in items] == [asset.id]
+        assert items[0]["number"] == asset.asset_no
+
+        # Head approval reserves against the PO.
+        client.force_login(role_users["head"])
+        resp = client.post(f"/assets/{asset.id}/approve/")
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        po.refresh_from_db()
+        assert asset.approval_status == "approved"
+        assert po.reserved_amount == Decimal("90000.00")
+        assert po.available_amount == Decimal("30000.00")
+
+        # Approving a second asset cannot overdraw the PO.
+        client.force_login(role_users["staff"])
+        resp = client.post("/assets/new/", {
+            "name": "Forklift Mk II",
+            "category": category.id,
+            "segment": segment.id,
+            "acquisition_date": "2026-02-01",
+            "useful_life_months": "36",
+            "residual_value": "0.00",
+            "supplier": supplier.id,
+            "po": po.id,
+            "line_account": [str(category.asset_account_id), str(accounts["10010"].id)],
+            "line_segment": [str(segment.id), str(segment.id)],
+            "line_debit": ["50000.00", ""],
+            "line_credit": ["", "50000.00"],
+            "line_description": ["Purchase of second forklift", "Paid from cash"],
+            "line_cost_center": ["", ""],
+        })
+        assert resp.status_code == 302
+        second = Asset.objects.exclude(pk=asset.pk).get()
+        client.post(f"/assets/{second.id}/submit/")
+        client.force_login(role_users["head"])
+        refuse = client.post(f"/assets/{second.id}/approve/")
+        assert refuse.status_code == 302
+        second.refresh_from_db()
+        assert second.approval_status != "approved"
+
+        # Posting the first one bills the PO and frees nothing for the second.
+        client.post(f"/assets/{asset.id}/post/")
+        asset.refresh_from_db()
+        po.refresh_from_db()
+        assert asset.approval_status == "posted"
+        assert po.billed_amount == Decimal("90000.00")
+        assert po.reserved_amount == Decimal("0.00")
+        assert po.available_amount == Decimal("30000.00")
+
+    def test_asset_new_renders(self, client, segment, role_users):
+        client.force_login(role_users["staff"])
+        assert client.get("/assets/new/").status_code == 200
+        assert client.get("/assets/").status_code == 200
+
+    def test_api_create_draft_and_lifecycle(self, segment, accounts,
+                                            role_users, category):
+        """DRF: POST drafts with a grid, lifecycle actions mirror the UI."""
+        from rest_framework.test import APIClient
+        from apps.foundation.models import SegmentAccountMap
+        from apps.assets.models import Asset
+
+        SegmentAccountMap.objects.create(
+            segment=segment, role=SegmentAccountMap.ROLE_CASH, account=accounts["10010"]
+        )
+        staff_api = APIClient()
+        staff_api.force_authenticate(user=role_users["staff"])
+        head_api = APIClient()
+        head_api.force_authenticate(user=role_users["head"])
+
+        resp = staff_api.post(
+            "/api/v1/assets/",
+            {
+                "asset_no": "FA-2026-0099",
+                "name": "API Aircon",
+                "category": category.id,
+                "segment": segment.id,
+                "acquisition_date": "2026-01-15",
+                "useful_life_months": 60,
+                "residual_value": "5000.00",
+                "lines": [
+                    {"side": "dr", "segment": segment.id,
+                     "account": category.asset_account.code, "amount": "55000.00",
+                     "description": "x"},
+                    {"side": "cr", "segment": segment.id,
+                     "account": accounts["10010"].code, "amount": "55000.00",
+                     "description": "y"},
+                ],
+            },
+            format="json",
+        )
+        assert resp.status_code == 201
+        asset = Asset.objects.get()
+        assert asset.approval_status == "draft"
+        assert not asset.acquisition_journal_id
+        assert resp.data["lines"][0]["account_code"] == category.asset_account.code
+        assert resp.data["useful_life_in_months"] == 60
+
+        resp = staff_api.post(f"/api/v1/assets/{asset.id}/submit/")
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.approval_status == "submitted"
+
+        resp = head_api.post(f"/api/v1/assets/{asset.id}/approve/")
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.approval_status == "approved"
+
+        resp = head_api.post(f"/api/v1/assets/{asset.id}/post/")
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.approval_status == "posted"
+        assert asset.acquisition_journal_id
+        assert asset.acquisition_journal.is_posted
+
+        # Non-heads cannot approve via the API.
+        resp = staff_api.post(f"/api/v1/assets/{asset.id}/submit/")
+        assert resp.status_code in (400, 403)
+
+    def test_asset_detail_page_shows_approval_state(self, client, company, segment,
+                                                    accounts, fiscal_period, role_users, category):
+        from apps.assets.models import Asset
+        from apps.foundation.models import SegmentAccountMap
+
+        SegmentAccountMap.objects.create(
+            segment=segment, role=SegmentAccountMap.ROLE_CASH, account=accounts["10010"]
+        )
+        client.force_login(role_users["staff"])
+        resp = client.post("/assets/new/", {
+            "name": "Aircon",
+            "category": category.id,
+            "segment": segment.id,
+            "acquisition_date": "2026-01-15",
+            "useful_life_months": "60",
+            "residual_value": "5000.00",
+            "line_account": [str(category.asset_account_id), str(accounts["10010"].id)],
+            "line_segment": [str(segment.id), str(segment.id)],
+            "line_debit": ["55000.00", ""],
+            "line_credit": ["", "55000.00"],
+            "line_description": ["Purchase of aircon", "Paid from cash"],
+            "line_cost_center": ["", ""],
+        })
+        assert resp.status_code == 302
+        asset = Asset.objects.get()
+        body = client.get(f"/assets/{asset.id}/").content.decode()
+        assert "Draft" in body
+        assert "55,000.00" in body
+        client.post(f"/assets/{asset.id}/submit/")
+        body = client.get(f"/assets/{asset.id}/").content.decode()
+        assert "Submitted" in body
 
     def test_asset_detail_shows_schedule(self, client, company, segment, accounts,
                                          fiscal_period, user, category, segment_account_map):

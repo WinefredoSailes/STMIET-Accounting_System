@@ -1,62 +1,228 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}New Fixed Asset{% endblock %}
 {% block content %}
 <div class="p-6">
-  {% include "ui/partials/page_header.html" with title="New Fixed Asset" subtitle="Acquisition posts the 9.1 JE (Dr Asset | Cr funding source) immediately. FA-YYYY-#### auto-assigned (ADR-034)." back_url_name="ui:asset_list" back_label="Assets" %}
+  <a href="{% url 'ui:asset_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr; Fixed assets</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-surface-900">New Fixed Asset</h1>
+    <span class="text-xs text-surface-400">
+      FA-YYYY-#### auto-assigned (ADR-034) · Draft, then submit for the Accounting &amp; Finance Head's approval
+    </span>
+  </div>
 
-  {% capture as form_fields %}
-  <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_name">Name</label>
-    <input type="text" name="name" id="id_name" required maxlength="255"
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_category">Category</label>
-    <select name="category" id="id_category" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-      {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.code }} — {{ cat.name }} ({{ cat.useful_life_years }} yrs)</option>{% endfor %}
-    </select>
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_segment">Segment</label>
-    <select name="segment" id="id_segment" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-      {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
-    </select>
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_acquisition_date">Acquisition date</label>
-    <input type="date" name="acquisition_date" id="id_acquisition_date" required
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_cost">Cost (₱)</label>
-    <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="cost" id="id_cost" required
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_residual_value">Residual value (₱)</label>
-    <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="residual_value" id="id_residual_value" value="0.00"
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_acquisition_fees">Acquisition fees (₱)</label>
-    <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="acquisition_fees" id="id_acquisition_fees" value="0.00"
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
-  </div>
-  <div>
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_funding_source">Funding source</label>
-    <select name="funding_source" id="id_funding_source" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-      <option value="cash">Cash</option>
-      <option value="ap">Accounts Payable</option>
-      <option value="loan">Loan</option>
-    </select>
-  </div>
-  <div class="md:col-span-2">
-    <label class="block text-sm font-medium text-surface-700 mb-1" for="id_financed_loan_reference">Loan reference (if financed)</label>
-    <input type="text" name="financed_loan_reference" id="id_financed_loan_reference"
-           class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-  </div>
-  {% endcapture %}
-  {% include "ui/partials/form_card.html" with fields_html=form_fields submit_label="Acquire asset" %}
+  <form method="post" class="mt-6 space-y-6">
+    {% csrf_token %}
+
+    <!-- ===================== HEADER ===================== -->
+    <div class="rounded-xl border border-surface-200 bg-white px-6 py-5 shadow-sm">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_name">Name</label>
+            <input type="text" name="name" id="id_name" required maxlength="255"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_category">Category</label>
+            <select name="category" id="id_category" required class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+              {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.code }} — {{ cat.name }} ({{ cat.useful_life_years }} yrs)</option>{% endfor %}
+            </select>
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_segment">Segment</label>
+            <select name="segment" id="id_segment" required class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+              {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_supplier">Supplier</label>
+            <select name="supplier" id="id_supplier" data-searchable data-search-compact
+                    data-search-placeholder="Search recorded suppliers…"
+                    data-search-url="{% url 'ui:supplier_options' %}"
+                    data-search-value="id"
+                    class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm">
+              <option value="">— select supplier (optional) —</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_acquisition_date">Acquisition date</label>
+            <input type="date" name="acquisition_date" id="id_acquisition_date" required
+                   value="{{ today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_po">Purchase Order</label>
+            <select name="po" id="id_po" data-searchable data-search-compact
+                    data-search-placeholder="Search approved PO with available balance…"
+                    data-search-url="{% url 'ui:asset_po_options' %}"
+                    data-search-value="id"
+                    class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm">
+              <option value="">— select PO (optional) —</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_reference">Reference</label>
+            <input type="text" name="reference" id="id_reference" maxlength="128"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_useful_life_months">Useful life (months)</label>
+            <input type="number" name="useful_life_months" id="id_useful_life_months" min="1" max="600"
+                   placeholder="leave blank to use category life"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_residual_value">Residual value (₱)</label>
+            <input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="residual_value" id="id_residual_value" value="0.00"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm text-right tabular-nums">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== ACCOUNT DISTRIBUTION ===================== -->
+    <div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Account Distribution</div>
+      <div class="rounded-xl border border-surface-200 bg-white shadow-sm overflow-x-auto">
+        <table class="line-table w-full text-sm" style="min-width: 1210px;">
+          <colgroup>
+            <col style="width:44px"><!-- # -->
+            <col style="width:80px"><!-- COA -->
+            <col style="width:230px"><!-- Account Name -->
+            <col style="width:90px"><!-- Segment -->
+            <col style="width:150px"><!-- Cost Center -->
+            <col style="width:300px"><!-- Description -->
+            <col style="width:160px"><!-- Debit -->
+            <col style="width:160px"><!-- Credit -->
+            <col style="width:36px"><!-- remove -->
+          </colgroup>
+          <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+            <tr>
+              <th class="px-3 py-3">#</th>
+              <th class="px-3 py-3">COA</th>
+              <th class="px-3 py-3">Account Name</th>
+              <th class="px-3 py-3">Segment</th>
+              <th class="px-3 py-3">Cost Center</th>
+              <th class="px-3 py-3">Description</th>
+              <th class="px-3 py-3 text-right">Debit</th>
+              <th class="px-3 py-3 text-right">Credit</th>
+              <th class="px-3 py-3"></th>
+            </tr>
+          </thead>
+          <tbody id="lines-body" data-line-grid="je"
+                 data-total-debit="#total-debit" data-total-credit="#total-credit" data-hint="#balance-hint"
+                 class="divide-y divide-surface-100">
+            <tr>
+              <td class="px-3 py-2 text-surface-400 line-no">1</td>
+              <td class="px-3 py-2"><span class="coa-display font-mono text-xs whitespace-nowrap"></span></td>
+              <td class="px-3 py-2">
+                <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?scope=all" data-search-value="id" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  <option value="">— select —</option>
+                </select>
+              </td>
+              <td class="px-3 py-2">
+                <select name="line_segment" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                  {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+                </select>
+              </td>
+              <td class="px-3 py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. OS, GEN-FUEL" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2"><textarea name="line_description" data-autogrow rows="1" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></textarea></td>
+              <td class="px-3 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+              <td class="px-3 py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-credit"></td>
+              <td class="px-3 py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
+            </tr>
+          </tbody>
+          <tfoot class="bg-surface-50">
+            <tr class="border-t-2 border-surface-300">
+              <td colspan="6" class="px-3 py-3 text-right text-sm font-bold uppercase tracking-wider text-surface-700">Totals</td>
+              <td id="total-debit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td id="total-credit" class="px-3 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="9" class="px-3 py-2">
+                <button type="button" id="add-line" data-add-row class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">+ Add line</button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p id="balance-hint" class="mt-2 text-xs text-surface-500">
+        Enter each line's amount in either the Debit or the Credit column — not both.
+        The register cost is the total of Dr lines on fixed-asset accounts (16xxx-19xxx); the
+        credit legs define the funding source (AP / Cash / Loans).
+      </p>
+      <datalist id="cost_center_options">
+        {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+      </datalist>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Save asset (draft)</button>
+    </div>
+  </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/line-grid.js' %}"></script>
+<script>
+  (function () {
+    // Keep a hidden segment field for the POST (billing-style line grid).
+    var hidden = document.getElementById("id_segment");
+    function syncSegment() {
+      var first = document.querySelector('#lines-body select[name="line_segment"]');
+      if (hidden && first && first.value) hidden.value = first.value;
+    }
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('select[name="line_segment"]')) syncSegment();
+    });
+    document.getElementById("add-line").addEventListener("click", function () {
+      setTimeout(function () {
+        var rows = document.querySelectorAll('#lines-body tr');
+        var last = rows[rows.length - 1];
+        if (last) {
+          var seg = last.querySelector('select[name="line_segment"]');
+          if (seg && hidden && hidden.value) seg.value = hidden.value;
+        }
+      }, 0);
+    });
+    syncSegment();
+
+    // Split the account picker display into COA code + Account Name.
+    function splitAccountText(text) {
+      var parts = String(text || '').trim().split(/\s+/);
+      var code = parts.length ? parts[0] : '';
+      var rest = String(text || '').replace(/^\s*\S+\s*/, '').replace(/^[—-]\s*/, '').trim();
+      return { code: code, name: rest };
+    }
+    function syncAccountDisplay(sel) {
+      var row = sel.closest('tr');
+      var coaSpan = row ? row.querySelector('.coa-display') : null;
+      var opt = sel.options[sel.selectedIndex];
+      if (coaSpan) coaSpan.textContent = (opt && opt.value) ? splitAccountText(opt.textContent).code : '';
+    }
+document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('select[name="line_account"]')) syncAccountDisplay(e.target);
+    });
+
+    // The PO picker is scoped to the chosen supplier: refresh its search URL
+    // whenever the supplier changes (mirrors the RFP form's payee -> PO link).
+    var supplierSel = document.getElementById("id_supplier");
+    var poSel = document.getElementById("id_po");
+    var poBase = "{% url 'ui:asset_po_options' %}";
+    if (supplierSel && poSel) {
+      document.addEventListener("change", function (e) {
+        if (!e.target || e.target.id !== "id_supplier") return;
+        var url = new URL(poBase, window.location.origin);
+        if (supplierSel.value) url.searchParams.set("supplier", supplierSel.value);
+        poSel.dataset.searchUrl = url.toString();
+      });
+    }
+  })();
+</script>
 {% endblock %}

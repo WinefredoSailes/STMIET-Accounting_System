@@ -3659,22 +3659,47 @@ def asset_create(request):
                 company=company, form_code="FA", year=int(request.POST["acquisition_date"][:4]),
                 pattern="FA-{YYYY}-{SEQ:04d}",
             )
-            asset = AssetService.acquire(
+            lines = _billing_lines_from_form(request)
+            if not lines:
+                raise ValidationError("Add at least one account distribution line.")
+
+            supplier = po = None
+            supplier_pk = (request.POST.get("supplier") or "").strip()
+            if supplier_pk:
+                from apps.ap.models import Supplier
+
+                supplier = Supplier.objects.filter(pk=supplier_pk).first()
+                if supplier is None:
+                    raise ValidationError("Select a valid supplier.")
+            po_pk = (request.POST.get("po") or "").strip()
+            if po_pk:
+                from apps.ap.models import PurchaseOrder
+
+                po = PurchaseOrder.objects.filter(pk=po_pk).first()
+                if po is None:
+                    raise ValidationError("Select a valid purchase order.")
+                if supplier is not None and po.supplier_id != supplier.id:
+                    raise ValidationError(
+                        f"PO {po.po_number} belongs to {po.supplier.name}, not {supplier.name}."
+                    )
+
+            asset = AssetService.create_asset(
                 asset_no=asset_no,
                 name=request.POST["name"].strip(),
                 category=category,
                 segment=segment,
                 acquisition_date=date.fromisoformat(request.POST["acquisition_date"]),
-                cost=request.POST["cost"],
                 residual_value=request.POST.get("residual_value", "0.00"),
-                funding_source=request.POST["funding_source"],
-                financed_loan_reference=request.POST.get("financed_loan_reference", ""),
-                acquisition_fees=request.POST.get("acquisition_fees", "0.00"),
+                useful_life_months=_parse_int(request.POST.get("useful_life_months", "")),
+                supplier=supplier,
+                po=po,
+                reference=request.POST.get("reference", ""),
+                lines=lines,
                 user=request.user,
             )
-            messages.success(request, f"Asset {asset.asset_no} acquired and posted.")
+            messages.success(request, f"Asset {asset.asset_no} saved as a draft — submit it for approval.")
             return redirect("ui:asset_detail", pk=asset.id)
-        except AccountingError as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     return render(
         request,
@@ -3682,16 +3707,138 @@ def asset_create(request):
         {
             "categories": AssetCategory.objects.filter(is_active=True).order_by("code"),
             "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+            "today": date.today(),
         },
     )
 
 
 @login_required
+def asset_po_options(request):
+    """Type-ahead source for the asset form's Purchase Order picker: approved
+    POs still holding available balance, narrowed by supplier via ``?supplier``."""
+    from apps.ap.models import PurchaseOrder
+
+    q = request.GET.get("q", "").strip()
+    supplier = request.GET.get("supplier", "").strip()
+    qs = PurchaseOrder.objects.filter(status="approved").select_related("supplier").order_by("-po_number")
+    if supplier:
+        if supplier.isdigit():
+            qs = qs.filter(supplier_id=int(supplier))
+        else:
+            qs = qs.filter(supplier__code=supplier)
+    if q:
+        qs = qs.filter(Q(po_number__icontains=q) | Q(supplier__name__icontains=q))
+    rows = [po for po in qs[:40] if po.available_amount > 0]
+    return JsonResponse(
+        [
+            {
+                "id": po.id,
+                "code": po.po_number,
+                "text": f"{po.po_number} — {po.supplier.name}",
+                "available": str(po.available_amount),
+            }
+            for po in rows
+        ],
+        safe=False,
+    )
+
+
+@login_required
+@require_POST
+def asset_submit(request, pk):
+    from apps.assets.models import Asset
+    from apps.assets.services import AssetService
+
+    asset = get_object_or_404(Asset, pk=pk)
+    if asset.created_by_id not in (None, request.user.id):
+        messages.error(request, "Only the preparer may submit this asset.")
+        return redirect(_safe_next(request, "ui:asset_detail", pk))
+    try:
+        AssetService.submit(asset, user=request.user)
+        messages.success(request, f"Asset {asset.asset_no} submitted for approval.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:asset_detail", pk))
+
+
+@login_required
+@require_POST
+def asset_approve(request, pk):
+    from apps.assets.models import Asset
+    from apps.assets.services import AssetService
+
+    asset = get_object_or_404(Asset, pk=pk)
+    try:
+        AssetService.approve(asset, user=request.user)
+        messages.success(request, f"Asset {asset.asset_no} approved — ready to post.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:asset_detail", pk))
+
+
+@login_required
+@require_POST
+def asset_reject(request, pk):
+    from apps.assets.models import Asset
+    from apps.assets.services import AssetService
+
+    asset = get_object_or_404(Asset, pk=pk)
+    try:
+        AssetService.reject(asset, user=request.user, note=request.POST.get("note", ""))
+        messages.success(request, f"Asset {asset.asset_no} returned for revision.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:asset_detail", pk))
+
+
+@login_required
+@require_POST
+def asset_post(request, pk):
+    from apps.assets.models import Asset
+    from apps.assets.services import AssetService
+
+    asset = get_object_or_404(Asset, pk=pk)
+    try:
+        entry = AssetService.post(asset, user=request.user)
+        messages.success(request, f"Asset {asset.asset_no} posted as {entry.entry_no}.")
+    except (AccountingError, ValueError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:asset_detail", pk))
+
+
+@login_required
 def asset_detail(request, pk):
     from apps.assets.models import Asset
+    from apps.core.approvals import (
+        ASSET_NEXT_ROLE,
+        ROLE_LABELS,
+        approval_role_of,
+        role_assignee,
+    )
 
-    asset = get_object_or_404(Asset.objects.select_related("category", "segment"), pk=pk)
-    return render(request, "ui/assets/asset_detail.html", asset_context(asset))
+    asset = get_object_or_404(
+        Asset.objects.select_related("category", "segment", "supplier", "po")
+        .prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    awaiting = None
+    role = ASSET_NEXT_ROLE.get(asset.approval_status)
+    if role:
+        awaiting = {
+            "role": role,
+            "label": ROLE_LABELS[role],
+            "assignee": role_assignee(role),
+            "you_hold": approval_role_of(request.user) == role,
+        }
+    ctx = asset_context(asset)
+    ctx.update(
+        {
+            "awaiting": awaiting,
+            "audit_trail": _doc_audit_trail("asset", asset.id, asset.acquisition_journal),
+        }
+    )
+    return render(request, "ui/assets/asset_detail.html", ctx)
 
 
 @login_required
@@ -7459,17 +7606,32 @@ request.GET,
 
 @login_required
 def assets_list_export(request):
-    """Fixed assets register export honoring the screen's filters."""
+    """Fixed Asset Registry export honoring the screen's filters.
+
+    The face of the printable/exportable registry (ADR-034 / POSTING_RULES §9):
+    identification + acquisition facts per asset, including the asset-account,
+    supplier, linked PO, residual value, useful life, approval and JE status.
+    """
     fmt = request.GET.get("format", "xlsx")
     rows = [
         [
             a.asset_no,
             a.name,
+            a.category.code if a.category else "",
             a.category.name if a.category else "",
             a.segment.code if a.segment else "",
-            a.acquisition_date.isoformat(),
+            a.acquisition_date.isoformat() if a.acquisition_date else "",
+            a.asset_account.code,
+            a.supplier.name if a.supplier_id else "",
+            a.po.po_number if a.po_id else "",
+            a.reference or "",
             a.cost,
+            a.residual_value,
+            a.useful_life_in_months,
             a.status,
+            a.approval_status,
+            a.acquisition_journal.entry_no if a.acquisition_journal_id else "",
+            a.created_by.get_full_name() or a.created_by.username if a.created_by else "",
         ]
         for a in list_assets(
             limit=None,
@@ -7480,13 +7642,15 @@ def assets_list_export(request):
         )
     ]
     return _table_response(
-        "FIXED ASSETS REGISTER",
-        ["Asset No", "Name", "Category", "Segment", "Acquired", "Cost", "Status"],
+        "FIXED ASSET REGISTRY",
+        ["Asset No", "Name", "Category Code", "Category", "Segment", "Acquired",
+         "Asset Acct", "Supplier", "PO", "Reference", "Cost", "Residual",
+         "Life (mos)", "Status", "Approval", "JE", "Prepared By"],
         rows,
         fmt,
-        "ASSET-REGISTER",
-        sheet_title="ASSETS",
-        money_cols=(5,),
+        "ASSET-REGISTRY",
+        sheet_title="ASSET REGISTRY",
+        money_cols=(10, 11),
         page="landscape",
     )
 

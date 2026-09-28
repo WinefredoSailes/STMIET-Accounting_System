@@ -67,6 +67,12 @@ BILLING_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Fixed Asset acquisition approval: staff creates/submits → head approves
+# (and then posts the acquisition Journal Entry).
+ASSET_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 # Acknowledgment Receipt status -> next approval role (ADR-033).
 # Same pattern: head checks and approves at every step; no amount threshold.
 AR_NEXT_ROLE = {
@@ -429,6 +435,10 @@ def je_queue(user_roles):
             | Q(pcf_replenishments__isnull=False)
             | Q(ar_receipts__isnull=False)
             | Q(ar_deposits__isnull=False)
+            | Q(assets_acquired__isnull=False)
+            | Q(depreciation_rows__isnull=False)
+            | Q(asset_disposals__isnull=False)
+            | Q(asset_reversals__isnull=False)
         )
     )
     for je in docs:
@@ -594,6 +604,43 @@ def billing_queue(user_roles):
     return out
 
 
+def asset_queue(user_roles):
+    """Fixed Asset acquisitions waiting on `user_roles` (head only).
+
+    Assets in "submitted" status wait on the Accounting & Finance Head, who
+    approves and then posts the acquisition Journal Entry (mirrors billing).
+    """
+    if "head" not in user_roles:
+        return []
+    from apps.assets.models import Asset, AssetApprovalStatus
+
+    out = []
+    docs = (
+        Asset.objects.filter(approval_status=AssetApprovalStatus.SUBMITTED)
+        .select_related("segment", "created_by", "supplier", "po", "category")
+        .order_by("acquisition_date", "asset_no")
+    )
+    for asset in docs:
+        title = f"{asset.name} · {asset.category.name}"
+        if asset.supplier_id:
+            title = f"{title} · {asset.supplier.name}"
+        out.append(
+            {
+                "kind": "asset",
+                "role": "head",
+                "doc": asset,
+                "number": asset.asset_no,
+                "title": title,
+                "date": asset.acquisition_date,
+                "amount": asset.acquisition_amount,
+                "detail": ("ui:asset_detail", asset.id),
+                "action": ("ui:asset_approve", asset.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pcf_queue(user_roles):
     """Petty cash replenishments waiting on the head.
 
@@ -679,6 +726,7 @@ def pending_approval_queue(user):
         + ar_receipt_queue({role})
         + ar_invoice_queue({role})
         + billing_queue({role})
+        + asset_queue({role})
         + pcf_queue({role})
         + customer_queue({role})
     )

@@ -1,6 +1,9 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+
+from apps.core.exceptions import ValidationError as CoreValidationError
 
 from .models import Asset, AssetCategory, AssetDisposal, DepreciationSchedule
 from .serializers import (
@@ -25,35 +28,135 @@ class AssetViewSet(viewsets.ModelViewSet):
     search_fields = ["asset_no", "name"]
     filterset_fields = ["category", "segment", "status"]
 
+    def update(self, request, *args, **kwargs):
+        asset = self.get_object()
+        if asset.approval_status == "posted":
+            raise ValidationError("Posted assets are locked. Reversal or disposal applies.")
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        asset = self.get_object()
+        if asset.approval_status in ("submitted", "approved", "posted"):
+            raise ValidationError("Submitted, approved or posted assets cannot be deleted.")
+        return super().destroy(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
-        from apps.foundation.models import Segment
+        from apps.foundation.models import Account, Segment
         from .models import AssetCategory, Asset
 
         data = request.data
-        segment = Segment.objects.get(pk=data.get("segment"))
-        category = AssetCategory.objects.get(pk=data.get("category"))
-        vehicle = None
-        if data.get("vehicle"):
-            from apps.fleet.models import Vehicle
+        try:
+            segment = Segment.objects.get(pk=data.get("segment"))
+            category = AssetCategory.objects.get(pk=data.get("category"))
+            vehicle = None
+            if data.get("vehicle"):
+                from apps.fleet.models import Vehicle
 
-            vehicle = Vehicle.objects.get(pk=data.get("vehicle"))
+                vehicle = Vehicle.objects.get(pk=data.get("vehicle"))
 
-        asset = AssetService.acquire(
-            asset_no=data.get("asset_no"),
-            name=data.get("name"),
-            category=category,
-            segment=segment,
-            acquisition_date=data.get("acquisition_date"),
-            cost=data.get("cost"),
-            residual_value=data.get("residual_value", "0.00"),
-            funding_source=data.get("funding_source", "cash"),
-            financed_loan_reference=data.get("financed_loan_reference", ""),
-            acquisition_fees=data.get("acquisition_fees", "0.00"),
-            vehicle=vehicle,
-            user=request.user,
-        )
+            supplier = po = None
+            if data.get("supplier"):
+                from apps.ap.models import Supplier
+
+                supplier = Supplier.objects.get(pk=data.get("supplier"))
+            if data.get("po"):
+                from apps.ap.models import PurchaseOrder
+
+                po = PurchaseOrder.objects.get(pk=data.get("po"))
+
+            lines = data.get("lines") or [
+                {
+                    "side": "dr", "segment": segment.id,
+                    "account": data.get("asset_account"),
+                    "amount": data.get("cost"),
+                    "description": f"Acquisition of {data.get('name')}",
+                },
+                {
+                    "side": "cr", "segment": segment.id,
+                    "account": self._funding_account(segment, data.get("funding_source", "cash")),
+                    "amount": data.get("cost"),
+                    "description": f"Funded by {data.get('funding_source', 'cash')}",
+                },
+            ]
+            resolved_lines = []
+            for raw in lines:
+                line = dict(raw)
+                acc = Account.objects.filter(pk=line.get("account")).first()
+                if acc is None:
+                    acc = Account.objects.filter(code=line.get("account")).first()
+                if acc is None:
+                    raise ValidationError(f"Unknown account '{line.get('account')}'.")
+                line["account"] = acc
+                line["account_code"] = acc.code
+                line["segment"] = Segment.objects.get(pk=line["segment"]) if line.get("segment") else segment
+                resolved_lines.append(line)
+
+            asset = AssetService.create_asset(
+                asset_no=data.get("asset_no"),
+                name=data.get("name"),
+                category=category,
+                segment=segment,
+                acquisition_date=data.get("acquisition_date"),
+                lines=resolved_lines,
+                residual_value=data.get("residual_value", "0.00"),
+                useful_life_months=data.get("useful_life_months") or None,
+                supplier=supplier,
+                po=po,
+                reference=data.get("reference", ""),
+                vehicle=vehicle,
+                user=request.user,
+            )
+        except CoreValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         out = self.get_serializer(asset)
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _funding_account(segment, funding_source):
+        from apps.foundation.models import SegmentAccountMap, resolve_segment_account
+
+        role = {
+            "ap": SegmentAccountMap.ROLE_AP,
+            "cash": SegmentAccountMap.ROLE_CASH,
+            "loan": SegmentAccountMap.ROLE_LOANS,
+        }.get(funding_source, SegmentAccountMap.ROLE_CASH)
+        return resolve_segment_account(segment, role).id
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        asset = self.get_object()
+        try:
+            AssetService.submit(asset, user=request.user)
+        except (CoreValidationError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(asset).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        asset = self.get_object()
+        try:
+            AssetService.approve(asset, user=request.user)
+        except (CoreValidationError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(asset).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        asset = self.get_object()
+        try:
+            asset = AssetService.reject(asset, user=request.user, note=request.data.get("note", ""))
+        except (CoreValidationError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(asset).data)
+
+    @action(detail=True, methods=["post"])
+    def post(self, request, pk=None):
+        asset = self.get_object()
+        try:
+            AssetService.post(asset, user=request.user)
+        except (CoreValidationError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(asset).data)
 
     @action(detail=True, methods=["post"])
     def build_schedule(self, request, pk=None):

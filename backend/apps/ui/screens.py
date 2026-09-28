@@ -77,6 +77,7 @@ SHARED_UI_URL_NAMES = frozenset({
     "supplier_options",
     "party_options",
     "po_options",
+    "asset_po_options",
     "billing_rfp_options",
     "ar_invoice_options",
     # Typeahead pickers used by OTHER modules' forms: a CV preparer needs the
