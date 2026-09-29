@@ -1199,6 +1199,44 @@ class TestReceiptScreen:
         assert debit.description == "Cash received"
         assert debit.cost_center == ""
 
+    def test_receipt_print_client_view(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        customer.tin = "123-456-789"
+        customer.address = "123 Fuel Road, Bacong"
+        customer.contact_no = "0917-000-0000"
+        customer.owner_name = "Maria Fuels"
+        customer.save()
+        resp = self._post_grid(client, customer, accounts, segment)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        body = client.get(f"/ar/receipts/{receipt.pk}/print/").content.decode()
+
+        # Client-facing customer details only - internal fields hidden.
+        assert "Business Name:" in body
+        assert "Owner:" in body
+        assert "C001 Fuel Client" in body
+        assert "Maria Fuels" in body
+        assert "123-456-789" in body
+        assert "0917-000-0000" in body
+        assert "123 Fuel Road, Bacong" in body
+        assert "Segment:" not in body
+        assert "Cash Account:" not in body
+
+        # No GL/accounting grid on the client copy.
+        assert "Account (GL)" not in body
+        assert "Cost Center" not in body
+        assert ">Debit<" not in body
+        assert ">Credit<" not in body
+
+        # Client breakdown: "Details" column header, credit description(s) + single TOTAL amount.
+        assert ">Details<" in body
+        assert "Sales collection" in body
+        assert "TOTAL" in body
+        assert "15,000.00" in body
+
     def test_receipt_cash_segment_syncs_header(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
         from apps.foundation.models import Segment as SegmentModel
@@ -1441,9 +1479,11 @@ class TestReceiptScreen:
         receipt.refresh_from_db()
         assert receipt.journal_entry.status == "reversed"
 
-        # print page renders the account distribution
+        # print page renders the client-facing breakdown (credit description + total)
         print_body = client.get(f"/ar/receipts/{receipt.pk}/print/").content.decode()
-        assert accounts["41010"].code in print_body
+        assert "Sales collection" in print_body
+        assert "TOTAL" in print_body
+        assert "15,000.00" in print_body
 
     def _new_invoice(self, customer, segment, total="15000.00", invoice_no="SI-E2E-001"):
         from apps.ar.models import ARInvoice, ARInvoiceLine
