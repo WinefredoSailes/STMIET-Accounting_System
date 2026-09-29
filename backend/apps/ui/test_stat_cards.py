@@ -21,7 +21,7 @@ SCREENS = {
     "/billing/": ["Total billings", "For head approval", "Posted to GL"],
     "/cash/transfers/": ["Total transfers", "For head approval", "Approved (posted)"],
     "/cash/cycles/": ["Total cycles", "Reconciled", "Locked"],
-    "/cash/pcf/replenishments/": ["Total vouchers", "Requested", "Posted"],
+    "/cash/pcf/replenishments/": ["Total vouchers", "Drafts", "Requested", "Rejected", "Posted"],
     "/cash/recon/": ["Total recons", "Resolved", "Escalated"],
     "/cash/short/": ["Total worksheets", "Open variances", "Adjusted"],
     "/ap/advances/": ["Total advances", "Active (unsettled)", "Liquidated / closed"],

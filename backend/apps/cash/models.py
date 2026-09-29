@@ -230,14 +230,15 @@ class PCFReplenishment(AuditableModel):
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
     )
     status = models.CharField(
-        max_length=16, default="requested",
+        max_length=16, default="draft",
         choices=[
+            ("draft", "Draft"),
             ("requested", "Requested"),
             ("approved", "Approved"),
             ("rejected", "Rejected"),
             ("posted", "Posted"),
         ],
-    )  # requested / approved / rejected / posted
+    )  # draft / requested / approved / rejected / posted
     approved_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_at = models.DateTimeField(null=True, blank=True)
     rejected_by = models.ForeignKey(

@@ -9,6 +9,7 @@
   {% capture as doc_badge_color %}
   {% if replen.status == 'posted' %}bg-emerald-100 text-emerald-800
   {% elif replen.status == 'rejected' %}bg-rose-100 text-rose-800
+  {% elif replen.status == 'draft' %}bg-surface-100 text-surface-700
   {% else %}bg-amber-100 text-amber-800{% endif %}
   {% endcapture %}
   {% capture as doc_meta %}
@@ -136,10 +137,27 @@
     <div class="text-xs text-surface-500 mt-1">Returned by {{ replen.rejected_by.get_full_name|default:replen.rejected_by }} · {{ replen.rejected_at|date:"M d, Y H:i" }}</div>
     <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ replen.rejection_note }}</div>
     {% if is_custodian %}
-    <a href="{% url 'ui:pcf_replenishment_edit' replen.id %}"
+    <a href="{% url 'ui:pcf_replenishment_revise' replen.id %}"
        class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Edit &amp; resubmit</a>
     {% else %}
     <p class="mt-2 text-xs text-surface-500">Only the custodian who requested this voucher can revise it.</p>
+    {% endif %}
+  </div>
+  {% elif replen.status == "draft" %}
+  <div class="mt-4 rounded-lg border border-surface-200 bg-surface-50 px-4 py-3">
+    <div class="text-sm font-semibold text-surface-700">Draft — not yet submitted for approval</div>
+    {% if is_custodian %}
+    <div class="mt-3 flex items-center gap-3">
+      <a href="{% url 'ui:pcf_replenishment_edit' replen.id %}"
+         class="inline-block rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-100">Edit draft</a>
+      <form method="post" action="{% url 'ui:pcf_replenishment_submit' replen.id %}">
+        {% csrf_token %}
+        <button type="submit" data-confirm="Submit this petty cash voucher for Accounting &amp; Finance Head approval?"
+          class="inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for approval</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="mt-1 text-xs text-surface-500">This voucher is being prepared by the custodian; it is not on the Head's approval queue yet.</p>
     {% endif %}
   </div>
   {% endif %}

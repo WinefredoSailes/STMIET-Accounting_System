@@ -3096,7 +3096,7 @@ class TestPCFReplenishmentScreen:
         replen = PCFReplenishment.objects.get()
         assert replen.amount == Decimal("850.00")
         assert replen.payee_name == "ADRIANO SILVA"
-        assert replen.status == "requested"
+        assert replen.status == "draft"  # preparer-side until submitted (RFP shape)
         assert replen.expenses[0]["account_code"] == "61100"
         assert replen.expenses[0]["side"] == "dr"
         assert replen.expenses[0]["business_name"] == "Adriano Fuel Station"
@@ -3188,6 +3188,7 @@ class TestPCFReplenishmentScreen:
             user=user,
         )
         assert replen.voucher_no.startswith(f"PCV-{date.today().year}-")
+        PCFService.submit_replenishment(replen, user=user)
         client.force_login(role_users["head"])
         resp = client.post(f"/cash/pcf/replenishments/{replen.id}/post/")
         replen.refresh_from_db()
@@ -3206,6 +3207,7 @@ class TestPCFReplenishmentScreen:
             [{"account_code": "61100", "amount": "850.00", "description": "Cable"}],
             user=user,
         )
+        PCFService.submit_replenishment(replen, user=user)
         client.force_login(role_users["staff"])
         resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
         assert resp.status_code == 302
@@ -3228,6 +3230,7 @@ class TestPCFReplenishmentScreen:
             user=user,
         )
         assert replen.voucher_no.startswith(f"PCV-{date.today().year}-")
+        PCFService.submit_replenishment(replen, user=user)
         head = role_users["head"]
         client.force_login(head)
         resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")

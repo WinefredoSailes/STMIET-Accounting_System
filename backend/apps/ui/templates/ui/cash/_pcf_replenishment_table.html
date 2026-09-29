@@ -28,7 +28,7 @@
         <td class="px-4 py-2 text-right font-medium tabular-nums">{{r.amount|peso}}</td>
         <td class="px-4 py-2">
           <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-            {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800 {% elif r.status == 'rejected' %}bg-rose-100 text-rose-800
+            {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800 {% elif r.status == 'rejected' %}bg-rose-100 text-rose-800 {% elif r.status == 'draft' %}bg-surface-100 text-surface-700
             {% else %}bg-amber-100 text-amber-800{% endif %}">
             {{ r.status }}
           </span>
@@ -47,7 +47,7 @@
     <div class="mobile-card-head">
       <a href="{% url 'ui:pcf_replenishment_detail' r.id %}" class="mobile-card-title text-brand-600 hover:text-brand-800">{% if r.voucher_no %}{{ r.voucher_no }}{% else %}PCF-{{ r.id }}{% endif %}</a>
       <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
-        {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800 {% elif r.status == 'rejected' %}bg-rose-100 text-rose-800
+        {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800 {% elif r.status == 'rejected' %}bg-rose-100 text-rose-800 {% elif r.status == 'draft' %}bg-surface-100 text-surface-700
         {% else %}bg-amber-100 text-amber-800{% endif %}">
         {{ r.status }}
       </span>

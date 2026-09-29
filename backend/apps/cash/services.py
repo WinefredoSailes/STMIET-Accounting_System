@@ -253,15 +253,38 @@ class PCFService:
             year=localdate().year,
             pattern="PCV-{YYYY}-{SEQ:04d}",
         )
+        # Created as a preparer-side DRAFT (mirrors RFP ``prepared``): it does
+        # not reach the Head's queue until ``submit_replenishment`` moves it to
+        # ``requested`` (the UI form's "Request replenishment" is that submit).
         return PCFReplenishment.objects.create(
             fund=fund,
             request_date=date.today(),
             amount=total,
             expenses=expenses,
-            status="requested",
+            status="draft",
             requested_by=user,
             voucher_no=voucher_no,
         )
+
+    @classmethod
+    @transaction.atomic
+    def submit_replenishment(
+        cls, replen: PCFReplenishment, *, user=None
+    ) -> PCFReplenishment:
+        """draft -> requested: the custodian sends the voucher to the Head.
+
+        Mirrors RFP's ``prepared -> submitted``: only the preparer's own draft
+        can be submitted, and it is the sole gateway into the Head's queue."""
+        if replen.status != "draft":
+            raise ValidationError("Only draft vouchers can be submitted.")
+        if user is not None and replen.requested_by_id not in (None, user.id):
+            if replen.fund.custodian_id != user.id:
+                raise ValidationError("Only the requesting custodian can submit this voucher.")
+        replen.status = "requested"
+        if replen.requested_by_id is None:
+            replen.requested_by = user
+        replen.save(update_fields=["status", "requested_by", "updated_at"])
+        return replen
 
     @classmethod
     @transaction.atomic
@@ -353,6 +376,8 @@ class PCFService:
         """
         if replen.status == "posted":
             raise ValidationError("Replenishment is already posted.")
+        if replen.status == "draft":
+            raise ValidationError("Draft vouchers must be submitted for approval before posting.")
         if replen.status == "rejected":
             raise ValidationError("Rejected replenishments must be revised and resubmitted before posting.")
         if replen.conso_id:

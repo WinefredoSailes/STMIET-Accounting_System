@@ -79,7 +79,7 @@ class TestInboxReject:
         client.post(f"/cash/pcf/replenishments/{replen.id}/reject/", {"note": "No receipts"})
         client.force_login(role_users["staff"])
         client.post(
-            f"/cash/pcf/replenishments/{replen.id}/edit/",
+            f"/cash/pcf/replenishments/{replen.id}/revise/",
             {
                 "fund": fund.pk,
                 "payee_name": "Clerk",
@@ -127,7 +127,7 @@ class TestRejectEndpoint:
         body = client.get(f"/cash/pcf/replenishments/{replen.id}/").content.decode()
         assert "Attach ORs" in body
         assert "Rejected — returned for revision" in body
-        assert f"/cash/pcf/replenishments/{replen.id}/edit/" in body
+        assert f"/cash/pcf/replenishments/{replen.id}/revise/" in body
 
     def test_register_shows_rejected_badge(self, client, replen, role_users):
         client.force_login(role_users["head"])
@@ -155,7 +155,7 @@ class TestEditAndResubmit:
             "exp_cost_center": ["", "OS"],
             "exp_supplier": ["", supplier.pk],
         }
-        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/edit/", form)
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/revise/", form)
         assert resp.status_code == 302
         replen.refresh_from_db()
         assert replen.status == "requested"
@@ -164,26 +164,28 @@ class TestEditAndResubmit:
         assert replen.rejected_by_id is None
         assert replen.expenses[0]["description"] == "Supplies (revised)"
 
-    def test_edit_form_prefills_rejected_values(self, client, replen, role_users):
+    def test_revise_form_prefills_rejected_values(self, client, replen, role_users):
         client.force_login(role_users["head"])
         client.post(f"/cash/pcf/replenishments/{replen.id}/reject/", {"note": "Amount wrong"})
         client.force_login(role_users["staff"])
-        body = client.get(f"/cash/pcf/replenishments/{replen.id}/edit/").content.decode()
+        body = client.get(f"/cash/pcf/replenishments/{replen.id}/revise/").content.decode()
         assert "Amount wrong" in body
         assert "value=\"500.00\"" in body
         assert "REF-REJ" in body
 
     def test_requested_voucher_is_not_editable(self, client, replen, role_users):
+        """Once submitted it is off the preparer's desk: edits only via the
+        reject/revise cycle (same contract as RFP)."""
         client.force_login(role_users["staff"])
         resp = client.get(f"/cash/pcf/replenishments/{replen.id}/edit/", follow=True)
         replen.refresh_from_db()
         assert replen.status == "requested"
-        assert "Only rejected vouchers can be revised" in resp.content.decode()
+        assert "Only draft vouchers can be edited" in resp.content.decode()
 
-    def test_other_users_cannot_open_edit(self, client, replen, company, accounts, role_users):
+    def test_other_users_cannot_open_revise(self, client, replen, company, accounts, role_users):
         client.force_login(role_users["head"])
         client.post(f"/cash/pcf/replenishments/{replen.id}/reject/", {"note": "x"})
-        resp = client.get(f"/cash/pcf/replenishments/{replen.id}/edit/")
+        resp = client.get(f"/cash/pcf/replenishments/{replen.id}/revise/")
         replen.refresh_from_db()
         assert resp.status_code == 403
         assert replen.status == "rejected"

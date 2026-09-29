@@ -81,9 +81,51 @@ class PettyCashFundViewSet(viewsets.ModelViewSet):
 
 
 class PCFReplenishmentViewSet(viewsets.ModelViewSet):
+    """PCV lifecycle (mirrors the RFP API): ``replenish`` creates a DRAFT, the
+    custodian submits it (``draft -> requested``, the Head-queue gateway), and
+    edits/deletes are allowed only by the preparer while the voucher is still
+    a draft. Approval/rejection stay head-only service calls."""
+
     queryset = PCFReplenishment.objects
     serializer_class = PCFReplenishmentSerializer
     filterset_fields = ["fund", "status"]
+
+    @staticmethod
+    def _is_preparer(request, replen):
+        return (
+            request.user.is_superuser
+            or replen.fund.custodian_id == request.user.id
+            or (replen.requested_by_id and replen.requested_by_id == request.user.id)
+        )
+
+    def _assert_can_edit(self, replen):
+        """Draft + preparer only — after it leaves her desk changes go
+        through the reject/revise cycle (same contract as the RFP viewset)."""
+        from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
+
+        if replen.status != "draft":
+            raise DRFPermissionDenied("Only draft vouchers can be edited.")
+        if not self._is_preparer(self.request, replen):
+            raise DRFPermissionDenied("Only the requesting custodian may edit this voucher.")
+
+    def update(self, request, *args, **kwargs):
+        self._assert_can_edit(self.get_object())
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._assert_can_edit(self.get_object())
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._assert_can_edit(self.get_object())
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """draft -> requested (the custodian sends it to the Head)."""
+        replen = self.get_object()
+        replen = PCFService.submit_replenishment(replen, user=request.user)
+        return Response(self.get_serializer(replen).data)
 
     @action(detail=True, methods=["post"])
     def post(self, request, pk=None):

@@ -157,13 +157,40 @@ class TestPCF:
         )
         assert PCFService.check_replenishment_needed(pcf_fund) is True
 
-    def test_replenishment_creates_je(self, pcf_fund):
+    def test_request_creates_a_draft_not_queued(self, pcf_fund):
+        """The voucher form saves a preparer-side draft (mirrors RFP
+        ``prepared``): it must not be approvable, postable, or in the Head's
+        queue until it is submitted (``requested``)."""
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
         assert replen.amount == Decimal("10000.00")
-        assert replen.status == "requested"
+        assert replen.status == "draft"
+        with pytest.raises(ValidationError):
+            PCFService.approve_replenishment(replen)
+        with pytest.raises(ValidationError):
+            PCFService.reject_replenishment(replen, user=None, note="x")
+        with pytest.raises(ValidationError):
+            PCFService.post_replenishment(replen)
 
+    def test_submit_moves_draft_to_requested(self, pcf_fund, user):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+            user=user,
+        )
+        PCFService.submit_replenishment(replen, user=user)
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        # submitting twice is refused (only drafts can be submitted)
+        with pytest.raises(ValidationError):
+            PCFService.submit_replenishment(replen, user=user)
+
+    def test_replenishment_creates_je(self, pcf_fund):
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        assert replen.status == "draft"
+        PCFService.submit_replenishment(replen)
         replen = PCFService.post_replenishment(replen)
         assert replen.status == "posted"
         assert replen.journal_entry is not None
@@ -178,6 +205,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.approve_replenishment(replen)
         replen.refresh_from_db()
         assert replen.status == "approved"
@@ -194,6 +222,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.approve_replenishment(replen, user=user)
         batch = replen.conso
         CONSOService.post_batch(batch, user=user)
@@ -211,6 +240,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.approve_replenishment(replen)
         with pytest.raises(ValidationError):
             PCFService.approve_replenishment(replen)  # already approved/batched
@@ -220,6 +250,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.approve_replenishment(replen)
         with pytest.raises(ValidationError):
             PCFService.post_replenishment(replen)
@@ -228,6 +259,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.reject_replenishment(replen, user=user, note="Missing receipts")
         replen.refresh_from_db()
         assert replen.status == "rejected"
@@ -239,6 +271,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         with pytest.raises(ValidationError):
             PCFService.reject_replenishment(replen, user=user, note="  ")
 
@@ -246,6 +279,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.approve_replenishment(replen)
         with pytest.raises(ValidationError):
             PCFService.reject_replenishment(replen, user=user, note="Too late")
@@ -254,6 +288,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.reject_replenishment(replen, user=user, note="Fix the lines")
         with pytest.raises(ValidationError):
             PCFService.approve_replenishment(replen)
@@ -264,6 +299,7 @@ class TestPCF:
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
+        PCFService.submit_replenishment(replen)
         PCFService.reject_replenishment(replen, user=user, note="Fix the lines")
         PCFService.revise_replenishment(replen, user=user)
         replen.refresh_from_db()

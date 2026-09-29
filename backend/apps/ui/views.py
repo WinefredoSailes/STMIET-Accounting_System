@@ -4458,8 +4458,12 @@ def pcf_replenish(request):
             if request.POST.get("request_date"):
                 replen.request_date = date.fromisoformat(request.POST["request_date"])
             replen.save(update_fields=["payee_name", "reference", "request_date", "updated_at"])
-            messages.success(request, f"PCF replenishment {replen.voucher_no} requested (₱{replen.amount}).")
-            return redirect("ui:pcf_replenishment_list")
+            messages.success(
+                request,
+                f"PCF voucher {replen.voucher_no} created (draft) — submit it for "
+                "approval from its detail page.",
+            )
+            return redirect("ui:pcf_replenishment_detail", pk=replen.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
     return render(
@@ -4469,45 +4473,90 @@ def pcf_replenish(request):
     )
 
 
-@login_required
-def pcf_replenishment_edit(request, pk):
-    """Edit & resubmit: revise a rejected petty cash voucher. Only the
-    custodian who requested it (or a superuser) may open it, only while the
-    voucher is ``rejected``; a successful save clears the rejection and the
-    voucher re-enters the Head's approval queue as ``requested``."""
-    from apps.cash.models import PCFReplenishment, PettyCashFund
+def _pcf_prepare(request, replen, *, submit: bool):
+    """Shared save path for the draft-edit and rejected-revise forms (the
+    voucher form posts the whole document). ``submit=True`` (revise) clears
+    the rejection and re-enters the Head's queue; ``submit=False`` (edit)
+    keeps the voucher a draft."""
+    from apps.cash.models import PettyCashFund
     from apps.cash.services import PCFService
 
-    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    fund = PettyCashFund.objects.get(pk=request.POST["fund"])
+    if fund.custodian_id != request.user.id and not request.user.is_superuser:
+        raise ValidationError("Select one of your own petty cash funds.")
+    expenses = _pcf_expenses_from_post(request)
+    if submit:
+        PCFService.revise_replenishment(replen, user=request.user)
+    replen.fund = fund
+    replen.expenses = expenses
+    replen.amount = sum(money(e["amount"]) for e in expenses)
+    replen.payee_name = request.POST.get("payee_name", "")
+    replen.reference = request.POST.get("reference", "")
+    if request.POST.get("request_date"):
+        replen.request_date = date.fromisoformat(request.POST["request_date"])
+    replen.save(
+        update_fields=[
+            "fund", "expenses", "amount", "payee_name",
+            "reference", "request_date", "updated_at",
+        ]
+    )
+    return replen
+
+
+def _pcf_edit_gate(request, replen, *, allowed_status, denied_message):
+    """Preparer-side check shared by the edit/revise forms: the fund's
+    custodian (the requester, or a superuser) may open it only while it sits
+    in the expected preparer state (mirrors the RFP preparer-only edit)."""
     is_custodian = request.user.is_superuser or (
         replen.fund.custodian_id == request.user.id
         or (replen.requested_by_id and replen.requested_by_id == request.user.id)
     )
     if not is_custodian:
-        raise PermissionDenied("Only the custodian who requested this voucher can revise it.")
-    if replen.status != "rejected":
-        messages.error(request, "Only rejected vouchers can be revised.")
+        raise PermissionDenied(f"Only the custodian who prepared this voucher can {denied_message}.")
+    if replen.status != allowed_status:
+        messages.error(request, f"Only {allowed_status} vouchers can be {denied_message}.")
+        return False
+    return True
+
+
+@login_required
+def pcf_replenishment_edit(request, pk):
+    """Edit a DRAFT petty cash voucher (preparer-only, like ``rfp_edit``):
+    the voucher stays a draft until it is submitted for approval."""
+    from apps.cash.models import PCFReplenishment
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    if not _pcf_edit_gate(request, replen, allowed_status="draft", denied_message="edited"):
         return redirect("ui:pcf_replenishment_detail", pk=pk)
     if request.method == "POST":
         try:
-            fund = PettyCashFund.objects.get(pk=request.POST["fund"])
-            if fund.custodian_id != request.user.id and not request.user.is_superuser:
-                raise ValidationError("Select one of your own petty cash funds.")
-            expenses = _pcf_expenses_from_post(request)
-            PCFService.revise_replenishment(replen, user=request.user)
-            replen.fund = fund
-            replen.expenses = expenses
-            replen.amount = sum(money(e["amount"]) for e in expenses)
-            replen.payee_name = request.POST.get("payee_name", "")
-            replen.reference = request.POST.get("reference", "")
-            if request.POST.get("request_date"):
-                replen.request_date = date.fromisoformat(request.POST["request_date"])
-            replen.save(
-                update_fields=[
-                    "fund", "expenses", "amount", "payee_name",
-                    "reference", "request_date", "updated_at",
-                ]
+            _pcf_prepare(request, replen, submit=False)
+            messages.success(
+                request, f"PCF voucher {replen.voucher_no} updated (still a draft)."
             )
+            return redirect("ui:pcf_replenishment_detail", pk=pk)
+        except (AccountingError, ValidationError, ValueError, KeyError, ArithmeticError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/cash/pcf_replenish_form.html",
+        {**_pcf_form_context(request, editing=replen), "edit_mode": "edit"},
+    )
+
+
+@login_required
+def pcf_replenishment_revise(request, pk):
+    """Revise a REJECTED petty cash voucher and resubmit it (preparer-only,
+    like ``rfp_revise``): a successful save clears the rejection and the
+    voucher re-enters the Head's approval queue as ``requested``."""
+    from apps.cash.models import PCFReplenishment
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    if not _pcf_edit_gate(request, replen, allowed_status="rejected", denied_message="revised"):
+        return redirect("ui:pcf_replenishment_detail", pk=pk)
+    if request.method == "POST":
+        try:
+            _pcf_prepare(request, replen, submit=True)
             messages.success(
                 request, f"PCF replenishment {replen.voucher_no} resubmitted for approval."
             )
@@ -4517,8 +4566,27 @@ def pcf_replenishment_edit(request, pk):
     return render(
         request,
         "ui/cash/pcf_replenish_form.html",
-        _pcf_form_context(request, editing=replen),
+        {**_pcf_form_context(request, editing=replen), "edit_mode": "revise"},
     )
+
+
+@login_required
+@require_POST
+def pcf_replenishment_submit(request, pk):
+    """draft -> requested: the custodian sends the voucher to the Head
+    (mirrors ``rfp_submit``)."""
+    from apps.cash.models import PCFReplenishment
+    from apps.cash.services import PCFService
+
+    replen = get_object_or_404(PCFReplenishment, pk=pk)
+    try:
+        PCFService.submit_replenishment(replen, user=request.user)
+        messages.success(
+            request, f"PCF voucher {replen.voucher_no} submitted for Head approval."
+        )
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:pcf_replenishment_detail", pk))
 
 
 @login_required

@@ -757,6 +757,7 @@ def pcf_replenishment_summary():
     return {
         "total": qs.count(),
         "total_amount": qs.aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
+        "draft": qs.filter(status="draft").count(),
         "requested": qs.filter(status="requested").count(),
         "requested_amount": qs.filter(status="requested").aggregate(t=Sum("amount"))["t"] or Decimal("0.00"),
         "rejected": qs.filter(status="rejected").count(),

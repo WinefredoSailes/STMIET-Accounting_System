@@ -456,6 +456,7 @@ def pcf_fund_filter_spec():
 # --- PCF Replenishments -----------------------------------------------------
 
 PCF_REPLENISHMENT_STATUS_CHOICES = [
+    ("draft", "Draft"),
     ("requested", "Requested"),
     ("rejected", "Rejected"),
     ("approved", "Approved"),
