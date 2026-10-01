@@ -3163,8 +3163,10 @@ class TestPCFReplenishmentScreen:
 
         assert PCFReplenishment.objects.count() == 0
 
-    def test_replenish_fund_list_limited_to_custodian(self, client, company, segment,
+    def test_replenish_fund_list_shows_all_custodians(self, client, company, segment,
                                                       accounts, fiscal_period, user, fund):
+        """A colleague may prepare a voucher on a fellow custodian's fund:
+        the FUND picker lists every ACTIVE fund, labelled with its custodian."""
         from django.contrib.auth import get_user_model
 
         from apps.cash.models import PettyCashFund
@@ -3180,11 +3182,21 @@ class TestPCFReplenishmentScreen:
             gl_account=accounts["10110"],
             company=company,
         )
+        PettyCashFund.objects.create(
+            fund_code="shutfund",
+            name="PCF-Closed",
+            custodian=other,
+            imprest_amount=Decimal("5000.00"),
+            gl_account=accounts["10110"],
+            company=company,
+            is_active=False,
+        )
         resp = client.get("/cash/pcf/replenish/")
         assert resp.status_code == 200
         body = resp.content.decode()
-        assert "PCF-General" in body
-        assert "PCF-Other" not in body
+        assert "PCF-General" in body                       # own fund still listed
+        assert "otherfund — PCF-Other — other" in body    # fellow custodian + label
+        assert "PCF-Closed" not in body                   # inactive funds hidden
 
     def test_replenish_rejects_mixed_dr_cr_row(self, client, company, segment, accounts,
                                                fiscal_period, user, fund):

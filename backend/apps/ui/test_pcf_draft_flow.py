@@ -37,6 +37,16 @@ def supplier(db, segment):
 
 
 @pytest.fixture
+def fund_b(db, company, accounts, other_staff):
+    """A fellow custodian's fund: staff A may prepare vouchers on it."""
+    return PettyCashFund.objects.create(
+        fund_code="PCF-B", name="Fellow Fund", custodian=other_staff,
+        custodian_name="Other Custodian", imprest_amount="20000.00",
+        gl_account=accounts["10010"], company=company, is_active=True,
+    )
+
+
+@pytest.fixture
 def other_staff(db):
     u = get_user_model().objects.create_user(username="otherstaff", password="x")
     UserProfile.objects.create(user=u, approval_role="staff")
@@ -303,6 +313,19 @@ class TestApiDraftContract:
         assert api.delete(f"/api/v1/cash/pcf-replenishments/{pk}/").status_code == 403
 
 
+    def test_preparer_can_discard_own_draft(self, role_users, fund, accounts):
+        api = APIClient()
+        api.force_authenticate(user=role_users["staff"])
+        resp = api.post(
+            f"/api/v1/cash/pcf-funds/{fund.pk}/replenish/",
+            {"expenses": [{"account_code": accounts["61100"].code, "amount": "50.00", "description": "x"}]},
+            format="json",
+        )
+        pk = resp.json()["id"]
+        assert api.delete(f"/api/v1/cash/pcf-replenishments/{pk}/").status_code == 204
+        assert not PCFReplenishment.objects.filter(pk=pk).exists()
+
+
 class TestGLAccountNamePersisted:
     """The GL title (code + name) survives every save path — create, draft
     edit, rejected-revise — and the detail screen resolves names even for
@@ -376,14 +399,82 @@ class TestGLAccountNamePersisted:
         assert "not found" in resp.content.decode()
         assert PCFReplenishment.objects.count() == 0
 
-    def test_preparer_can_discard_own_draft(self, role_users, fund, accounts):
-        api = APIClient()
-        api.force_authenticate(user=role_users["staff"])
-        resp = api.post(
-            f"/api/v1/cash/pcf-funds/{fund.pk}/replenish/",
-            {"expenses": [{"account_code": accounts["61100"].code, "amount": "50.00", "description": "x"}]},
-            format="json",
+
+class TestPrepareForFellowCustodian:
+    """Any preparer may draft, edit and submit on a FELLOW custodian's fund;
+    the stranger-out gates (neither preparer nor custodian) still refuse."""
+
+    def test_dropdown_lists_fellow_custodians_funds(self, client, role_users, fund, fund_b):
+        client.force_login(role_users["staff"])
+        body = client.get("/cash/pcf/replenish/").content.decode()
+        assert fund.fund_code in body
+        assert "PCF-B — Fellow Fund — otherstaff" in body  # fellow fund, labelled
+
+    def test_staff_can_draft_on_fellow_fund(self, client, role_users, fund_b, accounts, supplier):
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(fund_b, accounts, supplier))
+        assert resp.status_code == 302
+        replen = PCFReplenishment.objects.get()
+        assert replen.fund_id == fund_b.pk
+        assert replen.requested_by == role_users["staff"]
+        assert replen.status == "draft"
+
+    def test_fund_switch_between_fellow_funds_on_draft_edit(self, client, role_users, fund, fund_b, accounts, supplier):
+        """The old 'Select one of your own petty cash funds' refusal is gone:
+        a draft's fund may be re-picked across active funds."""
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund, accounts, supplier)
+        resp = client.post(
+            f"/cash/pcf/replenishments/{replen.id}/edit/",
+            _form(fund_b, accounts, supplier),
         )
-        pk = resp.json()["id"]
-        assert api.delete(f"/api/v1/cash/pcf-replenishments/{pk}/").status_code == 204
-        assert not PCFReplenishment.objects.filter(pk=pk).exists()
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.fund_id == fund_b.pk
+        assert replen.status == "draft"
+
+    def test_custodian_can_edit_and_submit_a_preparers_draft(self, client, role_users, other_staff, fund_b, accounts, supplier):
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund_b, accounts, supplier)
+        client.force_login(other_staff)  # the fund's custodian
+        assert client.get(f"/cash/pcf/replenishments/{replen.id}/edit/").status_code == 200
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        assert replen.requested_by == role_users["staff"]  # preparer preserved
+
+    def test_original_preparer_can_revise_after_rejection(self, client, role_users, fund_b, accounts, supplier):
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund_b, accounts, supplier)
+        client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        client.force_login(role_users["head"])
+        client.post(f"/cash/pcf/replenishments/{replen.id}/reject/", {"note": "trim"})
+        client.force_login(role_users["staff"])
+        resp = client.post(
+            f"/cash/pcf/replenishments/{replen.id}/revise/",
+            _form(fund_b, accounts, supplier, exp_debit=["450.00"], exp_description=["Trimmed"]),
+        )
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        assert replen.fund_id == fund_b.pk
+
+    def test_third_party_cannot_touch_proxy_draft(self, client, role_users, fund_b, accounts, supplier):
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund_b, accounts, supplier)
+        stranger = get_user_model().objects.create_user(username="nosy", password="x")
+        UserProfile.objects.create(user=stranger, approval_role="staff")
+        client.force_login(stranger)  # neither preparer nor the fund's custodian
+        assert client.get(f"/cash/pcf/replenishments/{replen.id}/edit/").status_code == 403
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "draft"
+
+    def test_missing_fund_renders_clean_error(self, client, role_users, fund, accounts, supplier):
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", {**_form(fund, accounts, supplier), "fund": ""})
+        assert resp.status_code == 200
+        assert "Select a petty cash fund" in resp.content.decode()
+        assert PCFReplenishment.objects.count() == 0

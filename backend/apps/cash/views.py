@@ -99,14 +99,17 @@ class PCFReplenishmentViewSet(viewsets.ModelViewSet):
         )
 
     def _assert_can_edit(self, replen):
-        """Draft + preparer only — after it leaves her desk changes go
-        through the reject/revise cycle (same contract as the RFP viewset)."""
+        """Draft + preparer only (the fund's custodian counts as preparer-side
+        even when a colleague drafted it) — after it leaves the desk changes
+        go through the reject/revise cycle (same contract as the RFP viewset)."""
         from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 
         if replen.status != "draft":
             raise DRFPermissionDenied("Only draft vouchers can be edited.")
         if not self._is_preparer(self.request, replen):
-            raise DRFPermissionDenied("Only the requesting custodian may edit this voucher.")
+            raise DRFPermissionDenied(
+                "Only the preparer or the fund's custodian may edit this voucher."
+            )
 
     def update(self, request, *args, **kwargs):
         self._assert_can_edit(self.get_object())

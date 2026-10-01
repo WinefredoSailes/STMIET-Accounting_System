@@ -286,15 +286,19 @@ class PCFService:
     def submit_replenishment(
         cls, replen: PCFReplenishment, *, user=None
     ) -> PCFReplenishment:
-        """draft -> requested: the custodian sends the voucher to the Head.
+        """draft -> requested: the preparer sends the voucher to the Head.
 
         Mirrors RFP's ``prepared -> submitted``: only the preparer's own draft
-        can be submitted, and it is the sole gateway into the Head's queue."""
+        can be submitted (the fund's custodian may submit a voucher a
+        colleague prepared on their behalf), and it is the sole gateway into
+        the Head's queue."""
         if replen.status != "draft":
             raise ValidationError("Only draft vouchers can be submitted.")
         if user is not None and replen.requested_by_id not in (None, user.id):
             if replen.fund.custodian_id != user.id:
-                raise ValidationError("Only the requesting custodian can submit this voucher.")
+                raise ValidationError(
+                    "Only the preparer or the fund's custodian can submit this voucher."
+                )
         replen.status = "requested"
         if replen.requested_by_id is None:
             replen.requested_by = user

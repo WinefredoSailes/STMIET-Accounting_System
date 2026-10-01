@@ -4541,9 +4541,12 @@ def _pcf_form_context(request, *, editing=None):
     """Shared context for the PCV create and revise forms."""
     from apps.cash.models import PettyCashFund
 
-    funds = PettyCashFund.objects.filter(
-        custodian=request.user, is_active=True
-    ).select_related("gl_account", "company", "custodian").order_by("fund_code")
+    # A colleague may prepare a voucher on a fellow custodian's fund, so the
+    # picker lists every active fund; each option label carries the
+    # custodian's name so the preparer can tell whose float they are using.
+    funds = PettyCashFund.objects.filter(is_active=True).select_related(
+        "gl_account", "company", "custodian"
+    ).order_by("fund_code")
     if editing is not None and editing.fund_id not in {f.id for f in funds}:
         funds = funds | PettyCashFund.objects.filter(pk=editing.fund_id)
     accounts = Account.objects.filter(is_postable=True).order_by("code")
@@ -4558,14 +4561,31 @@ def _pcf_form_context(request, *, editing=None):
     }
 
 
+def _pcf_fund_from_post(request):
+    """Resolve the voucher's fund from the posted id. Any fund may be chosen
+    (a colleague prepares on a fellow custodian's behalf); the picker offers
+    active funds, and the preparer/custodian gates protect the draft itself."""
+    from apps.cash.models import PettyCashFund
+
+    fund = None
+    posted = (request.POST.get("fund") or "").strip()
+    if posted:
+        try:
+            fund = PettyCashFund.objects.filter(pk=posted).first()
+        except ValueError:  # non-numeric pk
+            fund = None
+    if fund is None:
+        raise ValidationError("Select a petty cash fund.")
+    return fund
+
+
 @login_required
 def pcf_replenish(request):
-    from apps.cash.models import PettyCashFund
     from apps.cash.services import PCFService
 
     if request.method == "POST":
         try:
-            fund = PettyCashFund.objects.get(pk=request.POST["fund"])
+            fund = _pcf_fund_from_post(request)
             expenses = _pcf_expenses_from_post(request)
             replen = PCFService.request_replenishment(
                 fund,
@@ -4597,12 +4617,9 @@ def _pcf_prepare(request, replen, *, submit: bool):
     voucher form posts the whole document). ``submit=True`` (revise) clears
     the rejection and re-enters the Head's queue; ``submit=False`` (edit)
     keeps the voucher a draft."""
-    from apps.cash.models import PettyCashFund
     from apps.cash.services import PCFService
 
-    fund = PettyCashFund.objects.get(pk=request.POST["fund"])
-    if fund.custodian_id != request.user.id and not request.user.is_superuser:
-        raise ValidationError("Select one of your own petty cash funds.")
+    fund = _pcf_fund_from_post(request)
     expenses = _pcf_expenses_from_post(request)
     if submit:
         PCFService.revise_replenishment(replen, user=request.user)
