@@ -1,0 +1,86 @@
+{% extends "ui/base.html" %}
+{% load static %}
+{% block title %}Assistant Analytics{% endblock %}
+{% block content %}
+<div class="p-6 max-w-6xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-semibold text-surface-900">Assistant Analytics</h1>
+      <p class="text-sm text-surface-500 mt-1">Search usage and performance metrics</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="?days=7" class="text-xs px-3 py-1.5 rounded-md border border-surface-200 bg-white text-surface-600 hover:border-brand-300 hover:text-brand-600 {% if days == 7 %}border-brand-400 text-brand-600{% endif %}">7 days</a>
+      <a href="?days=30" class="text-xs px-3 py-1.5 rounded-md border border-surface-200 bg-white text-surface-600 hover:border-brand-300 hover:text-brand-600 {% if days == 30 %}border-brand-400 text-brand-600{% endif %}">30 days</a>
+      <a href="?days=90" class="text-xs px-3 py-1.5 rounded-md border border-surface-200 bg-white text-surface-600 hover:border-brand-300 hover:text-brand-600 {% if days == 90 %}border-brand-400 text-brand-600{% endif %}">90 days</a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <div class="text-xs text-surface-500 uppercase tracking-wide">Total Queries</div>
+      <div class="text-2xl font-semibold text-surface-900 mt-1">{{ total_queries }}</div>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <div class="text-xs text-surface-500 uppercase tracking-wide">Success Rate</div>
+      <div class="text-2xl font-semibold text-surface-900 mt-1">{{ success_rate }}%</div>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <div class="text-xs text-surface-500 uppercase tracking-wide">Active Users</div>
+      <div class="text-2xl font-semibold text-surface-900 mt-1">{{ unique_users }}</div>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <div class="text-xs text-surface-500 uppercase tracking-wide">Avg Response</div>
+      <div class="text-2xl font-semibold text-surface-900 mt-1">{{ avg_response_time }}ms</div>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <h2 class="text-sm font-semibold text-surface-900 mb-3">Top Keywords</h2>
+      <div class="space-y-2">
+        {% for kw in top_keywords %}
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-surface-700 truncate">{{ kw.query }}</span>
+          <span class="text-xs text-surface-500 ml-2">{{ kw.count }}</span>
+        </div>
+        {% empty %}
+        <p class="text-sm text-surface-400">No data available</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-surface-200 p-4">
+      <h2 class="text-sm font-semibold text-surface-900 mb-3">Module Usage</h2>
+      <div class="space-y-2">
+        {% for module, count in module_usage %}
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-surface-700 capitalize">{{ module }}</span>
+          <div class="flex items-center gap-2">
+            <div class="w-24 h-2 bg-surface-100 rounded-full overflow-hidden">
+              <div class="h-full bg-brand-500 rounded-full" style="width: {% widthratio count total_queries 100 %}%"></div>
+            </div>
+            <span class="text-xs text-surface-500">{{ count }}</span>
+          </div>
+        </div>
+        {% empty %}
+        <p class="text-sm text-surface-400">No data available</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-lg border border-surface-200 p-4">
+    <h2 class="text-sm font-semibold text-surface-900 mb-3">No-Result Queries (Needs Improvement)</h2>
+    <div class="space-y-2">
+      {% for qr in no_result_queries %}
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-surface-700 truncate">{{ qr.query }}</span>
+        <span class="text-xs text-surface-500 ml-2">{{ qr.count }}x</span>
+      </div>
+      {% empty %}
+      <p class="text-sm text-surface-400">All queries returned results</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
