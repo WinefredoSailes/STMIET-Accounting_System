@@ -4,8 +4,29 @@
 {% block content %}
 <style>
   @page { size: A4 landscape; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .no-print, .print-toolbar { display: none !important; }
+    .pcf-wrap { padding: 0 !important; background: #fff !important; }
+    tr, td { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .pcf-wrap, .pcf-wrap * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
 </style>
-<div class="py-6 px-4 bg-white">
+
+<div class="no-print print-toolbar">
+  <button onclick="window.print()">Print</button>
+</div>
+
+<div class="pcf-wrap py-6 px-4 bg-white">
   <div class="mx-0">
 <div class="text-center mb-4">
         <div class="text-xl font-bold tracking-wide py-1" style="background:#d2efef">PETTY CASH REPLENISHMENT</div>
@@ -38,7 +59,7 @@
           <th class="border border-slate-500 px-1 py-1 font-bold">Account Titles</th>
           <th class="border border-slate-500 px-1 py-1 font-bold text-right">Dr.</th>
           <th class="border border-slate-500 px-1 py-1 font-bold text-right">Cr.</th>
-          <th class="border border-slate-500 px-1 py-1 font-bold text-right">VAT</th>
+          <!-- <th class="border border-slate-500 px-1 py-1 font-bold text-right">VAT</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Segment</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Classification</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Category</th>
@@ -47,7 +68,7 @@
           <th class="border border-slate-500 px-1 py-1 font-bold">Behavior</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Traceability</th>
           <th class="border border-slate-500 px-1 py-1 font-bold">Controllability</th>
-          <th class="border border-slate-500 px-1 py-1 font-bold">AP NO</th>
+          <th class="border border-slate-500 px-1 py-1 font-bold">AP NO</th> -->
         </tr>
       </thead>
       <tbody>
@@ -66,16 +87,16 @@
           <td class="border border-slate-500 px-1 py-1">{{ row.title }}</td>
           <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{% if row.side != 'cr' %}{{ row.dr|money }}{% endif %}</td>
           <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{% if row.side == 'cr' %}{{ row.cr|money }}{% endif %}</td>
-          <td class="border border-slate-500 px-1 py-1 text-right"></td>
-          <td class="border border-slate-500 px-1 py-1">{{ row.segment }}</td>
+          <!-- <td class="border border-slate-500 px-1 py-1 text-right"></td> -->
+          <!-- <td class="border border-slate-500 px-1 py-1">{{ row.segment }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.classification }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.category }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.sub_accounts }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.major_accounts }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.behavior }}</td>
           <td class="border border-slate-500 px-1 py-1">{{ row.traceability }}</td>
-          <td class="border border-slate-500 px-1 py-1">{{ row.controllability }}</td>
-          <td class="border border-slate-500 px-1 py-1"></td>
+          <td class="border border-slate-500 px-1 py-1">{{ row.controllability }}</td> -->
+          <!-- <td class="border border-slate-500 px-1 py-1"></td> -->
         </tr>
         {% empty %}
         <tr>
@@ -87,10 +108,18 @@
         <tr class="font-bold" style="background:#d2efef">
           <td colspan="12" class="border border-slate-500 px-1 py-1 text-right uppercase">Total</td>
           <td class="border border-slate-500 px-1 py-1 text-right tabular-nums">{{ total|money }}</td>
-          <td colspan="10" class="border border-slate-500 px-1 py-1"></td>
+          <!-- <td colspan="10" class="border border-slate-500 px-1 py-1"></td> -->
         </tr>
       </tfoot>
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>
 {% endblock %}

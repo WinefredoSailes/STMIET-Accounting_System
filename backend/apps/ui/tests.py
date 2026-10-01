@@ -3353,6 +3353,13 @@ class TestPCFReplenishmentScreen:
         assert "850.00" in body                # Dr. column
         assert "ENTITY" not in body
         assert "STMIET" not in body.replace("STMIET-WSS", "")
+        # print shell parity with the other print pages (regression: the PCF
+        # print previously rendered the sidebar and never opened the dialog)
+        assert "print-toolbar" in body
+        assert "window.print()" in body
+        assert "@media print" in body
+        assert "#sidebar" in body                 # hidden during print
+        assert "no-print" in body
 
     def test_pcf_fund_create(self, client, company, segment, accounts, user):
         resp = client.post("/cash/pcf/new/", {
