@@ -28,15 +28,17 @@ class CatalogEntry:
     status: str = "ready"  # ready | projection | needs-stub | pending-external | write-deferred
     stub_kind: str = ""
     module: str = ""
+    extra: str = ""
 
 
 #: (qid, question, phrases, requires, handler, screen, status)
-def _e(qid, category, question, phrases, requires, handler, screen, status="ready", stub_kind="", module=None):
+def _e(qid, category, question, phrases, requires, handler, screen, status="ready", stub_kind="", module=None, extra=""):
     return CatalogEntry(
         qid=qid, category=category, question=question,
         phrases=tuple(phrases), requires=tuple(requires),
         handler=handler, screen=screen, status=status,
         stub_kind=stub_kind, module=module or category.lower(),
+        extra=extra,
     )
 
 
@@ -109,7 +111,7 @@ CATALOG: list[CatalogEntry] = [
       "cash.unreconciled", "recon_list"),
     _e("F53", "F", "Difference between book and bank balance?", ["book vs bank", "book and bank", "book-versus", "difference between book", "bank statement vs"], (),
       "cash.book_vs_bank", "recon_list"),
-    _e("F54", "F", "Show all transfers between bank accounts", ["transfers between", "inter-account", "fund transfer", "transfer between banks", "ftv"], (),
+    _e("F54", "F", "Show all transfers between bank accounts", ["transfers between", "inter-account", "fund transfer", "transfer between banks"], (),
       "cash.transfers", "transfers"),
 
     # ------------------------------------------------------------------ G
@@ -171,6 +173,25 @@ CATALOG: list[CatalogEntry] = [
     _e("K98", "K", "Show the Balance Sheet", ["balance sheet", "statement of financial position", "sfp"], (), "reports.balance_sheet", "statement"),
     _e("K99", "K", "Show the Cash Flow Statement", ["cash flow"], (), "reports.cash_flow", "cash_flow"),
     _e("K100", "K", "Compare this month with previous month", ["compare", "versus last", "vs last"], ("word:month|word:period|word:quarter|word:year|word:previous",), "reports.compare_periods", "statement"),
+
+    # ------------------------------------------------------------------ L
+    _e("L101", "L", "How many RFPs are made per CV?", ["rfp per cv", "per cv", "rfs per cv", "rfp is made per"], (), "stats.rfp_per_cv", "cv_list"),
+    _e("L102", "L", "How many CVs do we have?", ["how many cv", "how many check voucher", "number of check voucher"], (), "stats.doc_count", "cv_list", extra="cv"),
+    _e("L103", "L", "How many RFPs do we have?", ["how many rfp", "number of rfps"], (), "stats.doc_count", "rfp_list", extra="rfp"),
+    _e("L104", "L", "How many journal entries do we have?", ["how many journal entry", "how many journal entries", "how many je", "number of journal entries"], (), "stats.doc_count", "je_list", extra="je"),
+    _e("L105", "L", "How many FTVs do we have?", ["how many ftv", "how many transfer", "number of transfers"], (), "stats.doc_count", "transfers", extra="ftv"),
+    _e("L106", "L", "How many purchase orders do we have?", ["how many purchase order", "how many po", "number of purchase orders"], (), "stats.doc_count", "po_list", extra="po"),
+    _e("L107", "L", "How many Purchase Requests do we have?", ["how many purchase request", "how many pr", "number of purchase requests"], (), "stats.doc_count", "po_list", extra="pr"),
+    _e("L108", "L", "How many CONSO batches do we have?", ["how many conso", "number of conso batches"], (), "stats.doc_count", "conso_list", extra="conso"),
+    _e("L109", "L", "How many sales invoices do we have?", ["how many sales invoice", "how many si", "number of sales invoices"], (), "stats.doc_count", "si_list", extra="si"),
+    _e("L110", "L", "How many receipts do we have?", ["how many receipt", "number of receipts"], (), "stats.doc_count", "receipt_list", extra="receipt"),
+    _e("L111", "L", "How many deposits do we have?", ["how many deposit", "number of deposits"], (), "stats.doc_count", "receipt_list", extra="deposit"),
+    _e("L112", "L", "How many PCF replenishments do we have?", ["how many pcf", "how many replenishment", "number of pcf replenishments"], (), "stats.doc_count", "pcf_list", extra="pcf"),
+    _e("L113", "L", "How many advances do we have?", ["how many advance", "number of advances"], (), "stats.doc_count", "advances", extra="advance"),
+    _e("L114", "L", "How many billing transactions do we have?", ["how many billing", "number of billing transactions"], (), "stats.doc_count", "billing_list", extra="billing"),
+    _e("L115", "L", "How many assets do we have?", ["how many asset", "number of assets"], (), "stats.doc_count", "asset_list", extra="asset"),
+    _e("L116", "L", "How many suppliers / customers / bank accounts do we have?", ["how many supplier", "how many customer", "how many bank", "how many petty cash fund", "how many pcf fund"], (), "stats.master_counts", "supplier_list"),
+    _e("L117", "L", "Who processed this purchase?", ["who processed", "processed the", "who handled", "who prepared this"], ("supplier|item_text",), "stats.who_prepared", "rfp_list"),
 ]
 
 CATALOG_BY_ID: dict[str, CatalogEntry] = {e.qid: e for e in CATALOG}

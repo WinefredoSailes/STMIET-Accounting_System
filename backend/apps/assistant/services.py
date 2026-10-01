@@ -10,6 +10,7 @@ from .parser.query_parser import QueryParser
 from .parser.intent_router import IntentRouter
 from .formatter.response_formatter import ResponseFormatter
 from .answers import compute_answer
+from .answers.conversation import conversation_answer
 from .executors.ap_executor import APExecutor
 from .executors.ar_executor import ARExecutor
 from .executors.posting_executor import PostingExecutor
@@ -94,10 +95,11 @@ class AssistantService:
             answer_block = None
             date_relaxed = False
 
-            # Computed answers first: when a catalog question fires, its
-            # answer replaces the record search (the handler already embeds
-            # supporting rows/links). None -> the pre-existing search chains.
-            answer = compute_answer(user, parsed, message)
+            # Small talk first ("hi", "thanks", "what's the date?") — a chat
+            # reply; otherwise computed answers, else the pre-existing search.
+            answer = conversation_answer(message)
+            if answer is None:
+                answer = compute_answer(user, parsed, message)
             if answer is not None:
                 answer_block = answer.to_block()
                 results = []

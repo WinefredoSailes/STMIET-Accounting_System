@@ -40,6 +40,12 @@ def _explicit_period(lower: str) -> ResolvedPeriod | None:
         if re.search(rf"\b{name}\w*\s+(\d{{4}})\b", lower):
             year = int(re.search(rf"\b{name}\w*\s+(\d{{4}})\b", lower).group(1))
             return _month_window(date(year, num, 1))
+    if re.search(r"\b(this week|karon nga semana)\b", lower):
+        monday = today - timedelta(days=today.weekday())
+        return ResolvedPeriod(monday, today)
+    if re.search(r"\b(last week|miaging semana)\b", lower):
+        monday = today - timedelta(days=today.weekday() + 7)
+        return ResolvedPeriod(monday, monday + timedelta(days=6))
     if re.search(r"\b(this month|karon nga bulan|karon ni nga bulan)\b", lower):
         return _month_window(today)
     if re.search(r"\b(last month|miaging bulan)\b", lower):

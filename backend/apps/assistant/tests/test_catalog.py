@@ -29,6 +29,7 @@ EXPECTED_IDS = set(
     + [f"I{n}" for n in range(73, 81)]
     + [f"J{n}" for n in range(81, 90)]
     + [f"K{n}" for n in range(90, 101)]
+    + [f"L{n}" for n in range(101, 118)]
 )
 
 
@@ -40,8 +41,8 @@ def dummy_period():
     )
 
 
-def test_catalog_has_exactly_100_rows_with_expected_ids():
-    assert len(CATALOG) == 100
+def test_catalog_has_exactly_117_rows_with_expected_ids():
+    assert len(CATALOG) == 117
     ids = [e.qid for e in CATALOG]
     assert len(ids) == len(set(ids)), "duplicate qid in catalog"
     assert set(ids) == EXPECTED_IDS
@@ -51,9 +52,9 @@ def test_every_entry_has_phrase_and_category():
     seen_categories = set()
     for e in CATALOG:
         assert e.phrases, f"{e.qid} has no phrases"
-        assert e.category in "ABCDEFGHIJK", f"{e.qid} bad category"
+        assert e.category in "ABCDEFGHIJKL", f"{e.qid} bad category"
         seen_categories.add(e.category)
-    assert seen_categories == set("ABCDEFGHIJK")
+    assert seen_categories == set("ABCDEFGHIJKL")
 
 
 def test_ready_entries_have_handler_and_screen():

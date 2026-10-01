@@ -79,6 +79,14 @@ function addMessage(role, content, results, answer) {
 
 function renderAnswerCard(answer) {
   if (!answer || typeof answer !== "object") return "";
+  const hasAny =
+    Boolean(answer.title) ||
+    (Array.isArray(answer.metrics) && answer.metrics.length > 0) ||
+    (Array.isArray(answer.rows) && answer.rows.length > 0) ||
+    (Array.isArray(answer.links) && answer.links.length > 0) ||
+    Boolean(answer.note) ||
+    answer.kind === "denied";
+  if (!hasAny) return "";
   const metrics = answer.metrics || [];
   const rows = answer.rows || [];
   const links = answer.links || [];
