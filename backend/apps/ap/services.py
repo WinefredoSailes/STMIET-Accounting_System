@@ -901,6 +901,107 @@ class PurchaseOrderService:
     @classmethod
     @retry_on_lock()
     @transaction.atomic
+    def edit_prepared(
+        cls,
+        po: PurchaseOrder,
+        *,
+        user,
+        po_date: date,
+        supplier: Supplier,
+        segment,
+        particulars: str = "",
+        lines: list[dict],
+        discount: Decimal = Decimal("0.00"),
+        vat_amount: Decimal = Decimal("0.00"),
+        other_charges: Decimal = Decimal("0.00"),
+        payment_terms: str = "",
+        contract_duration: str = "",
+        ship_to_company: str = "",
+        ship_to_address: str = "",
+        contact_person: str = "",
+        notes: str = "",
+    ) -> PurchaseOrder:
+        """The preparer corrects a `prepared` PO before submitting it.
+
+        Only the preparer may edit, and only while the PO is still `prepared` —
+        nothing has left her desk yet. The full header and the line items are
+        replaced wholesale; validation mirrors create_po. The PO stays
+        `prepared` (no rejection, no resubmission) so the preparer reviews her
+        fix and submits when ready.
+        """
+        if po.status != "prepared":
+            raise ValidationError("Only prepared POs can be edited.")
+        if user.id != po.created_by_id:
+            raise ValidationError(
+                f"PO {po.po_number} was prepared by another user; only the preparer may edit it."
+            )
+
+        subtotal = Decimal("0.00")
+        parsed = []
+        for line in lines:
+            qty = money(line["qty"])
+            price = money(line["unit_price"])
+            if qty <= 0 or price <= 0:
+                raise ValidationError("Each PO line needs a quantity and unit price greater than zero.")
+            desc = (line.get("description") or "").strip()
+            if not desc:
+                raise ValidationError("Each PO line needs a description.")
+            account = None
+            account_code = (line.get("account") or "").strip()
+            if account_code:
+                account = _account(account_code)
+            amt = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            parsed.append((qty, price, amt, line, account, account_code))
+            subtotal += amt
+        if not parsed:
+            raise ValidationError("A PO needs at least one line item.")
+        disc = money(discount)
+        vat = money(vat_amount)
+        other = money(other_charges)
+        total = subtotal - disc + vat + other
+        if total <= 0:
+            raise ValidationError("PO grand total must be greater than zero.")
+
+        po.po_date = po_date
+        po.supplier = supplier
+        po.segment = segment
+        po.particulars = particulars
+        po.subtotal = subtotal
+        po.discount = disc
+        po.vat_amount = vat
+        po.other_charges = other
+        po.amount = total
+        po.payment_terms = (payment_terms or "").strip()
+        po.contract_duration = (contract_duration or "").strip()
+        po.ship_to_company = (ship_to_company or "").strip()
+        po.ship_to_address = (ship_to_address or "").strip()
+        po.contact_person = (contact_person or "").strip()
+        po.notes = notes
+        po.lines.all().delete()
+        po.save(update_fields=[
+            "po_date", "supplier", "segment", "particulars", "subtotal",
+            "discount", "vat_amount", "other_charges", "amount",
+            "payment_terms", "contract_duration", "ship_to_company",
+            "ship_to_address", "contact_person", "notes", "updated_at",
+        ])
+        for i, (qty, price, amt, line, account, _code) in enumerate(parsed, start=1):
+            POLine.objects.create(
+                po=po,
+                line_no=i,
+                pr_number=(line.get("pr_number") or "").strip(),
+                qty=qty,
+                unit=(line.get("unit") or "").strip(),
+                description=(line.get("description") or "").strip(),
+                unit_price=price,
+                amount=amt,
+                account=account,
+            )
+        log_action(po, "edited", actor=user)
+        return po
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
     def advance_step(cls, po: PurchaseOrder, *, role: str, user) -> PurchaseOrder:
         """Move the PO forward one approval role (same matrix as the RFP,
         ADR-020/0XX). 'prepared'/'submitted' -> checked -> acctg_approved ->

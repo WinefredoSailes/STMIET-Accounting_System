@@ -3634,6 +3634,71 @@ def po_revise(request, pk):
 
 
 @login_required
+def po_edit(request, pk):
+    """The preparer corrects a prepared PO before submitting it. GET shows a
+    prefilled edit form; POST runs PurchaseOrderService.edit_prepared
+    (prepared + preparer only)."""
+    from apps.ap.models import PurchaseOrder
+    from apps.ap.services import PurchaseOrderService
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.select_related("supplier").prefetch_related("lines"), pk=pk
+    )
+    if po.status != "prepared":
+        messages.error(request, "Only prepared POs can be edited.")
+        return redirect(_safe_next(request, "ui:po_detail", pk))
+    if request.user.id != po.created_by_id:
+        messages.error(request, "Only the preparer may edit this PO.")
+        return redirect(_safe_next(request, "ui:po_detail", pk))
+
+    if request.method == "POST":
+        try:
+            supplier, segment = _po_supplier_and_segment_from_form(request)
+            po_date = request.POST.get("po_date", "")
+            if not po_date:
+                raise ValidationError("Enter the date of the purchase order.")
+            lines = _po_lines_from_form(request)
+            if not lines:
+                raise ValidationError("Add at least one line item.")
+            po = PurchaseOrderService.edit_prepared(
+                po,
+                user=request.user,
+                po_date=date.fromisoformat(po_date),
+                supplier=supplier,
+                segment=segment,
+                particulars=request.POST.get("particulars", ""),
+                lines=lines,
+                discount=request.POST.get("discount") or "0.00",
+                vat_amount=request.POST.get("vat_amount") or "0.00",
+                other_charges=request.POST.get("other_charges") or "0.00",
+                payment_terms=request.POST.get("payment_terms", ""),
+                contract_duration=request.POST.get("contract_duration", ""),
+                ship_to_company=request.POST.get("ship_to_company", ""),
+                ship_to_address=request.POST.get("ship_to_address", ""),
+                contact_person=request.POST.get("contact_person", ""),
+                notes=request.POST.get("notes", ""),
+            )
+            _capture_po_receipt_fields(request, po)
+            messages.success(request, f"PO {po.po_number} updated.")
+            return redirect(_safe_next(request, "ui:po_detail", pk))
+        except ValidationError as exc:
+            logger.info("PO edit rejected for %s on %s: %s", request.user, po.po_number, exc)
+            messages.error(request, str(exc))
+        except (AccountingError, ValueError) as exc:
+            logger.exception("PO edit failed for %s on %s", request.user, po.po_number)
+            messages.error(request, str(exc))
+        except ObjectDoesNotExist as exc:
+            logger.exception("PO edit hit a missing record for %s on %s", request.user, po.po_number)
+            messages.error(request, str(exc))
+
+    return render(
+        request,
+        "ui/ap/po_form.html",
+        {"editing": po, "edit_mode": "edit", "segments": Segment.objects.order_by("code")},
+    )
+
+
+@login_required
 @require_POST
 def po_close(request, pk):
     from apps.ap.models import PurchaseOrder

@@ -3,7 +3,10 @@ Mirror of the RFP action bar: preparer submits, head one-click approves,
 COO (CNR) approves above ₱100k when the gate is enabled, head closes a
 bankable PO. The reject-toggle/reject-form pair is wired by toggle-block.js.{% endcomment %}
 {% if po.status == "prepared" %}
-<div class="mt-4">
+<div class="mt-4 flex items-center gap-2">
+  {% if request.user.id == po.created_by_id %}
+  <a href="{% url 'ui:po_edit' po.id %}" class="inline-block rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-100">Edit</a>
+  {% endif %}
   <form method="post" action="{% url 'ui:po_submit' po.id %}">
     {% csrf_token %}
     <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for checking</button>

@@ -250,6 +250,7 @@ def test_transfer_form_page_is_batch_grid(client, company, segment, accounts, ro
     assert 'data-line-grid="transfer"' in body
     assert 'data-add-row' in body
     assert 'data-remove-row' in body
+    assert 'data-drag-handle' in body
     assert "FUND TRANSFER VOUCHER (FTV)" not in body
 
 

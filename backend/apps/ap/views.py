@@ -213,6 +213,30 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     search_fields = ["po_number", "supplier__name", "particulars"]
     filterset_fields = ["status", "segment"]
 
+    def _assert_can_edit(self, po):
+        """The preparer may edit a PO only while it is still `prepared` — after
+        it leaves her desk (submitted or later) changes go through the
+        reject/revise cycle and no one may delete a document."""
+        if po.status != "prepared":
+            raise PermissionDenied("Only prepared POs can be edited.")
+        if self.request.user.id != po.created_by_id:
+            raise PermissionDenied("Only the preparer may edit this PO.")
+
+    def update(self, request, *args, **kwargs):
+        po = self.get_object()
+        self._assert_can_edit(po)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        po = self.get_object()
+        self._assert_can_edit(po)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        po = self.get_object()
+        self._assert_can_edit(po)
+        return super().destroy(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         data = request.data
         from apps.foundation.models import Segment

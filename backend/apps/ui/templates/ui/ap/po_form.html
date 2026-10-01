@@ -1,15 +1,15 @@
 {% extends "ui/base.html" %}
 {% load static %}
-{% block title %}{% if editing %}Revise PO {{ editing.po_number }}{% else %}New Purchase Order{% endif %}{% endblock %}
+{% block title %}{% if editing %}{% if edit_mode == 'edit' %}Edit PO {{ editing.po_number }}{% else %}Revise PO {{ editing.po_number }}{% endif %}{% else %}New Purchase Order{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
   <a href="{% url 'ui:po_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr; Purchase Orders</a>
   <div class="mt-1 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-surface-900">{% if editing %}Revise PO {{ editing.po_number }}{% else %}New Purchase Order{% endif %}</h1>
+    <h1 class="text-xl font-semibold text-surface-900">{% if editing %}{% if edit_mode == 'edit' %}Edit PO {{ editing.po_number }}{% else %}Revise PO {{ editing.po_number }}{% endif %}{% else %}New Purchase Order{% endif %}</h1>
     <span class="text-xs text-surface-400">PO template · YYYY-SEQ auto-assigned</span>
   </div>
 
-  {% if editing %}
+  {% if editing and edit_mode != 'edit' %}
   <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
     <div class="text-sm font-semibold text-rose-800">Rejected — returned for revision</div>
     <div class="text-xs text-surface-500 mt-1">Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by }} · {{ editing.rejected_at|date:"M d, Y H:i" }}</div>
@@ -60,8 +60,9 @@
       Line items — PR NO / QTY / UNIT / DESCRIPTION / UNIT PRICE / AMOUNT &middot; optional GL account pre-fills RFP expense lines
     </div>
     <div class="px-6 pb-4">
-      <table class="line-table w-full text-sm" style="min-width: 1300px;">
+      <table class="line-table w-full text-sm" style="min-width: 1330px;">
         <colgroup>
+          <col style="width:30px"><!-- drag -->
           <col style="width:40px"><!-- # -->
           <col style="width:130px"><!-- PR No -->
           <col style="width:80px"><!-- QTY -->
@@ -74,6 +75,7 @@
         </colgroup>
         <thead class="text-left text-xs uppercase tracking-wider text-surface-500">
           <tr>
+            <th class="py-2"></th>
             <th class="py-2">#</th>
             <th class="py-2">PR No.</th>
             <th class="py-2 text-right">QTY</th>
@@ -85,10 +87,11 @@
             <th></th>
           </tr>
         </thead>
-        <tbody id="lines-body" data-po-grid class="divide-y divide-surface-100">
+        <tbody id="lines-body" data-line-grid="po" data-subtotal="#po-subtotal" data-total="#po-total" data-discount="#id_discount" data-vat="#id_vat_amount" data-other="#id_other_charges" class="divide-y divide-surface-100">
           {% if editing %}
           {% for line in editing.lines.all %}
           <tr>
+            <td class="py-2 text-surface-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
             <td class="py-2 text-surface-400 po-line-no">{{ forloop.counter }}</td>
             <td class="py-2"><input type="text" name="line_pr_no" maxlength="32" value="{{ line.pr_number }}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" value="{{ line.qty }}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
@@ -101,11 +104,12 @@
             </td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_unit_price" value="{{ line.unit_price }}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums po-price"></td>
             <td class="py-2 text-right tabular-nums po-row-amount">{{ line.amount|default:"" }}</td>
-            <td class="py-2"><button type="button" data-po-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>
           </tr>
           {% endfor %}
           {% else %}
           <tr>
+            <td class="py-2 text-surface-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
             <td class="py-2 text-surface-400 po-line-no">1</td>
             <td class="py-2"><input type="text" name="line_pr_no" maxlength="32" placeholder="2026-189" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_qty" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums po-qty"></td>
@@ -118,12 +122,18 @@
             </td>
             <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount name="line_unit_price" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums po-price"></td>
             <td class="py-2 text-right tabular-nums po-row-amount">0.00</td>
-            <td class="py-2"><button type="button" data-po-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>
           </tr>
           {% endif %}
         </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="10" class="py-2">
+              <button type="button" data-add-row class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">+ Add line</button>
+            </td>
+          </tr>
+        </tfoot>
       </table>
-      <button type="button" id="add-po-line" class="mt-2 rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">+ Add line</button>
     </div>
 
     <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -180,8 +190,8 @@
     </div>
 
     <div class="px-6 py-4 border-t border-surface-200 flex justify-end">
-      <button type="submit" data-confirm="{% if editing %}Resubmit this PO for checking? It re-enters the approval queue.{% endif %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        {% if editing %}Save & resubmit (revised){% else %}Create PO (prepared){% endif %}
+      <button type="submit" data-confirm="{% if editing and edit_mode != 'edit' %}Resubmit this PO for checking? It re-enters the approval queue.{% endif %}" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        {% if editing %}{% if edit_mode == 'edit' %}Save changes{% else %}Save & resubmit (revised){% endif %}{% else %}Create PO (prepared){% endif %}
       </button>
     </div>
   </form>
@@ -189,82 +199,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/amount-format.js' %}"></script>
-<script>
-  (function () {
-    function parse(v) { return window.AmountFormat.parse(v); }
-    function fmt(n) { return window.AmountFormat.fmt(n); }
-
-    var tbody = document.getElementById('lines-body');
-    var subtotalEl = document.getElementById('po-subtotal');
-    var totalEl = document.getElementById('po-total');
-
-    function rowAmount(tr) {
-      var qty = parse(tr.querySelector('.po-qty').value);
-      var price = parse(tr.querySelector('.po-price').value);
-      return Math.round(qty * price * 100) / 100;
-    }
-
-    function recalcTotals() {
-      var t = 0;
-      tbody.querySelectorAll('tr').forEach(function (tr) {
-        var amt = rowAmount(tr);
-        tr.querySelector('.po-row-amount').textContent = fmt(amt);
-        t += amt;
-      });
-      var discount = parse(document.getElementById('id_discount').value);
-      var vat = parse(document.getElementById('id_vat_amount').value);
-      var other = parse(document.getElementById('id_other_charges').value);
-      subtotalEl.textContent = fmt(t);
-      totalEl.textContent = fmt(t - discount + vat + other);
-    }
-
-    function renumber() {
-      tbody.querySelectorAll('tr').forEach(function (tr, i) {
-        var no = tr.querySelector('.po-line-no');
-        if (no) no.textContent = i + 1;
-      });
-    }
-
-    document.getElementById('add-po-line').addEventListener('click', function () {
-      var src = tbody.querySelector('tr');
-      var row = src.cloneNode(true);
-      row.querySelectorAll('input, textarea').forEach(function (i) {
-        i.value = '';
-        i.removeAttribute('title');
-        if (i.tagName === 'TEXTAREA') {
-          i.style.height = 'auto';
-          i.removeAttribute('data-autogrown');
-        }
-      });
-      // Async account pickers on cloned rows must start blank and re-wrap:
-      // their options were fetched for the source row and the wrapped select
-      // would otherwise carry the source's picked value into the new line.
-      row.querySelectorAll('select[data-search-url]').forEach(function (s) {
-        s.removeAttribute('data-search-enhanced');
-        var wrap = s.closest('.searchable-wrap');
-        if (wrap) wrap.replaceWith(s);
-        s.classList.add('hidden');
-        s.innerHTML = '<option value="" selected>— select —</option>';
-        s.value = '';
-      });
-      var amtCell = row.querySelector('.po-row-amount');
-      if (amtCell) amtCell.textContent = '0.00';
-      tbody.appendChild(row);
-      renumber();
-      recalcTotals();
-    });
-
-    tbody.addEventListener('click', function (e) {
-      var btn = e.target.closest('[data-po-remove-row]');
-      if (btn) { btn.closest('tr').remove(); renumber(); recalcTotals(); }
-    });
-
-    tbody.addEventListener('input', recalcTotals);
-    ['id_discount', 'id_vat_amount', 'id_other_charges'].forEach(function (id) {
-      document.getElementById(id).addEventListener('input', recalcTotals);
-    });
-    recalcTotals();
-  })();
-</script>
+<script src="{% static 'js/line-grid.js' %}"></script>
 {% endblock %}

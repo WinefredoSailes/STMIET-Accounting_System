@@ -5,6 +5,7 @@
  *   rfp      — debit/credit pair columns (.amount-dr / .amount-cr)
  *   pcv      — expense rows (input[name="exp_amount"]) with total only
  *   transfer — transfer legs (input[name="line_amount"]) with total only
+ *   po       — purchase order lines (qty × unit price), subtotal + grand total
  *
  * The grid tbody declares behaviour via data attributes:
  *   data-line-grid="<variant>"
@@ -12,6 +13,7 @@
  *   variant rfp: data-total-dr / data-total-cr / data-hint
  *   variant pcv: data-total
  *   variant transfer: data-total
+ *   variant po: data-subtotal / data-total / data-discount / data-vat / data-other
  * All selectors are CSS selectors resolved in document scope, the add button is
  * any [data-add-row] inside the grid's <table>, row removal is any
  * [data-remove-row] inside the tbody (one per row — every row, template or
@@ -141,6 +143,25 @@
     if (total) total.textContent = fmtMoney(t);
   }
 
+  function recalcPo(grid) {
+    var subtotal = 0;
+    grid.querySelectorAll('tr').forEach(function (tr) {
+      var qty = num(tr.querySelector('.po-qty'));
+      var price = num(tr.querySelector('.po-price'));
+      var amt = Math.round(qty * price * 100) / 100;
+      var cell = tr.querySelector('.po-row-amount');
+      if (cell) cell.textContent = fmtMoney(amt);
+      subtotal += amt;
+    });
+    var discount = num(docSel(grid.dataset.discount));
+    var vat = num(docSel(grid.dataset.vat));
+    var other = num(docSel(grid.dataset.other));
+    var sub = docSel(grid.dataset.subtotal);
+    if (sub) sub.textContent = fmtMoney(subtotal);
+    var total = docSel(grid.dataset.total);
+    if (total) total.textContent = fmtMoney(subtotal - discount + vat + other);
+  }
+
   function renumberLines(grid) {
     grid.querySelectorAll('tr').forEach(function (tr, i) {
       var no = tr.querySelector('.line-no');
@@ -152,7 +173,7 @@
     if (grid.dataset.lineGridBound) return;
     grid.dataset.lineGridBound = '1';
     var variant = grid.dataset.lineGrid;
-    var recalc = { je: recalcJe, rfp: recalcRfp, pcv: recalcPcv, transfer: recalcTransfer }[variant];
+    var recalc = { je: recalcJe, rfp: recalcRfp, pcv: recalcPcv, transfer: recalcTransfer, po: recalcPo }[variant];
     var resetSelects = variant === 'rfp' || variant === 'je' || variant === 'transfer';
     if (!recalc) return;
 
@@ -231,6 +252,16 @@
       renumberLines(grid);
       recalc(grid);
     });
+
+    // The PO grand total also depends on discount / VAT / other charges, which
+    // live outside the line grid in their own summary card. Re-run the PO calc
+    // whenever those inputs change too.
+    if (variant === 'po') {
+      ['discount', 'vat', 'other'].forEach(function (key) {
+        var el = docSel(grid.dataset[key]);
+        if (el) el.addEventListener('input', function () { recalc(grid); });
+      });
+    }
 
     recalc(grid);
   }

@@ -152,6 +152,7 @@ urlpatterns = [
     path("ap/pos/<int:pk>/approve-cnr/", views.po_approve_cnr, name="po_approve_cnr"),
     path("ap/pos/<int:pk>/reject/", views.po_reject, name="po_reject"),
     path("ap/pos/<int:pk>/revise/", views.po_revise, name="po_revise"),
+    path("ap/pos/<int:pk>/edit/", views.po_edit, name="po_edit"),
     path("ap/pos/<int:pk>/close/", views.po_close, name="po_close"),
     path("ap/cv/", views.cv_list, name="cv_list"),
     path("ap/cv/new/", views.cv_create, name="cv_create"),

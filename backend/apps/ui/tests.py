@@ -3229,6 +3229,8 @@ class TestPCFReplenishmentScreen:
         assert "BUSINESS NAME" in body
         assert "CUSTOMER / CLIENT" not in body    # customer field removed (ADR-032)
         assert "REQUESTED BY" in body
+        assert "data-drag-handle" in body
+        assert "data-remove-row" in body
 
     def test_replenishment_post(self, client, company, segment, accounts, fiscal_period,
                                 user, fund, role_users):
@@ -4506,6 +4508,8 @@ class TestJournalVoucherLayout:
         assert 'id="total-credit"' in body
         assert 'id="balance-hint"' in body
         assert "data-add-row" in body
+        assert "data-drag-handle" in body
+        assert "data-remove-row" in body
 
     def test_je_form_party_picker_keeps_stored_name_when_editing(
         self, client, company, segment, accounts, fiscal_period
@@ -5000,6 +5004,15 @@ class TestPurchaseOrderScreen:
         body = resp.content.decode()
         assert 'name="line_description" data-autogrow rows="1"' in body
 
+    def test_po_form_has_drag_and_remove_line_tools(self, client, company, segment, accounts, supplier):
+        resp = client.get("/ap/pos/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "data-drag-handle" in body
+        assert "data-remove-row" in body
+        assert "data-add-row" in body
+        assert 'data-line-grid="po"' in body
+
     def test_po_form_offers_a_usable_segment_picker(self, client, company, segment, accounts, supplier):
         """Regression: the create form carried a hidden `segment` input that
         always rendered empty, so every new-PO submit posted segment="" and
@@ -5184,6 +5197,154 @@ class TestPurchaseOrderScreen:
         assert resp.status_code == 200
         body = resp.content.decode()
         assert "/ap/pos/" in body
+
+
+class TestPOEditPrepared:
+    """The preparer fixes a `prepared` PO before submitting it (Edit button on
+    the detail action bar; UI relies on PurchaseOrderService.edit_prepared and
+    the DRF viewset guards update/destroy). Mirrors TestRFPEditPrepared."""
+
+    @pytest.fixture
+    def supplier(self, db, segment):
+        from apps.ap.models import Supplier
+
+        return Supplier.objects.create(
+            code="S911", name="Shell Fuel Depot", default_segment=segment
+        )
+
+    @pytest.fixture
+    def staff(self, db, role_users):
+        return role_users["staff"]
+
+    def _make_po(self, segment, supplier, staff):
+        from apps.ap.services import PurchaseOrderService
+
+        return PurchaseOrderService.create_po(
+            po_number="PO-2026-9901",
+            po_date=date(2026, 1, 5),
+            supplier=supplier,
+            segment=segment,
+            particulars="Engine oil",
+            lines=[
+                {"qty": "2", "unit": "DRUM", "description": "ENGINE OIL", "unit_price": "25000.00"},
+            ],
+            user=staff,
+        )
+
+    def test_edit_button_shown_only_to_preparer_on_detail(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        po = self._make_po(segment, supplier, staff)
+
+        client.force_login(staff)
+        resp = client.get(f"/ap/pos/{po.id}/")
+        assert resp.status_code == 200
+        assert f"/ap/pos/{po.id}/edit/" in resp.content.decode()
+        assert "Submit for checking" in resp.content.decode()
+
+        client.force_login(role_users["head"])
+        resp = client.get(f"/ap/pos/{po.id}/")
+        assert f"/ap/pos/{po.id}/edit/" not in resp.content.decode()
+
+    def test_non_preparer_and_non_prepared_cannot_open_edit_form(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        po = self._make_po(segment, supplier, staff)
+
+        client.force_login(role_users["head"])
+        resp = client.get(f"/ap/pos/{po.id}/edit/")
+        assert resp.status_code == 302
+
+        client.force_login(staff)
+        resp = client.post(f"/ap/pos/{po.id}/submit/")
+        assert resp.status_code == 302
+        resp = client.get(f"/ap/pos/{po.id}/edit/")
+        assert resp.status_code == 302
+
+    def test_preparer_edits_prepared_po_and_stays_prepared(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        po = self._make_po(segment, supplier, staff)
+        client.force_login(staff)
+
+        resp = client.get(f"/ap/pos/{po.id}/edit/")
+        assert resp.status_code == 200
+        assert "Edit PO" in resp.content.decode()
+
+        resp = client.post(f"/ap/pos/{po.id}/edit/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-02-02",
+            "particulars": "Engine oil revised",
+            "line_pr_no": ["2026-1"],
+            "line_qty": ["3"],
+            "line_unit": ["DRUM"],
+            "line_description": ["ENGINE OIL 15W40"],
+            "line_unit_price": ["30000.00"],
+            "line_account": ["61100"],
+            "discount": "0.00",
+            "vat_amount": "0.00",
+            "other_charges": "0.00",
+        })
+        assert resp.status_code == 302
+
+        po.refresh_from_db()
+        assert po.status == "prepared"
+        assert po.amount == Decimal("90000.00")
+        assert po.po_date == date(2026, 2, 2)
+        assert po.particulars == "Engine oil revised"
+        assert po.lines.count() == 1
+
+    def test_edit_invalid_lines_leave_po_untouched(
+        self, client, company, segment, accounts, supplier, role_users, staff
+    ):
+        po = self._make_po(segment, supplier, staff)
+        client.force_login(staff)
+
+        resp = client.post(f"/ap/pos/{po.id}/edit/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-02-02",
+            "line_qty": ["0"],
+            "line_unit": ["DRUM"],
+            "line_description": ["Zero qty"],
+            "line_unit_price": ["25000.00"],
+            "line_account": [""],
+        })
+        po.refresh_from_db()
+        assert po.amount == Decimal("50000.00")
+        assert po.status == "prepared"
+
+    def test_api_update_destroy_guarded(self, segment, accounts, supplier, role_users, staff):
+        from rest_framework.test import APIClient
+
+        po = self._make_po(segment, supplier, staff)
+        staff_api = APIClient()
+        staff_api.force_authenticate(user=staff)
+        head_api = APIClient()
+        head_api.force_authenticate(user=role_users["head"])
+
+        url = f"/api/v1/ap/purchase-orders/{po.id}/"
+
+        # Another user holding the approval step is not the preparer -> blocked.
+        resp = head_api.patch(url, {"particulars": "HACK"}, format="json")
+        assert resp.status_code == 403
+        resp = head_api.delete(url)
+        assert resp.status_code == 403
+
+        # The preparer may adjust the header while the PO is still prepared.
+        resp = staff_api.patch(url, {"particulars": "GEN-FUEL"}, format="json")
+        assert resp.status_code == 200
+        po.refresh_from_db()
+        assert po.particulars == "GEN-FUEL"
+
+        # After submission the document is locked to editing/deletion.
+        resp = staff_api.post(f"/api/v1/ap/purchase-orders/{po.id}/submit/")
+        assert resp.status_code == 200
+        resp = staff_api.patch(url, {"particulars": "LATE"}, format="json")
+        assert resp.status_code == 403
+        resp = staff_api.delete(url)
+        assert resp.status_code == 403
 
 
 class TestRFPPurchaseOrderScreen:
