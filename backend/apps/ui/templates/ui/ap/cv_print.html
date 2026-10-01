@@ -2,54 +2,16 @@
 {% load static ui_filters %}
 {% block title %}Check Voucher {{ cv.cv_number }} — Print{% endblock %}
 {% block content %}
-<style>
-  @page { size: A5 portrait; margin: 6mm; }
-  .print-a4 @page { size: A4 portrait; margin: 8mm; }
-  @media print {
-    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
-    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
-    .cv-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
-    .cv-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .cv-paper td { padding: 1px 4px; }
-    tr, td { page-break-inside: avoid; break-inside: avoid; }
-  }
-  .print-toolbar {
-    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
-    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
-  }
-  .print-toolbar button {
-    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
-    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
-  }
-  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
-  .print-toolbar button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
-  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
-  .print-toolbar button:last-child:hover { background: #15803d; }
-  .cv-paper {
-    background: #fff; box-shadow: none;
-    margin: 0 auto; padding: 0; max-width: 148mm;
-  }
-  .cv-paper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-  .cv-paper td { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
-  .cv-paper *, .cv-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
-</style>
+{% include "ui/partials/shared_print.html" %}
 
-<div class="no-print print-toolbar">
-  <button class="active" onclick="setPaper('a5')">A5 / Half-Bond</button>
-  <button onclick="setPaper('a4')">A4</button>
-  <button onclick="window.print()">Print</button>
-</div>
+<style>.voucher-paper .data-grid td{border:1px solid #000!important;box-sizing:border-box;padding:1px 4px}</style>
 
-<div class="cv-paper">
-  <!-- 12 equal columns — every row's colspans sum to exactly 12 -->
-  <table>
-    <colgroup>
-      <col><col><col><col><col><col><col><col><col><col><col><col>
-    </colgroup>
+<div class="voucher-paper">
+  <table class="data-grid">
+    <colgroup><col><col><col><col><col><col><col><col><col><col><col><col></colgroup>
     <tbody>
 
-      <!-- HEADER  (4 rows: logo/title rowspan + 3 document rows) -->
-      <!-- Row 1: logo + CHECK VOUCHER + ACCOUNTING DEPARTMENT -->
+      <!-- HEADER (4 rows: logo/title rowspan + doc metadata) -->
       <tr>
         <td rowspan="4" colspan="3" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
@@ -61,43 +23,48 @@
           ACCOUNTING DEPARTMENT
         </td>
       </tr>
-      <!-- Row 2: Document No. -->
       <tr style="font-size:10px">
         <td colspan="2">Document No.:</td>
         <td colspan="3">ACCTG-FOR-010</td>
       </tr>
-      <!-- Row 3: Effective Date -->
       <tr style="font-size:10px">
         <td colspan="2">Effective Date:</td>
-        <td colspan="3">08.18.2022</td>
-      </tr>
-      <!-- Row 4: Revision No. -->
-      <tr style="font-size:10px">
-        <td colspan="2">Revision No.:</td>
-        <td colspan="3">02</td>
+        <td colspan="3">08.18.2022 · Revision No.: 02</td>
       </tr>
 
-      <!-- ═══ PAYEE INFORMATION  (12 full span) ═══ -->
+      <!-- PAYEE INFORMATION -->
       <tr>
-        <td colspan="15" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="5" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Payee Information
         </td>
       </tr>
-      <!-- NAME row: 1+6+1+4=12 -->
+      {% if source_type == "pcf" %}{% with pcfs=cv.pcf_cvs.all|first %}
       <tr style="font-size:10px">
-        <td colspan="3"style="font-weight:600">NAME:</td>
-        <td colspan="6" style="font-weight:700; text-transform:uppercase; white-space:normal">{{ cv.payee.name }}</td>
-        <td colspan="3"style="font-weight:600">DATE OF REQUEST:</td>
+        <td colspan="3" style="font-weight:600">NAME:</td>
+        <td colspan="6" style="font-weight:700; text-transform:uppercase; white-space:normal">{{ payee_name }}</td>
+        <td colspan="3" style="font-weight:600">DATE OF REQUEST:</td>
         <td colspan="3">{{ date_of_request|date:"m/d/Y" }}</td>
       </tr>
-      <!-- POSITION row: 1+6+1+4=12 -->
       <tr style="font-size:10px">
         <td colspan="3" style="font-weight:600">POSITION:</td>
         <td colspan="6" style="white-space:normal">{{ position|default:"—" }}</td>
-        <td colspan="3"style="font-weight:600">CHECK ISSUED &amp; NO.:</td>
+        <td colspan="3" style="font-weight:600">CHECK ISSUED NO.:</td>
         <td colspan="3">{{ cv.check_no|default:"" }}</td>
       </tr>
-      <!-- CV NO. row: 3+6+3+3=15 -->
+      {% endwith %}{% else %}
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600">NAME:</td>
+        <td colspan="6" style="font-weight:700; text-transform:uppercase; white-space:normal">{{ cv.payee.name }}</td>
+        <td colspan="3" style="font-weight:600">DATE OF REQUEST:</td>
+        <td colspan="3">{{ date_of_request|date:"m/d/Y" }}</td>
+      </tr>
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600">POSITION:</td>
+        <td colspan="6" style="white-space:normal">{{ position|default:"—" }}</td>
+        <td colspan="3" style="font-weight:600">CHECK ISSUED NO.:</td>
+        <td colspan="3">{{ cv.check_no|default:"" }}</td>
+      </tr>
+      {% endif %}
       <tr style="font-size:10px">
         <td colspan="3" style="font-weight:600">CV NO.:</td>
         <td colspan="6" style="font-weight:700">{{ cv.cv_number }}</td>
@@ -105,26 +72,24 @@
         <td colspan="3">{{ cleared_at|date:"m/d/Y"|default:"—" }}</td>
       </tr>
 
-      <!-- ═══ DISTRIBUTION CHARGES  (13 full span) ═══ -->
+      <!-- DISTRIBUTION CHARGES -->
       <tr>
         <td colspan="15" style="background:#e2efda; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Distribution Charges
         </td>
       </tr>
-      <!-- Column headers: 7+2+2+2+2=15 -->
       <tr style="font-size:10px; text-transform:uppercase; letter-spacing:.03em">
         <td colspan="7" style="font-weight:600">Purpose of Payment</td>
-        <td colspan="2"style="font-weight:600; text-align:center">Segment</td>
+        <td colspan="2" style="font-weight:600; text-align:center">Segment</td>
         <td colspan="2" style="font-weight:600; text-align:center">Cost Center</td>
         <td colspan="2" style="font-weight:600; text-align:center">GL Account</td>
         <td colspan="2" style="font-weight:600; text-align:right">Amount</td>
       </tr>
-      <!-- Data rows: 7+2+2+2+2=15 -->
       {% for line in dr_lines %}
       <tr style="font-size:10px; line-height:2;">
-        <td colspan="7" style="overflow:hidden; text-overflow:ellipsis; white-space:normal">{{ line.description|default:rfp.particulars }}</td>
+        <td colspan="7" style="overflow:hidden; text-overflow:ellipsis; white-space:normal">{{ line.description }}</td>
         <td colspan="2" style="text-align:center">{{ line.segment.code }}</td>
-        <td colspan="2" style="text-align:center">{{ rfp.purpose|default:"—" }}</td>
+        <td colspan="2" style="text-align:center">{% if source_type == "rfp" %}{{ rfp.purpose|default:"—" }}{% else %}—{% endif %}</td>
         <td colspan="2" style="font-family:monospace; font-size:9px; text-align:center">{{ line.account.code }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ line.amount|money }}</td>
       </tr>
@@ -135,10 +100,11 @@
       </tr>
       {% endif %}
 
-      <!-- ═══ TOTAL / REMARKS  8+2+2=12 ═══ -->
+      <!-- TOTAL/REMARKS -->
       <tr style="font-size:10px; font-weight:600">
         <td colspan="11">
-          OTHER REMARKS:{% if rfp %} <span style="font-weight:400">See attached RFP {{ rfp.ap_number }}</span>{% endif %}
+          OTHER REMARKS:
+          {% if source_type == "rfp" and rfp %}<span style="font-weight:400">See attached RFP {{ rfp.ap_number }}</span>{% elif pcfs %}<span style="font-weight:400">See attached PCV {{ pcfs.0.voucher_no }}</span>{% endif %}
         </td>
         <td colspan="2" style="text-align:center; text-transform:uppercase">Total Amount</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
@@ -151,14 +117,14 @@
       </tr>
       {% endif %}
 
-      <!-- ═══ DISCLAIMER  12 full span ═══ -->
+      <!-- DISCLAIMER -->
       <tr>
         <td colspan="15" style="font-size:9px; font-style:italic; line-height:1.3">
           Each check issued shall be supported with sufficient documentation. Failure to do so shall constitute neglect to the requester and/or the department.
         </td>
       </tr>
 
-      <!-- ═══ SIGNATURE BLOCK  2+2+3+2+3=12 ═══ -->
+      <!-- SIGNATURE BLOCK -->
       <tr style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.03em">
         <td colspan="3">Prepared By:</td>
         <td colspan="3">Requested By:</td>
@@ -184,18 +150,4 @@
     </tbody>
   </table>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-  function setPaper(size) {
-    document.body.classList.toggle('print-a4', size === 'a4');
-    document.querySelectorAll('.print-toolbar button').forEach(function(btn, i) {
-      if (i < 2) btn.classList.toggle('active', (i === 0 && size === 'a5') || (i === 1 && size === 'a4'));
-    });
-  }
-  window.addEventListener("load", function () {
-    setTimeout(function () { window.print(); }, 350);
-  });
-</script>
 {% endblock %}

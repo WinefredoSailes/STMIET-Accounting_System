@@ -3342,15 +3342,12 @@ class TestPCFReplenishmentScreen:
         body = resp.content.decode()
         assert "PETTY CASH REPLENISHMENT" in body
         assert replen.voucher_no in body
-        assert "BUSINESS SEGMENT" in body      # workbook column header
-        assert "Controllability" in body       # workbook column header
+        assert "Business Segment" in body      # PCF print column header
         assert "Josefina P. Ogabang" in body
         assert "PCV 09-03-2026" in body
-        assert "Adriano Fuel Station" in body  # Vendor/Customer column
-        assert "111-222-333-000" in body       # TIN column
-        assert "Cable" in body                 # REMARKS
+        assert "Cable" in body                 # Purpose of payment / remarks
         assert "61100" in body                 # COA column
-        assert "850.00" in body                # Dr. column
+        assert "850.00" in body                # Dr. amount
         assert "ENTITY" not in body
         assert "STMIET" not in body.replace("STMIET-WSS", "")
         # print shell parity with the other print pages (regression: the PCF

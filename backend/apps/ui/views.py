@@ -45,6 +45,7 @@ from .services import (
     advances_subsidiary_ledger,
     ADVANCE_LEDGER_STATUS_LABELS,
     aging_context,
+    approved_pcf,
     approved_rfps,
     asset_context,
     asset_summary,
@@ -4291,36 +4292,54 @@ def cv_list(request):
 @login_required
 def cv_create(request):
     from apps.ap.models import RFPDocument
+    from apps.cash.models import PCFReplenishment
     from apps.ap.services import CVPaymentService, rfp_payable
 
     if request.method == "POST":
         try:
-            rfp = RFPDocument.objects.get(pk=request.POST["rfp"])
             bank_account = Account.objects.get(pk=request.POST["bank_account"])
+            source_type = request.POST.get("source_type", "rfp")
+            # New UI sends source_id; the legacy RFP-only form posts rfp=.
+            source_pk = request.POST.get("source_id") or request.POST.get("rfp")
+            gross = request.POST["gross_amount"]
+            withheld_tax = request.POST.get("withheld_tax", "0.00")
+
+            # Resolve source document (RFP or PCF replenishment).
+            source_doc = None
+            if source_type == "pcf" and source_pk:
+                source_doc = PCFReplenishment.objects.get(pk=source_pk)
+                company = source_doc.fund.company
+                payee_name = source_doc.payee_name or ""
+                payee = None  # No Supplier FK on PCF
+            else:
+                source_doc = RFPDocument.objects.get(pk=source_pk)
+                company = source_doc.segment.company
+                payee = source_doc.payee
+
             cv_number = DocumentSequence.next_number(
-                company=rfp.segment.company,
-                form_code="CV",
+                company=company, form_code="CV",
                 year=int(request.POST["cv_date"][:4]),
                 pattern="CV-{YYYY}-{SEQ:04d}",
             )
             cv = CVPaymentService.create_cv(
                 cv_number=cv_number,
                 cv_date=date.fromisoformat(request.POST["cv_date"]),
-                payee=rfp.payee,
-                bank_account=bank_account,
-                gross_amount=request.POST["gross_amount"],
-                withheld_tax=request.POST.get("withheld_tax", "0.00"),
-                rfp=rfp,
-                check_no=request.POST.get("check_no", ""),
+                payee=payee, bank_account=bank_account,
+                gross_amount=gross, withheld_tax=withheld_tax,
+                rfp=source_doc, check_no=request.POST.get("check_no", ""),
                 user=request.user,
             )
             messages.success(request, f"Check voucher {cv.cv_number} issued.")
             return redirect("ui:cv_detail", pk=cv.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
+
     selected_rfp = None
+    selected_pcf = None
     payable = None
     rfp_id = request.GET.get("rfp")
+    pcf_id = request.GET.get("pcfid")
+    source_type = request.GET.get("source", "rfp")
     if rfp_id:
         from django.db.models import Prefetch
         from apps.ap.models import RFPLine
@@ -4328,22 +4347,29 @@ def cv_create(request):
         try:
             rfp_qs = RFPDocument.objects.filter(pk=rfp_id).select_related("payee", "segment")
             selected_rfp = rfp_qs.prefetch_related(
-                Prefetch(
-                    "lines",
-                    queryset=RFPLine.objects.select_related("account", "segment"),
-                )
+                Prefetch("lines", queryset=RFPLine.objects.select_related("account", "segment")),
             ).get()
             payable = money(rfp_payable(selected_rfp))
         except (ValueError, RFPDocument.DoesNotExist):
             messages.error(request, "Selected RFP not found.")
+    elif pcf_id:
+        try:
+            selected_pcf = PCFReplenishment.objects.get(pk=pcf_id)
+            source_type = "pcf"
+        except (ValueError, PCFReplenishment.DoesNotExist):
+            messages.error(request, "Selected PCF voucher not found.")
+
     return render(
         request,
         "ui/ap/cv_form.html",
         {
             "rfps": approved_rfps(),
+            "pcfs": approved_pcf(),
             "today": date.today(),
             "selected_rfp": selected_rfp,
+            "selected_pcf": selected_pcf,
             "payable": payable,
+            "source_type": source_type,
         },
     )
 
@@ -4358,29 +4384,52 @@ def cv_detail(request, pk):
         return signatory_name(user)
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "rfp", "journal_entry"),
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp", "journal_entry")
+            .prefetch_related("pcf_cvs__fund", "pcf_cvs__requested_by"),
         pk=pk,
     )
-    if cv.rfp_id:
-        list(cv.rfp.lines.select_related("account", "segment"))
     rfp = cv.rfp
+    pcfs = list(cv.pcf_cvs.all()) if not rfp else []
     from apps.ap.services import rfp_payable
 
     payable = money(rfp_payable(rfp)) if rfp else None
+    # For PCF source build dr_lines from expenses so detail can show them too.
+    dr_lines = []
+    source_type = "rfp" if rfp else "pcf"
+    if pcfs:
+        replen = pcfs[0]
+        from apps.foundation.models import SegmentAccountMap
+        from types import SimpleNamespace
+        seg = replen.fund.company.segments.order_by("code").first()
+        acct_code = str(replen.fund.gl_account.code)
+        acct_name = str(replen.fund.gl_account.name)
+        for exp in (replen.expenses or []):
+            side = str(exp.get("side", "dr")).lower()
+            amt = Decimal(str(exp.get("amount", 0)))
+            seg_code = exp.get("segment") or (seg.code if seg else "")
+            dr_lines.append(SimpleNamespace(
+                description=exp.get("description", ""),
+                cost_center=exp.get("cost_center", ""),
+                account=SimpleNamespace(code=exp.get("account_code", acct_code), name=exp.get("account_name", acct_name)),
+                segment=SimpleNamespace(code=seg_code),
+                amount=amt,
+                side=side,
+            ))
+        total = sum((line.amount for line in dr_lines), Decimal("0.00"))
+    else:
+        lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
+        dr_lines = [line for line in lines if line.side == "dr"]
+        total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     from apps.cash.models import CheckDisbursement
 
     disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
     cleared_at = disb["cleared_at"] if disb else None
-    # Same 5 signatory cells as the print layout (ACCTG-FOR-010): prepared by
-    # is whoever issued the CV, requested by is the RFP creator, checked by is
-    # the RFP checker, approved by is the COO role holder, and the payee signs
-    # as receiver.
     signatories = {
         "prepared": _name(cv.created_by),
-        "requested": _name(rfp.created_by) if rfp else "",
+        "requested": _name(rfp.created_by) if rfp else (_name(replen.requested_by) if pcfs else ""),
         "checked": _name(rfp.checked_by) if rfp else _name(cv.approved_by),
         "approved": _coo_name(),
-        "received": cv.payee.name if cv.payee else "",
+        "received": cv.payee.name if cv.payee else (pcfs[0].payee_name if pcfs else ""),
     }
     return render(request, "ui/ap/cv_detail.html", {
         "cv": cv,
@@ -4389,6 +4438,10 @@ def cv_detail(request, pk):
         "signatories": signatories,
         "audit_trail": _doc_audit_trail("cv", cv.id, cv.journal_entry),
         **_reversal_context(request, cv.journal_entry),
+        "source_type": source_type,
+        "dr_lines": dr_lines,
+        "total": total,
+        "pcfs": pcfs,
     })
 
 
@@ -4404,15 +4457,45 @@ def cv_print(request, pk):
         return signatory_name(user)
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "approved_by", "rfp"),
+        CheckVoucher.objects.select_related("payee", "bank_account", "approved_by", "rfp")
+            .prefetch_related("pcf_cvs__fund", "pcf_cvs__requested_by"),
         pk=pk,
     )
     rfp = cv.rfp
-    lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
-    dr_lines = [line for line in lines if line.side == "dr"]
-    total = sum((line.amount for line in dr_lines), Decimal("0.00"))
-    position = cv.payee.position or cv.payee.get_supplier_type_display()
-    date_of_request = rfp.rfp_date if rfp and rfp.rfp_date else None
+    pcfs = list(cv.pcf_cvs.all()) if not rfp else []
+    # Build dr_lines from RFP lines or PCF expenses — print template needs both.
+    dr_lines = []
+    position = ""
+    date_of_request = None
+    total = Decimal("0.00")
+    if rfp:
+        lines = list(rfp.lines.select_related("account", "segment"))
+        dr_lines = [line for line in lines if line.side == "dr"]
+        total = sum((line.amount for line in dr_lines), Decimal("0.00"))
+        position = cv.payee.position or cv.payee.get_supplier_type_display()
+        date_of_request = rfp.rfp_date if rfp and rfp.rfp_date else None
+    elif pcfs:
+        replen = pcfs[0]
+        from types import SimpleNamespace
+        seg = replen.fund.company.segments.order_by("code").first()
+        acct_code = str(replen.fund.gl_account.code)
+        acct_name = str(replen.fund.gl_account.name)
+        for exp in (replen.expenses or []):
+            side = str(exp.get("side", "dr")).lower()
+            amt = Decimal(str(exp.get("amount", 0)))
+            seg_code = exp.get("segment") or (seg.code if seg else "")
+            dr_lines.append(SimpleNamespace(
+                description=exp.get("description", ""),
+                cost_center=exp.get("cost_center", ""),
+                account=SimpleNamespace(code=exp.get("account_code", acct_code), name=exp.get("account_name", acct_name)),
+                segment=SimpleNamespace(code=seg_code),
+                amount=amt,
+                side=side,
+            ))
+        total = sum((line.amount for line in dr_lines), Decimal("0.00"))
+        position = f"{replen.fund.fund_code} — {replen.fund.custodian.get_full_name() or replen.fund.custodian.username}" if replen.fund.custodian else replen.fund.fund_code
+        date_of_request = replen.request_date
+
     from apps.ap.services import rfp_payable
 
     payable = money(rfp_payable(rfp)) if rfp else money(total)
@@ -4422,10 +4505,10 @@ def cv_print(request, pk):
     cleared_at = disb["cleared_at"] if disb else None
     signatories = {
         "prepared": _name(cv.created_by),
-        "requested": _name(rfp.created_by) if rfp else "",
+        "requested": _name(rfp.created_by) if rfp else (_name(replen.requested_by) if pcfs else ""),
         "checked": _name(rfp.checked_by) if rfp else _name(cv.approved_by),
         "approved": _coo_name(),
-        "received": cv.payee.name if cv.payee else "",
+        "received": cv.payee.name if cv.payee else (pcfs[0].payee_name if pcfs else ""),
     }
     return render(
         request,
@@ -4433,7 +4516,7 @@ def cv_print(request, pk):
         {
             "cv": cv,
             "rfp": rfp,
-            "lines": lines,
+            "lines": dr_lines,
             "dr_lines": dr_lines,
             "total": total,
             "payable": payable,
@@ -4441,6 +4524,7 @@ def cv_print(request, pk):
             "position": position,
             "signatories": signatories,
             "date_of_request": date_of_request,
+            "source_type": "pcf" if pcfs else "rfp",
         },
     )
 
@@ -4943,11 +5027,15 @@ def pcf_replenishment_detail(request, pk):
 
 @login_required
 def pcf_replenishment_print(request, pk):
-    """Print-optimized Petty Cash Replenishment report (landscape) matching the
-    PETTY CASH REPLENISHMENT.xlsx columns. Columns the app does not capture yet
-    (Type, DATE, REF., Address, VAT, AP NO) print blank."""
+    """Print-optimized Petty Cash Replenishment (ACCTG-FOR-002) matching the
+    standard voucher-print convention: A5 portrait, STM logo header,
+    Payee Information + Distribution Charges sections, 5-cell signature block."""
     from apps.cash.models import PCFReplenishment
     from apps.foundation.models import Account
+
+    def _signatory_name(user):
+        from apps.core.approvals import signatory_name
+        return signatory_name(user)
 
     replen = get_object_or_404(
         PCFReplenishment.objects.select_related("fund__custodian", "fund__company", "requested_by"),
@@ -4968,18 +5056,18 @@ def pcf_replenishment_print(request, pk):
                 "remarks": exp.get("description", ""),
                 "business_name": exp.get("business_name", ""),
                 "tin": exp.get("tin", ""),
-                "classification": acct.classification if acct else "",
-                "category": acct.category if acct else "",
-                "sub_accounts": acct.sub_accounts if acct else "",
-                "major_accounts": acct.major_accounts if acct else "",
-                "behavior": acct.behavior if acct else "",
-                "traceability": acct.traceability if acct else "",
-                "controllability": acct.controllability if acct else "",
             }
         )
     total = sum((Decimal(str(row["dr"])) for row in rows), Decimal("0.00"))
     fund = replen.fund
     custodian = fund.custodian
+    signatories = {
+        "prepared": _signatory_name(replen.requested_by) if replen.requested_by else "",
+        "requested": _signatory_name(custodian) if custodian else replen.fund.fund_code,
+        "checked": _signatory_name(None) if False else _coo_name(),
+        "approved": _coo_name(),
+        "received": replen.payee_name or "—",
+    }
     return render(
         request,
         "ui/cash/pcf_replenishment_print.html",
@@ -4989,6 +5077,9 @@ def pcf_replenishment_print(request, pk):
             "total": total,
             "fund_label": fund.name or fund.fund_code,
             "custodian_label": custodian.get_full_name() or custodian.username if custodian else "—",
+            "payee_name": replen.payee_name or "—",
+            "reference": replen.reference or "—",
+            "signatories": signatories,
         },
     )
 

@@ -52,7 +52,7 @@ class PettyCashFundSerializer(serializers.ModelSerializer):
 class PCFReplenishmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PCFReplenishment
-        fields = ("id", "voucher_no", "fund", "request_date", "amount", "payee_name", "reference", "cost_center", "expenses", "journal_entry", "status", "requested_by", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_note")
+        fields = ("id", "voucher_no", "fund", "request_date", "amount", "payee_name", "reference", "cost_center", "expenses", "journal_entry", "status", "requested_by", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_note", "conso", "cv")
         read_only_fields = ("status", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_note")
 
 

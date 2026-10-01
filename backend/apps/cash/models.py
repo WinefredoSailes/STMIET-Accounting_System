@@ -226,6 +226,12 @@ class PCFReplenishment(AuditableModel):
         "ap.CONSOBatch", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
     )
     conso_line_no = models.PositiveSmallIntegerField(null=True, blank=True)
+    # A check voucher may be issued against a posted replenishment to document
+    # the treasury drawdown that settles it (ACCTG-FOR-010).
+    cv = models.ForeignKey(
+        "ap.CheckVoucher", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="pcf_cvs"
+    )
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="pcf_replenishments"
     )

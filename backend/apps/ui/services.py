@@ -816,6 +816,15 @@ def approved_rfps():
     ).select_related("payee", "segment")
 
 
+def approved_pcf():
+    """PCF replenishments ready for CV settlement (posted, no CV issued yet)."""
+    from apps.cash.models import PCFReplenishment
+
+    return PCFReplenishment.objects.filter(
+        status="posted", cv__isnull=True
+    ).select_related("fund", "requested_by").order_by("request_date")
+
+
 def unassigned_approved_rfps():
     """Approved RFPs not yet in a CONSO batch (for CONSO add)."""
     from apps.ap.models import RFPDocument

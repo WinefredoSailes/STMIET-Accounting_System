@@ -1,0 +1,49 @@
+{% load static %}
+{# Shared CSS + toolbar for all voucher print templates (RFP/CV/PCF). #}
+<style>
+  @page { size: A5 portrait; margin: 6mm; }
+  .print-a4 @page { size: A4 portrait; margin: 8mm; }
+  @media print {
+    html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
+    #sidebar, header, .p-4, .no-print, .print-toolbar { display: none !important; }
+    .voucher-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
+    .voucher-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .voucher-paper td { border: 1px solid #000; box-sizing: border-box; padding: 1px 4px; }
+    tr, td { page-break-inside: avoid; break-inside: avoid; }
+  }
+  .print-toolbar {
+    display: flex; justify-content: center; gap: 8px; padding: 12px 16px;
+    background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  }
+  .print-toolbar button {
+    padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 4px;
+    font-size: 12px; cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .print-toolbar button:hover { background: #f8fafc; border-color: #94a3b8; }
+  .print-toolbar button.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  .print-toolbar button:last-child { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .print-toolbar button:last-child:hover { background: #15803d; }
+  .voucher-paper {
+    background: #fff; box-shadow: none;
+    margin: 0 auto; padding: 0; max-width: 148mm;
+  }
+  .voucher-paper *, .voucher-paper { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+</style>
+
+<div class="no-print print-toolbar">
+  <button class="active" onclick="setPaper('a5')">A5 / Half-Bond</button>
+  <button onclick="setPaper('a4')">A4</button>
+  <button onclick="window.print()">Print</button>
+</div>
+
+<script>
+  function setPaper(size) {
+    document.body.classList.toggle('print-a4', size === 'a4');
+    document.querySelectorAll('.print-toolbar button').forEach(function(b, i) {
+      if (i < 2) b.classList.toggle('active', (i === 0 && size === 'a5') || (i === 1 && size === 'a4'));
+    });
+  }
+  window.addEventListener("load", function () {
+    setTimeout(function () { window.print(); }, 350);
+  });
+</script>

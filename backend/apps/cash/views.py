@@ -86,7 +86,7 @@ class PCFReplenishmentViewSet(viewsets.ModelViewSet):
     edits/deletes are allowed only by the preparer while the voucher is still
     a draft. Approval/rejection stay head-only service calls."""
 
-    queryset = PCFReplenishment.objects
+    queryset = PCFReplenishment.objects.select_related("fund", "cv")
     serializer_class = PCFReplenishmentSerializer
     filterset_fields = ["fund", "status"]
 

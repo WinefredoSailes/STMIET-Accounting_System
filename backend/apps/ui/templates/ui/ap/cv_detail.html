@@ -17,7 +17,7 @@
   {% capture as shell_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div><div class="text-xs text-surface-500">CV NUMBER</div><div class="mt-0.5 font-mono font-medium">{{ cv.cv_number }}</div></div>
-    <div><div class="text-xs text-surface-500">NAME</div><div class="mt-0.5 font-medium">{{ cv.payee.name }}</div></div>
+    <div><div class="text-xs text-surface-500">NAME</div><div class="mt-0.5 font-medium">{% if cv.payee %}{{ cv.payee.name }}{% elif pcfs %}{{ pcfs.0.payee_name }}{% else %}—{% endif %}</div></div>
     <div><div class="text-xs text-surface-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
     <div><div class="text-xs text-surface-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
     <div><div class="text-xs text-surface-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
@@ -65,8 +65,44 @@
         <tr><td colspan="6" class="px-3 py-2 text-xs text-surface-500">RFP {{ cv.rfp.ap_number }} — {{ cv.rfp.particulars }}</td></tr>
       </tfoot>
     </table>
+    {% elif pcfs %}
+    <table class="line-table w-full text-sm" style="min-width: 1150px;">
+      <colgroup>
+        <col style="width: 280px;"><!-- GL ACCOUNT -->
+        <col style="width: 350px;"><!-- PURPOSE OF PAYMENT -->
+        <col style="width: 90px;"><!-- SEGMENT -->
+        <col style="width: 90px;"><!-- COST CENTER -->
+        <col style="width: 170px;"><!-- DEBIT -->
+        <col style="width: 170px;"><!-- CREDIT -->
+      </colgroup>
+      <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+        <tr>
+          <th class="px-3 py-2">GL ACCOUNT</th>
+          <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+          <th class="px-3 py-2">SEGMENT</th>
+          <th class="px-3 py-2">COST CENTER</th>
+          <th class="px-3 py-2 text-right">DEBIT</th>
+          <th class="px-3 py-2 text-right">CREDIT</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-surface-100">
+        {% for exp in dr_lines %}
+        <tr>
+          <td class="px-3 py-2 font-mono text-xs">{{ exp.account.code }} <span class="font-sans text-surface-500">{{ exp.account.name }}</span></td>
+          <td class="px-3 py-2">{{ exp.description }}</td>
+          <td class="px-3 py-2">{{ exp.segment.code }}</td>
+          <td class="px-3 py-2">{{ exp.cost_center|default:"—" }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if exp.side != 'cr' %}{{exp.amount|peso}}{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if exp.side == 'cr' %}{{exp.amount|peso}}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-surface-50">
+        <tr><td colspan="6" class="px-3 py-2 text-xs text-surface-500">PCV {{ pcfs.0.voucher_no }} — {{ pcfs.0.fund.fund_code }}</td></tr>
+      </tfoot>
+    </table>
     {% else %}
-    <p class="text-sm text-surface-400">Standalone voucher — no linked RFP.</p>
+    <p class="text-sm text-surface-400">Standalone voucher — no linked RFP or PCF.</p>
     {% endif %}
 
     <table class="mt-4 ml-auto w-72 text-sm">

@@ -13,7 +13,8 @@ from decimal import Decimal
 import pytest
 from rest_framework.test import APIClient
 
-from apps.ap.models import Supplier
+from apps.ap.models import Supplier, CheckVoucher, CONSOBatch
+from apps.ap.services import CVPaymentService, RFPService, CONSOService
 from apps.cash.models import PCFReplenishment, PettyCashFund
 from apps.core.approvals import pending_approval_queue
 from apps.foundation.models import UserProfile
@@ -398,6 +399,244 @@ class TestGLAccountNamePersisted:
         assert resp.status_code == 200
         assert "not found" in resp.content.decode()
         assert PCFReplenishment.objects.count() == 0
+
+
+class TestPcfToCheckVoucherFlow:
+    """PCF replenishment → Check Voucher parity with RFP flow:
+    approved + CONSO-posted PCF can be issued a CV; CV approve → clear;
+    disbursement stamped. Print/detail render correctly for both sources."""
+
+    @pytest.fixture
+    def post_pc_fund(self, company, segment, accounts, role_users):
+        return PettyCashFund.objects.create(
+            fund_code="PCF-CV", name="CV Test Fund", custodian=role_users["staff"],
+            custodian_name="Test Custodian", imprest_amount="20000.00",
+            gl_account=accounts["10010"], company=company, is_active=True,
+        )
+
+    def test_create_cv_from_posted_pcf(self, client, role_users, post_pc_fund, accounts, supplier):
+        """Full lifecycle: draft → submit → approve → post → create CV."""
+        from apps.cash.models import PCFReplenishment
+
+        # Prepare & submit
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(post_pc_fund, accounts, supplier))
+        assert resp.status_code == 302
+        replen = PCFReplenishment.objects.get()
+        assert replen.status == "draft"
+
+        # Staff submits (draft → requested)
+        client.force_login(role_users["staff"])
+        client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+
+        # Head approves (auto-creates CONSO batch)
+        client.force_login(role_users["head"])
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+
+        # Post through CONSO
+        resp = client.post(f"/ap/conso/{replen.conso_id}/post/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "posted"
+        assert replen.journal_entry_id
+
+        # Create CV against posted PCF
+        bank = accounts["10110"]
+        resp = client.post("/ap/cv/new/", {
+            "source_type": "pcf",
+            "source_id": replen.pk,
+            "bank_account": bank.pk,
+            "cv_date": "2026-09-15",
+            "gross_amount": str(replen.amount),
+            "withheld_tax": "0.00",
+            "check_no": "",
+        })
+        assert resp.status_code == 302  # redirect to detail
+        cv = CheckVoucher.objects.last()
+        assert cv is not None
+        assert PCFReplenishment.objects.get(pk=replen.pk).cv_id  # FK set
+
+    def test_cv_from_pcf_has_correct_je(self, client, role_users, post_pc_fund, accounts, supplier):
+        """CV created from PCF source builds 2-line JE: Dr Fund | Cr Bank — no WHT."""
+        from apps.cash.models import PCFReplenishment
+
+        # Prep → submit → approve → post → CV
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(post_pc_fund, accounts, supplier))
+        assert resp.status_code == 302
+        replen = PCFReplenishment.objects.get()
+
+        # Submit (draft → requested)
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+
+        client.force_login(role_users["head"])
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+        assert replen.conso_id is not None
+
+        resp = client.post(f"/ap/conso/{replen.conso_id}/post/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "posted"
+
+        # Create CV
+        resp = client.post("/ap/cv/new/", {
+            "source_type": "pcf", "source_id": replen.pk,
+            "bank_account": accounts["10110"].pk,
+            "cv_date": "2026-09-15", "gross_amount": str(replen.amount),
+            "withheld_tax": "0.00", "check_no": "",
+        })
+        assert resp.status_code == 302
+        cv = CheckVoucher.objects.last()
+        assert cv.rfp_id is None  # not an RFP-backed CV
+        assert cv.journal_entry_id
+
+        entry = cv.journal_entry
+        lines = list(entry.lines.all().order_by("line_no"))
+        assert len(lines) == 2, f"Expected 2 lines (no WHT), got {len(lines)}"
+
+        # Line 1: Dr Fund GL
+        assert lines[0].debit > 0
+        assert lines[0].account_id == post_pc_fund.gl_account_id
+
+        # Line 2: Cr Bank Account
+        assert lines[1].credit > 0
+        assert lines[1].account_id == accounts["10110"].id
+
+        # No withholding tax line
+        wht_lines = [l for l in lines if l.account.account_type in ("liability",)]
+        wht = [l for l in wht_lines if "wht" in l.description.lower() or "withholding" in l.description.lower()]
+        assert len(wht) == 0, "No WHT line should exist for PCF-sourced CV"
+
+    def test_cv_detail_shows_pcf_metadata(self, client, role_users, post_pc_fund, accounts, supplier):
+        """GET /ap/cv/<pk>/ renders PCF context fields when CV pays a PCF."""
+        from apps.cash.models import PCFReplenishment
+        from apps.ap.models import CheckVoucher
+
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(post_pc_fund, accounts, supplier))
+        assert resp.status_code == 302
+        replen = PCFReplenishment.objects.get()
+
+        # Submit (draft → requested)
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        assert resp.status_code == 302
+        client.force_login(role_users["head"])
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.conso_id is not None
+        client.post(f"/ap/conso/{replen.conso_id}/post/")
+        replen.refresh_from_db()
+
+        resp = client.post("/ap/cv/new/", {
+            "source_type": "pcf", "source_id": replen.pk,
+            "bank_account": accounts["10110"].pk,
+            "cv_date": "2026-09-15", "gross_amount": str(replen.amount),
+            "withheld_tax": "0.00", "check_no": "",
+        })
+        assert resp.status_code == 302
+        cv = CheckVoucher.objects.last()
+        body = client.get(f"/ap/cv/{cv.pk}/").content.decode()
+        assert replen.voucher_no in body
+        assert post_pc_fund.fund_code in body
+
+    def test_clear_stamps_check_disbursement(self, client, role_users, post_pc_fund, accounts, supplier):
+        """CV clear action stamps CheckDisbursement record with cleared_at."""
+        from apps.cash.models import PCFReplenishment, CheckDisbursement
+        from apps.ap.models import CheckVoucher
+
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(post_pc_fund, accounts, supplier))
+        assert resp.status_code == 302
+        replen = PCFReplenishment.objects.get()
+
+        # Submit (draft → requested)
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        assert resp.status_code == 302
+        client.force_login(role_users["head"])
+        resp = client.post(f"/cash/pcf/replenishments/{replen.id}/approve/")
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.conso_id is not None
+        client.post(f"/ap/conso/{replen.conso_id}/post/")
+        replen.refresh_from_db()
+
+        resp = client.post("/ap/cv/new/", {
+            "source_type": "pcf", "source_id": replen.pk,
+            "bank_account": accounts["10110"].pk,
+            "cv_date": "2026-09-15", "gross_amount": str(replen.amount),
+            "withheld_tax": "0.00", "check_no": "CHK-001",
+        })
+        assert resp.status_code == 302
+        cv = CheckVoucher.objects.last()
+
+        # Approve then clear
+        assert client.post(f"/ap/cv/{cv.pk}/approve/").status_code == 302
+        assert CheckDisbursement.objects.filter(cv_id=cv.pk).count() == 0
+
+        # Clear stamps disb record
+        resp = client.post(f"/ap/cv/{cv.pk}/clear/")
+        assert resp.status_code == 302
+        assert CheckDisbursement.objects.filter(cv_id=cv.pk).exists()
+
+    def test_rfp_to_cv_still_works(self, client, company, segment, accounts, user, supplier, fiscal_period, segment_account_map):
+        """Regression: existing RFP → CV flow remains unchanged."""
+        # Use the existing TestPCFReplenishmentScreen fixture setup pattern:
+        # Create an RFP, fully approve it (checked → acctg → fin), let auto-assign
+        # add it to CONSO, then post → issued.
+        from django.contrib.auth import get_user_model
+        from apps.foundation.models import UserProfile
+        from apps.ap.services import RFPService, CONSOService
+
+        h = get_user_model().objects.create_user(username="head2", password="x")
+        UserProfile.objects.create(user=h, approval_role="head")
+
+        rfp = RFPService.create_rfp(
+            ap_number="A9998", rfp_date=date(2026, 9, 10), payee=supplier,
+            segment=segment, lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "3000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "3000.00"},
+            ], user=user,
+        )
+        # Advance through approvals (below P100k so no CNR needed)
+        RFPService.advance_step(rfp, role="checked", user=h)
+        RFPService.advance_step(rfp, role="acctg_approved", user=h)
+        RFPService.advance_step(rfp, role="fin_approved", user=h)
+
+        # Manually assign to CONSO batch and post
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-09", conso_date=date(2026, 9, 10), total_amount=Decimal("3000.00"))
+        rfp.conso = batch
+        rfp.save()
+        assert rfp.conso_id is not None
+
+        # Post the batch
+        CONSOService.post_batch(rfp.conso, user=h)
+        rfp.refresh_from_db()
+        assert rfp.status == "posted"
+
+        # Create CV from posted RFP
+        client.force_login(user)
+        resp = client.post("/ap/cv/new/", {
+            "source_type": "rfp", "source_id": rfp.pk,
+            "bank_account": accounts["10110"].pk,
+            "cv_date": "2026-09-15", "gross_amount": "3000.00",
+            "withheld_tax": "0.00", "check_no": "",
+        })
+        assert resp.status_code == 302
+        cv = CheckVoucher.objects.get()
+        assert cv.rfp_id == rfp.pk
+        assert cv.status == "created"
 
 
 class TestPrepareForFellowCustodian:

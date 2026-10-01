@@ -410,7 +410,7 @@ class CheckVoucher(AuditableModel):
     cv_number = models.CharField(max_length=16, unique=True)  # CV-YYYY-####
     cv_date = models.DateField(db_index=True)
     rfp = models.ForeignKey(RFPDocument, on_delete=models.PROTECT, related_name="cv", null=True, blank=True)
-    payee = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="cv")
+    payee = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="cv", null=True, blank=True)
     bank_account = models.ForeignKey(
         "foundation.Account", on_delete=models.PROTECT, related_name="cv",
         limit_choices_to={"code__startswith": "100"},
@@ -435,7 +435,7 @@ class CheckVoucher(AuditableModel):
         ordering = ["-cv_date", "-cv_number"]
 
     def __str__(self):
-        return f"{self.cv_number} {self.payee} net {self.net_amount} ({self.status})"
+        return f"{self.cv_number} {self.payee.name if self.payee else 'PCF'} net {self.net_amount} ({self.status})"
 
 
 class AdvanceToEmployee(AuditableModel):
