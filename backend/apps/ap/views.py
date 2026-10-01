@@ -139,8 +139,9 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
 
 
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
-    """Purchase Orders (ADR-0XX): auto-numbered {YYYY}-{SEQ}, approval chain
-    mirrors the RFP (head trio + optional CNR/COO), manually closed by head."""
+    """Purchase Orders (ADR-042): auto-numbered PO-{YYYY}-{SEQ:05d}, approval
+    chain mirrors the RFP (head trio + optional CNR/COO), manually closed by
+    head. Callers may pass an explicit `po_number` to override the sequence."""
 
     queryset = PurchaseOrder.objects.prefetch_related("lines")
     serializer_class = PurchaseOrderSerializer
@@ -161,7 +162,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             year = date.today().year
 
         po_number = data.get("po_number") or DocumentSequence.next_number(
-            company=company, form_code="PO", year=year, pattern="{YYYY}-{SEQ:05d}",
+            company=company, form_code="PO", year=year, pattern="PO-{YYYY}-{SEQ:05d}",
         )
 
         po = PurchaseOrderService.create_po(

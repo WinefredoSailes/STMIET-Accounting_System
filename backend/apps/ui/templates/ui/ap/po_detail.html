@@ -9,7 +9,7 @@
   {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:po_list" back_label="Purchase Orders" actions=actions %}
 
   {% capture as shell_meta %}
-  <div>PO NO.: <span class="font-mono font-medium text-surface-800">{{ po.po_number }}</span></div>
+  <div>NO.: <span class="font-mono font-medium text-surface-800">{{ po.po_number }}</span></div>
   {% endcapture %}
   {% capture as shell_body %}
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

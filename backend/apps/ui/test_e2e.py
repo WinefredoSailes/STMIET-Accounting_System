@@ -230,7 +230,7 @@ class TestEndToEndWorkflow:
         )
         assert resp.status_code == 302
         po = PurchaseOrder.objects.get()
-        assert po.po_number.startswith("2026-")
+        assert po.po_number.startswith("PO-")
         assert po.status == "prepared"
         assert po.available_amount == Decimal("180000.00")
         client.force_login(roles["staff"])

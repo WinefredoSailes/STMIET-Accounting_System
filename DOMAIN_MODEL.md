@@ -363,7 +363,7 @@ class PurchaseOrder(AuditableModel):
     """Commitment document (ADR-042). Never posts to the GL — the RFP it
     authorizes carries the JE through CONSO. Billing is header-level and
     DERIVED from the linked RFPs: available = amount - reserved - billed."""
-    po_number = models.CharField(max_length=16, unique=True)  # {YYYY}-{SEQ:05d}
+    po_number = models.CharField(max_length=16, unique=True)  # PO-{YYYY}-{SEQ:05d}
     po_date = models.DateField(db_index=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="pos")
     segment = models.ForeignKey(Segment, on_delete=models.PROTECT, related_name="pos")

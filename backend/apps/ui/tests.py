@@ -9,6 +9,7 @@ re-tests.
 from datetime import date, datetime
 from decimal import Decimal
 from calendar import monthrange
+import logging
 import re
 
 import pytest
@@ -4941,8 +4942,8 @@ class TestPurchaseOrderScreen:
         from apps.ap.models import PurchaseOrder, POLine
 
         po = PurchaseOrder.objects.get()
-        assert po.po_number == "2026-00001"
-        assert po.po_number.startswith("2026-")
+        assert po.po_number == "PO-2026-00001"
+        assert po.po_number.startswith("PO-")
         assert po.amount == Decimal("50000.00")
         assert po.lines.count() == 1
         line = po.lines.get()
@@ -4958,11 +4959,168 @@ class TestPurchaseOrderScreen:
         assert 'name="line_account"' in body
         assert "GL ACCOUNT" in body
 
+    def test_po_number_carries_the_po_prefix(self, client, company, segment, accounts, supplier):
+        """PO numbers mirror every other document type's PREFIX-YYYY-SEQ
+        convention (AR-, SI-, BI-, CV-, PCV-, FTV-). Sequencing, the API call
+        site and the max-width edge case are covered in apps/ap and
+        apps/sequences."""
+        resp = client.post("/ap/pos/new/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-01-15",
+            "line_qty": ["2"],
+            "line_unit": ["DRUM"],
+            "line_description": ["ENGINE OIL"],
+            "line_unit_price": ["25000.00"],
+            "line_account": [""],
+        })
+        assert resp.status_code == 302
+        from apps.ap.models import PurchaseOrder
+
+        po = PurchaseOrder.objects.get()
+        assert po.po_number == "PO-2026-00001"
+        # must fit the model's max_length=16 without truncation
+        assert len(po.po_number) <= 16
+
     def test_po_form_description_autogrows(self, client, company, segment, accounts, supplier):
         resp = client.get("/ap/pos/new/")
         assert resp.status_code == 200
         body = resp.content.decode()
         assert 'name="line_description" data-autogrow rows="1"' in body
+
+    def test_po_form_offers_a_usable_segment_picker(self, client, company, segment, accounts, supplier):
+        """Regression: the create form carried a hidden `segment` input that
+        always rendered empty, so every new-PO submit posted segment="" and
+        blew up on the model's AutoField ("Field 'id' expected a number but
+        got ''"). The segment must be a real, required, selectable control."""
+        resp = client.get("/ap/pos/new/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert '<select name="segment"' in body
+        assert 'required' in body
+        assert f'value="{segment.id}"' in body
+        # the blank-value hidden input that caused the crash is gone
+        assert 'type="hidden" name="segment"' not in body
+
+    def test_po_create_without_segment_reports_a_clean_error(
+        self, client, company, segment, accounts, supplier, caplog
+    ):
+        """A blank segment must read as a form error, never as a raw Django
+        field-coercion traceback, and must not create a PO."""
+        with caplog.at_level("INFO"):
+            resp = client.post("/ap/pos/new/", {
+                "supplier": supplier.id,
+                "segment": "",
+                "po_date": "2026-01-15",
+                "line_qty": ["2"],
+                "line_unit": ["DRUM"],
+                "line_description": ["ENGINE OIL"],
+                "line_unit_price": ["25000.00"],
+                "line_account": [""],
+            })
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "expected a number" not in body
+        from apps.ap.models import PurchaseOrder
+
+        assert PurchaseOrder.objects.count() == 0
+        # the rejection is traceable in the logs, not silent
+        assert any(
+            r.name == "apps.ui.views" and "PO create rejected" in r.getMessage()
+            for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
+
+    def test_po_create_without_supplier_reports_a_clean_error(
+        self, client, company, segment, accounts, supplier
+    ):
+        resp = client.post("/ap/pos/new/", {
+            "supplier": "",
+            "segment": segment.id,
+            "po_date": "2026-01-15",
+            "line_qty": ["2"],
+            "line_unit": ["DRUM"],
+            "line_description": ["ENGINE OIL"],
+            "line_unit_price": ["25000.00"],
+            "line_account": [""],
+        })
+        assert resp.status_code == 200
+        assert "expected a number" not in resp.content.decode()
+        from apps.ap.models import PurchaseOrder
+
+        assert PurchaseOrder.objects.count() == 0
+
+    def test_po_create_with_non_numeric_segment_reports_a_clean_error(
+        self, client, company, segment, accounts, supplier
+    ):
+        resp = client.post("/ap/pos/new/", {
+            "supplier": supplier.id,
+            "segment": "not-a-number",
+            "po_date": "2026-01-15",
+            "line_qty": ["2"],
+            "line_unit": ["DRUM"],
+            "line_description": ["ENGINE OIL"],
+            "line_unit_price": ["25000.00"],
+            "line_account": [""],
+        })
+        assert resp.status_code == 200
+        assert "expected a number" not in resp.content.decode()
+        from apps.ap.models import PurchaseOrder
+
+        assert PurchaseOrder.objects.count() == 0
+
+    def test_po_create_with_stale_vendor_id_is_logged(
+        self, client, company, segment, accounts, supplier, caplog
+    ):
+        """A vendor deleted between render and submit means a stale form was
+        posted. That is a defect worth a traceback, not a quiet flash."""
+        with caplog.at_level("ERROR"):
+            resp = client.post("/ap/pos/new/", {
+                "supplier": 987654,  # never existed
+                "segment": segment.id,
+                "po_date": "2026-01-15",
+                "line_qty": ["2"],
+                "line_unit": ["DRUM"],
+                "line_description": ["ENGINE OIL"],
+                "line_unit_price": ["25000.00"],
+                "line_account": [""],
+            })
+        assert resp.status_code == 200
+        assert "expected a number" not in resp.content.decode()
+        from apps.ap.models import PurchaseOrder
+
+        assert PurchaseOrder.objects.count() == 0
+        assert any(
+            r.name == "apps.ui.views"
+            and r.levelno == logging.ERROR
+            and "PO create hit a missing record" in r.getMessage()
+            for r in caplog.records
+        ), [(r.name, r.levelno, r.getMessage()) for r in caplog.records]
+
+    def test_po_create_missing_line_items_reports_a_clean_error(
+        self, client, company, segment, accounts, supplier, caplog
+    ):
+        """No line rows is ordinary user input, so it logs at INFO (not an
+        exception traceback) and creates nothing."""
+        with caplog.at_level("INFO"):
+            resp = client.post("/ap/pos/new/", {
+                "supplier": supplier.id,
+                "segment": segment.id,
+                "po_date": "2026-01-15",
+                "line_qty": [""],
+                "line_unit": [""],
+                "line_description": [""],
+                "line_unit_price": [""],
+                "line_account": [""],
+            })
+        assert resp.status_code == 200
+        assert "expected a number" not in resp.content.decode()
+        from apps.ap.models import PurchaseOrder
+
+        assert PurchaseOrder.objects.count() == 0
+        assert any(
+            r.name == "apps.ui.views" and r.levelno == logging.INFO
+            for r in caplog.records
+        ), [(r.name, r.levelno) for r in caplog.records]
 
     def test_po_options_filters_approved_and_vendor(
         self, client, company, segment, accounts, supplier, other_supplier, approved_po

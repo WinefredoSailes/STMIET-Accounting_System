@@ -234,7 +234,7 @@ class PurchaseOrder(AuditableModel):
     Partial billing is supported; each RFP must stay within `available`.
     """
 
-    po_number = models.CharField(max_length=16, unique=True)  # {YYYY}-{SEQ:05d}
+    po_number = models.CharField(max_length=16, unique=True)  # PO-{YYYY}-{SEQ:05d}
     po_date = models.DateField(db_index=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="pos")
     segment = models.ForeignKey("foundation.Segment", on_delete=models.PROTECT, related_name="pos")
