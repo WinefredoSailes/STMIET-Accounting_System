@@ -22,7 +22,7 @@
     <aside id="sidebar"
       class="fixed inset-y-0 left-0 z-40 w-56 -transurface-x-full transform bg-white border-r border-surface-200 text-surface-700 flex flex-col transition-transform duration-200 lg:static lg:transurface-x-0 lg:shrink-0">
       <div class="sidebar-header relative px-4 py-4 border-b border-surface-200 flex items-center gap-2.5">
-        <a href="{% url 'ui:dashboard' %}" title="Dashboard" class="flex items-center gap-2.5 min-w-0">
+        <a href="{{ home_url }}" title="Home" class="flex items-center gap-2.5 min-w-0">
           <img src="{% static 'img/logo.svg' %}" alt="logo" class="h-9 w-9 rounded-lg shadow sidebar-logo">
           <div class="sidebar-logo-text min-w-0">
             <div class="font-semibold text-surface-900 text-sm leading-tight truncate">Accounting System</div>
@@ -61,7 +61,7 @@
       <header class="lg:hidden sticky top-0 z-20 flex items-center gap-3 bg-white border-b border-surface-200 px-4 py-3 shadow-sm">
         <button onclick="toggleSidebar(true)" aria-label="Open menu"
           class="rounded-md px-2 py-1 text-surface-600 hover:text-surface-900 hover:bg-surface-100">☰</button>
-        <span class="font-semibold text-surface-900 text-sm"><a href="{% url 'ui:dashboard' %}">Accounting System</a></span>
+        <span class="font-semibold text-surface-900 text-sm"><a href="{{ home_url }}">Accounting System</a></span>
         <a href="{% url 'ui:profile' %}" title="My Profile" class="ml-auto flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-brand-50 text-[10px] font-semibold text-brand-700">
           {% if request.user.profile.avatar_url %}<img src="{{ request.user.profile.avatar_url }}" alt="" class="h-full w-full object-cover">{% else %}{{ request.user|initials }}{% endif %}
         </a>

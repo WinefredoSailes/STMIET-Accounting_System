@@ -149,12 +149,13 @@ def test_effective_screens_rules(db):
     _profile(coo, "coo")
     assert S.effective_screens(coo) == frozenset({"dashboard", "my_approvals"})
 
-    # explicit grants: dashboard always kept, unknown keys dropped
+    # explicit grants are honored exactly: revoked dashboard stays revoked,
+    # unknown keys dropped
     weird = User.objects.create_user("w", password="x")
     _profile(weird, "staff", ["cv_list", "not_a_screen", "x"])
-    assert S.effective_screens(weird) == frozenset({"dashboard", "cv_list"})
+    assert S.effective_screens(weird) == frozenset({"cv_list"})
 
-    # no profile at all (edge) -> unassigned template + dashboard
+    # no profile at all (edge) -> unassigned template (dashboard included)
     bare = User.objects.create_user("bare", password="x")
     assert "cv_list" in S.effective_screens(bare)
 

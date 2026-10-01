@@ -72,6 +72,8 @@
           everywhere — hidden from the sidebar <em>and</em> denied by direct
           URL, including the API (ADR-047). Leaving the set equal to a role's
           defaults keeps the user following that role template automatically.
+          Unchecking <em>Executive Dashboard</em> revokes it too: login then
+          lands on their first granted screen instead.
         </p>
       </div>
       {% if screen_custom %}
@@ -95,13 +97,12 @@
         </div>
         <div class="space-y-1">
           {% for item in group.items %}
-          <label class="flex items-center gap-2 text-sm text-surface-700 {% if item.key == 'dashboard' %}opacity-70{% endif %}">
+          <label class="flex items-center gap-2 text-sm text-surface-700">
             <input type="checkbox" name="screens" value="{{ item.key }}"
                    {% if item.key in screen_checked %}checked{% endif %}
-                   {% if not screen_editable or item.key == 'dashboard' %}disabled{% endif %}
+                   {% if not screen_editable %}disabled{% endif %}
                    class="h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500 screen-checkbox">
             {{ item.label }}
-            {% if item.key == 'dashboard' %}<span class="text-[10px] text-surface-400">(always on — landing)</span>{% endif %}
           </label>
           {% endfor %}
         </div>

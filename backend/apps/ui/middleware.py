@@ -69,4 +69,7 @@ class ScreenAccessMiddleware:
                 {"detail": "This screen is not part of your assigned access."},
                 status=403,
             )
-        return HttpResponseForbidden(_FORBIDDEN_HTML)
+        from .screens import home_url_for
+
+        html = _FORBIDDEN_HTML.replace('href="/"', f'href="{home_url_for(request.user)}"')
+        return HttpResponseForbidden(html)

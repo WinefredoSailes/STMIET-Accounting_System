@@ -204,7 +204,9 @@ def test_edit_form_shows_screen_access_grid(client, role_users):
     body = client.get(f"/settings/users/{role_users['staffer'].pk}/update/").content.decode()
     assert "Screen access" in body
     assert 'name="screens" value="je_list"' in body
-    assert "always on" in body  # dashboard locked on
+    # the Executive Dashboard is a normal toggle (revocable), not locked on
+    assert 'name="screens" value="dashboard"' in body
+    assert "always on" not in body
 
 
 def test_custom_grants_round_trip(client, role_users):
@@ -229,6 +231,31 @@ def test_custom_grants_round_trip(client, role_users):
     client.force_login(staff)
     assert client.get("/journal/").status_code == 200
     assert client.get("/ap/rfps/").status_code == 403
+
+
+def test_head_can_revoke_the_executive_dashboard(client, role_users):
+    """The finance head unchecks Executive Dashboard for a staff account:
+    the grant persists, direct URLs 403, the sidebar hides it, and login
+    lands on the desk instead (no dead ends)."""
+    from apps.ui.screens import WORK_KEYS, effective_screens, home_url_for
+
+    staffer = role_users["staffer"]
+    client.force_login(role_users["head"])
+    client.post(
+        f"/settings/users/{staffer.pk}/update/",
+        {"first_name": "", "last_name": "", "email": "", "role": "staff",
+         "is_active": "1", "password": "",
+         "screens": sorted(WORK_KEYS - {"dashboard"})},
+    )
+    staffer.refresh_from_db()
+    assert staffer.profile.screen_access == sorted(WORK_KEYS - {"dashboard"})
+    assert effective_screens(staffer) == WORK_KEYS - {"dashboard"}
+
+    client.force_login(staffer)
+    assert client.get("/").status_code == 403
+    body = client.get("/journal/").content.decode()
+    assert 'title="Dashboard"' not in body  # hidden from the sidebar
+    assert home_url_for(staffer) == "/journal/"
 
 
 def test_selection_equal_to_template_stays_following(client, role_users):

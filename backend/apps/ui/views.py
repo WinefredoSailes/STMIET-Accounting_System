@@ -7138,8 +7138,9 @@ def _apply_screen_grants(request, target):
 
     Only grant-editors touch this (superuser always; head for non-head,
     non-self targets). A selection equal to the role template is stored as
-    NULL so the user keeps following the template if it evolves; the
-    dashboard is always on (landing safety).
+    NULL so the user keeps following the template if it evolves. The
+    Executive Dashboard is a normal, revocable grant — role templates check
+    it by default, and home_url_for routes around a revoked one.
     """
     from . import screens as S
     from apps.foundation.models import UserProfile
@@ -7149,8 +7150,8 @@ def _apply_screen_grants(request, target):
     selected = {k for k in request.POST.getlist("screens") if k in S.SCREEN_KEYS}
     profile, _ = UserProfile.objects.get_or_create(user=target)
     role = profile.approval_role or ""
-    template = set(S.role_template(role)) | {"dashboard"}
-    profile.screen_access = None if selected | {"dashboard"} == template else sorted(selected | {"dashboard"})
+    template = set(S.role_template(role))
+    profile.screen_access = None if selected == template else sorted(selected)
     profile.save(update_fields=["screen_access", "updated_at"])
 
 
@@ -7414,7 +7415,7 @@ def profile(request):
 
     allowed = effective_screens(me)
     screen_names = [
-        label for key, label, _section in SCREENS if key in allowed and key != "dashboard"
+        label for key, label, _section in SCREENS if key in allowed
     ]
     return render(
         request,

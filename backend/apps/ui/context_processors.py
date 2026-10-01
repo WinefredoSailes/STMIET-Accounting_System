@@ -49,12 +49,12 @@ def nav_sections(request):
     """
     user = request.user
     if not user.is_authenticated:
-        return {"nav_sections": []}
+        return {"nav_sections": [], "home_url": "/"}
 
     from django.urls import NoReverseMatch, reverse
 
     from .nav import NAV_SECTIONS
-    from .screens import effective_screens
+    from .screens import effective_screens, home_url_for
 
     allowed = set(effective_screens(user))
     current = getattr(getattr(request, "resolver_match", None), "url_name", "")
@@ -111,4 +111,4 @@ def nav_sections(request):
                 "active": any(i["active"] for i in items),
             }
         )
-    return {"nav_sections": sections}
+    return {"nav_sections": sections, "home_url": home_url_for(user)}

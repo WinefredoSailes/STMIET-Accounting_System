@@ -286,16 +286,18 @@ def role_template(approval_role: str) -> frozenset[str]:
 def effective_screens(user) -> frozenset[str]:
     """Screens the user may use: explicit grants, else the role template.
 
-    Dashboard is always included — it is the landing and read-only overview;
-    locking it out would dead-end any personalized home.
+    Executive Dashboard is an ordinary grant: role templates include it (all
+    heads/COO/staff see it by default) but a grant-editor may revoke it per
+    user. Landing safety lives in home_url_for, which routes around a
+    missing dashboard instead of forcing it.
     """
     if user.is_superuser:
         return SCREEN_KEYS
     profile = getattr(user, "profile", None)
     grants = getattr(profile, "screen_access", None) if profile else None
     if grants is None:
-        return role_template(getattr(profile, "approval_role", "") or "") | {"dashboard"}
-    return frozenset(set(grants) | {"dashboard"}) & SCREEN_KEYS
+        return role_template(getattr(profile, "approval_role", "") or "")
+    return frozenset(set(grants)) & SCREEN_KEYS
 
 
 def home_url_for(user) -> str:
@@ -303,18 +305,27 @@ def home_url_for(user) -> str:
 
     Management (superuser/head/coo) and unassigned users open on the
     Executive Dashboard; staff open on their desk (the journal), falling
-    back to the approvals inbox, then the dashboard, if narrowed.
+    back to the approvals inbox, then the dashboard. If the dashboard was
+    revoked, the first granted screen is the landing — and a fully stripped
+    account lands on its own profile (always reachable), never a 403.
     """
     from django.urls import reverse
 
     allowed = effective_screens(user)
     role = getattr(getattr(user, "profile", None), "approval_role", "") or ""
     if user.is_superuser or role in ("head", "coo") or role not in ("staff",):
-        return "/"  # management/unassigned: bird's-eye (always in allowed)
-    for key in ("je_list", "my_approvals"):
+        if "dashboard" in allowed:
+            return "/"  # management/unassigned: bird's-eye
+    else:
+        for key in ("je_list", "my_approvals"):
+            if key in allowed:
+                return reverse(f"ui:{key}")
+        if "dashboard" in allowed:
+            return "/"
+    for key, _label, _section in SCREENS:
         if key in allowed:
-            return reverse(f"ui:{key}")
-    return "/"
+            return "/" if key == "dashboard" else reverse(f"ui:{key}")
+    return reverse("ui:profile")
 
 
 def can_edit_grants_for(actor, target) -> bool:

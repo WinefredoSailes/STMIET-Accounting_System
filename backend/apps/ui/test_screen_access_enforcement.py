@@ -46,11 +46,15 @@ def test_coo_default_dashboard_and_inbox_only(client):
         assert "Not on your desk" in resp.content.decode()
 
 
-def test_dashboard_always_reachable_even_when_custom_grants_exclude_it(client):
+def test_dashboard_is_revocable_via_custom_grants(client):
+    """ADR-047: role templates default the Executive Dashboard on, but
+    explicit grants that omit it deny it — revoking is the admin's call."""
     client.force_login(_user("cw", grants=["cv_list"]))
-    assert client.get("/").status_code == 200  # landing safety
+    assert client.get("/").status_code == 403
     assert client.get("/ap/cv/").status_code == 200
     assert client.get("/journal/").status_code == 403
+    # the 403 page's "back" link routes to a screen the user actually holds
+    assert 'href="/ap/cv/"' in client.get("/").content.decode()
 
 
 def test_deep_typed_urls_and_exports_denied_for_custom_set(client):
@@ -132,6 +136,16 @@ def test_role_home_respects_narrowed_grants(db):
     assert _post_login(narrowed) == "/approvals/"  # no journal desk → inbox
     stripped = _user("lx", role="staff", grants=["dashboard", "cv_list"])
     assert _post_login(stripped) == "/"            # no inbox either → dashboard
+
+
+def test_role_home_routes_around_revoked_dashboard(db):
+    """Landing safety without forcing the dashboard (ADR-047)."""
+    # staff without the dashboard still lands on their desk
+    assert _post_login(_user("nd", role="staff", grants=["je_list"])) == "/journal/"
+    # management without the dashboard lands on their first granted screen
+    assert _post_login(_user("nx", role="head", grants=["my_approvals", "cv_list"])) == "/approvals/"
+    # a fully stripped account lands on its own profile (never a 403)
+    assert _post_login(_user("n0", role="staff", grants=[])) == "/profile/"
 
 
 def test_narrowed_users_still_reach_shared_pickers(client):
