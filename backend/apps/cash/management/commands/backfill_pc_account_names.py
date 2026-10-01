@@ -1,9 +1,12 @@
 """Backfill ``account_name`` into stored PCF replenishment expense dicts.
 
-Vouchers saved before the account-name fix (or through the draft-edit path)
-carry expenses with only ``account_code``. The detail screen now resolves
-names live from the COA, but this command persists them into the stored JSON
-so exports and snapshots match what the UI renders.
+Deployment wiring for this repair is the cash 0022 data migration, which
+runs automatically via the entrypoint's ``migrate --run-sync`` (ADR-040).
+This command is the manual equivalent for the same job: idempotent, it can
+be re-run any time (e.g. after out-of-band data imports) to persist titles
+that the stored JSON is still missing. The voucher detail screen also
+resolves missing names live from the COA, so unbackfilled rows display
+correctly regardless.
 """
 
 from django.core.management.base import BaseCommand
