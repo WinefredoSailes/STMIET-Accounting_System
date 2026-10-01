@@ -42,23 +42,23 @@ function addMessage(role, content, results, answer) {
     const answerHtml = renderAnswerCard(answer);
     let resultsHtml = "";
     if (results && results.length > 0) {
-      resultsHtml = '<div class="mt-2 space-y-2">';
+      resultsHtml = '<div class="mt-1.5 space-y-1">';
       for (const group of results) {
         const total = group.count || group.items.length;
-        const more = total > 5 ? ` <span class="text-surface-400">(${total} total)</span>` : "";
-        resultsHtml += `<div class="text-xs font-semibold text-surface-500">${escapeHtml(group.module_name || group.module)}${more}</div>`;
+        const more = total > 5 ? ` <span class="font-normal text-surface-400">(${total})</span>` : "";
+        resultsHtml += `<div class="text-[10px] font-semibold uppercase tracking-wide text-surface-500 leading-none">${escapeHtml(group.module_name || group.module)}${more}</div>`;
+        resultsHtml += '<div class="divide-y divide-surface-100 rounded-md border border-surface-200 bg-white overflow-hidden">';
         for (const item of group.items.slice(0, 5)) {
-          const meta = item.status ? ` · ${escapeHtml(item.status)}` : "";
-          const amt = item.amount ? ` · ₱${escapeHtml(item.amount)}` : "";
-          const dt = item.date ? ` · ${escapeHtml(item.date)}` : "";
-          const by = item.by ? ` · ${escapeHtml(item.by)}` : "";
+          const code = item.code ? `<span class="text-[10px] font-normal text-surface-400"> ${escapeHtml(item.code)}</span>` : "";
+          const amt = item.amount ? `<span class="shrink-0 text-xs font-semibold tabular-nums text-surface-700">₱${escapeHtml(item.amount)}</span>` : "";
           resultsHtml += `
-            <a href="${item.link || '#'}" class="block bg-white border border-surface-200 rounded-lg px-3 py-2 hover:border-brand-300 hover:shadow-sm transition">
-              <div class="text-sm font-medium text-surface-900">${escapeHtml(item.name || '')}</div>
-              <div class="text-xs text-surface-500">${escapeHtml(item.code || '')}${dt}${amt}${meta}${by}</div>
+            <a href="${item.link || '#'}" class="flex items-center justify-between gap-2 px-2 py-1 hover:bg-brand-50 transition" title="${escapeHtml([item.code, item.date, item.status, item.by].filter(Boolean).join(' · '))}">
+              <span class="min-w-0 truncate text-xs leading-none text-surface-800">${escapeHtml(item.name || '')}${code}</span>
+              ${amt}
             </a>
           `;
         }
+        resultsHtml += "</div>";
       }
       resultsHtml += "</div>";
     }
@@ -66,10 +66,9 @@ function addMessage(role, content, results, answer) {
       <div class="flex-shrink-0 h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center">
         <svg class="h-4 w-4 text-brand-600" aria-hidden="true"><use href="#i-chat"/></svg>
       </div>
-      <div class="bg-surface-100 rounded-lg px-3 py-2 text-sm text-surface-700 max-w-[80%] whitespace-pre-wrap break-words">
-        ${escapeHtml(content)}
-        ${answerHtml}
-        ${resultsHtml}
+      <div class="w-fit min-w-0 max-w-[80%]">
+        <div class="bg-surface-100 rounded-lg px-3 py-2 text-sm text-surface-700 whitespace-pre-wrap break-words">${escapeHtml(content)}</div>
+        <div class="text-sm text-surface-700">${answerHtml}${resultsHtml}</div>
       </div>
     `;
   }
