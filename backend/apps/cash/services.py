@@ -240,12 +240,22 @@ class PCFService:
 
         The voucher number is allocated from the per-company/per-year PCV
         sequence (ADR-032) so PCVs never collide with JE/RFP/CV/CONSO numbers.
+
+        If an expense dict contains an ``account_code`` we look up the
+        corresponding :model:`foundation.Account` and store its ``name``
+        alongside the code so the printable voucher can show
+        ``63800 Petron`` instead of just the code.
         """
         from django.utils.timezone import localdate
 
+        from apps.foundation.models import Account
         from apps.sequences.models import DocumentSequence
 
-        expenses = [dict(e, side=str(e.get("side", "dr")).lower()) for e in expenses]
+        expenses = [
+            dict(e, side=str(e.get("side", "dr")).lower(),
+                 account_name=Account.objects.filter(code=e.get("account_code", "")).first().name if e.get("account_code") else "")
+            for e in expenses
+        ]
         total = sum(money(e["amount"]) for e in expenses)
         voucher_no = DocumentSequence.next_number(
             company=fund.company,

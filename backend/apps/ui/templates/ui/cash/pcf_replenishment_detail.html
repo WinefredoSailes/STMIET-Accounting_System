@@ -95,7 +95,7 @@
           </td>
 
           <td class="px-2 py-2 font-mono text-xs">
-            {{ exp.account_code }}
+            {{ exp.account_code }}{% if exp.account_name %} {{ exp.account_name }}{% endif %}
           </td>
 
           <td class="px-2 py-2 text-right tabular-nums">
