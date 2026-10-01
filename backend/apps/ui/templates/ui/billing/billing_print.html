@@ -33,7 +33,7 @@
     </colgroup>
     <tbody>
       <tr>
-        <td colspan="8" style="text-align:center; background:#fce4d6">
+        <td colspan="8" style="text-align:center; background:#f8d7d0">
           <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">{{ billing.company.name }}</div>
           <div style="font-size:15px; font-weight:900; letter-spacing:.06em">BILLING TRANSACTION</div>
           <div style="font-size:10px">{{ billing.get_billing_type_display }}</div>
@@ -64,7 +64,7 @@
       </tr>
       {% endif %}
 
-      <tr style="font-size:10px; text-transform:uppercase; background:#fce4d6">
+      <tr style="font-size:10px; text-transform:uppercase; background:#f8d7d0">
         <th style="font-weight:700">#</th>
         <th style="font-weight:700">COA</th>
         <th style="font-weight:700">Account Name</th>
@@ -86,7 +86,7 @@
         <td style="text-align:right; font-variant-numeric:tabular-nums">{{ line.credit|money }}</td>
       </tr>
       {% endfor %}
-      <tr style="font-size:10px; font-weight:700; background:#fce4d6">
+      <tr style="font-size:10px; font-weight:700; background:#f8d7d0">
         <td colspan="6" style="text-align:right">TOTALS</td>
         <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.debit_total|money }}</td>
         <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.credit_total|money }}</td>

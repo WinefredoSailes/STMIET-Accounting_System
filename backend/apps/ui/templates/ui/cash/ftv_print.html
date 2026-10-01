@@ -56,9 +56,8 @@
         <td rowspan="5" colspan="3" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
         </td>
-        <td rowspan="5" colspan="7" style="text-align:center; vertical-align:middle">
-          <div style="font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#334155">{{ transfer.from_account.company.name|default:"SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING" }}</div>
-          <div style="font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6; margin-top:2px">FUND TRANSFER VOUCHER (FTV)</div>
+        <td rowspan="5" colspan="7" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#e9e1f8">
+          FUND TRANSFER VOUCHER (FTV)
         </td>
         <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
           ACCOUNTING DEPARTMENT
@@ -83,7 +82,7 @@
 
       <!-- ═══════════════ TRANSFER DETAILS ═══════════════ -->
       <tr>
-        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="14" style="background:#e9e1f8; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Transfer Details
         </td>
       </tr>
@@ -107,10 +106,14 @@
         <td colspan="3" style="font-weight:600">PURPOSE / PARTICULAR:</td>
         <td colspan="11" style="white-space:normal">{{ transfer.purpose|default:"—" }}</td>
       </tr>
+      <tr style="font-size:10px">
+        <td colspan="3" style="font-weight:600">COST CENTER:</td>
+        <td colspan="11" style="white-space:normal">{{ transfer.cost_center|default:"—" }}</td>
+      </tr>
 
       <!-- ═══════════════ ACCOUNT DISTRIBUTION ═══════════════ -->
       <tr>
-        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="14" style="background:#e9e1f8; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Account Distribution
         </td>
       </tr>
@@ -138,7 +141,7 @@
       {% endif %}
 
       <!-- Totals -->
-      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#fce4d6">
+      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#e9e1f8">
         <td colspan="10" style="text-align:right">TOTALS</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total_credit|money }}</td>
@@ -146,7 +149,7 @@
 
       <!-- ═══════════════ REFERENCE / ATTACHMENTS ═══════════════ -->
       <tr>
-        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="14" style="background:#e9e1f8; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Reference / Attachments
         </td>
       </tr>

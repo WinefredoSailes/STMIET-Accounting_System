@@ -529,6 +529,7 @@ class TransferService:
         purpose: str,
         reference: str = "",
         check_no: str = "",
+        cost_center: str = "",
         transfer_date: date | None = None,
         segment=None,
         user=None,
@@ -556,6 +557,7 @@ class TransferService:
             purpose=purpose,
             reference=reference,
             check_no=check_no or "",
+            cost_center=cost_center or "",
             initiated_by=user,
             status="requested",
         )
@@ -579,11 +581,11 @@ class TransferService:
         )
         JournalEntryLine.objects.create(
             entry=entry, line_no=1, account=to_account.gl_account,
-            debit=amount, description=purpose
+            debit=amount, description=purpose, cost_center=cost_center or "",
         )
         JournalEntryLine.objects.create(
             entry=entry, line_no=2, account=from_account.gl_account,
-            credit=amount, description=purpose
+            credit=amount, description=purpose, cost_center=cost_center or "",
         )
         entry.recalc_totals()
         # Do NOT post here: the JE stays DRAFT until the finance head
@@ -606,6 +608,7 @@ class TransferService:
         purpose: str,
         reference: str = "",
         check_no: str = "",
+        cost_center: str = "",
         transfer_date: date | None = None,
         user=None,
     ) -> InterAccountTransfer:
@@ -625,6 +628,7 @@ class TransferService:
         transfer.purpose = purpose.strip()
         transfer.reference = reference
         transfer.check_no = check_no or ""
+        transfer.cost_center = cost_center or ""
         # Editing a rejected transfer reopens it for resubmission.
         transfer.status = "requested"
         transfer.rejected_by = None
@@ -633,8 +637,8 @@ class TransferService:
         transfer.save(
             update_fields=[
                 "transfer_date", "from_account", "to_account", "amount",
-                "purpose", "reference", "check_no", "status", "rejected_by",
-                "rejected_at", "rejection_note", "updated_at",
+                "purpose", "reference", "check_no", "cost_center", "status",
+                "rejected_by", "rejected_at", "rejection_note", "updated_at",
             ]
         )
 
@@ -656,10 +660,12 @@ class TransferService:
             JournalEntryLine.objects.create(
                 entry=entry, line_no=1, account=to_account.gl_account,
                 debit=amount, description=transfer.purpose,
+                cost_center=transfer.cost_center,
             )
             JournalEntryLine.objects.create(
                 entry=entry, line_no=2, account=from_account.gl_account,
                 credit=amount, description=transfer.purpose,
+                cost_center=transfer.cost_center,
             )
             entry.recalc_totals()
         _log_transfer(transfer, "revised", actor=user)

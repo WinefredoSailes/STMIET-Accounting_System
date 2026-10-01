@@ -27,7 +27,6 @@ from reportlab.platypus import (
 
 from apps.foundation.calendar import cycle_range_for
 
-COMPANY_FALLBACK = "SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING"
 DOCUMENT_NO = "ACCTG-FOR-012"
 DOCUMENT_EFFECTIVE = "08.18.2022"
 DOCUMENT_REVISION = "02"
@@ -124,12 +123,12 @@ def _base_style():
     ]
 
 
-def _band_row(text):
+def _band_row(text, color=ORANGE):
     """A single full-width band cell (section separator), like the print."""
     p = Paragraph(text, _style_band())
     t = Table([[p]], colWidths=[COLW * GRID])
     t.setStyle(TableStyle(
-        _base_style() + [("BACKGROUND", (0, 0), (-1, -1), ORANGE)]
+        _base_style() + [("BACKGROUND", (0, 0), (-1, -1), color)]
     ))
     return t
 
@@ -239,7 +238,7 @@ def _distribution_table(entry):
     style = _base_style()
     style += [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-        ("BACKGROUND", (0, -1), (-1, -1), ORANGE),
+        ("BACKGROUND", (0, -1), (-1, -1), PINK),
         ("SPAN", (0, -1), (5, -1)),
         ("ALIGN", (6, -1), (7, -1), "RIGHT"),
     ]
@@ -276,9 +275,8 @@ def _signature_table(requested_by, approved_by, rows=4):
 def build_journal_voucher_pdf(entry, *, requested_by="", approved_by="") -> bytes:
     """Render the journal entry to the EXACT print-view (je_print.html) layout."""
     logo_path = _logo_path()
-    company_name = (entry.company.name if entry.company else "") or COMPANY_FALLBACK
 
-    # HEADER block: logo | company + GENERAL JOURNAL VOUCHER | dept/rev info
+    # HEADER block: logo | GENERAL JOURNAL VOUCHER | dept/rev info
     logo = None
     if logo_path:
         try:
@@ -287,17 +285,10 @@ def build_journal_voucher_pdf(entry, *, requested_by="", approved_by="") -> byte
             logo = None
     title = [
         Paragraph(
-            company_name.upper(),
-            ParagraphStyle(
-                "coName", fontName="Helvetica-Bold", fontSize=6.8, leading=9,
-                alignment=TA_CENTER, textColor=colors.HexColor("#334155"),
-            ),
-        ),
-        Paragraph(
             "GENERAL JOURNAL VOUCHER",
             ParagraphStyle(
                 "gJv", fontName="Helvetica-Bold", fontSize=12, leading=15,
-                alignment=TA_CENTER, backColor=ORANGE, textColor=BAND_BORDER,
+                alignment=TA_CENTER, backColor=PINK, textColor=BAND_BORDER,
                 spaceBefore=2,
             ),
         ),
@@ -341,10 +332,10 @@ def build_journal_voucher_pdf(entry, *, requested_by="", approved_by="") -> byte
     story = [
         header_tbl,
         Spacer(1, 0.15 * cm),
-        _band_row("Entry Information"),
+        _band_row("Entry Information", PINK),
         _entry_info_table(entry),
         Spacer(1, 0.15 * cm),
-        _band_row("Account Distribution"),
+        _band_row("Account Distribution", PINK),
         _distribution_table(entry),
         Spacer(1, 0.25 * cm),
         _signature_table(requested_by, approved_by),
@@ -387,11 +378,12 @@ def _ftv_doc_info_table(voucher_no, transfer_type, date_label, prepared_by):
 
 
 def _ftv_transfer_details_table(transfer):
-    """SOURCE / DESTINATION / AMOUNT / PURPOSE rows (TRANSFER DETAILS)."""
+    """SOURCE / DESTINATION / AMOUNT / PURPOSE / COST CENTER rows
+    (TRANSFER DETAILS)."""
     cell = _style_cell()
     bold = _style_bold()
     bold_right = _style_bold_right()
-    rows = 4
+    rows = 5
     data = [[None] * GRID for _ in range(rows)]
 
     data[0][0] = Paragraph("SOURCE (FROM / CREDIT):", bold)
@@ -402,6 +394,8 @@ def _ftv_transfer_details_table(transfer):
     data[2][3] = Paragraph(f"₱{_money(transfer.amount)}", bold_right)
     data[3][0] = Paragraph("PURPOSE / PARTICULAR:", bold)
     data[3][3] = Paragraph(transfer.purpose or "-", cell)
+    data[4][0] = Paragraph("COST CENTER:", bold)
+    data[4][3] = Paragraph(transfer.cost_center or "-", cell)
 
     spans = [
         ("SPAN", (0, r), (2, r))
@@ -468,7 +462,7 @@ def _ftv_distribution_table(entry, fallback_amount):
     style = _base_style()
     style += [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-        ("BACKGROUND", (0, -1), (-1, -1), ORANGE),
+        ("BACKGROUND", (0, -1), (-1, -1), LAVENDER),
         ("SPAN", (0, -1), (2, -1)),
         ("ALIGN", (3, -1), (4, -1), "RIGHT"),
     ]
@@ -539,9 +533,6 @@ def build_fund_transfer_voucher_pdf(
     print view; real vector/text output (selectable text, embedded logo),
     repeating distribution header and safe page splits on multi-page output.
     """
-    company = transfer.from_account.company
-    company_name = (company.name if company else "") or COMPANY_FALLBACK
-
     logo_path = _logo_path()
     logo = None
     if logo_path:
@@ -552,17 +543,10 @@ def build_fund_transfer_voucher_pdf(
 
     title = [
         Paragraph(
-            company_name.upper(),
-            ParagraphStyle(
-                "coName", fontName="Helvetica-Bold", fontSize=6.8, leading=9,
-                alignment=TA_CENTER, textColor=colors.HexColor("#334155"),
-            ),
-        ),
-        Paragraph(
             "FUND TRANSFER VOUCHER (FTV)",
             ParagraphStyle(
                 "fTV", fontName="Helvetica-Bold", fontSize=12, leading=15,
-                alignment=TA_CENTER, backColor=ORANGE, textColor=BAND_BORDER,
+                alignment=TA_CENTER, backColor=LAVENDER, textColor=BAND_BORDER,
                 spaceBefore=2,
             ),
         ),
@@ -617,13 +601,13 @@ def build_fund_transfer_voucher_pdf(
     story = [
         header_tbl,
         Spacer(1, 0.15 * cm),
-        _band_row("Transfer Details"),
+        _band_row("Transfer Details", LAVENDER),
         _ftv_transfer_details_table(transfer),
         Spacer(1, 0.15 * cm),
-        _band_row("Account Distribution"),
+        _band_row("Account Distribution", LAVENDER),
         _ftv_distribution_table(transfer.journal_entry, transfer.amount),
         Spacer(1, 0.15 * cm),
-        _band_row("Reference / Attachments"),
+        _band_row("Reference / Attachments", LAVENDER),
         _ftv_reference_table(transfer.reference),
         Spacer(1, 0.25 * cm),
         _ftv_signature_table(prepared_by, checked_by, approved_by),
@@ -640,6 +624,13 @@ def build_fund_transfer_voucher_pdf(
 
 GREEN = colors.HexColor("#e2efda")
 
+# Document classification palette — every printed form gets a unique pastel
+# band so prints are distinguishable at a glance.
+PINK = colors.HexColor("#fbd5dd")      # General Journal Voucher (JE)
+BLUE = colors.HexColor("#dbeafe")      # Acknowledgment Receipt (AR)
+LAVENDER = colors.HexColor("#e9e1f8")  # Fund Transfer Voucher (FTV)
+TEAL = colors.HexColor("#d2efef")      # Petty Cash Replenishment (PCF)
+
 
 def _signatory_name(user):
     from apps.core.approvals import signatory_name
@@ -654,17 +645,10 @@ def _t(value):
     return str(value).replace("—", "-")
 
 
-def _form_header(colw, company_name, title_text, band_color, doc_no, doc_effective, doc_revision):
+def _form_header(colw, title_text, band_color, doc_no, doc_effective, doc_revision):
     """Generic form header (logo | title band | dept + doc meta rows), 14-col grid."""
     bold = _style_bold()
     title = [
-        Paragraph(
-            company_name.upper(),
-            ParagraphStyle(
-                "coName", fontName="Helvetica-Bold", fontSize=6.8, leading=9,
-                alignment=TA_CENTER, textColor=colors.HexColor("#334155"),
-            ),
-        ),
         Paragraph(
             title_text,
             ParagraphStyle(
@@ -873,11 +857,9 @@ def build_rfp_pdf(rfp, *, paper="a5") -> bytes:
     pagesize = A4 if paper == "a4" else A5
     margin = 0.9 * cm
     colw = (pagesize[0] - 2 * margin) / GRID
-    company = rfp.segment.company if rfp.segment else None
-    company_name = (company.name if company else "") or COMPANY_FALLBACK
 
     story = [
-        _form_header(colw, company_name, "REQUEST FOR PAYMENT", ORANGE,
+        _form_header(colw, "REQUEST FOR PAYMENT", ORANGE,
                      "ACCTG-FOR-012", "11.16.2024", "00"),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Payee Information"),
@@ -946,12 +928,6 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     pagesize = A4 if paper == "a4" else A5
     margin = 0.9 * cm
     colw = (pagesize[0] - 2 * margin) / GRID
-    company = None
-    if rfp and rfp.segment and rfp.segment.company:
-        company = rfp.segment.company
-    elif cv.payee.default_segment and cv.payee.default_segment.company:
-        company = cv.payee.default_segment.company
-    company_name = (company.name if company else "") or COMPANY_FALLBACK
 
     # Distribution Charges — Purpose | Segment | Cost Center | GL Account | Amount
     cell = _style_cell()
@@ -1013,7 +989,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     disclaimer.setStyle(TableStyle(_base_style()))
 
     story = [
-        _form_header(colw, company_name, "CHECK VOUCHER", GREEN,
+        _form_header(colw, "CHECK VOUCHER", GREEN,
                      "ACCTG-FOR-010", "08.18.2022", "02"),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Payee Information", GREEN),
@@ -1065,8 +1041,6 @@ def build_ar_receipt_pdf(receipt, *, paper="a5") -> bytes:
     receipt = receipt if isinstance(receipt, AcknowledgmentReceipt) else \
         AcknowledgmentReceipt.objects.get(pk=int(receipt))
     customer = receipt.customer
-    r = receipt.segment
-    company_name = (r.company.name if r else "") or COMPANY_FALLBACK
 
     pagesize = A4 if paper == "a4" else A5
     margin = 1.0 * cm
@@ -1076,7 +1050,7 @@ def build_ar_receipt_pdf(receipt, *, paper="a5") -> bytes:
     cell_right = _style_cell_right()
 
     # Header band
-    story = [_form_header(colw, company_name, "ACKNOWLEDGMENT RECEIPT", ORANGE,
+    story = [_form_header(colw, "ACKNOWLEDGMENT RECEIPT", BLUE,
                           "ACCTG-FOR-005", receipt.transaction_date.isoformat(), "")]
 
     # Receipt details
@@ -1220,7 +1194,7 @@ def build_pcf_replenishment_pdf(replen, *, rows=None, total=None, fund_label=Non
     style = _base_style()
     style += [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-        ("BACKGROUND", (0, -1), (-1, -1), ORANGE),
+        ("BACKGROUND", (0, -1), (-1, -1), TEAL),
         ("SPAN", (0, -1), (11, -1)),
         ("ALIGN", (12, -1), (12, -1), "RIGHT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 1),

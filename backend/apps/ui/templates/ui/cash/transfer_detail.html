@@ -29,6 +29,7 @@
     <div><div class="text-xs text-surface-500">FROM (CREDIT)</div><div class="mt-0.5 font-medium">{{ transfer.from_account.code }} <span class="text-surface-400">({{ transfer.from_account.bank_name|default:transfer.from_account.name }})</span></div></div>
     <div><div class="text-xs text-surface-500">TO (DEBIT)</div><div class="mt-0.5 font-medium">{{ transfer.to_account.code }} <span class="text-surface-400">({{ transfer.to_account.bank_name|default:transfer.to_account.name }})</span></div></div>
     <div><div class="text-xs text-surface-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono text-xs">{{ transfer.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">COST CENTER</div><div class="mt-0.5">{{ transfer.cost_center|default:"—" }}</div></div>
     <div><div class="text-xs text-surface-500">REFERENCE</div><div class="mt-0.5">{{ transfer.reference|default:"—" }}</div></div>
     <div><div class="text-xs text-surface-500">SOURCE</div><div class="mt-0.5 font-medium">{{ entry.source_doc_type|default:"—" }}{% if entry.source_doc_no %} {{ entry.source_doc_no }}{% endif %}</div></div>
     <div><div class="text-xs text-surface-500">JOURNAL ENTRY</div><div class="mt-0.5 font-medium">{% if entry %}<a href="{% url 'ui:je_detail' entry.id %}" class="font-mono text-xs text-brand-600 hover:underline">{{ entry.entry_no }}</a>{% else %}—{% endif %}</div></div>

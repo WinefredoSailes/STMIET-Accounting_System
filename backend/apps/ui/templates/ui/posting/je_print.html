@@ -56,9 +56,8 @@
         <td rowspan="4" colspan="3" style="text-align:center; vertical-align:middle">
           <img src="{% static 'stmiet-trans-logo.png' %}" alt="" style="height:44px; width:auto; max-width:100%; display:block; margin:0 auto">
         </td>
-        <td rowspan="4" colspan="7" style="text-align:center; vertical-align:middle">
-          <div style="font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#334155">{{ entry.company.name|default:"SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING" }}</div>
-          <div style="font-size:16px; font-weight:900; letter-spacing:.08em; background:#fce4d6; margin-top:2px">GENERAL JOURNAL VOUCHER</div>
+        <td rowspan="4" colspan="7" style="text-align:center; vertical-align:middle; font-size:16px; font-weight:900; letter-spacing:.08em; background:#fbd5dd">
+          GENERAL JOURNAL VOUCHER
         </td>
         <td colspan="4" style="text-align:right; vertical-align:top; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em">
           ACCOUNTING DEPARTMENT
@@ -79,7 +78,7 @@
 
       <!-- ═══════════════ ENTRY INFORMATION ═══════════════ -->
       <tr>
-        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="14" style="background:#fbd5dd; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Entry Information
         </td>
       </tr>
@@ -119,7 +118,7 @@
 
       <!-- ═══════════════ ACCOUNT DISTRIBUTION ═══════════════ -->
       <tr>
-        <td colspan="14" style="background:#fce4d6; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
+        <td colspan="14" style="background:#fbd5dd; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">
           Account Distribution
         </td>
       </tr>
@@ -153,7 +152,7 @@
       {% endif %}
 
       <!-- Totals -->
-      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#fce4d6">
+      <tr class="keep-together" style="font-size:10px; font-weight:700; background:#fbd5dd">
         <td colspan="10" style="text-align:right">TOTALS</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ total|money }}</td>

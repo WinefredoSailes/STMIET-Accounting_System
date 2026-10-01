@@ -74,9 +74,10 @@ def test_ftv_print_renders_voucher_sections(client, company, banks, named_staff)
     assert resp.status_code == 200
     body = resp.content.decode()
 
-    # Header: logo, company name from the transfer, dynamic document title.
+# Header: logo + dynamic document title. The company-name strip was
+    # removed from every voucher print header so all prints match the CV.
     assert "stmiet-trans-logo.png" in body
-    assert company.name in body
+    assert company.name not in body
     assert "FUND TRANSFER VOUCHER (FTV)" in body
 
     # Document information (dynamic values from the transfer).
@@ -233,20 +234,68 @@ def test_transfer_form_page_is_batch_grid(client, company, segment, accounts, ro
         code="PNB-CHK", name="Philippine National Bank",
         account_type="checking", bank_name="Philippine National Bank",
         bank_code="PNB", gl_account=accounts["10010"], company=company,
-    )
+)
     client.force_login(role_users["staff"])
     resp = client.get("/cash/transfers/new/")
     assert resp.status_code == 200
     body = resp.content.decode()
-    # The batch grid posts named line fields, one full transfer leg per row.
+    # The batch grid posts named line fields, one full transfer leg per row,
+    # including the cost center column (same as the RFP distribution grid).
     assert 'name="line_from"' in body
     assert 'name="line_to"' in body
     assert 'name="line_amount"' in body
     assert 'name="line_purpose"' in body
+    assert 'name="line_cost_center"' in body
+    assert 'id="cost_center_options"' in body
     assert 'data-line-grid="transfer"' in body
     assert 'data-add-row' in body
     assert 'data-remove-row' in body
     assert "FUND TRANSFER VOUCHER (FTV)" not in body
+
+
+def test_transfer_form_cost_center_persists_and_prints(client, company, accounts, segment, role_users):
+    """Cost center from the batch grid row is stored on the transfer, stamped
+    on both JE lines, and shown on the FTV detail/print/PDF."""
+    from apps.cash.models import BankAccount, InterAccountTransfer
+
+    bank_from = BankAccount.objects.create(
+        code="1VB-CHK", name="First Valley Bank",
+        account_type="checking", bank_name="First Valley Bank", bank_code="1VB",
+        gl_account=accounts["10110"], company=company,
+    )
+    bank_to = BankAccount.objects.create(
+        code="PNB-CHK", name="Philippine National Bank",
+        account_type="checking", bank_name="Philippine National Bank",
+bank_code="PNB", gl_account=accounts["10010"], company=company,
+    )
+    client.force_login(role_users["staff"])
+    resp = client.post("/cash/transfers/new/", {
+        "transfer_date": "2026-09-12",
+        "reference": "BDO-RT-2233",
+        "line_from": [str(bank_from.id), ""],
+        "line_to": [str(bank_to.id), ""],
+        "line_amount": ["25000.00", ""],
+        "line_purpose": ["Fund transfer to PNB for payroll", ""],
+        "line_cost_center": ["GEN-FUEL", ""],
+    })
+    assert resp.status_code == 302
+    tr = InterAccountTransfer.objects.get()
+    assert tr.cost_center == "GEN-FUEL"
+    assert tr.reference == "BDO-RT-2233"
+    assert {line.cost_center for line in tr.journal_entry.lines.all()} == {"GEN-FUEL"}
+
+    # Detail page shows the cost center chip.
+    body = client.get(f"/cash/transfers/{tr.id}/").content.decode()
+    assert "GEN-FUEL" in body
+
+    # Print view carries the cost center row in Transfer Details.
+    body = client.get(f"/cash/transfers/{tr.id}/print/").content.decode()
+    assert "COST CENTER:" in body
+    assert "GEN-FUEL" in body
+
+    # Server PDF exports the same row as real text.
+    resp = client.get(f"/cash/transfers/{tr.id}/pdf/")
+    assert b"GEN-FUEL" in _pdf_text(resp.content)
 
 
 def _table_max_columns(body):

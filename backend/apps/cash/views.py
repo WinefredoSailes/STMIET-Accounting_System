@@ -185,7 +185,8 @@ class InterAccountTransferViewSet(viewsets.ModelViewSet):
             from_account=from_acc, to_account=to_acc,
             amount=amount, purpose=purpose,
             reference=request.data.get("reference", ""),
-            check_no=request.data.get("check_no", ""), user=request.user,
+            check_no=request.data.get("check_no", ""),
+            cost_center=request.data.get("cost_center", ""), user=request.user,
         )
         # The transfer is created with status ``requested``, then submitted by
         # the preparer; the JE is posted when the head approves it.

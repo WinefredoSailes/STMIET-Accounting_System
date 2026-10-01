@@ -290,6 +290,9 @@ class InterAccountTransfer(AuditableModel):
     rejected_at = models.DateTimeField(null=True, blank=True)
     rejection_note = models.TextField(blank=True)
     check_no = models.CharField(max_length=32, blank=True, help_text="Check number (optional)")
+    cost_center = models.CharField(
+        max_length=64, blank=True, help_text="Cost center / ref (e.g. OS — offsite, GEN-FUEL)",
+    )
 
     class Meta:
         ordering = ["-transfer_date"]

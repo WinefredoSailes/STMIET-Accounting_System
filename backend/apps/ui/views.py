@@ -6635,11 +6635,13 @@ def transfers(request):
 def _transfer_form_context(request, *, editing=None):
     """Shared context for the create and edit transfer forms."""
     from apps.cash.models import BankAccount
+    from apps.foundation.models import CostCenter
 
     return {
         "banks": BankAccount.objects.filter(is_active=True)
         .select_related("company")
         .order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
         "today": date.today(),
         "editing": editing,
     }
@@ -6681,15 +6683,17 @@ def transfer_create(request):
     amounts = request.POST.getlist("line_amount")
     purposes = request.POST.getlist("line_purpose")
     check_nos = request.POST.getlist("line_check_no")
+    cost_centers = request.POST.getlist("line_cost_center")
 
     # Backward-compatible single-leg POST (old inline form).
     if not from_ids and {"from_account", "to_account", "amount"} <= set(request.POST):
-        from_ids, to_ids, amounts, purposes, check_nos = (
+        from_ids, to_ids, amounts, purposes, check_nos, cost_centers = (
             [request.POST["from_account"]],
             [request.POST["to_account"]],
             [request.POST["amount"]],
             [request.POST.get("purpose", "")],
             [request.POST.get("check_no", "")],
+            [request.POST.get("cost_center", "")],
         )
 
     transfer_date = date.fromisoformat(request.POST["transfer_date"]) if request.POST.get("transfer_date") else None
@@ -6709,6 +6713,7 @@ def transfer_create(request):
                 t = _resolve_bank(banks_by_id, t_id)
                 purpose = (purp or "").strip() or f"Fund transfer to {t.code} ({t.bank_name})"
                 check_no = (check_nos[i] if i < len(check_nos) else "").strip()
+                cost_center = (cost_centers[i] if i < len(cost_centers) else "").strip()
                 posted.append(
                     TransferService.transfer(
                         from_account=f,
@@ -6717,6 +6722,7 @@ def transfer_create(request):
                         purpose=purpose,
                         reference=reference,
                         check_no=check_no,
+                        cost_center=cost_center,
                         transfer_date=transfer_date,
                         user=request.user,
                     )
@@ -6768,6 +6774,7 @@ def transfer_edit(request, pk):
                 purpose=request.POST.get("line_purpose", ""),
                 reference=request.POST.get("reference", ""),
                 check_no=request.POST.get("line_check_no", ""),
+                cost_center=request.POST.get("line_cost_center", ""),
                 transfer_date=request.POST.get("transfer_date") or None,
                 user=request.user,
             )
@@ -7025,7 +7032,7 @@ def transfer_export(request, pk, fmt):
         columns=[
             Column("#"), Column("Side"), Column("COA"),
             Column("Account Name", width_cm=6), Column("Segment"),
-            Column("Description", width_cm=8),
+            Column("Cost Center"), Column("Description", width_cm=8),
             Column("Debit", money=True), Column("Credit", money=True),
         ],
         preamble=[
@@ -7036,6 +7043,7 @@ def transfer_export(request, pk, fmt):
             ["To (Debit)", f"{transfer.to_account.code} — {transfer.to_account.bank_name or transfer.to_account.name}"],
             ["Amount", transfer.amount],
             ["Purpose", transfer.purpose],
+            ["Cost Center", transfer.cost_center or ""],
             ["Reference", transfer.reference or ""],
             ["Check No", transfer.check_no or ""],
             ["Status", transfer.status],
@@ -7047,13 +7055,14 @@ def transfer_export(request, pk, fmt):
                 line.account.code,
                 line.account.name,
                 line.segment.code if line.segment else (entry.segment.code if entry else ""),
+                line.cost_center or transfer.cost_center or "",
                 line.description or transfer.purpose,
                 line.debit,
                 line.credit,
             ]
             for line in lines
         ],
-        totals_row=["", "", "", "TOTAL", "", "", total_dr, total_cr],
+        totals_row=["", "", "", "TOTAL", "", "", "", total_dr, total_cr],
         sheet_title=f"FTV_{label}",
         page="portrait",
     )
