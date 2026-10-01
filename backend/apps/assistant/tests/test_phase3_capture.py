@@ -399,3 +399,95 @@ class TestAttachments:
         assert block is not None, resp["text"]
         assert block["qid"] == "B24"
         assert "No supporting file" in resp["text"]
+
+
+class TestAttachmentRemove:
+    """Wrong-file recovery: the edit forms can remove the stored scan."""
+
+    def test_remove_attachment_clears_stored_file(self, doc_set, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.ui.views import _capture_po_receipt_fields
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        po = doc_set["po"]
+        _capture_po_receipt_fields(
+            RequestFactory().post("/x/", {"attachment": SimpleUploadedFile("scan9.pdf", b"x", "application/pdf")}),
+            po,
+        )
+        assert po.attachment.name
+        assert (tmp_path / "po_supporting").exists()
+
+        _capture_po_receipt_fields(RequestFactory().post("/x/", {"attachment_remove": "1"}), po)
+        po.refresh_from_db()
+        assert not po.attachment
+        assert not list((tmp_path / "po_supporting").glob("*scan9*"))
+
+    def test_remove_wins_over_new_upload(self, doc_set, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.ui.views import _capture_po_receipt_fields
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        po = doc_set["po"]
+        req = RequestFactory().post("/x/", {
+            "attachment_remove": "1",
+            "attachment": SimpleUploadedFile("later.pdf", b"x", "application/pdf"),
+        })
+        _capture_po_receipt_fields(req, po)
+        po.refresh_from_db()
+        assert not po.attachment
+
+    def test_rfp_remove_clears(self, doc_set, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.ui.views import _capture_rfp_invoice_fields
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        rfp = doc_set["rfp"]
+        _capture_rfp_invoice_fields(
+            RequestFactory().post("/x/", {"attachment": SimpleUploadedFile("inv9.pdf", b"x", "application/pdf")}),
+            rfp,
+        )
+        assert rfp.attachment.name
+        assert (tmp_path / "rfp_supporting").exists()
+        _capture_rfp_invoice_fields(RequestFactory().post("/x/", {"attachment_remove": "1"}), rfp)
+        rfp.refresh_from_db()
+        assert not rfp.attachment
+        assert not list((tmp_path / "rfp_supporting").glob("*inv9*"))
+
+    def test_po_edit_form_shows_choose_and_remove(self, client, staff, doc_set):
+        po = doc_set["po"]
+        po.status = "prepared"
+        po.created_by = staff
+        po.attachment = "po_supporting/old.pdf"
+        po.save(update_fields=["status", "created_by", "attachment", "updated_at"])
+        client.force_login(staff)
+        resp = client.get(f"/ap/pos/{po.pk}/edit/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Choose file" in body
+        assert 'name="attachment_remove"' in body
+        assert "Remove file" in body
+        assert "view current file" in body
+
+    def test_rfp_edit_form_shows_choose_and_remove(self, client, staff, doc_set):
+        rfp = doc_set["rfp"]
+        rfp.status = "prepared"
+        rfp.created_by = staff
+        rfp.attachment = "rfp_supporting/inv.pdf"
+        rfp.save(update_fields=["status", "created_by", "attachment", "updated_at"])
+        client.force_login(staff)
+        resp = client.get(f"/ap/rfps/{rfp.pk}/edit/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Choose file" in body
+        assert 'name="attachment_remove"' in body
+        assert "Remove file" in body
+
+    def test_create_form_has_no_remove_control(self, client, staff, segment):
+        client.force_login(staff)
+        resp = client.get("/ap/pos/new/")
+        body = resp.content.decode()
+        assert "Choose file" in body
+        assert "attachment_remove" not in body

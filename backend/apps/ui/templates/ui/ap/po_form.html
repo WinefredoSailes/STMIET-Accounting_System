@@ -186,11 +186,32 @@
           <input type="text" name="delivery_receipt_no" maxlength="32" placeholder="DR No." value="{{ editing.delivery_receipt_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <input type="date" name="receipt_date" value="{{ editing.receipt_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
         </div>
-        <div class="flex items-center gap-3">
-          <label class="text-sm font-medium text-surface-700 shrink-0" for="id_attachment">Supporting file</label>
-          <input type="file" id="id_attachment" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="block w-full text-xs text-surface-600 file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-brand-700">
-          {% if editing and editing.attachment %}<a href="{{ editing.attachment.url }}" target="_blank" rel="noopener" class="text-xs text-brand-600 hover:underline shrink-0">current file</a>{% endif %}
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm font-medium text-surface-700">Supporting file</span>
+          <label class="relative inline-flex cursor-pointer items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+            Choose file
+            <input type="file" id="id_attachment" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="absolute inset-0 cursor-pointer opacity-0">
+          </label>
+          <span id="id_attachment_hint" class="text-xs text-surface-500">{{ editing.attachment.name|default:'' }}</span>
+          {% if editing and editing.attachment %}
+          <a href="{{ editing.attachment.url }}" target="_blank" rel="noopener" class="text-xs text-brand-600 hover:underline">view current file</a>
+          <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-rose-600 hover:text-rose-700">
+            <input type="checkbox" name="attachment_remove" value="1" class="h-4 w-4 rounded border-surface-300 text-rose-600">
+            Remove file
+          </label>
+          {% endif %}
         </div>
+        <script>
+          (function () {
+            var input = document.getElementById("id_attachment");
+            var hint = document.getElementById("id_attachment_hint");
+            if (input && hint) {
+              input.addEventListener("change", function () {
+                hint.textContent = input.files && input.files.length ? input.files[0].name : "";
+              });
+            }
+          })();
+        </script>
       </div>
     </div>
 
