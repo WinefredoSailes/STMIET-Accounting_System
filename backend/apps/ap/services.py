@@ -37,6 +37,7 @@ from .models import (
     RFPDocument,
     RFPLine,
     Supplier,
+    SupplierApprovalStatus,
     SupplierContact,
 )
 
@@ -238,7 +239,13 @@ def _account(code: str) -> Account:
 
 
 class SupplierService:
-    """Supplier master maintenance (ADR-024 / ADR-038 §6)."""
+    """Supplier master approval lifecycle (ADR-024 / ADR-042).
+
+    Staff-added suppliers land ``pending`` and stay out of every picker and
+    transaction until the Accounting & Finance Head approves them; the Head's
+    own creations are ``approved`` immediately (head self-approve, same
+    pattern as customers/JEs/transfers). A rejected supplier returns to its
+    creator, who can edit and resubmit it."""
 
     @classmethod
     def save_contacts(cls, supplier, contacts):
@@ -260,6 +267,103 @@ class SupplierService:
                 email=(row.get("email") or "").strip(),
             )
 
+    @classmethod
+    def initial_status(cls, user) -> str:
+        """pending for accounting staff, approved for the Head/admins."""
+        if user is not None and user.is_superuser:
+            return SupplierApprovalStatus.APPROVED
+        if approval_role_of(user) == "head":
+            return SupplierApprovalStatus.APPROVED
+        return SupplierApprovalStatus.PENDING
+
+    @classmethod
+    def create_supplier(cls, *, created_by, **fields) -> Supplier:
+        status = cls.initial_status(created_by)
+        supplier = Supplier.objects.create(
+            created_by=created_by,
+            approval_status=status,
+            approved_by=created_by if status == SupplierApprovalStatus.APPROVED else None,
+            approved_at=timezone.now() if status == SupplierApprovalStatus.APPROVED else None,
+            **fields,
+        )
+        return supplier
+
+    @classmethod
+    def update_supplier(cls, supplier: Supplier, *, user, **fields) -> Supplier:
+        """Head/admin edit; the creator may also edit *their own rejected*
+        supplier, which resubmits it for another round of approval."""
+        from apps.core.approvals import can_edit_master
+
+        resubmit = (
+            supplier.approval_status == SupplierApprovalStatus.REJECTED
+            and not can_edit_master(user)
+            and supplier.created_by_id == user.id
+        )
+        if resubmit:
+            supplier.approval_status = SupplierApprovalStatus.PENDING
+            supplier.rejected_by = None
+            supplier.rejected_at = None
+            supplier.rejection_note = ""
+        for key, value in fields.items():
+            setattr(supplier, key, value)
+        supplier.updated_by = user
+        supplier.save()
+        return supplier
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, supplier: Supplier, *, user) -> Supplier:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if supplier.approval_status != SupplierApprovalStatus.PENDING:
+            raise ValidationError("Only pending suppliers can be approved.")
+        supplier.approval_status = SupplierApprovalStatus.APPROVED
+        supplier.approved_by = user
+        supplier.approved_at = timezone.now()
+        supplier.rejected_by = None
+        supplier.rejected_at = None
+        supplier.rejection_note = ""
+        supplier.save(
+            update_fields=[
+                "approval_status", "approved_by", "approved_at",
+                "rejected_by", "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        return supplier
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, supplier: Supplier, *, user, note: str) -> Supplier:
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if supplier.approval_status != SupplierApprovalStatus.PENDING:
+            raise ValidationError("Only pending suppliers can be rejected.")
+        if not (note and note.strip()):
+            raise ValidationError("A rejection note is required.")
+        supplier.approval_status = SupplierApprovalStatus.REJECTED
+        supplier.rejected_by = user
+        supplier.rejected_at = timezone.now()
+        supplier.rejection_note = note.strip()
+        supplier.save(
+            update_fields=[
+                "approval_status", "rejected_by", "rejected_at",
+                "rejection_note", "updated_at",
+            ]
+        )
+        return supplier
+
+    @classmethod
+    def require_approved(cls, supplier: Supplier) -> Supplier:
+        """Gate for transacting with a supplier (RFP, PO, CV payments)."""
+        if supplier.approval_status != SupplierApprovalStatus.APPROVED:
+            raise ValidationError(
+                f"Supplier {supplier.code} — {supplier.name} is not approved yet "
+                f"(status: {supplier.get_approval_status_display()}). "
+                "Only approved suppliers can be used on transactions."
+            )
+        return supplier
 
 class RFPService:
     """Creates and advances RFPs through their approval chain."""

@@ -26,7 +26,13 @@ class SupplierSerializer(serializers.ModelSerializer):
         model = Supplier
         fields = ("id", "code", "name", "supplier_type", "tin", "address", "contact_no",
                   "owner_name", "email", "contact_person", "position", "attachments_required",
-                  "last_ap", "default_segment", "contacts")
+                  "last_ap", "default_segment", "contacts",
+                  "approval_status", "approved_by", "approved_at",
+                  "rejected_by", "rejected_at", "rejection_note")
+        read_only_fields = (
+            "approval_status", "approved_by", "approved_at",
+            "rejected_by", "rejected_at", "rejection_note",
+        )
 
 
 class RFPLineSerializer(serializers.ModelSerializer):

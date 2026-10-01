@@ -1209,6 +1209,122 @@ class TestRFPPurchaseOrderLink:
         assert approved.available_amount == Decimal("40000.00")
 
 
+class TestPurchaseOrderNumbering:
+    """ADR-042: PO numbers are auto-allocated as PO-{YYYY}-{SEQ:05d}, matching
+    the other document series. The API viewset and the UI form are two separate
+    allocation call sites, so both need coverage."""
+
+    @staticmethod
+    def _payload(segment, **overrides):
+        body = {
+            "po_date": "2026-01-05",
+            "supplier": None,
+            "segment": segment.id,
+            "particulars": "Engine oil",
+            "lines": [
+                {
+                    "qty": "2", "unit": "DRUM",
+                    "description": "ENGINE OIL 15W40", "unit_price": "25000.00",
+                },
+            ],
+        }
+        body.update(overrides)
+        return body
+
+    def test_api_allocates_prefixed_po_number(self, company, segment, supplier, role_users):
+        from rest_framework.test import APIClient
+
+        staff = APIClient()
+        staff.force_authenticate(user=role_users["staff"])
+        resp = staff.post(
+            "/api/v1/ap/purchase-orders/",
+            self._payload(segment, supplier=supplier.id),
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+        from apps.ap.models import PurchaseOrder
+
+        po = PurchaseOrder.objects.get()
+        assert po.po_number == "PO-2026-00001"
+
+    def test_api_keeps_counting_across_calls(self, company, segment, supplier, role_users):
+        from rest_framework.test import APIClient
+
+        staff = APIClient()
+        staff.force_authenticate(user=role_users["staff"])
+        payload = self._payload(segment, supplier=supplier.id)
+        assert staff.post("/api/v1/ap/purchase-orders/", payload, format="json").status_code == 201
+        assert staff.post("/api/v1/ap/purchase-orders/", payload, format="json").status_code == 201
+
+        from apps.ap.models import PurchaseOrder
+
+        numbers = sorted(PurchaseOrder.objects.values_list("po_number", flat=True))
+        assert numbers == ["PO-2026-00001", "PO-2026-00002"]
+
+    def test_api_honours_an_explicit_po_number(self, company, segment, supplier, role_users):
+        """Callers may still supply their own number; the sequence is only a
+        default, and an explicit number must not consume a sequence slot."""
+        from rest_framework.test import APIClient
+
+        staff = APIClient()
+        staff.force_authenticate(user=role_users["staff"])
+        resp = staff.post(
+            "/api/v1/ap/purchase-orders/",
+            self._payload(segment, supplier=supplier.id, po_number="LEGACY-PO-1"),
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+        from apps.ap.models import PurchaseOrder
+        from apps.sequences.models import DocumentSequence
+
+        assert PurchaseOrder.objects.get().po_number == "LEGACY-PO-1"
+        assert not DocumentSequence.objects.filter(form_code="PO").exists()
+
+    def test_ui_and_api_share_one_sequence(self, company, segment, supplier, role_users, client):
+        """The two call sites must not allocate from independent counters."""
+        from rest_framework.test import APIClient
+
+        client.force_login(role_users["staff"])
+        assert client.post("/ap/pos/new/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-01-15",
+            "line_qty": ["2"],
+            "line_unit": ["DRUM"],
+            "line_description": ["ENGINE OIL"],
+            "line_unit_price": ["25000.00"],
+            "line_account": [""],
+        }).status_code == 302
+
+        staff = APIClient()
+        staff.force_authenticate(user=role_users["staff"])
+        assert staff.post(
+            "/api/v1/ap/purchase-orders/",
+            self._payload(segment, supplier=supplier.id),
+            format="json",
+        ).status_code == 201
+
+        from apps.ap.models import PurchaseOrder
+
+        numbers = sorted(PurchaseOrder.objects.values_list("po_number", flat=True))
+        assert numbers == ["PO-2026-00001", "PO-2026-00002"]
+
+    def test_prefix_fits_the_column_at_the_top_of_the_range(self, company, segment):
+        """PO-2026-99999 is the widest value the 5-digit counter produces and it
+        must fit max_length=16 without truncation."""
+        from apps.sequences.models import DocumentSequence
+
+        DocumentSequence.objects.create(
+            company=company, form_code="PO", year=2026,
+            pattern="PO-{YYYY}-{SEQ:05d}", next_seq=99999,
+        )
+        number = DocumentSequence.next_number(
+            company=company, form_code="PO", year=2026, pattern="PO-{YYYY}-{SEQ:05d}"
+        )
+        assert number == "PO-2026-99999"
+        assert len(number) <= 16
+
+
 class TestImportSuppliers:
     def test_creates_and_is_idempotent(self, tmp_path, company, segment):
         from apps.ap.models import SupplierType

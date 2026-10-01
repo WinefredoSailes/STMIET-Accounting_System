@@ -29,14 +29,72 @@ from .services import (
     CVPaymentService,
     PurchaseOrderService,
     RFPService,
+    SupplierService,
 )
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
+    """Supplier master. Staff-created suppliers land ``pending`` and must be
+    approved by the Accounting & Finance Head (same rule as the UI / the
+    customer master); the Head's own creations are approved immediately."""
+
     queryset = Supplier.objects
     serializer_class = SupplierSerializer
     search_fields = ["code", "name"]
-    filterset_fields = ["supplier_type"]
+    filterset_fields = ["supplier_type", "approval_status"]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        supplier = SupplierService.create_supplier(
+            created_by=request.user, **serializer.validated_data
+        )
+        return Response(self.get_serializer(supplier).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        from apps.core.approvals import can_edit_master
+
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        creator_revise = (
+            instance.approval_status == "rejected"
+            and instance.created_by_id == getattr(request.user, "id", None)
+        )
+        if not can_edit_master(request.user) and not creator_revise:
+            return Response(
+                {"detail": "Only the Accounting & Finance Head may edit suppliers."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        supplier = SupplierService.update_supplier(
+            instance, user=request.user, **serializer.validated_data
+        )
+        return Response(self.get_serializer(supplier).data)
+
+    partial_update = update
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """pending -> approved (head only)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        supplier = self.get_object()
+        SupplierService.approve(supplier, user=request.user)
+        return Response(self.get_serializer(supplier).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """pending -> rejected (head only, note required)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        supplier = self.get_object()
+        SupplierService.reject(
+            supplier, user=request.user, note=request.data.get("note", "")
+        )
+        return Response(self.get_serializer(supplier).data)
 
 
 class RFPDocumentViewSet(viewsets.ModelViewSet):
@@ -77,6 +135,13 @@ class RFPDocumentViewSet(viewsets.ModelViewSet):
 
         segment = Segment.objects.get(pk=data.get("segment"))
         payee = Supplier.objects.get(pk=data.get("payee"))
+        if not payee.is_approved:
+            return Response(
+                {"detail": f"Supplier {payee.code} is not approved yet "
+                 f"({payee.get_approval_status_display()}); RFPs require an "
+                 "approved supplier."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         lines = data.get("lines", [])
         po = None
         if data.get("po"):
@@ -155,6 +220,13 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 
         segment = Segment.objects.get(pk=data.get("segment"))
         supplier = Supplier.objects.get(pk=data.get("supplier"))
+        if not supplier.is_approved:
+            return Response(
+                {"detail": f"Supplier {supplier.code} is not approved yet "
+                 f"({supplier.get_approval_status_display()}); purchase orders "
+                 "require an approved supplier."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         company = segment.company or (supplier.default_segment.company if supplier.default_segment else None)
         try:
             year = int(str(data.get("po_date"))[:4])
@@ -271,6 +343,13 @@ class CheckVoucherViewSet(viewsets.ModelViewSet):
 
         try:
             payee = Supplier.objects.get(pk=data.get("payee"))
+            if not payee.is_approved:
+                return Response(
+                    {"detail": f"Supplier {payee.code} is not approved yet "
+                     f"({payee.get_approval_status_display()}); check vouchers "
+                     "require an approved supplier."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             bank_account = Account.objects.get(pk=data.get("bank_account"))
             rfp = None
             if data.get("rfp"):

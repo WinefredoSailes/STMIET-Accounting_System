@@ -710,6 +710,41 @@ def customer_queue(user_roles):
     return out
 
 
+def supplier_queue(user_roles):
+    """Suppliers waiting on the head (staff-added masters only).
+
+    A supplier created by accounting staff lands ``pending`` and is unusable
+    on transactions until the Head approves it; the Head's own creations are
+    approved immediately and never enter this queue."""
+    if "head" not in user_roles:
+        return []
+    from apps.ap.models import Supplier, SupplierApprovalStatus
+
+    out = []
+    docs = Supplier.objects.filter(
+        approval_status=SupplierApprovalStatus.PENDING
+    ).select_related("created_by")
+    for supplier in docs:
+        title = supplier.name
+        if supplier.owner_name:
+            title = f"{title} · {supplier.owner_name}"
+        out.append(
+            {
+                "kind": "supplier",
+                "role": "head",
+                "doc": supplier,
+                "number": supplier.code,
+                "title": title,
+                "date": supplier.created_at.date() if supplier.created_at else None,
+                "amount": "",
+                "detail": ("ui:supplier_detail", supplier.id),
+                "action": ("ui:supplier_approve", supplier.id),
+                "action_label": "Approve",
+            }
+        )
+    return out
+
+
 def pending_approval_queue(user):
     """All documents waiting on `user`, oldest first (My Approvals)."""
     role = approval_role_of(user)
@@ -729,6 +764,7 @@ def pending_approval_queue(user):
         + asset_queue({role})
         + pcf_queue({role})
         + customer_queue({role})
+        + supplier_queue({role})
     )
     queues.sort(key=lambda item: (item["date"] or date.min, item["number"]))
     return queues

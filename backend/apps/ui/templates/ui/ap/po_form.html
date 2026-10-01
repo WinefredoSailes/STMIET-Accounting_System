@@ -37,14 +37,24 @@
                value="{% if editing %}{{ editing.po_date|date:"Y-m-d" }}{% endif %}"
                class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
-      <div class="md:col-span-2">
+      <div>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_segment">Segment</label>
+        <select name="segment" id="id_segment" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          {% if editing %}
+            {% for seg in segments %}<option value="{{ seg.id }}" {% if seg.id == editing.segment_id %}selected{% endif %}>{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+          {% else %}
+            <option value="" selected>— select segment —</option>
+            {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }} — {{ seg.name }}</option>{% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div>
         <label class="block text-sm font-medium text-surface-700 mb-1" for="id_particulars">Particulars</label>
         <input type="text" name="particulars" id="id_particulars" maxlength="500"
                value="{{ editing.particulars|default:'' }}"
                class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
     </div>
-    <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
 
     <div class="px-6 py-3 border-t border-surface-200 text-xs uppercase tracking-wider text-surface-500">
       Line items — PR NO / QTY / UNIT / DESCRIPTION / UNIT PRICE / AMOUNT &middot; optional GL account pre-fills RFP expense lines

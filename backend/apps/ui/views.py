@@ -8,6 +8,7 @@ service functions the DRF API uses, so the UI and the API can never drift.
 from datetime import date, timedelta
 from decimal import Decimal
 import json
+import logging
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -85,6 +86,8 @@ from .services import (
     transfers_context,
     unassigned_approved_rfps,
 )
+
+logger = logging.getLogger(__name__)
 
 AUDIT_ACTION_LABELS = {
     "created": "Created",
@@ -347,6 +350,7 @@ KIND_LABELS = {
     "po": "Purchase Orders",
     "reversal": "Reversals",
     "rfp": "RFPs (Disbursements)",
+    "supplier": "Supplier Requests",
     "transfer": "Inter-account Transfers",
 }
 
@@ -376,6 +380,7 @@ def my_approvals(request):
         "transfer": "ui:transfer_reject",
         "pcf": "ui:pcf_replenishment_reject",
         "customer": "ui:customer_reject",
+        "supplier": "ui:supplier_reject",
     }
 
     queues = pending_approval_queue(request.user)
@@ -1892,6 +1897,15 @@ def supplier_list(request):
     return render(request, template, ctx)
 
 
+@login_required
+def supplier_detail(request, pk):
+    """Supplier master detail with head-approval banner (ADR-042)."""
+    from apps.ap.models import Supplier
+
+    supplier = get_object_or_404(Supplier.objects.prefetch_related("contacts"), pk=pk)
+    return render(request, "ui/ap/supplier_detail.html", {"supplier": supplier})
+
+
 def _rfp_approval_info(rfp, role):
     """Inline-approval facts for one RFP row (HTMX row swap).
 
@@ -2618,11 +2632,11 @@ def supplier_create(request):
     require_can_create_master(request.user)
     if request.method == "POST":
         try:
-            from apps.ap.models import Supplier
             from apps.ap.services import SupplierService
 
             segment = request.POST.get("default_segment")
-            supplier = Supplier.objects.create(
+            supplier = SupplierService.create_supplier(
+                created_by=request.user,
                 code=request.POST["code"].strip(),
                 name=request.POST["name"].strip(),
                 supplier_type=request.POST["supplier_type"],
@@ -2637,7 +2651,14 @@ def supplier_create(request):
                 default_segment=Segment.objects.get(pk=segment) if segment else None,
             )
             SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
-            messages.success(request, "Supplier created.")
+            if supplier.approval_status == "approved":
+                messages.success(request, "Supplier created (approved by the Head).")
+            else:
+                messages.success(
+                    request,
+                    "Supplier submitted — the Accounting & Finance Head must "
+                    "approve it before it can be used on transactions.",
+                )
             return redirect("ui:supplier_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
@@ -2646,37 +2667,93 @@ def supplier_create(request):
 
 @login_required
 def supplier_update(request, pk):
-    """Update an existing supplier (Accounting & Finance Head + admins only)."""
-    require_can_edit_master(request.user)
-    from apps.ap.models import Supplier
+    """Update an existing supplier (Head + admins; the creator may revise
+    their own REJECTED supplier, which resubmits it for approval)."""
+    from apps.ap.models import Supplier, SupplierApprovalStatus
     from apps.ap.services import SupplierService
+    from apps.core.approvals import can_edit_master
 
     supplier = get_object_or_404(Supplier, pk=pk)
+    creator_revise = (
+        supplier.approval_status == SupplierApprovalStatus.REJECTED
+        and supplier.created_by_id == request.user.id
+    )
+    if not can_edit_master(request.user) and not creator_revise:
+        from django.core.exceptions import PermissionDenied
+
+        raise PermissionDenied(
+            "Editing master data (COA, customers, suppliers, banks) is reserved "
+            "for the Accounting & Finance Head. Accounting staff can only add."
+        )
     if request.method == "POST":
         try:
-            supplier.code = request.POST.get("code") or supplier.code
-            supplier.name = request.POST["name"].strip()
-            supplier.supplier_type = request.POST["supplier_type"]
-            supplier.tin = request.POST.get("tin", "")
-            supplier.address = request.POST.get("address", "")
-            supplier.contact_no = request.POST.get("contact_no", "")
-            supplier.owner_name = request.POST.get("owner_name", "")
-            supplier.email = request.POST.get("email", "")
-            supplier.contact_person = request.POST.get("contact_person", "")
-            supplier.position = request.POST.get("position", "")
-            supplier.attachments_required = bool(request.POST.get("attachments_required"))
             segment = request.POST.get("default_segment")
-            supplier.default_segment = Segment.objects.get(pk=segment) if segment else None
-            supplier.save()
+            SupplierService.update_supplier(
+                supplier,
+                user=request.user,
+                code=request.POST.get("code") or supplier.code,
+                name=request.POST["name"].strip(),
+                supplier_type=request.POST["supplier_type"],
+                tin=request.POST.get("tin", ""),
+                address=request.POST.get("address", ""),
+                contact_no=request.POST.get("contact_no", ""),
+                owner_name=request.POST.get("owner_name", ""),
+                email=request.POST.get("email", ""),
+                contact_person=request.POST.get("contact_person", ""),
+                position=request.POST.get("position", ""),
+                attachments_required=bool(request.POST.get("attachments_required")),
+                default_segment=Segment.objects.get(pk=segment) if segment else None,
+            )
             SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
-            messages.success(request, f"Supplier {supplier.code} updated.")
+            messages.success(
+                request,
+                "Supplier resubmitted for Head approval."
+                if creator_revise
+                else f"Supplier {supplier.code} updated.",
+            )
             return redirect("ui:supplier_list")
         except (IntegrityError, ValueError, ObjectDoesNotExist) as exc:
             messages.error(request, str(exc))
     return render(request, "ui/ap/supplier_form.html", {
         "supplier": supplier,
+        "editing": True,
+        "creator_revise": creator_revise,
         "segments": Segment.objects.order_by("code"),
     })
+
+
+@login_required
+@require_POST
+def supplier_approve(request, pk):
+    """pending -> approved (Head only): the supplier becomes usable on AP."""
+    from apps.ap.models import Supplier
+    from apps.ap.services import SupplierService
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    try:
+        SupplierService.approve(supplier, user=request.user)
+        messages.success(request, f"Supplier {supplier.code} — {supplier.name} approved.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:supplier_list"))
+
+
+@login_required
+@require_POST
+def supplier_reject(request, pk):
+    """pending -> rejected (Head only, note required): back to the creator."""
+    from apps.ap.models import Supplier
+    from apps.ap.services import SupplierService
+
+    supplier = get_object_or_404(Supplier, pk=pk)
+    try:
+        SupplierService.reject(
+            supplier, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, f"Supplier {supplier.code} returned to its creator.")
+    except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:supplier_list"))
 
 
 def _supplier_contacts_from_post(post):
@@ -3210,27 +3287,47 @@ def po_list(request):
     return render(request, template, ctx)
 
 
+def _po_supplier_and_segment_from_form(request):
+    """Resolve the PO header's vendor + segment from raw form values.
+
+    The vendor/segment controls are search-enhanced selects, so a blank or
+    malformed value must be reported as a form error rather than handed to
+    ``.get(pk=...)`` -- an empty string reaches the model's AutoField and
+    surfaces as the opaque "Field 'id' expected a number but got ''".
+    """
+    from apps.ap.models import Supplier
+
+    raw_supplier = (request.POST.get("supplier") or "").strip()
+    if not raw_supplier.isdigit():
+        raise ValidationError("Select the vendor for the purchase order.")
+    raw_segment = (request.POST.get("segment") or "").strip()
+    if not raw_segment.isdigit():
+        raise ValidationError("Select the segment for the purchase order.")
+    return (
+        Supplier.objects.get(pk=int(raw_supplier)),
+        Segment.objects.get(pk=int(raw_segment)),
+    )
+
+
 @login_required
 def po_create(request):
-    from apps.ap.models import Supplier
     from apps.ap.services import PurchaseOrderService
 
     if request.method == "POST":
         try:
-            supplier = Supplier.objects.get(pk=request.POST["supplier"])
-            segment = Segment.objects.get(pk=request.POST["segment"])
+            supplier, segment = _po_supplier_and_segment_from_form(request)
             po_date = request.POST.get("po_date", "")
             if not po_date:
                 raise ValidationError("Enter the date of the purchase order.")
             lines = _po_lines_from_form(request)
             if not lines:
-                raise ValueError("Add at least one line item.")
+                raise ValidationError("Add at least one line item.")
             po = PurchaseOrderService.create_po(
                 po_number=DocumentSequence.next_number(
                     company=supplier.default_segment.company if supplier.default_segment else segment.company,
                     form_code="PO",
                     year=int(po_date[:4]),
-                    pattern="{YYYY}-{SEQ:05d}",
+                    pattern="PO-{YYYY}-{SEQ:05d}",
                 ),
                 po_date=date.fromisoformat(po_date),
                 supplier=supplier,
@@ -3250,9 +3347,20 @@ def po_create(request):
             )
             messages.success(request, f"PO {po.po_number} created (prepared).")
             return redirect("ui:po_detail", pk=po.id)
+        except ValidationError as exc:
+            # Expected user-input rejection: the flash message is the whole
+            # user-facing contract, so this is not an error condition.
+            logger.info("PO create rejected for %s: %s", request.user, exc)
+            messages.error(request, str(exc))
         except (AccountingError, ValueError) as exc:
+            # Rule/parse violations that still reach here are defects (e.g. a
+            # bad date string), not user mistakes -- log the traceback.
+            logger.exception("PO create failed for %s", request.user)
             messages.error(request, str(exc))
         except ObjectDoesNotExist as exc:
+            # A vendor/segment was deleted or de-activated between render and
+            # submit: worth a traceback, since it means a stale form was posted.
+            logger.exception("PO create hit a missing record for %s", request.user)
             messages.error(request, str(exc))
     return render(
         request,
@@ -3448,7 +3556,14 @@ def po_revise(request, pk):
             )
             messages.success(request, f"PO {po.po_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:po_detail", pk))
-        except (AccountingError, ValidationError) as exc:
+        except ValidationError as exc:
+            logger.info("PO revise rejected for %s on %s: %s", request.user, po.po_number, exc)
+            messages.error(request, str(exc))
+        except (AccountingError, ValueError) as exc:
+            logger.exception("PO revise failed for %s on %s", request.user, po.po_number)
+            messages.error(request, str(exc))
+        except ObjectDoesNotExist as exc:
+            logger.exception("PO revise hit a missing record for %s on %s", request.user, po.po_number)
             messages.error(request, str(exc))
 
     return render(
@@ -5416,15 +5531,19 @@ def account_options(request):
 def supplier_options(request):
     """Type-ahead source for searchable supplier/payee pickers (server-side).
 
-    Returns the first ~30 active suppliers matching the query by code or name,
+    Returns the first ~30 approved suppliers matching the query by code or name,
     plus the currently-selected supplier (when editing) so the picker keeps a
-    stable selection. ``?selected=`` accepts a supplier code or id.
+    stable selection. ``?selected=`` accepts a supplier code or id. Pending or
+    rejected suppliers are hidden: they cannot be transacted with until the
+    Accounting & Finance Head approves them.
     """
-    from apps.ap.models import Supplier
+    from apps.ap.models import Supplier, SupplierApprovalStatus
 
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
-    qs = Supplier.objects.order_by("code")
+    qs = Supplier.objects.filter(
+        approval_status=SupplierApprovalStatus.APPROVED
+    ).order_by("code")
     if q:
         qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
     rows = list(qs[:30])

@@ -35,12 +35,22 @@ class SupplierType(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class SupplierApprovalStatus(models.TextChoices):
+    PENDING = "pending", "Pending approval"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
 class Supplier(SoftDeleteMixin, AuditableModel):
     """Supplier/Vendor master (ADR-024). LAST AP is auto-tracked (pain #5).
 
     Columns mirror the finance head's LIST-OF-SUPPLIERS master (Sept 2026),
     which is the authoritative source for the supplier model.
-    """
+
+    ADR-042: a supplier added by accounting staff lands ``pending`` and stays
+    out of every picker/transaction until the Accounting & Finance Head
+    approves it; a supplier the Head creates is ``approved`` immediately
+    (head self-approve, same pattern as customers/JEs/transfers)."""
 
     code = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=255)
@@ -57,6 +67,20 @@ class Supplier(SoftDeleteMixin, AuditableModel):
     )
     # Per-vendor numbering: previous RFP for this supplier (ADR-019 gap tracking).
     last_ap = models.CharField(max_length=16, blank=True)
+    approval_status = models.CharField(
+        max_length=16,
+        choices=SupplierApprovalStatus.choices,
+        default=SupplierApprovalStatus.APPROVED,
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="approved_suppliers"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_suppliers"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
     default_segment = models.ForeignKey(
         "foundation.Segment", null=True, blank=True, on_delete=models.SET_NULL, related_name="suppliers"
     )
@@ -66,6 +90,10 @@ class Supplier(SoftDeleteMixin, AuditableModel):
 
     def __str__(self):
         return f"{self.code} {self.name}"
+
+    @property
+    def is_approved(self):
+        return self.approval_status == SupplierApprovalStatus.APPROVED
 
     def save(self, *args, **kwargs):
         """Auto-generate supplier code on create (S001, S002, ... pattern per ADR-038)."""

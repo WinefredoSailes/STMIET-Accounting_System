@@ -1,0 +1,125 @@
+{% extends "ui/base.html" %}
+{% load static ui_filters %}
+{% block title %}Supplier — {{ supplier.name }}{% endblock %}
+{% block content %}
+<div class="p-6">
+  {% capture as doc_title %}Supplier — {{ supplier.code }} {{ supplier.name }}{% endcapture %}
+  {% capture as actions %}<a href="{% url 'ui:supplier_update' supplier.pk %}" class="rounded-md bg-surface-800 px-4 py-2 text-sm font-medium text-white hover:bg-surface-700">Edit</a>{% endcapture %}
+  {% include "ui/partials/page_header.html" with title=doc_title back_url_name="ui:supplier_list" back_label="Suppliers" actions=actions %}
+
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 shadow-sm">
+    <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Code</div>
+        <div class="mt-0.5 font-mono font-medium">{{ supplier.code }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Business Name</div>
+        <div class="mt-0.5 font-medium">{{ supplier.name }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Type</div>
+        <div class="mt-0.5">{{ supplier.get_supplier_type_display }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">TIN</div>
+        <div class="mt-0.5 font-mono">{{ supplier.tin|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Owner/Rep</div>
+        <div class="mt-0.5">{{ supplier.owner_name|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Contact</div>
+        <div class="mt-0.5">{{ supplier.contact_no|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Email</div>
+        <div class="mt-0.5">{{ supplier.email|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Default Segment</div>
+        <div class="mt-0.5">{{ supplier.default_segment.code|default:"—" }}</div>
+      </div>
+      <div class="col-span-2">
+        <div class="text-xs uppercase tracking-wider text-surface-500">Address</div>
+        <div class="mt-0.5">{{ supplier.address|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase tracking-wider text-surface-500">Approval</div>
+        <div class="mt-0.5">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if supplier.approval_status == 'approved' %}bg-emerald-100 text-emerald-800{% elif supplier.approval_status == 'rejected' %}bg-rose-100 text-rose-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ supplier.get_approval_status_display }}</span>
+        </div>
+      </div>
+      {% if supplier.created_by %}
+      <div class="col-span-2 md:col-span-4">
+        <div class="text-xs uppercase tracking-wider text-surface-500">Added by</div>
+        <div class="mt-0.5 text-surface-700">{{ supplier.created_by.get_full_name|default:supplier.created_by.username }} · {{ supplier.created_at|date:"M d, Y H:i" }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if supplier.contacts.all %}
+    <div class="px-6 pb-4">
+      <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">Contacts</div>
+      <div class="space-y-1 text-sm">
+        {% for c in supplier.contacts.all %}
+        <div class="text-surface-700">{{ c.name }}{% if c.position %} · {{ c.position }}{% endif %}{% if c.phone %} · {{ c.phone }}{% endif %}{% if c.email %} · {{ c.email }}{% endif %}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if supplier.attachments_required %}
+    <div class="px-6 pb-4 text-xs text-brand-700">Attachments required: BIR-COR, DTI/SEC, Business Permit.</div>
+    {% endif %}
+
+    {% if supplier.approval_status == "pending" %}
+    <div class="px-6 pb-4">
+      <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <div class="text-sm font-semibold text-amber-800">Awaiting Accounting &amp; Finance Head approval</div>
+        <div class="mt-1 text-xs text-surface-600">This supplier was added by accounting staff; it stays out of every picker and cannot be used on RFPs, POs, or payments until approved.</div>
+        {% if request.user|approval_role_of == "head" %}
+        <div class="mt-3 flex items-center gap-3">
+          <form method="post" action="{% url 'ui:supplier_approve' supplier.pk %}">
+            {% csrf_token %}
+            <button type="submit" data-confirm="Approve {{ supplier.code }} — {{ supplier.name }}? It becomes usable on AP right away."
+              class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Approve supplier</button>
+          </form>
+          <button type="button" data-toggle-target="#supplier-reject-form"
+            class="inline-block rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject with note</button>
+        </div>
+        <form method="post" action="{% url 'ui:supplier_reject' supplier.pk %}" id="supplier-reject-form" class="mt-3 hidden max-w-xl">
+          {% csrf_token %}
+          <textarea name="note" data-autogrow rows="3" required
+            class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm"
+            placeholder="Why is this supplier being returned? The creator will see this note before resubmitting."></textarea>
+          <button type="submit" class="mt-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Return supplier to its creator</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% elif supplier.approval_status == "rejected" %}
+    <div class="px-6 pb-4">
+      <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+        <div class="text-sm font-semibold text-rose-800">Rejected — returned for correction</div>
+        {% if supplier.rejected_by %}
+        <div class="text-xs text-surface-500 mt-1">Returned by {{ supplier.rejected_by.get_full_name|default:supplier.rejected_by }} · {{ supplier.rejected_at|date:"M d, Y H:i" }}</div>
+        {% endif %}
+        <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ supplier.rejection_note }}</div>
+        {% if request.user == supplier.created_by %}
+        <a href="{% url 'ui:supplier_update' supplier.pk %}"
+          class="inline-block mt-3 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Edit &amp; resubmit</a>
+        {% endif %}
+      </div>
+    </div>
+    {% elif supplier.approved_by %}
+    <div class="px-6 pb-3 text-xs text-surface-500">Approved by {{ supplier.approved_by.get_full_name|default:supplier.approved_by }}{% if supplier.approved_at %} · {{ supplier.approved_at|date:"M d, Y H:i" }}{% endif %}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/toggle-block.js' %}"></script>
+{% endblock %}
