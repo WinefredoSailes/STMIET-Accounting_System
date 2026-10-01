@@ -4515,9 +4515,13 @@ def _pcf_expenses_from_post(request):
             supplier = Supplier.objects.filter(pk=supplier_id).first()
         if supplier is None:
             raise ValidationError(f"Line {i + 1}: select a supplier (Business name).")
+        account = Account.objects.filter(code=acc_id).first()
+        if account is None:
+            raise ValidationError(f"Line {i + 1}: GL account {acc_id} not found.")
         expenses.append(
             {
-                "account_code": Account.objects.get(code=acc_id).code,
+                "account_code": account.code,
+                "account_name": account.name,
                 "side": "dr" if debit else "cr",
                 "amount": str(debit or credit),
                 "description": (descs[i] if i < len(descs) else "")[:500],
@@ -4740,11 +4744,25 @@ def pcf_replenishment_detail(request, pk):
         ),
         pk=pk,
     )
+    # Expense lines saved before account_name was stored resolve their GL
+    # title live from the chart of accounts, so the detail screen shows
+    # "63800 Petron" for old vouchers too (print/PDF already did this).
+    stored = replen.expenses or []
+    name_by_code = dict(
+        Account.objects.filter(
+            code__in={e.get("account_code", "") for e in stored if e.get("account_code") and not e.get("account_name")}
+        ).values_list("code", "name")
+    )
+    expense_lines = [
+        dict(e, account_name=e.get("account_name") or name_by_code.get(e.get("account_code", ""), ""))
+        for e in stored
+    ]
     return render(
         request,
         "ui/cash/pcf_replenishment_detail.html",
         {
             "replen": replen,
+            "expense_lines": expense_lines,
             "is_custodian": request.user.is_superuser
             or replen.fund.custodian_id == request.user.id
             or replen.requested_by_id == request.user.id,

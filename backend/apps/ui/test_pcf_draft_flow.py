@@ -302,6 +302,80 @@ class TestApiDraftContract:
         assert api.patch(f"/api/v1/cash/pcf-replenishments/{pk}/", {"reference": "R3"}, format="json").status_code == 403
         assert api.delete(f"/api/v1/cash/pcf-replenishments/{pk}/").status_code == 403
 
+
+class TestGLAccountNamePersisted:
+    """The GL title (code + name) survives every save path — create, draft
+    edit, rejected-revise — and the detail screen resolves names even for
+    rows stored before the name was captured."""
+
+    def test_create_stores_name_and_detail_shows_it(self, client, role_users, fund, accounts, supplier):
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund, accounts, supplier)
+        assert replen.expenses[0]["account_name"] == accounts["61100"].name
+        body = client.get(f"/cash/pcf/replenishments/{replen.id}/").content.decode()
+        assert f"{accounts['61100'].code} {accounts['61100'].name}" in body
+
+    def test_draft_edit_keeps_account_name(self, client, role_users, fund, accounts, supplier):
+        """Regression: the draft-edit POST used to rewrite expenses without
+        account_name, wiping the GL title from the detail screen."""
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund, accounts, supplier)
+        resp = client.post(
+            f"/cash/pcf/replenishments/{replen.id}/edit/",
+            _form(fund, accounts, supplier, exp_debit=["1,000.00"], exp_description=["Ink v2"]),
+        )
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.expenses[0]["account_name"] == accounts["61100"].name
+        body = client.get(f"/cash/pcf/replenishments/{replen.id}/").content.decode()
+        assert f"{accounts['61100'].code} {accounts['61100'].name}" in body
+
+    def test_revise_keeps_account_name(self, client, role_users, fund, accounts, supplier):
+        client.force_login(role_users["staff"])
+        replen = _create(client, fund, accounts, supplier)
+        client.post(f"/cash/pcf/replenishments/{replen.id}/submit/")
+        client.force_login(role_users["head"])
+        client.post(f"/cash/pcf/replenishments/{replen.id}/reject/", {"note": "trim it"})
+        client.force_login(role_users["staff"])
+        resp = client.post(
+            f"/cash/pcf/replenishments/{replen.id}/revise/",
+            _form(fund, accounts, supplier, exp_debit=["400.00"], exp_description=["Ink (trimmed)"]),
+        )
+        assert resp.status_code == 302
+        replen.refresh_from_db()
+        assert replen.status == "requested"
+        assert replen.expenses[0]["account_name"] == accounts["61100"].name
+
+    def test_detail_resolves_name_for_stored_rows_without_one(self, client, role_users, fund, accounts):
+        """Old vouchers (JSON predating account_name) still show the title."""
+        replen = PCFReplenishment.objects.create(
+            fund=fund, request_date=date(2026, 9, 5), amount=Decimal("100.00"),
+            expenses=[
+                {"account_code": accounts["61100"].code, "side": "dr", "amount": "100.00",
+                 "description": "Legacy line", "segment": "DHPP", "cost_center": "OS"}
+            ],
+            status="draft", requested_by=role_users["staff"], voucher_no="PCV-LEGACY-0001",
+        )
+        client.force_login(role_users["staff"])
+        body = client.get(f"/cash/pcf/replenishments/{replen.id}/").content.decode()
+        assert f"{accounts['61100'].code} {accounts['61100'].name}" in body
+
+    def test_service_survives_unknown_account_code(self, fund, role_users):
+        from apps.cash.services import PCFService
+
+        replen = PCFService.request_replenishment(
+            fund, [{"account_code": "99999", "amount": "50.00", "description": "ghost"}],
+            user=role_users["staff"],
+        )
+        assert replen.expenses[0]["account_name"] == ""
+
+    def test_form_rejects_unknown_account_code(self, client, role_users, fund, accounts, supplier):
+        client.force_login(role_users["staff"])
+        resp = client.post("/cash/pcf/replenish/", _form(fund, accounts, supplier, exp_account=["99999"]))
+        assert resp.status_code == 200
+        assert "not found" in resp.content.decode()
+        assert PCFReplenishment.objects.count() == 0
+
     def test_preparer_can_discard_own_draft(self, role_users, fund, accounts):
         api = APIClient()
         api.force_authenticate(user=role_users["staff"])
