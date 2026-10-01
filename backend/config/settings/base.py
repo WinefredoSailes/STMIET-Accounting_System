@@ -67,6 +67,7 @@ DOMAIN_APPS = [
     "apps.tax",           # VAT, WHT, BIR (Phase 9)
     "apps.reporting",     # financial statements (Phase 8)
     "apps.ui",            # server-rendered UI (templates + HTMX, no models)
+    "apps.assistant",     # smart search assistant (chat-like knowledge base)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + DOMAIN_APPS

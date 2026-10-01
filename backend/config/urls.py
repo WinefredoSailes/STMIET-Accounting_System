@@ -104,6 +104,7 @@ urlpatterns = [
         f"{API_PREFIX}/reporting/",
         include("apps.reporting.urls"),
     ),
+    path("assistant/", include("apps.assistant.urls")),
 ]
 
 # Uploaded media (profile avatars). Served in every environment, not just

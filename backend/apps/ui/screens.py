@@ -57,6 +57,7 @@ SCREENS: list[tuple[str, str, str | None]] = [
     ("statement", "Financial Statements", "Reports"),
     ("month_end_close", "Month-End Close", "Reports"),
     ("user_management", "User Management", "Settings / Admin"),
+    ("analytics", "Assistant Analytics", "Settings / Admin"),
 ]
 
 SCREEN_KEYS: frozenset[str] = frozenset(k for k, _, _ in SCREENS)
@@ -171,6 +172,7 @@ _PREFIXES: list[tuple[str, str]] = sorted(
         ("statement", "statement"),
         ("month_end_", "month_end_close"),
         ("user_", "user_management"),
+        ("analytics", "analytics"),
     ],
     key=lambda kv: len(kv[0]),
     reverse=True,
