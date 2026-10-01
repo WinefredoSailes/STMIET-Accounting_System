@@ -17,7 +17,7 @@
   </div>
   {% endif %}
 
-  <form method="post" class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
+  <form method="post" enctype="multipart/form-data" class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
     {% csrf_token %}
     <div class="px-6 py-4 border-b border-surface-200">
       <div class="text-sm font-semibold text-surface-900">PURCHASE ORDER</div>
@@ -185,6 +185,11 @@
           <input type="text" name="receiving_report_no" maxlength="32" placeholder="RR No." value="{{ editing.receiving_report_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <input type="text" name="delivery_receipt_no" maxlength="32" placeholder="DR No." value="{{ editing.delivery_receipt_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
           <input type="date" name="receipt_date" value="{{ editing.receipt_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="text-sm font-medium text-surface-700 shrink-0" for="id_attachment">Supporting file</label>
+          <input type="file" id="id_attachment" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="block w-full text-xs text-surface-600 file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-brand-700">
+          {% if editing and editing.attachment %}<a href="{{ editing.attachment.url }}" target="_blank" rel="noopener" class="text-xs text-brand-600 hover:underline shrink-0">current file</a>{% endif %}
         </div>
       </div>
     </div>

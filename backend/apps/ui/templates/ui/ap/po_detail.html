@@ -39,10 +39,10 @@
       <div class="mt-0.5">{{ po.ship_to_company|default:"" }}{% if po.ship_to_company and po.ship_to_address %}, {% endif %}{{ po.ship_to_address|default:"" }}{% if po.contact_person %} — {{ po.contact_person }}{% endif %}</div>
     </div>
     {% endif %}
-    {% if po.receiving_report_no or po.delivery_receipt_no or po.receipt_date %}
+    {% if po.receiving_report_no or po.delivery_receipt_no or po.receipt_date or po.attachment %}
     <div class="col-span-2 md:col-span-4">
       <div class="text-xs text-surface-500">GOODS RECEIPT</div>
-      <div class="mt-0.5 font-mono text-xs">{% if po.receiving_report_no %}RR {{ po.receiving_report_no }}{% endif %}{% if po.delivery_receipt_no %}{% if po.receiving_report_no %} · {% endif %}DR {{ po.delivery_receipt_no }}{% endif %}{% if po.receipt_date %} · received {{ po.receipt_date|date:"M d, Y" }}{% endif %}</div>
+      <div class="mt-0.5 font-mono text-xs">{% if po.receiving_report_no %}RR {{ po.receiving_report_no }}{% endif %}{% if po.delivery_receipt_no %}{% if po.receiving_report_no %} · {% endif %}DR {{ po.delivery_receipt_no }}{% endif %}{% if po.receipt_date %} · received {{ po.receipt_date|date:"M d, Y" }}{% endif %}{% if po.attachment %}<a href="{{ po.attachment.url }}" target="_blank" rel="noopener" class="ml-2 font-sans text-brand-600 hover:underline">[supporting file]</a>{% endif %}</div>
     </div>
     {% endif %}
     {% if po.revision_count %}

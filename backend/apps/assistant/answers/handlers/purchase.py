@@ -283,3 +283,48 @@ def supplier_invoice_of(ctx, e) -> Answer:
         links=[{"url": f"/ap/rfps/{main.pk}/", "label": f"View RFP {main.ap_number}"}],
         module="ap",
     )
+
+
+def supporting_docs(ctx, e) -> Answer:
+    """B24/G62 — view supporting documents attached to a purchase/payment.
+
+    Collects the optional attachment captured on the PO / RFP (ADR-050 Phase 3b)
+    and, for a JE document, its recorded source-file path. Honest when empty.
+    """
+    rfp = e.rfp or (e.cv.rfp if e.cv is not None and e.cv.rfp is not None else None)
+    po = e.po if e.po is not None else (rfp.po if rfp is not None else None)
+    files = []
+    if po is not None and po.attachment:
+        files.append((f"PO {po.po_number}", po.attachment.url))
+    if rfp is not None and rfp.attachment:
+        files.append((f"RFP {rfp.ap_number}", rfp.attachment.url))
+    if e.je is not None and e.je.source_file:
+        files.append((f"JE {e.je.entry_no}", e.je.source_file))
+    if not files:
+        label = ""
+        if po is not None:
+            label = po.po_number
+        elif rfp is not None:
+            label = rfp.ap_number
+        elif e.je is not None:
+            label = e.je.entry_no
+        return Answer(
+            qid="B24",
+            title="Supporting documents",
+            summary=f"No supporting file is attached to {label or 'this document'} yet.",
+            note="Staff can attach a scan/PDF in the Supporting file field of the PO or RFP form.",
+            module="ap",
+        )
+    links = [{"url": url, "label": f"Open file — {name}"} for name, url in files]
+    if po is not None:
+        links.append({"url": f"/ap/pos/{po.pk}/", "label": f"View PO {po.po_number}"})
+    if rfp is not None:
+        links.append({"url": f"/ap/rfps/{rfp.pk}/", "label": f"View RFP {rfp.ap_number}"})
+    return Answer(
+        qid="B24",
+        title="Supporting documents",
+        summary=f"{len(files)} supporting file(s) found for this purchase.",
+        metrics=[metric("Files", len(files), "count")],
+        links=links,
+        module="ap",
+    )

@@ -274,12 +274,128 @@ class TestAnswerLinksResolve:
         ("unpaid rfps", "C26"),
     ])
     def test_links_from_service(self, staff, doc_set, message, qid):
-        from apps.foundation.models import Account
-
-        # give AR/K answers a reason to link
         resp = AssistantService().process_query(staff, message)
         block = resp.get("answer_block")
         assert block is not None, resp["text"]
         assert block["qid"] == qid
         for link in block.get("links", []):
             resolve(urlparse(link["url"]).path)
+
+
+class TestAttachments:
+    """Phase 3b: supporting file capture on PO/RFP + B24/G62 answers."""
+
+    def test_catalog_flipped_to_ready(self):
+        assert CATALOG_BY_ID["B24"].status == "ready"
+        assert CATALOG_BY_ID["B24"].handler == "purchase.supporting_docs"
+        assert CATALOG_BY_ID["G62"].status == "ready"
+        assert CATALOG_BY_ID["G62"].handler == "purchase.supporting_docs"
+        assert CATALOG_BY_ID["H71"].status == "ready"
+
+    def test_po_upload_roundtrip(self, client, staff, segment, company, accounts, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        client.force_login(staff)
+        supplier = Supplier.objects.create(code="S011", name="ScanCo", default_segment=segment, approval_status="approved")
+        resp = client.post("/ap/pos/new/", {
+            "supplier": supplier.id,
+            "segment": segment.id,
+            "po_date": "2026-09-10",
+            "particulars": "filters",
+            "line_pr_no": ["2026-11"],
+            "line_qty": ["1"],
+            "line_unit": ["PC"],
+            "line_description": ["Filter"],
+            "line_unit_price": ["900.00"],
+            "line_account": ["61100"],
+            "discount": "0.00",
+            "vat_amount": "0.00",
+            "other_charges": "0.00",
+            "receiving_report_no": "RR-77",
+            "attachment": SimpleUploadedFile("scan.pdf", b"%PDF-1.4 test", content_type="application/pdf"),
+        })
+        assert resp.status_code == 302
+        po = PurchaseOrder.objects.get(supplier=supplier)
+        assert po.receiving_report_no == "RR-77"
+        assert po.attachment.name and po.attachment.name.startswith("po_supporting/")
+
+    def test_po_repost_without_file_keeps_attachment(self, doc_set, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.ui.views import _capture_po_receipt_fields
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        req = RequestFactory().post("/x/", {"attachment": SimpleUploadedFile("a.pdf", b"x", "application/pdf")})
+        _capture_po_receipt_fields(req, doc_set["po"])
+        assert doc_set["po"].attachment.name
+
+        # a later post without a file must NOT wipe the stored attachment
+        _capture_po_receipt_fields(RequestFactory().post("/x/", {"receiving_report_no": "RR-2"}), doc_set["po"])
+        doc_set["po"].refresh_from_db()
+        assert doc_set["po"].attachment.name
+        assert doc_set["po"].receiving_report_no == "RR-2"
+
+    def test_rfp_upload_roundtrip(self, doc_set, settings, tmp_path):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.ui.views import _capture_rfp_invoice_fields
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        req = RequestFactory().post("/x/", {
+            "supplier_invoice_no": "SI-5",
+            "attachment": SimpleUploadedFile("inv.pdf", b"x", "application/pdf"),
+        })
+        _capture_rfp_invoice_fields(req, doc_set["rfp"])
+        doc_set["rfp"].refresh_from_db()
+        assert doc_set["rfp"].supplier_invoice_no == "SI-5"
+        assert doc_set["rfp"].attachment.name.startswith("rfp_supporting/")
+
+    def test_supporting_docs_none_attached(self, staff, doc_set):
+        from apps.assistant.answers.handlers.purchase import supporting_docs
+
+        e = Entities(po=doc_set["po"])
+        ans = supporting_docs(_ctx(staff, e, "supporting documents", [doc_set["company"]]), e)
+        assert "No supporting file is attached" in ans.summary
+        assert "Supporting file field" in ans.note
+
+    def test_supporting_docs_with_file(self, staff, doc_set):
+        from apps.assistant.answers.handlers.purchase import supporting_docs
+
+        po = doc_set["po"]
+        po.attachment = "po_supporting/scan.pdf"
+        po.save(update_fields=["attachment", "updated_at"])
+        e = Entities(po=po)
+        ans = supporting_docs(_ctx(staff, e, "supporting documents", [doc_set["company"]]), e)
+        assert ans.qid == "B24"
+        assert "1 supporting file" in ans.summary
+        # non-media links must resolve; the file link points under MEDIA_URL
+        from django.conf import settings
+
+        for link in ans.links:
+            if link["url"].startswith(settings.MEDIA_URL):
+                continue
+            resolve(urlparse(link["url"]).path)
+
+    def test_supporting_docs_via_cv_resolves_rfp(self, staff, doc_set):
+        from apps.assistant.answers.handlers.purchase import supporting_docs
+
+        rfp = doc_set["rfp"]
+        rfp.attachment = "rfp_supporting/invoice.pdf"
+        rfp.save(update_fields=["attachment", "updated_at"])
+        e = Entities(rfp=rfp)
+        ans = supporting_docs(_ctx(staff, e, "attached documents", [doc_set["company"]]), e)
+        assert "RFP" in ans.summary or "1 supporting file" in ans.summary
+
+    def test_attachment_not_in_api_payloads(self, doc_set):
+        po_data = PurchaseOrderSerializer(doc_set["po"]).data
+        rfp_data = RFPDocumentSerializer(doc_set["rfp"]).data
+        assert "attachment" not in po_data
+        assert "attachment" not in rfp_data
+
+    def test_service_routes_b24_to_handler(self, staff, doc_set):
+        resp = AssistantService().process_query(staff, "can I view the supporting documents of PO-2026-0500")
+        block = resp.get("answer_block")
+        assert block is not None, resp["text"]
+        assert block["qid"] == "B24"
+        assert "No supporting file" in resp["text"]

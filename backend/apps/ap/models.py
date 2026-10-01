@@ -193,6 +193,8 @@ class RFPDocument(AuditableModel):
     # SupplierInvoice model so the promotion is an FK + backfill.
     supplier_invoice_no = models.CharField("Supplier Invoice No.", max_length=32, blank=True)
     supplier_invoice_date = models.DateField("Invoice Date", null=True, blank=True)
+    # Optional supporting scan/attachment (ADR-050 Phase 3b).
+    attachment = models.FileField(upload_to="rfp_supporting/", blank=True)
 
     class Meta:
         ordering = ["-rfp_date", "-ap_number"]
@@ -307,6 +309,9 @@ class PurchaseOrder(AuditableModel):
     receiving_report_no = models.CharField("RR No.", max_length=32, blank=True)
     delivery_receipt_no = models.CharField("DR No.", max_length=32, blank=True)
     receipt_date = models.DateField("Received Date", null=True, blank=True)
+    # Optional supporting scan/attachment (ADR-050 Phase 3b). Inert evidence:
+    # never affects posting, approval, or balances.
+    attachment = models.FileField(upload_to="po_supporting/", blank=True)
 
     class Meta:
         ordering = ["-po_date", "-po_number"]

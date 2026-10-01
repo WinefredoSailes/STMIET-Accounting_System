@@ -7,9 +7,8 @@ item is a pipe-separated OR list of entity keys (``none`` always passes, and a
 entries with ``status == "ready"`` participate in routing; the rest exist here
 as the spec, drive the matrix test, and ship with a ``handler=None``.
 
-``needs-stub`` entries (B18/B19/B24/G62/H71) route to ``stubs.not_tracked``
-which explains the gap in place of the record search; they become full
-answers once the Phase-3 capture fields land.
+``needs-stub`` entries route to ``stubs.not_tracked`` (kept for future gaps);
+Phase 3b capture fields make B18/B19/B24/G62/H71 real answers now.
 """
 
 from __future__ import annotations
@@ -68,7 +67,7 @@ CATALOG: list[CatalogEntry] = [
     _e("B21", "B", "What Check Voucher relates to this purchase?", ["what cv", "cv related", "check voucher for this", "what check voucher", "voucher for this purchase"], ("po|rfp",), "purchase.cv_of", "cv_list"),
     _e("B22", "B", "What check was issued for this purchase?", ["what check", "check issued for this", "check for this purchase", "check number of"], ("po|rfp",), "purchase.check_of", "cv_list"),
     _e("B23", "B", "What Journal Entry was recorded for this purchase?", ["je was recorded for this", "je recorded for this purchase", "journal entry was recorded for this purchase"], ("po|rfp",), "journal.lookup", "je_list"),
-    _e("B24", "B", "Can I view the supporting documents?", ["supporting documents", "supporting doc", "view the attachment", "attachments of this purchase"], ("po|rfp|je",), "stubs.not_tracked", "po_list", "needs-stub", "supporting documents"),
+    _e("B24", "B", "Can I view the supporting documents?", ["supporting documents", "view the attachment", "attachments of this purchase"], ("po|rfp|je",), "purchase.supporting_docs", "po_list"),
 
     # ------------------------------------------------------------------ C
     _e("C25", "C", "How much do we currently owe this supplier?", ["owe", "supplier balance", "balance with this supplier", "balance of this supplier", "current balance with", "outstanding balance with"], ("supplier",), "ap.supplier_balance", "ap_aging"),
@@ -121,7 +120,7 @@ CATALOG: list[CatalogEntry] = [
     _e("G59", "G", "What check was issued?", ["what check", "check issued", "which check", "check number"], ("doc", "word:payment|word:rfp|word:cv|word:check|word:voucher"), "purchase.check_of", "cv_list"),
     _e("G60", "G", "Has the check been encashed/cleared?", ["encashed", "check cleared", "check encashed", "cleared yet", "already cleared", "credited to the supplier"], ("doc", "word:check|word:cv|word:encash|word:payment|word:cleared"), "payment.check_status", "cv_list"),
     _e("G61", "G", "What journal entry was created?", ["journal entry was created", "je was created", "entry was created for this"], ("doc", "word:payment|word:rfp|word:cv|none"), "journal.lookup", "je_list"),
-    _e("G62", "G", "What supporting documents are attached?", ["supporting documents", "supporting doc", "attached documents"], ("doc",), "stubs.not_tracked", "rfp_list", "needs-stub", "supporting documents"),
+    _e("G62", "G", "What supporting documents are attached?", ["supporting documents", "attached documents"], ("doc",), "purchase.supporting_docs", "rfp_list"),
     _e("G63", "G", "Who created and approved the transaction?", ["who created and approved", "created and approved", "who prepared and approved"], ("doc",), "payment.actors", "rfp_list"),
     _e("G64", "G", "Current status of the payment?", ["current status", "status of this payment", "status of the payment", "what is the status", "payment status"], ("doc",), "payment.status", "cv_list"),
 
@@ -132,7 +131,7 @@ CATALOG: list[CatalogEntry] = [
     _e("H68", "H", "What is the reference of the JE?", ["reference of the je", "reference of the journal", "je reference", "journal reference", "reference number of the entry", "ref number of"], ("doc",), "journal.reference", "je_list"),
     _e("H69", "H", "Who prepared the journal entry?", ["who prepared", "prepared by", "who encoded", "who made the entry"], ("doc", "word:je|word:journal|word:entry|none"), "journal.preparer", "je_list"),
     _e("H70", "H", "Who approved the journal entry?", ["approved the je", "approved the journal", "approved the entry", "approved by"], ("doc", "word:je|word:journal|word:entry|none"), "journal.approver", "je_list"),
-    _e("H71", "H", "Can I view the supporting document?", ["supporting document", "supporting doc", "attachment of the je", "source file"], ("doc",), "journal.supporting_doc", "je_list", "needs-stub", "journal supporting file"),
+    _e("H71", "H", "Can I view the supporting document?", ["supporting document", "attachment of the je", "source file"], ("doc",), "journal.supporting_doc", "je_list"),
     _e("H72", "H", "Can I prepare a draft JE for this transaction?", ["prepare a draft", "draft je", "draft journal entry", "make a draft"], (), None, "je_list", "write-deferred"),
 
     # ------------------------------------------------------------------ I

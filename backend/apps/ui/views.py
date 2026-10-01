@@ -2800,6 +2800,10 @@ def _capture_po_receipt_fields(request, po):
         if parsed != po.receipt_date:
             po.receipt_date = parsed
             changed.append("receipt_date")
+    uploaded = request.FILES.get("attachment")
+    if uploaded:
+        po.attachment = uploaded
+        changed.append("attachment")
     if changed:
         po.save(update_fields=changed + ["updated_at"])
 
@@ -2826,6 +2830,10 @@ def _capture_rfp_invoice_fields(request, rfp):
         if parsed != rfp.supplier_invoice_date:
             rfp.supplier_invoice_date = parsed
             changed.append("supplier_invoice_date")
+    uploaded = request.FILES.get("attachment")
+    if uploaded:
+        rfp.attachment = uploaded
+        changed.append("attachment")
     if changed:
         rfp.save(update_fields=changed + ["updated_at"])
 

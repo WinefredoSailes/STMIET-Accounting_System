@@ -508,13 +508,17 @@ class TestReportHandlers:
 
 class TestStubNotices:
     def test_not_tracked(self, books):
+        from dataclasses import replace
+
         from apps.assistant.answers.handlers.stubs import not_tracked
         from apps.assistant.catalog import CATALOG_BY_ID
 
-        entry = CATALOG_BY_ID["B24"]
+        # B18 is a real answer now (Phase 3a); exercise the stub path with a
+        # synthetic still-uncaptured reference.
+        entry = replace(CATALOG_BY_ID["B18"], qid="X99", status="needs-stub", stub_kind="receiving/delivery report")
         e = Entities(po=books["po"])
-        ctx = _ctx(books, e, "supporting documents")
+        ctx = _ctx(books, e, "receiving report")
         ctx.entry = entry
         ans = not_tracked(ctx, e)
-        assert ans.qid == "B24"
+        assert ans.qid == "X99"
         assert "not captured" in ans.summary
