@@ -68,7 +68,7 @@ def balance(ctx, e) -> Answer:
         summary=f"{acc.code} {acc.name}: {money_metric('x', bal)['value']}.",
         metrics=[money_metric("Balance", bal), metric("Account", f"{acc.code} — {acc.name}", "text")],
         note=note,
-        links=[{"url": f"/ui/reports/ledger/{acc.pk}/", "label": "Open the account register"}],
+        links=[{"url": f"/reports/ledger/{acc.pk}/", "label": "Open the account register"}],
         module="posting",
     )
 

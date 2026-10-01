@@ -28,6 +28,12 @@
       <div class="text-xs text-surface-500 mt-1">Ref: {{ rfp.purpose }}</div>
       {% endif %}
     </div>
+    {% if rfp.supplier_invoice_no or rfp.supplier_invoice_date %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">SUPPLIER INVOICE</div>
+      <div class="mt-0.5 font-mono text-xs">{{ rfp.supplier_invoice_no|default:"—" }}{% if rfp.supplier_invoice_date %} · dated {{ rfp.supplier_invoice_date|date:"M d, Y" }}{% endif %}</div>
+    </div>
+    {% endif %}
     {% if rfp.revision_count %}
     <div class="col-span-2 md:col-span-4">
       <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Revised {{ rfp.revision_count }}×</span>

@@ -39,6 +39,12 @@
       <div class="mt-0.5">{{ po.ship_to_company|default:"" }}{% if po.ship_to_company and po.ship_to_address %}, {% endif %}{{ po.ship_to_address|default:"" }}{% if po.contact_person %} — {{ po.contact_person }}{% endif %}</div>
     </div>
     {% endif %}
+    {% if po.receiving_report_no or po.delivery_receipt_no or po.receipt_date %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">GOODS RECEIPT</div>
+      <div class="mt-0.5 font-mono text-xs">{% if po.receiving_report_no %}RR {{ po.receiving_report_no }}{% endif %}{% if po.delivery_receipt_no %}{% if po.receiving_report_no %} · {% endif %}DR {{ po.delivery_receipt_no }}{% endif %}{% if po.receipt_date %} · received {{ po.receipt_date|date:"M d, Y" }}{% endif %}</div>
+    </div>
+    {% endif %}
     {% if po.revision_count %}
     <div class="col-span-2 md:col-span-4">
       <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Revised {{ po.revision_count }}×</span>

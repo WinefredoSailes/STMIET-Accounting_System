@@ -52,7 +52,7 @@ def customer_balance(ctx, e) -> Answer:
         ),
         metrics=[money_metric("Receivable balance", balance), metric("Open invoices", open_count, "count")],
         rows=[{"Invoice": r["invoice_no"], "Date": r["date"].isoformat(), "Balance": f"₱{r['balance']:,.2f}"} for r in _open_invoices(customer=c)[:5]],
-        links=[{"url": f"/ui/ar/customers/{c.pk}/", "label": f"View {c.name}"}],
+        links=[{"url": f"/ar/customers/{c.pk}/", "label": f"View {c.name}"}],
         module="ar",
     )
 
@@ -80,7 +80,7 @@ def unpaid_invoices(ctx, e) -> Answer:
             {"Invoice": r["invoice_no"], "Customer": r["customer"], "Date": r["date"].isoformat(), "Balance": f"₱{r['balance']:,.2f}"}
             for r in rows_all[:10]
         ],
-        links=[{"url": "/ui/ar/aging/", "label": "AR Aging register"}],
+        links=[{"url": "/ar/aging/", "label": "AR Aging register"}],
         module="ar",
     )
 
@@ -115,7 +115,7 @@ def last_payment(ctx, e) -> Answer:
             money_metric("Amount", receipt.amount),
             metric("Receipt", receipt.receipt_no, "text"),
         ],
-        links=[{"url": f"/ui/ar/receipts/{receipt.pk}/", "label": f"View {receipt.receipt_no}"}],
+        links=[{"url": f"/ar/receipts/{receipt.pk}/", "label": f"View {receipt.receipt_no}"}],
         module="ar",
     )
 
@@ -140,7 +140,7 @@ def customer_payments(ctx, e) -> Answer:
             {"Receipt": r.receipt_no, "Date": r.transaction_date.isoformat(), "Method": r.get_payment_method_display(), "Amount": f"₱{r.amount:,.2f}"}
             for r in receipts
         ],
-        links=[{"url": f"/ui/ar/customers/{e.customer.pk}/", "label": f"View {e.customer.name}"}],
+        links=[{"url": f"/ar/customers/{e.customer.pk}/", "label": f"View {e.customer.name}"}],
         module="ar",
     )
 
@@ -171,7 +171,7 @@ def overdue(ctx, e) -> Answer:
         summary=f"{len(rows)} receivable(s) over 30 days.",
         metrics=[money_metric("Overdue total", total)],
         rows=rows[:10],
-        links=[{"url": "/ui/ar/aging/", "label": "AR Aging register"}],
+        links=[{"url": "/ar/aging/", "label": "AR Aging register"}],
         module="ar",
     )
 
@@ -236,6 +236,6 @@ def customer_ledger(ctx, e) -> Answer:
             }
             for r in rows[-10:]
         ],
-        links=[{"url": f"/ui/ar/customers/{e.customer.pk}/", "label": f"View {e.customer.name}"}],
+        links=[{"url": f"/ar/customers/{e.customer.pk}/", "label": f"View {e.customer.name}"}],
         module="ar",
     )

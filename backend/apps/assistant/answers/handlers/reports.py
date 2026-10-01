@@ -104,7 +104,7 @@ def _statement_answer(ctx, statement_type, qid, title_label) -> Answer:
         summary=f"{title_label} for {label}.",
         rows=rows,
         note=note,
-        links=[{"url": f"/ui/reports/{statement_type}/print/", "label": f"Print {title_label}"}],
+        links=[{"url": f"/reports/{statement_type}/print/", "label": f"Print {title_label}"}],
         module="reporting",
     )
 
@@ -230,7 +230,7 @@ def trial_balance(ctx, e) -> Answer:
         summary=f"{len(nonzero)} account(s) with a balance.",
         metrics=[metric("Accounts", len(nonzero), "count")],
         rows=[{"Code": r["code"], "Account": r["name"], "Balance": f"₱{r['balance']:,.2f}"} for r in nonzero[:14]],
-        links=[{"url": "/ui/reports/trial-balance/print/", "label": "Print trial balance"}],
+        links=[{"url": "/reports/trial-balance/print/", "label": "Print trial balance"}],
         module="reporting",
     )
 

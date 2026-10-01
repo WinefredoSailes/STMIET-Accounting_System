@@ -170,6 +170,12 @@
           <label class="block text-sm font-medium text-surface-700 mb-1" for="id_notes">Notes</label>
           <textarea name="notes" id="id_notes" data-autogrow rows="2" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">{{ editing.notes|default:"" }}</textarea>
         </div>
+        <div class="text-xs uppercase tracking-wider text-surface-500 pt-1">Goods Receipt (optional)</div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input type="text" name="receiving_report_no" maxlength="32" placeholder="RR No." value="{{ editing.receiving_report_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          <input type="text" name="delivery_receipt_no" maxlength="32" placeholder="DR No." value="{{ editing.delivery_receipt_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          <input type="date" name="receipt_date" value="{{ editing.receipt_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        </div>
       </div>
     </div>
 

@@ -36,6 +36,11 @@
         </select>
         <p class="text-xs text-surface-500 mt-1">Pick an approved PO from the same vendor to authorize this disbursement. The remaining balance is enforced when the RFP is approved. Picking a PO pre-fills the vendor, segment and the distribution grid — over blank lines only, so manual entries are never overwritten. Drag ⋮⋮ to reorder lines; &times; removes a line.</p>
       </div>
+      <div class="text-xs uppercase tracking-wider text-surface-500 pt-1">Supplier Invoice (optional)</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:max-w-lg">
+        <input type="text" name="supplier_invoice_no" maxlength="32" placeholder="Supplier invoice no." value="{{ editing.supplier_invoice_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        <input type="date" name="supplier_invoice_date" value="{{ editing.supplier_invoice_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+      </div>
     </div>
     <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
 

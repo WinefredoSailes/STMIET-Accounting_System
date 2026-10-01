@@ -2774,6 +2774,62 @@ def _supplier_contacts_from_post(post):
     return rows
 
 
+def _capture_po_receipt_fields(request, po):
+    """Persist the optional RR/DR capture fields on a PO (ADR-050 Phase 3).
+
+    Post-service addendum only: fields are read when the full form submits
+    them (a partial/HTMX post without the keys leaves stored values intact)
+    and saved with explicit update_fields, so no service save path ever
+    touches these columns.
+    """
+    changed = []
+    for name in ("receiving_report_no", "delivery_receipt_no"):
+        if name in request.POST:
+            val = (request.POST.get(name) or "").strip()[:32]
+            if val != getattr(po, name):
+                setattr(po, name, val)
+                changed.append(name)
+    if "receipt_date" in request.POST:
+        raw = (request.POST.get("receipt_date") or "").strip()
+        parsed = None
+        if raw:
+            try:
+                parsed = date.fromisoformat(raw)
+            except ValueError:
+                raise ValidationError("Enter a valid received date.")
+        if parsed != po.receipt_date:
+            po.receipt_date = parsed
+            changed.append("receipt_date")
+    if changed:
+        po.save(update_fields=changed + ["updated_at"])
+
+
+def _capture_rfp_invoice_fields(request, rfp):
+    """Persist the optional supplier-invoice capture fields on an RFP (ADR-050).
+
+    Same contract as _capture_po_receipt_fields: explicit update_fields only.
+    """
+    changed = []
+    if "supplier_invoice_no" in request.POST:
+        val = (request.POST.get("supplier_invoice_no") or "").strip()[:32]
+        if val != rfp.supplier_invoice_no:
+            rfp.supplier_invoice_no = val
+            changed.append("supplier_invoice_no")
+    if "supplier_invoice_date" in request.POST:
+        raw = (request.POST.get("supplier_invoice_date") or "").strip()
+        parsed = None
+        if raw:
+            try:
+                parsed = date.fromisoformat(raw)
+            except ValueError:
+                raise ValidationError("Enter a valid supplier invoice date.")
+        if parsed != rfp.supplier_invoice_date:
+            rfp.supplier_invoice_date = parsed
+            changed.append("supplier_invoice_date")
+    if changed:
+        rfp.save(update_fields=changed + ["updated_at"])
+
+
 @login_required
 def rfp_create(request):
     from apps.ap.models import PurchaseOrder, Supplier
@@ -2811,6 +2867,7 @@ def rfp_create(request):
                 user=request.user,
                 po=po,
             )
+            _capture_rfp_invoice_fields(request, rfp)
             messages.success(request, f"RFP {rfp.ap_number} created (prepared).")
             return redirect("ui:rfp_detail", pk=rfp.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
@@ -3177,6 +3234,7 @@ def rfp_edit(request, pk):
                 purpose=request.POST.get("purpose", ""),
                 lines=lines,
             )
+            _capture_rfp_invoice_fields(request, rfp)
             messages.success(request, f"RFP {rfp.ap_number} updated.")
             return redirect(_safe_next(request, "ui:rfp_detail", pk))
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
@@ -3345,6 +3403,7 @@ def po_create(request):
                 notes=request.POST.get("notes", ""),
                 user=request.user,
             )
+            _capture_po_receipt_fields(request, po)
             messages.success(request, f"PO {po.po_number} created (prepared).")
             return redirect("ui:po_detail", pk=po.id)
         except ValidationError as exc:
@@ -3554,6 +3613,7 @@ def po_revise(request, pk):
                 contact_person=request.POST.get("contact_person", ""),
                 notes=request.POST.get("notes", ""),
             )
+            _capture_po_receipt_fields(request, po)
             messages.success(request, f"PO {po.po_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:po_detail", pk))
         except ValidationError as exc:

@@ -66,7 +66,7 @@ def lookup(ctx, e) -> Answer:
             money_metric("Total", je.total_debit),
         ],
         note=je.description[:200],
-        links=[{"url": f"/ui/journal/{je.pk}/", "label": f"Open {je.entry_no}"}],
+        links=[{"url": f"/journal/{je.pk}/", "label": f"Open {je.entry_no}"}],
         module="posting",
     )
 
@@ -133,7 +133,7 @@ def reference(ctx, e) -> Answer:
             metric("Source doc", je.source_doc_no or "—", "text"),
             metric("PO", je.po or "—", "text"),
         ],
-        links=[{"url": f"/ui/journal/{je.pk}/", "label": f"Open {je.entry_no}"}],
+        links=[{"url": f"/journal/{je.pk}/", "label": f"Open {je.entry_no}"}],
         module="posting",
     )
 

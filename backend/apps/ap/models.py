@@ -188,6 +188,11 @@ class RFPDocument(AuditableModel):
     # Revision audit trail (ADR-038): track RFP revisions and Finance Head notes
     revision_count = models.PositiveSmallIntegerField(default=0)
     finance_notes = models.TextField(blank=True, help_text="Notes from Finance Head for Ellen/COO")
+    # Phase 3 stub capture (ADR-050): optional reference-only fields for the
+    # supplier invoice backing this disbursement. Named to match the future
+    # SupplierInvoice model so the promotion is an FK + backfill.
+    supplier_invoice_no = models.CharField("Supplier Invoice No.", max_length=32, blank=True)
+    supplier_invoice_date = models.DateField("Invoice Date", null=True, blank=True)
 
     class Meta:
         ordering = ["-rfp_date", "-ap_number"]
@@ -295,6 +300,13 @@ class PurchaseOrder(AuditableModel):
     rejection_note = models.TextField(blank=True)
     finance_notes = models.TextField(blank=True, help_text="Notes from Finance Head for Ellen/COO")
     revision_count = models.PositiveSmallIntegerField(default=0)
+    # Capture fields for the PR -> PO -> RR -> SI -> RFP -> CONSO -> CV chain
+    # (Phase 3 stub capture, ADR-050). Optional and reference-only: no workflow,
+    # no GL effect. Named to match the future ReceivingReport/SupplierInvoice
+    # models so they become FKs with a backfill, not a rewrite.
+    receiving_report_no = models.CharField("RR No.", max_length=32, blank=True)
+    delivery_receipt_no = models.CharField("DR No.", max_length=32, blank=True)
+    receipt_date = models.DateField("Received Date", null=True, blank=True)
 
     class Meta:
         ordering = ["-po_date", "-po_number"]

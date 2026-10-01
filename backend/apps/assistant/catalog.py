@@ -62,8 +62,8 @@ CATALOG: list[CatalogEntry] = [
     # ------------------------------------------------------------------ B
     _e("B16", "B", "What Purchase Request relates to this purchase?", ["purchase request", "pr number", "pr no", "pr of this", "requisition"], ("po|rfp",), "purchase.pr_numbers", "po_list"),
     _e("B17", "B", "What Purchase Order relates to this purchase?", ["what purchase order", "po related", "po for this", "purchase order for this", "which purchase order"], ("po|rfp",), "purchase.po_of", "po_list"),
-    _e("B18", "B", "What Receiving Report / Delivery Receipt relates to this purchase?", ["receiving report", "delivery receipt", "rr for this", "dr for this", "goods receipt"], ("po|rfp",), "stubs.not_tracked", "po_list", "needs-stub", "receiving/delivery report"),
-    _e("B19", "B", "What Supplier Invoice relates to this purchase?", ["supplier invoice", "invoice from the supplier", "supplier's invoice", "si for this purchase"], ("po|rfp",), "stubs.not_tracked", "rfp_list", "needs-stub", "supplier invoice"),
+    _e("B18", "B", "What Receiving Report / Delivery Receipt relates to this purchase?", ["receiving report", "delivery receipt", "rr for this", "dr for this", "goods receipt"], ("po|rfp",), "purchase.rr_of", "po_list"),
+    _e("B19", "B", "What Supplier Invoice relates to this purchase?", ["supplier invoice", "invoice from the supplier", "supplier's invoice", "si for this purchase"], ("po|rfp",), "purchase.supplier_invoice_of", "rfp_list"),
     _e("B20", "B", "What RFP relates to this purchase?", ["what rfp", "rfp related", "rfp for this", "which rfp"], ("po|rfp",), "purchase.rfp_of", "rfp_list"),
     _e("B21", "B", "What Check Voucher relates to this purchase?", ["what cv", "cv related", "check voucher for this", "what check voucher", "voucher for this purchase"], ("po|rfp",), "purchase.cv_of", "cv_list"),
     _e("B22", "B", "What check was issued for this purchase?", ["what check", "check issued for this", "check for this purchase", "check number of"], ("po|rfp",), "purchase.check_of", "cv_list"),

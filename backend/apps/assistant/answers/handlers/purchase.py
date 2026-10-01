@@ -37,7 +37,7 @@ def pr_numbers(ctx, e) -> Answer:
         summary=f"{po.po_number} references {len(prs)} PR number(s): {', '.join(prs)}.",
         metrics=[metric("PR count", len(prs), "count")],
         rows=[{"PR No.": p} for p in prs],
-        links=[{"url": f"/ui/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
+        links=[{"url": f"/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
         module="ap",
     )
 
@@ -56,7 +56,7 @@ def po_of(ctx, e) -> Answer:
             money_metric("Amount", po.amount),
             metric("Status", po.status, "text"),
         ],
-        links=[{"url": f"/ui/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
+        links=[{"url": f"/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
         module="ap",
     )
 
@@ -186,5 +186,100 @@ def fully_paid(ctx, e) -> Answer:
             money_metric("Amount", base),
         ],
         note=note,
+        module="ap",
+    )
+
+
+def rr_of(ctx, e) -> Answer:
+    """B18 — which Receiving Report / Delivery Receipt covers this purchase?
+
+    Reads the optional capture fields on the PO (ADR-050 Phase 3). When the
+    reference has not been recorded yet the answer says so honestly.
+    """
+    po = _po_of(ctx, e)
+    if po is None:
+        return Answer(qid="B18", title="Receiving/Delivery Report", summary="No purchase order could be matched to this document.", module="ap")
+    rr = po.receiving_report_no or ""
+    dr = po.delivery_receipt_no or ""
+    rd = po.receipt_date
+    if not (rr or dr or rd):
+        return Answer(
+            qid="B18",
+            title="Receiving/Delivery Report",
+            summary=f"No receiving report or delivery receipt has been recorded for {po.po_number} yet.",
+            note="Staff can capture RR/DR numbers in the Goods Receipt section of the purchase order form.",
+            links=[{"url": f"/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
+            module="ap",
+        )
+    bits = []
+    if rr:
+        bits.append(f"RR {rr}")
+    if dr:
+        bits.append(f"DR {dr}")
+    if rd:
+        bits.append(f"received {rd.isoformat()}")
+    return Answer(
+        qid="B18",
+        title="Receiving/Delivery Report",
+        summary=f"{po.po_number} — {' · '.join(bits)}.",
+        metrics=[
+            metric("Receiving Report", rr or "—", "text"),
+            metric("Delivery Receipt", dr or "—", "text"),
+            metric("Received", rd.isoformat() if rd else "—", "date"),
+        ],
+        links=[{"url": f"/ap/pos/{po.pk}/", "label": f"Open {po.po_number}"}],
+        module="ap",
+    )
+
+
+def supplier_invoice_of(ctx, e) -> Answer:
+    """B19 — which Supplier Invoice backs this purchase?
+
+    Reads the optional capture fields on the RFP (ADR-050 Phase 3); accepts
+    an RFP directly or resolves RFPs through the PO / CV.
+    """
+    rfps = []
+    if e.rfp is not None:
+        rfps = [e.rfp]
+    elif e.cv is not None and e.cv.rfp is not None:
+        rfps = [e.cv.rfp]
+    elif e.po is not None:
+        rfps = list(e.po.rfps.all().order_by("rfp_date"))
+    if not rfps:
+        return Answer(qid="B19", title="Supplier Invoice", summary="No RFP found for this purchase to inspect supplier invoices.", module="ap")
+    rows = [
+        {
+            "RFP": r.ap_number,
+            "Supplier Invoice": r.supplier_invoice_no or "—",
+            "Invoice Date": r.supplier_invoice_date.isoformat() if r.supplier_invoice_date else "—",
+        }
+        for r in rfps[:8]
+    ]
+    filled = [r for r in rfps if r.supplier_invoice_no or r.supplier_invoice_date]
+    if not filled:
+        return Answer(
+            qid="B19",
+            title="Supplier Invoice",
+            summary="No supplier invoice reference recorded for this purchase yet.",
+            rows=rows,
+            note="Staff can capture the supplier invoice number/date in the RFP form.",
+            module="ap",
+        )
+    main = filled[0]
+    bits = []
+    if main.supplier_invoice_no:
+        bits.append(f"invoice {main.supplier_invoice_no}")
+    if main.supplier_invoice_date:
+        bits.append(f"dated {main.supplier_invoice_date.isoformat()}")
+    return Answer(
+        qid="B19",
+        title="Supplier Invoice",
+        summary=f"{' · '.join(bits)} ({main.ap_number}).",
+        metrics=[
+            metric("Supplier Invoice", main.supplier_invoice_no or "—", "text"),
+            metric("Invoice Date", main.supplier_invoice_date.isoformat() if main.supplier_invoice_date else "—", "date"),
+        ],
+        rows=rows if len(filled) > 1 else None,
+        links=[{"url": f"/ap/rfps/{main.pk}/", "label": f"View RFP {main.ap_number}"}],
         module="ap",
     )

@@ -98,7 +98,7 @@ def supplier_balance(ctx, e) -> Answer:
             money_metric("Total paid", paid),
             money_metric("Outstanding", outstanding),
         ],
-        links=[{"url": f"/ui/ap/suppliers/{s.pk}/", "label": f"View {s.name}"}],
+        links=[{"url": f"/ap/suppliers/{s.pk}/", "label": f"View {s.name}"}],
         module="ap",
     )
 
@@ -134,7 +134,7 @@ def open_payables(ctx, e) -> Answer:
         summary=f"Found {len(rows)} unpaid invoice(s){who} totaling {money_metric('x', total)['value']}.",
         metrics=[money_metric("Total outstanding", total)],
         rows=rows[:10],
-        links=[{"url": "/ui/ap/aging/", "label": "AP Aging register"}],
+        links=[{"url": "/ap/aging/", "label": "AP Aging register"}],
         module="ap",
     )
 
@@ -186,7 +186,7 @@ def company_aging(ctx, e) -> Answer:
             money_metric("120+", buckets.get("120+", Decimal("0.00"))),
         ],
         rows=rows[:10],
-        links=[{"url": "/ui/ap/aging/", "label": "AP Aging register"}],
+        links=[{"url": "/ap/aging/", "label": "AP Aging register"}],
         module="ap",
     )
 
@@ -207,7 +207,7 @@ def supplier_payments(ctx, e) -> Answer:
             title="Supplier payments",
             summary=f"No cleared payments found for {e.supplier.name}.",
             metrics=[money_metric("Total paid", Decimal("0.00"))],
-            links=[{"url": f"/ui/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
+            links=[{"url": f"/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
             module="ap",
         )
     total = sum(r.gross_amount for r in rows)
@@ -226,7 +226,7 @@ def supplier_payments(ctx, e) -> Answer:
             }
             for r in rows
         ],
-        links=[{"url": f"/ui/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
+        links=[{"url": f"/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
         module="ap",
     )
     if "when did we pay" in ctx.lower or "when was the supplier paid" in ctx.lower:
@@ -263,7 +263,7 @@ def supplier_ledger(ctx, e) -> Answer:
         summary=f"{len(rows_data)} ledger row(s) for {e.supplier.name}.",
         metrics=[metric("Rows", len(rows_data), "count")],
         rows=rows,
-        links=[{"url": f"/ui/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
+        links=[{"url": f"/ap/suppliers/{e.supplier.pk}/", "label": f"View {e.supplier.name}"}],
         module="ap",
     )
 

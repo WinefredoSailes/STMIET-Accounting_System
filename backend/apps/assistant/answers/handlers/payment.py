@@ -40,7 +40,7 @@ def requested_by(ctx, e) -> Answer:
         title="Payment requester",
         summary=f"RFP {rfp.ap_number} was requested by {_user_name(rfp.created_by)}.",
         metrics=[metric("Requested by", _user_name(rfp.created_by), "person"), metric("RFP", rfp.ap_number, "text")],
-        links=[{"url": f"/ui/ap/rfps/{rfp.pk}/", "label": f"View RFP {rfp.ap_number}"}],
+        links=[{"url": f"/ap/rfps/{rfp.pk}/", "label": f"View RFP {rfp.ap_number}"}],
         module="ap",
     )
 
@@ -81,7 +81,7 @@ def rfp_of(ctx, e) -> Answer:
             money_metric("Amount", rfp.amount),
             metric("Status", rfp.status, "text"),
         ],
-        links=[{"url": f"/ui/ap/rfps/{rfp.pk}/", "label": f"View RFP {rfp.ap_number}"}],
+        links=[{"url": f"/ap/rfps/{rfp.pk}/", "label": f"View RFP {rfp.ap_number}"}],
         module="ap",
     )
 
@@ -111,7 +111,7 @@ def cv_of(ctx, e) -> Answer:
             metric("Status", cv.status, "text"),
         ],
         rows=[{"CV": c.cv_number, "Date": c.cv_date.isoformat(), "Payee": c.payee.name, "Status": c.status} for c in cvs[:5]],
-        links=[{"url": f"/ui/ap/cv/{cv.pk}/", "label": f"View CV {cv.cv_number}"}],
+        links=[{"url": f"/ap/cv/{cv.pk}/", "label": f"View CV {cv.cv_number}"}],
         module="ap",
     )
 

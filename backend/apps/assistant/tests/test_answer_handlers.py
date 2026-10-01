@@ -511,10 +511,10 @@ class TestStubNotices:
         from apps.assistant.answers.handlers.stubs import not_tracked
         from apps.assistant.catalog import CATALOG_BY_ID
 
-        entry = CATALOG_BY_ID["B18"]
+        entry = CATALOG_BY_ID["B24"]
         e = Entities(po=books["po"])
-        ctx = _ctx(books, e, "receiving report")
+        ctx = _ctx(books, e, "supporting documents")
         ctx.entry = entry
         ans = not_tracked(ctx, e)
-        assert ans.qid == "B18"
+        assert ans.qid == "B24"
         assert "not captured" in ans.summary

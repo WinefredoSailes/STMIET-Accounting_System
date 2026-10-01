@@ -34,7 +34,7 @@ def bank_balance(ctx, e) -> Answer:
             money_metric("Book balance", bal),
             metric("Bank", f"{bank.code} {bank.bank_name}".strip(), "text"),
         ],
-        links=[{"url": "/ui/cash/banks/", "label": "Bank accounts"}],
+        links=[{"url": "/cash/banks/", "label": "Bank accounts"}],
         module="cash",
     )
 
@@ -207,6 +207,6 @@ def transfers(ctx, e) -> Answer:
             {"Date": r.transfer_date.isoformat(), "From": r.from_account.code, "To": r.to_account.code, "Amount": f"₱{r.amount:,.2f}", "Status": r.status}
             for r in rows
         ],
-        links=[{"url": "/ui/cash/transfers/", "label": "Transfer list"}],
+        links=[{"url": "/cash/transfers/", "label": "Transfer list"}],
         module="cash",
     )
