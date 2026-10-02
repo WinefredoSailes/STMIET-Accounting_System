@@ -181,7 +181,7 @@ def customer_aging(ctx, e) -> Answer:
 
     data = customer_aging_context(e.customer, date.today())
     buckets = data["buckets"]
-    total = sum(b["amount"] for b in buckets.values()) if isinstance(buckets, dict) else (data.get("bucket_total") or Decimal("0.00"))
+    total = sum(buckets.values()) if isinstance(buckets, dict) else (data.get("bucket_total") or Decimal("0.00"))
     bucket_rows = []
     if isinstance(buckets, dict):
         bucket_rows = [{"Bucket": k, "Amount": f"₱{v:,.2f}"} for k, v in buckets.items()]

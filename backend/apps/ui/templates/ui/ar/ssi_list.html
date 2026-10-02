@@ -1,0 +1,23 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Special Sales Invoices (Fuel){% endblock %}
+{% block content %}
+<div class="p-6">
+  {% capture as list_actions %}
+  <a href="{% url 'ui:ssi_create' %}" class="inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">+ New special invoice</a>
+  {% endcapture %}
+  {% include "ui/partials/page_header.html" with title="Special Sales Invoices (Fuel)" subtitle="SSI-YYYY-SEQ · fuel delivery only — the Account Distribution posts to the GL when the Head approves." back_url_name="ui:si_list" back_label="Sales invoices" actions=list_actions %}
+
+  <div class="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% include "ui/partials/stat_card.html" with label="Total special invoices" value=summary.total sub=summary.total_amount|peso icon="send" %}
+    {% include "ui/partials/stat_card.html" with label="Draft" value=summary.draft tone="amber" sub=summary.draft_amount|peso icon="clock" %}
+    {% include "ui/partials/stat_card.html" with label="Submitted" value=summary.submitted tone="violet" sub=summary.submitted_amount|peso icon="document-check" %}
+    {% include "ui/partials/stat_card.html" with label="Posted to GL" value=summary.posted tone="emerald" sub=summary.posted_amount|peso icon="check" %}
+  </div>
+
+  {% include "ui/partials/filter_bar.html" with filters=filters filter_action=request.path filter_target='#ssi-table' filter_grid='md:grid-cols-4' %}
+  <div id="ssi-table">
+    {% include "ui/ar/_ssi_table.html" %}
+  </div>
+</div>
+{% endblock %}

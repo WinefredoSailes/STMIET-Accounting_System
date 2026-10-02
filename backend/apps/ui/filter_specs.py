@@ -36,6 +36,7 @@ __all__ = [
     "transfer_filter_spec",
     "asset_filter_spec",
     "si_filter_spec",
+    "ssi_filter_spec",
     "billing_filter_spec",
     "conso_filter_spec",
     "bank_filter_spec",
@@ -331,6 +332,35 @@ def si_filter_spec():
             FilterField(
                 "status", "Status", kind="choice",
                 choices=lambda req: SI_STATUS_CHOICES,
+            ),
+            FilterField("customer", "Customer", kind="choice", choices=customer_choices),
+            FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+        ]
+    )
+
+
+# --- AR Special Sales Invoices (Fuel Delivery) --------------------------------
+
+SSI_STATUS_CHOICES = [
+    ("draft", "Draft"),
+    ("submitted", "Submitted"),
+    ("posted", "Posted"),
+]
+
+
+def ssi_filter_spec():
+    return FilterSpec(
+        fields=[
+            FilterField(
+                "q", "Search", kind="text", placeholder="SSI no, DR no or customer",
+                search_fields=(
+                    "invoice_no", "delivery_receipt_no",
+                    "customer__name", "customer__code",
+                ),
+            ),
+            FilterField(
+                "status", "Status", kind="choice",
+                choices=lambda req: SSI_STATUS_CHOICES,
             ),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),

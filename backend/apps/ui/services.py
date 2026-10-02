@@ -529,6 +529,25 @@ def si_summary():
     }
 
 
+def ssi_summary():
+    """Counts/amounts by stage for the Special Sales Invoices stat cards."""
+    from django.db.models import Sum
+
+    from apps.ar.models import SpecialSalesInvoice
+
+    qs = SpecialSalesInvoice.objects
+    return {
+        "total": qs.count(),
+        "total_amount": qs.aggregate(t=Sum("total"))["t"] or Decimal("0.00"),
+        "draft": qs.filter(status="draft").count(),
+        "draft_amount": qs.filter(status="draft").aggregate(t=Sum("total"))["t"] or Decimal("0.00"),
+        "submitted": qs.filter(status="submitted").count(),
+        "submitted_amount": qs.filter(status="submitted").aggregate(t=Sum("total"))["t"] or Decimal("0.00"),
+        "posted": qs.filter(status="posted").count(),
+        "posted_amount": qs.filter(status="posted").aggregate(t=Sum("total"))["t"] or Decimal("0.00"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # AP
 # ---------------------------------------------------------------------------

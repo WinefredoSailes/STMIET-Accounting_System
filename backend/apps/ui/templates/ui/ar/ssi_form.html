@@ -1,0 +1,187 @@
+{% extends "ui/base.html" %}
+{% load static %}
+{% block title %}{% if editing %}Edit {{ editing.invoice_no }}{% else %}New Special Sales Invoice (Fuel){% endif %}{% endblock %}
+{% block content %}
+<div class="p-6">
+  <a href="{% url 'ui:ssi_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr; Special invoices</a>
+  <div class="mt-1 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-surface-900">{% if editing %}Edit {{ editing.invoice_no }}{% else %}New Special Sales Invoice{% endif %}</h1>
+    <span class="text-xs text-surface-400">FUEL DELIVERY ONLY · SSI-YYYY-SEQ auto-assigned</span>
+  </div>
+  <p class="text-sm text-surface-500 mt-1">Customer, generated Sales Invoice number, Delivery Receipt number, and the Account Distribution (COA · account name · default segment · cost center · description · debit / credit). Debits must equal credits; the entry posts to the GL only after the Head approves.</p>
+
+  {% if editing and editing.status != 'draft' %}
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">Only draft invoices can be edited.</div>
+  {% elif editing.rejection_note %}
+  <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+    <div class="text-sm font-semibold text-rose-800">
+      Returned by {{ editing.rejected_by.get_full_name|default:editing.rejected_by|default:"approver" }} — needs revision
+    </div>
+    <div class="text-xs text-surface-500 mt-1">{{ editing.rejected_at|date:"M d, Y H:i" }}</div>
+    <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ editing.rejection_note }}</div>
+  </div>
+  {% endif %}
+
+  <form method="post" class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
+    {% csrf_token %}
+    <div class="px-6 py-4 border-b border-surface-200">
+      <div class="text-sm font-semibold text-surface-900">SPECIAL SALES INVOICE — FUEL DELIVERY</div>
+      <div class="text-xs text-surface-500">ACCOUNTING DEPARTMENT</div>
+    </div>
+
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_customer">Customer</label>
+        {% if editing %}
+        <div class="text-sm font-medium">{{ editing.customer.code }} — {{ editing.customer.name }}</div>
+        {% else %}
+        <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          <option value="" selected>— select customer —</option>
+        </select>
+        {% endif %}
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:max-w-lg">
+        <div>
+          <label class="block text-sm font-medium text-surface-700 mb-1" for="id_dr_no">Delivery Receipt No.</label>
+          <input type="text" name="delivery_receipt_no" id="id_dr_no" maxlength="32" placeholder="Driver's paper DR no." value="{{ editing.delivery_receipt_no|default:'' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-surface-700 mb-1" for="id_ssi_date">Date of SSI</label>
+          <input type="date" name="transaction_date" id="id_ssi_date" required
+                 value="{% if editing %}{{ editing.transaction_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
+                 class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        </div>
+      </div>
+      <div class="w-full md:max-w-lg">
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_notes">Notes</label>
+        <textarea name="notes" id="id_notes" rows="2" maxlength="500" placeholder="Tanker, driver, destination…" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">{{ editing.notes|default:'' }}</textarea>
+      </div>
+    </div>
+    <input type="hidden" name="segment" id="id_segment" value="{% if editing %}{{ editing.segment_id }}{% endif %}">
+
+    <div class="px-6 py-3 border-t border-surface-200 text-xs uppercase tracking-wider text-surface-500">
+      Account Distribution — chart of accounts (Dr/Cr)
+    </div>
+    <div class="px-6 pb-4">
+      <table class="line-table w-full text-sm" style="min-width: 1190px;">
+        <colgroup>
+          <col style="width:30px"><!-- drag -->
+          <col style="width:40px"><!-- # -->
+          <col style="width:270px"><!-- Account (GL) -->
+          <col style="width:90px"><!-- Segment -->
+          <col style="width:340px"><!-- Description -->
+          <col style="width:90px"><!-- Cost Center/Ref -->
+          <col style="width:170px"><!-- Debit -->
+          <col style="width:170px"><!-- Credit -->
+          <col style="width:36px"><!-- remove -->
+        </colgroup>
+        <thead class="text-left text-xs uppercase tracking-wider text-surface-500">
+          <tr>
+            <th class="py-2"></th>
+            <th class="py-2">#</th>
+            <th class="py-2">Account (GL)</th>
+            <th class="py-2">Segment</th>
+            <th class="py-2">Description</th>
+            <th class="py-2">Cost Center/Ref</th>
+            <th class="py-2 text-right">Debit</th>
+            <th class="py-2 text-right">Credit</th>
+            <th class="py-2"></th>
+          </tr>
+        </thead>
+        <tbody id="lines-body" data-line-grid="rfp"
+               data-total-dr="#total-dr" data-total-cr="#total-cr" data-hint="#balance-hint"
+               class="divide-y divide-surface-100">
+          {% if editing %}
+          {% for line in editing.lines.all %}
+          <tr>
+            <td class="py-2 text-surface-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
+            <td class="py-2 text-surface-400 line-no">{{ forloop.counter }}</td>
+            <td class="py-2">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}?selected={{ line.account.code }}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                <option value="{{ line.account.code }}" selected>{{ line.account.code }} — {{ line.account.name }}</option>
+              </select>
+            </td>
+            <td class="py-2">
+              <select name="line_segment" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                {% for seg in segments %}<option value="{{ seg.id }}" {% if line.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2"><textarea name="line_description" data-autogrow rows="1" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">{{ line.description }}</textarea></td>
+            <td class="py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" value="{{ line.cost_center }}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" {% if line.debit %}value="{{ line.debit }}"{% endif %} class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+            <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" {% if line.credit %}value="{{ line.credit }}"{% endif %} class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td class="py-2 text-surface-300" title="Drag to reorder"><button type="button" data-drag-handle class="cursor-grab touch-none" aria-label="Reorder line">⋮⋮</button></td>
+            <td class="py-2 text-surface-400 line-no">1</td>
+            <td class="py-2">
+              <select name="line_account" data-searchable data-search-compact data-search-placeholder="Search code or name…" data-search-url="{% url 'ui:account_options' %}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                <option value="" selected>— select —</option>
+              </select>
+            </td>
+            <td class="py-2">
+              <select name="line_segment" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="py-2"><textarea name="line_description" data-autogrow rows="1" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></textarea></td>
+            <td class="py-2"><input type="text" name="line_cost_center" maxlength="64" list="cost_center_options" placeholder="e.g. GEN-FUEL" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+            <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_debit" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-dr"></td>
+            <td class="py-2"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="line_credit" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-cr"></td>
+            <td class="py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
+          </tr>
+          {% endif %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6" class="py-2 text-right font-semibold">TOTALS</td>
+            <td id="total-dr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
+            <td id="total-cr" class="py-2 text-right font-semibold tabular-nums">0.00</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td colspan="9" class="py-2">
+              <button type="button" id="add-line" data-add-row
+                      class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">
+                + Add line
+              </button>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+      <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Debits and credits balance.</p>
+      <p class="mt-1 text-xs text-surface-500">Enter each line's amount in either the Debit or the Credit column — not both. The posted journal entry is built exactly from these lines, so debits must equal credits. Output VAT (when due) is entered as its own credit line.</p>
+      <datalist id="cost_center_options">
+        {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+      </datalist>
+    </div>
+
+    <div class="px-6 py-4 border-t border-surface-200 flex items-center gap-3">
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        {% if editing %}Save changes{% else %}Create draft{% endif %}
+      </button>
+      <a href="{% if editing %}{% url 'ui:ssi_detail' editing.id %}{% else %}{% url 'ui:ssi_list' %}{% endif %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/line-grid.js' %}"></script>
+<script>
+  (function () {
+    var hidden = document.getElementById("id_segment");
+    function syncSegment() {
+      var first = document.querySelector('#lines-body select[name="line_segment"]');
+      if (hidden && first && first.value) hidden.value = first.value;
+    }
+    document.addEventListener("change", function (e) {
+      if (e.target && e.target.matches && e.target.matches('select[name="line_segment"]')) syncSegment();
+    });
+    syncSegment();
+  })();
+</script>
+{% endblock %}

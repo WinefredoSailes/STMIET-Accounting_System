@@ -40,6 +40,17 @@
 
 > When based on an RFP, the JE Note/Reference captures the RFP number; credit lines on 15550 / 15560 record `RFP <no> — billed <amount>` (POSTING_RULES §18).
 
+### 1b. SPECIAL SALES INVOICE — FUEL DELIVERY (ADR-050)
+
+| # | Event | Trigger | Source | Data Required | Posting Rule | Approval |
+|---|-------|---------|--------|--------------|-------------|----------|
+| S1 | `ssi.document.created` | Fuel delivered, SSI prepared | Accounting staff | Customer, DR no., distribution grid (COA, Account Name, Segment, Cost Center, Description, Dr/Cr) | — | — |
+| S2 | `ssi.document.submitted` | SSI submitted for approval | Accounting staff | SSI ref | — | — |
+| S3 | `ssi.document.approved` | Accounting & Finance Head approves | Alywin | SSI ref | — | Alywin |
+| S4 | `ssi.document.posted` | SSI journalized | Alywin | Distribution lines | Dr grid lines | Cr grid lines | Alywin |
+
+> Standalone document: never enters the SI register, AR aging, or the receipt apply-to picker. Output VAT (when due) is a credit distribution line until auto-extraction is requested (ADR-050 trajectory).
+
 ---
 
 ## 2. PROCUREMENT & PAYABLES (22 events)

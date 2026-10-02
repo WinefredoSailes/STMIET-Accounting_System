@@ -85,6 +85,13 @@ AR_INVOICE_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Special Sales Invoice (Fuel) status -> next approval role (ADR-050).
+# Mirrors the SI: the preparer submits, the Head approves and posts the
+# distribution JE. Standalone — never enters the SI register or aging.
+SSI_NEXT_ROLE = {
+    "submitted": "head",
+}
+
 # Inter-account transfer status -> next approval role (ADR-030). Mirrors JE:
 # the preparer submits, the head approves (and the JE posts).
 TRANSFER_NEXT_ROLE = {
@@ -569,6 +576,38 @@ def ar_invoice_queue(user_roles):
     return out
 
 
+def ssi_queue(user_roles):
+    """Special Sales Invoices (Fuel) waiting on any of `user_roles`.
+
+    SSIs in "submitted" status wait for the Accounting & Finance Head, who
+    approves and posts the distribution JE (ADR-050; mirrors ar_invoice_queue).
+    """
+    from apps.ar.models import SpecialSalesInvoice, SSIStatus
+
+    out = []
+    docs = SpecialSalesInvoice.objects.filter(
+        status=SSIStatus.SUBMITTED
+    ).select_related("customer", "segment", "created_by")
+    for invoice in docs:
+        role = SSI_NEXT_ROLE.get(invoice.status)
+        if role in user_roles:
+            out.append(
+                {
+                    "kind": "ssi",
+                    "role": role,
+                    "doc": invoice,
+                    "number": invoice.invoice_no,
+                    "title": f"SSI · {invoice.customer.name} · {invoice.segment.code if invoice.segment else ''}",
+                    "date": invoice.transaction_date,
+                    "amount": invoice.total,
+                    "detail": ("ui:ssi_detail", invoice.id),
+                    "action": ("ui:ssi_approve", invoice.id),
+                    "action_label": "Approve",
+                }
+            )
+    return out
+
+
 def billing_queue(user_roles):
     """Billing transactions waiting on `user_roles` (head only).
 
@@ -760,6 +799,7 @@ def pending_approval_queue(user):
         + reversal_queue({role})
         + ar_receipt_queue({role})
         + ar_invoice_queue({role})
+        + ssi_queue({role})
         + billing_queue({role})
         + asset_queue({role})
         + pcf_queue({role})

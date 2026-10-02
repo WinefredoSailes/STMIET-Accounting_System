@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from django.db import models
 
+from apps.core.constants import COST_CENTER_MAX_LENGTH
 from apps.core.models import AuditableModel, SoftDeleteMixin
 
 
@@ -324,6 +325,127 @@ class ARInvoiceLine(models.Model):
 
     def __str__(self):
         return f"{self.invoice.invoice_no} L{self.line_no} {self.product_code}"
+
+
+class SSIStatus(models.TextChoices):
+    """Special Sales Invoice lifecycle (mirrors the AR receipt/SI workflow).
+
+    draft      -> prepared by staff, editable, no JE yet
+    submitted  -> awaiting the Accounting & Finance Head's review
+    posted     -> approved by the Head; the distribution JE is posted to GL
+
+    A rejection returns the document to ``draft`` with the rejection trio
+    kept, so the preparer reads the note and resubmits (same as SIs).
+    """
+
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted for approval"
+    POSTED = "posted", "Posted to GL"
+
+
+class SpecialSalesInvoice(AuditableModel):
+    """Special Sales Invoice for Fuel Delivery only (SSI-YYYY-SEQ).
+
+    A standalone sales document — NOT an ARInvoice (it never enters the SI
+    register, aging, or the receipt apply-to picker). The header carries the
+    customer, the generated invoice number, and the driver's paper Delivery
+    Receipt number (a free-text cross-reference, like the receipt's
+    ``ref_po_no`` — never routed through DocumentSequence). The Account
+    Distribution grid (``SpecialSalesInvoiceLine``) carries explicit
+    debit/credit lines; on Head approval the JE is built exactly from those
+    lines and posted, so the entry flows to the General Journal, Ledger,
+    Trial Balance, and statements with no further step.
+    """
+
+    invoice_no = models.CharField(max_length=32, unique=True)  # SSI-YYYY-SEQ
+    customer = models.ForeignKey(
+        Customer, on_delete=models.PROTECT, related_name="special_invoices"
+    )
+    # Driver's paper Delivery Receipt number. Free text, non-unique: it may
+    # repeat across clients/dates, so it stays out of the sequence registry.
+    delivery_receipt_no = models.CharField("Delivery Receipt No.", max_length=32, blank=True)
+    transaction_date = models.DateField(db_index=True)
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, related_name="special_invoices"
+    )
+    # Total of the DEBIT distribution lines (the fuel sale amount).
+    total = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField(
+        max_length=16, choices=SSIStatus.choices, default=SSIStatus.DRAFT, db_index=True
+    )
+    # The journal entry produced by this invoice (filled on approval/post).
+    journal_entry = models.ForeignKey(
+        "posting.JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="special_invoices",
+    )
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-transaction_date", "-invoice_no"]
+
+    def __str__(self):
+        return f"{self.invoice_no} {self.customer} {self.total}"
+
+    @property
+    def debit_total(self):
+        return sum((line.debit for line in self.lines.all()), Decimal("0.00"))
+
+    @property
+    def credit_total(self):
+        return sum((line.credit for line in self.lines.all()), Decimal("0.00"))
+
+    @property
+    def is_balanced(self) -> bool:
+        return self.debit_total == self.credit_total
+
+
+class SpecialSalesInvoiceLine(models.Model):
+    """One row of an SSI's Account Distribution grid.
+
+    Mirrors ``AcknowledgmentReceiptLine``: each row carries one side's amount
+    (debit XOR credit — a row with both filled is rejected at the service
+    layer), the COA account (code + name resolve from the FK), the line's
+    default segment, cost center, and description. The posted JE is built
+    exactly from these rows.
+    """
+
+    invoice = models.ForeignKey(
+        SpecialSalesInvoice, on_delete=models.PROTECT, related_name="lines"
+    )
+    line_no = models.PositiveIntegerField()
+    account = models.ForeignKey(
+        "foundation.Account", on_delete=models.PROTECT, related_name="ssi_lines"
+    )
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, related_name="ssi_lines"
+    )
+    cost_center = models.CharField(
+        "Cost center", max_length=COST_CENTER_MAX_LENGTH, blank=True
+    )
+    description = models.CharField(max_length=500, blank=True)
+    debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["line_no"]
+        unique_together = ("invoice", "line_no")
+
+    def __str__(self):
+        side = "Dr" if self.debit else "Cr"
+        amount = self.debit or self.credit
+        return f"{self.invoice.invoice_no} #{self.line_no} {side} {self.account.code} {amount}"
 
 
 class Deposit(AuditableModel):

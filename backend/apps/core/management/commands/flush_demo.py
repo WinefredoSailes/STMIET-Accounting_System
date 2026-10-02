@@ -69,6 +69,8 @@ FLUSH_LABELS = [
     "ar:Deposit",
     "ar:ARInvoiceLine",
     "ar:ARInvoice",
+    "ar:SpecialSalesInvoiceLine",
+    "ar:SpecialSalesInvoice",
     "ar:AcknowledgmentReceipt",
     "ar:PriceSnapshot",
     "ar:Customer",

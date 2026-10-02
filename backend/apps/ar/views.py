@@ -5,13 +5,21 @@ from rest_framework.response import Response
 
 from apps.core.exceptions import AccountingError
 
-from .models import AcknowledgmentReceipt, ARInvoice, Customer, Deposit, PriceSnapshot
+from .models import (
+    AcknowledgmentReceipt,
+    ARInvoice,
+    Customer,
+    Deposit,
+    PriceSnapshot,
+    SpecialSalesInvoice,
+)
 from .serializers import (
     AcknowledgmentReceiptSerializer,
     ARInvoiceSerializer,
     CustomerSerializer,
     DepositSerializer,
     PriceSnapshotSerializer,
+    SpecialSalesInvoiceSerializer,
 )
 from .services import CollectionService, CycleLedgerService, DepositService
 
@@ -245,3 +253,156 @@ class DepositViewSet(viewsets.ModelViewSet):
         except AccountingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(deposit).data, status=status.HTTP_201_CREATED)
+
+
+class SpecialSalesInvoiceViewSet(viewsets.ModelViewSet):
+    """Special Sales Invoice (Fuel Delivery): service-backed CRUD + workflow.
+
+    Unlike the legacy ARInvoiceViewSet (raw model writes), every mutation
+    runs through SpecialInvoiceService so numbering, balance, and approval
+    invariants hold on the API surface too.
+    """
+
+    queryset = SpecialSalesInvoice.objects.select_related(
+        "customer", "segment", "journal_entry"
+    ).prefetch_related("lines__account", "lines__segment")
+    serializer_class = SpecialSalesInvoiceSerializer
+    search_fields = ["invoice_no", "delivery_receipt_no", "customer__name"]
+    filterset_fields = ["customer", "segment", "status"]
+
+    def _assert_can_edit(self, invoice):
+        """The preparer (or the Head) may change a special invoice only while
+        it is still `draft` — afterwards changes go through reject/revise."""
+        from django.core.exceptions import PermissionDenied
+
+        from apps.core.approvals import get_approval_role
+
+        if invoice.status != "draft":
+            raise PermissionDenied("Only draft invoices can be edited.")
+        if (
+            self.request.user.id != invoice.created_by_id
+            and get_approval_role(self.request.user) != "head"
+        ):
+            raise PermissionDenied("Only the preparer may edit this invoice.")
+
+    def _line_dicts(self, data, header_segment):
+        """Raw line dicts — the service resolves accounts/segments and raises
+        ValidationError (400) on unknown refs, so the view never 500s."""
+        out = []
+        for line in data.get("lines") or []:
+            out.append(
+                {
+                    "account": line.get("account"),
+                    "segment": line.get("segment", header_segment),
+                    "cost_center": line.get("cost_center", ""),
+                    "description": line.get("description", ""),
+                    "debit": line.get("debit", 0),
+                    "credit": line.get("credit", 0),
+                }
+            )
+        return out
+
+    def create(self, request, *args, **kwargs):
+        """Create a DRAFT special invoice with its distribution (no JE yet)."""
+        from .services import SpecialInvoiceService
+
+        data = request.data
+        customer = get_object_or_404(Customer, pk=data.get("customer"))
+        header_segment = data.get("segment")
+        try:
+            invoice = SpecialInvoiceService.create_ssi(
+                customer=customer,
+                transaction_date=data.get("transaction_date"),
+                segment=header_segment,
+                delivery_receipt_no=data.get("delivery_receipt_no", ""),
+                notes=data.get("notes", ""),
+                lines=self._line_dicts(data, header_segment),
+                created_by=request.user,
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(invoice).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        from .services import SpecialInvoiceService
+
+        invoice = self.get_object()
+        try:
+            self._assert_can_edit(invoice)
+        except Exception as exc:
+            from django.core.exceptions import PermissionDenied as DjangoDenied
+
+            status_code = (
+                status.HTTP_403_FORBIDDEN
+                if isinstance(exc, DjangoDenied)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=status_code)
+        data = request.data
+        header_segment = data.get("segment", invoice.segment_id)
+        try:
+            invoice = SpecialInvoiceService.update_draft(
+                invoice=invoice,
+                transaction_date=data.get("transaction_date"),
+                segment=header_segment if data.get("segment") else None,
+                delivery_receipt_no=data.get("delivery_receipt_no"),
+                notes=data.get("notes"),
+                lines=self._line_dicts(data, header_segment)
+                if "lines" in data
+                else None,
+                user=request.user,
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(invoice).data)
+
+    partial_update = update
+
+    def destroy(self, request, *args, **kwargs):
+        from django.core.exceptions import PermissionDenied as DjangoDenied
+
+        invoice = self.get_object()
+        try:
+            self._assert_can_edit(invoice)
+        except DjangoDenied as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        invoice.lines.all().delete()
+        invoice.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        from .services import SpecialInvoiceService
+
+        invoice = self.get_object()
+        try:
+            SpecialInvoiceService.submit(invoice, user=request.user)
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(invoice).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        from .services import SpecialInvoiceService
+
+        invoice = self.get_object()
+        try:
+            SpecialInvoiceService.approve(invoice, user=request.user)
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(invoice).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        from .services import SpecialInvoiceService
+
+        invoice = self.get_object()
+        try:
+            SpecialInvoiceService.reject(
+                invoice, user=request.user, note=request.data.get("note", "")
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(invoice).data)

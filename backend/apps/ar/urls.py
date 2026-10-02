@@ -6,6 +6,7 @@ from .views import (
     CustomerViewSet,
     DepositViewSet,
     PriceSnapshotViewSet,
+    SpecialSalesInvoiceViewSet,
 )
 
 router = DefaultRouter()
@@ -14,5 +15,6 @@ router.register("price-snapshots", PriceSnapshotViewSet, basename="pricesnapshot
 router.register("invoices", ARInvoiceViewSet, basename="arinvoice")
 router.register("receipts", AcknowledgmentReceiptViewSet, basename="ackreceipt")
 router.register("deposits", DepositViewSet, basename="deposit")
+router.register("special-invoices", SpecialSalesInvoiceViewSet, basename="specialinvoice")
 
 urlpatterns = router.urls

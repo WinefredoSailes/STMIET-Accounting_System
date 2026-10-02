@@ -84,6 +84,7 @@ from .services import (
     rfp_summary,
     rfp_timeline,
     si_summary,
+    ssi_summary,
     transfers_context,
     unassigned_approved_rfps,
 )
@@ -341,11 +342,13 @@ def logout_view(request):
 # pending for the signed-in user (an empty kind just filters to "no matches").
 KIND_LABELS = {
     "ar_receipt": "Acknowledgment Receipts",
+    "asset": "Assets",
     "billing": "Billing",
     "cash_short": "Cash Short/Excess",
     "cv": "Check Vouchers",
     "customer": "Customer Requests",
     "invoice": "Sales Invoices",
+    "ssi": "Special Sales Invoices (Fuel)",
     "je": "Journal Entries",
     "pcf": "Petty Cash Replenishments",
     "po": "Purchase Orders",
@@ -353,6 +356,28 @@ KIND_LABELS = {
     "rfp": "RFPs (Disbursements)",
     "supplier": "Supplier Requests",
     "transfer": "Inter-account Transfers",
+}
+
+# Reject endpoints by queue kind — the inbox can send back a note, so
+# sign-off and return happen without leaving the queue (ADR-047: needed
+# by approvers whose screen set is dashboard+inbox only). Module level so
+# the registry guard test can pin completeness (every queue kind labels +
+# rejects); kinds without a reject view are intentionally absent.
+INBOX_REJECT_URLS = {
+    "je": "ui:je_reject",
+    "reversal": "ui:je_reversal_reject",
+    "ar_receipt": "ui:receipt_reject",
+    "invoice": "ui:si_reject",
+    "ssi": "ui:ssi_reject",
+    "asset": "ui:asset_reject",
+    "rfp": "ui:rfp_reject",
+    "po": "ui:po_reject",
+    "cv": "ui:cv_reject",
+    "billing": "ui:billing_reject",
+    "transfer": "ui:transfer_reject",
+    "pcf": "ui:pcf_replenishment_reject",
+    "customer": "ui:customer_reject",
+    "supplier": "ui:supplier_reject",
 }
 
 
@@ -369,20 +394,7 @@ def my_approvals(request):
     # Reject endpoints by queue kind — the inbox can send back a note, so
     # sign-off and return happen without leaving the queue (ADR-047: needed
     # by approvers whose screen set is dashboard+inbox only).
-    reject_urls = {
-        "je": "ui:je_reject",
-        "reversal": "ui:je_reversal_reject",
-        "ar_receipt": "ui:receipt_reject",
-        "invoice": "ui:si_reject",
-        "rfp": "ui:rfp_reject",
-        "po": "ui:po_reject",
-        "cv": "ui:cv_reject",
-        "billing": "ui:billing_reject",
-        "transfer": "ui:transfer_reject",
-        "pcf": "ui:pcf_replenishment_reject",
-        "customer": "ui:customer_reject",
-        "supplier": "ui:supplier_reject",
-    }
+    reject_urls = INBOX_REJECT_URLS
 
     queues = pending_approval_queue(request.user)
     has_inbox = bool(queues)
@@ -2584,6 +2596,346 @@ def si_print(request, pk: int):
         pk=pk,
     )
     return render(request, "ui/ar/si_print.html", {"invoice": invoice})
+
+
+# ---------------------------------------------------------------------------
+# AR — Special Sales Invoice (Fuel Delivery) (SSI-YYYY-SEQ, ADR-050)
+# ---------------------------------------------------------------------------
+
+
+def _ssi_lines_from_form(request):
+    """Parse the SSI Dr/Cr distribution grid (parallel arrays) into line dicts.
+
+    Same postlist contract as the RFP grid: the account posts as its COA code
+    and the amount goes in exactly one of Debit/Credit. The service resolves
+    codes/segments and owns balance validation — this only assembles rows.
+    """
+    seg_ids = request.POST.getlist("line_segment")
+    codes = request.POST.getlist("line_account")
+    debits = request.POST.getlist("line_debit")
+    credits = request.POST.getlist("line_credit")
+    descs = request.POST.getlist("line_description")
+    centers = request.POST.getlist("line_cost_center")
+    lines = []
+    for i, code in enumerate(codes):
+        seg_id = seg_ids[i] if i < len(seg_ids) else ""
+        if not (code or "").strip() or not seg_id:
+            continue
+        try:
+            debit = money((debits[i] if i < len(debits) else 0) or 0)
+            credit = money((credits[i] if i < len(credits) else 0) or 0)
+        except (ValidationError, ValueError, TypeError, ArithmeticError) as exc:
+            detail = getattr(exc, "message", None) or str(exc)
+            raise ValidationError(f"Line {i + 1}: {detail}") from exc
+        if not debit and not credit:
+            continue
+        if debit and credit:
+            raise ValidationError(
+                f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+            )
+        lines.append(
+            {
+                "account": code.strip(),
+                "segment": seg_id,
+                "cost_center": (centers[i] if i < len(centers) else "")[:64],
+                "description": (descs[i] if i < len(descs) else "")[:500],
+                "debit": debit,
+                "credit": credit,
+            }
+        )
+    return lines
+
+
+def _ssi_segment_from_form(request):
+    """Header segment: the synced hidden field, else the first grid line."""
+    segment_id = (request.POST.get("segment") or "").strip()
+    if not segment_id:
+        seg_ids = request.POST.getlist("line_segment")
+        segment_id = next((s for s in seg_ids if (s or "").strip()), "")
+    if not segment_id:
+        raise ValidationError("A segment is required (add a distribution line).")
+    return Segment.objects.get(pk=segment_id)
+
+
+@login_required
+def ssi_list(request):
+    """Special Sales Invoices register — search + status filter."""
+    from apps.ar.models import SpecialSalesInvoice
+
+    from .filter_specs import ssi_filter_spec
+
+    spec = ssi_filter_spec()
+    qs = spec.apply(
+        SpecialSalesInvoice.objects.select_related("customer", "segment").order_by(
+            "-transaction_date", "-invoice_no"
+        ),
+        request.GET,
+    )
+    ctx = {
+        "page_obj": _page(request, qs),
+        "filters": spec.context(request.GET, request),
+        "summary": ssi_summary(),
+    }
+    template = (
+        "ui/ar/_ssi_table.html"
+        if request.headers.get("HX-Request")
+        else "ui/ar/ssi_list.html"
+    )
+    return render(request, template, ctx)
+
+
+@login_required
+def ssi_detail(request, pk: int):
+    from apps.ar.models import SpecialSalesInvoice
+
+    invoice = get_object_or_404(
+        SpecialSalesInvoice.objects.select_related(
+            "customer", "segment", "journal_entry", "created_by"
+        ).prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    return render(
+        request,
+        "ui/ar/ssi_detail.html",
+        {
+            "invoice": invoice,
+            "audit_trail": _audit_trail("ssi", pk),
+            "can_edit": invoice.status == "draft"
+            and (
+                invoice.created_by_id == request.user.id
+                or get_approval_role(request.user) == "head"
+            ),
+            "can_submit": invoice.status == "draft"
+            and invoice.created_by_id == request.user.id,
+            "can_approve": invoice.status == "submitted"
+            and get_approval_role(request.user) == "head",
+        },
+    )
+
+
+@login_required
+def ssi_create(request):
+    from apps.ar.models import Customer
+    from apps.ar.services import CustomerService, SpecialInvoiceService
+
+    if request.method == "POST":
+        try:
+            customer_id = request.POST.get("customer") or ""
+            if not customer_id:
+                raise ValidationError("Select a customer.")
+            customer = Customer.objects.get(pk=customer_id)
+            CustomerService.require_approved(customer)
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of SSI is required.")
+            invoice = SpecialInvoiceService.create_ssi(
+                customer=customer,
+                transaction_date=transaction_date,
+                segment=_ssi_segment_from_form(request),
+                delivery_receipt_no=(request.POST.get("delivery_receipt_no") or "").strip(),
+                notes=(request.POST.get("notes") or "").strip(),
+                lines=_ssi_lines_from_form(request),
+                created_by=request.user,
+            )
+            messages.success(
+                request,
+                f"Special Invoice {invoice.invoice_no} saved as draft — submit it when ready.",
+            )
+            return redirect("ui:ssi_detail", pk=invoice.pk)
+        except (AccountingError, ValidationError, Customer.DoesNotExist, Segment.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/ssi_form.html",
+        {
+            "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        },
+    )
+
+
+@login_required
+def ssi_edit(request, pk: int):
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.ar.services import SpecialInvoiceService
+
+    invoice = get_object_or_404(
+        SpecialSalesInvoice.objects.select_related("customer", "segment").prefetch_related(
+            "lines__account", "lines__segment"
+        ),
+        pk=pk,
+    )
+    if request.method == "POST":
+        try:
+            transaction_date = _parse_date(request.POST.get("transaction_date") or "")
+            if transaction_date is None:
+                raise ValidationError("Date of SSI is required.")
+            SpecialInvoiceService.update_draft(
+                invoice=invoice,
+                transaction_date=transaction_date,
+                segment=_ssi_segment_from_form(request),
+                delivery_receipt_no=(request.POST.get("delivery_receipt_no") or "").strip(),
+                notes=(request.POST.get("notes") or "").strip(),
+                lines=_ssi_lines_from_form(request),
+                user=request.user,
+            )
+            messages.success(request, f"Special Invoice {invoice.invoice_no} updated.")
+            return redirect("ui:ssi_detail", pk=invoice.pk)
+        except (AccountingError, ValidationError, Segment.DoesNotExist) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/ar/ssi_form.html",
+        {
+            "editing": invoice,
+            "today": date.today(),
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        },
+    )
+
+
+@login_required
+@require_POST
+def ssi_submit(request, pk: int):
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.ar.services import SpecialInvoiceService
+
+    invoice = get_object_or_404(SpecialSalesInvoice, pk=pk)
+    try:
+        if invoice.created_by_id != request.user.id:
+            raise ValidationError("Only the preparer may submit this invoice.")
+        SpecialInvoiceService.submit(invoice, user=request.user)
+        messages.success(request, f"Special Invoice {invoice.invoice_no} submitted for approval.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:ssi_detail", pk))
+
+
+@login_required
+@require_POST
+def ssi_approve(request, pk: int):
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.ar.services import SpecialInvoiceService
+
+    invoice = get_object_or_404(SpecialSalesInvoice, pk=pk)
+    try:
+        SpecialInvoiceService.approve(invoice, user=request.user)
+        messages.success(request, f"Special Invoice {invoice.invoice_no} approved and posted to GL.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:ssi_detail", pk))
+
+
+@login_required
+@require_POST
+def ssi_reject(request, pk: int):
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.ar.services import SpecialInvoiceService
+
+    invoice = get_object_or_404(SpecialSalesInvoice, pk=pk)
+    note = request.POST.get("note", "")
+    try:
+        SpecialInvoiceService.reject(invoice, user=request.user, note=note)
+        messages.success(request, f"Special Invoice {invoice.invoice_no} rejected. Returned to Draft.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:ssi_detail", pk))
+
+
+@login_required
+def ssi_print(request, pk: int):
+    """Print-optimized Special Sales Invoice (Fuel Delivery)."""
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.core.approvals import role_assignee, signatory_name
+
+    invoice = get_object_or_404(
+        SpecialSalesInvoice.objects.select_related(
+            "customer", "segment", "journal_entry", "created_by", "approved_by"
+        ).prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    requested_by = signatory_name(invoice.created_by)
+    approved_by = signatory_name(invoice.approved_by) if invoice.approved_by else ""
+    if not approved_by and invoice.status == "posted":
+        approved_by = role_assignee("head")
+    return render(
+        request,
+        "ui/ar/ssi_print.html",
+        {"invoice": invoice, "requested_by": requested_by, "approved_by": approved_by},
+    )
+
+
+@login_required
+def ssi_export(request, pk: int, fmt: str):
+    """Single-document SSI export (xlsx/csv/pdf)."""
+    from apps.ar.models import SpecialSalesInvoice
+    from apps.core.approvals import role_assignee, signatory_name
+    from apps.core.exports import Column, TableSpec, table_export
+
+    invoice = get_object_or_404(
+        SpecialSalesInvoice.objects.select_related(
+            "customer", "segment", "journal_entry", "created_by", "approved_by"
+        ).prefetch_related("lines__account", "lines__segment"),
+        pk=pk,
+    )
+    fmt = (fmt or "xlsx").lower()
+    if fmt == "pdf":
+        from .pdf import build_special_sales_invoice_pdf
+
+        requested_by = signatory_name(invoice.created_by)
+        approved_by = signatory_name(invoice.approved_by) if invoice.approved_by else ""
+        if not approved_by and invoice.status == "posted":
+            approved_by = role_assignee("head")
+        data = build_special_sales_invoice_pdf(
+            invoice, requested_by=requested_by, approved_by=approved_by
+        )
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="SSI_{invoice.invoice_no}.pdf"'
+        )
+        return response
+    lines = list(invoice.lines.order_by("line_no"))
+    rows = [
+        [
+            line.line_no,
+            line.account.code,
+            line.account.name,
+            line.segment.code,
+            line.cost_center or "",
+            line.description or "",
+            line.debit,
+            line.credit,
+        ]
+        for line in lines
+    ]
+    spec = TableSpec(
+        title=f"Special Sales Invoice (Fuel Delivery) {invoice.invoice_no}",
+        columns=[
+            Column("#"),
+            Column("COA"),
+            Column("Account Name", width_cm=6),
+            Column("Segment"),
+            Column("Cost Center"),
+            Column("Description", width_cm=7),
+            Column("Debit", money=True),
+            Column("Credit", money=True),
+        ],
+        rows=rows,
+        totals_row=["", "", "", "", "", "TOTAL", invoice.debit_total, invoice.credit_total],
+        preamble=[
+            ["Invoice No", invoice.invoice_no],
+            ["Delivery Receipt No.", invoice.delivery_receipt_no or "—"],
+            ["Customer", f"{invoice.customer.code} — {invoice.customer.name}"],
+            ["Date", invoice.transaction_date.isoformat()],
+            ["Segment", invoice.segment.code],
+            ["Status", invoice.get_status_display()],
+        ],
+        sheet_title="SSI",
+        page="landscape",
+    )
+    return table_export(spec, fmt, f"SSI_{invoice.invoice_no}.{fmt}")
 
 
 def _deposit_distribution_from_post(request):

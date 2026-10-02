@@ -9,6 +9,8 @@ from .models import (
     Deposit,
     DepositLine,
     PriceSnapshot,
+    SpecialSalesInvoice,
+    SpecialSalesInvoiceLine,
 )
 
 
@@ -116,3 +118,44 @@ class DepositSerializer(serializers.ModelSerializer):
             "reference", "attachment", "journal_entry", "lines",
         )
         read_only_fields = ("deposit_no", "journal_entry", "lines")
+
+
+class SpecialSalesInvoiceLineSerializer(serializers.ModelSerializer):
+    account_code = serializers.CharField(source="account.code", read_only=True)
+    account_name = serializers.CharField(source="account.name", read_only=True)
+    segment_code = serializers.CharField(source="segment.code", read_only=True)
+
+    class Meta:
+        model = SpecialSalesInvoiceLine
+        fields = (
+            "id", "line_no", "account", "account_code", "account_name",
+            "segment", "segment_code", "cost_center", "description",
+            "debit", "credit",
+        )
+
+
+class SpecialSalesInvoiceSerializer(serializers.ModelSerializer):
+    lines = SpecialSalesInvoiceLineSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SpecialSalesInvoice
+        fields = (
+            "id", "invoice_no", "customer", "delivery_receipt_no",
+            "transaction_date", "segment", "total", "status", "journal_entry",
+            "notes", "approved_by", "approved_at", "rejected_by",
+            "rejected_at", "rejection_note", "lines",
+        )
+        read_only_fields = (
+            "invoice_no", "total", "status", "journal_entry",
+            "approved_by", "approved_at", "rejected_by", "rejected_at",
+            "rejection_note",
+        )
+
+    def validate_customer(self, value):
+        if not value.is_approved:
+            raise serializers.ValidationError(
+                f"Customer {value.code} is not approved yet "
+                f"({value.get_approval_status_display()}); only approved "
+                "customers can be invoiced."
+            )
+        return value

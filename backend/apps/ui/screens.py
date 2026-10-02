@@ -23,6 +23,7 @@ SCREENS: list[tuple[str, str, str | None]] = [
     ("coa_list", "Chart of Accounts", "Foundation"),
     ("customer_list", "Customers", "Receivables (AR)"),
     ("si_list", "Sales Invoices", "Receivables (AR)"),
+    ("ssi_list", "Special Sales Invoices (Fuel)", "Receivables (AR)"),
     ("receipt_list", "Acknowledgment Receipts", "Receivables (AR)"),
     ("ar_aging", "AR Aging / Register", "Receivables (AR)"),
     ("ar_ledger", "AR Subsidiary Ledger", "Receivables (AR)"),
@@ -57,8 +58,12 @@ SCREENS: list[tuple[str, str, str | None]] = [
     ("statement", "Financial Statements", "Reports"),
     ("month_end_close", "Month-End Close", "Reports"),
     ("user_management", "User Management", "Settings / Admin"),
-    ("analytics", "Assistant Analytics", "Settings / Admin"),
 ]
+# NOTE: the assistant analytics page (/assistant/analytics/) is deliberately NOT
+# a screen here. It lives in the `assistant` URL namespace (outside the `ui`
+# namespace the middleware enforces) and keeps its own head/coo gate
+# (assistant/views.py AnalyticsView._can_access). Registering it would show a
+# dead checkbox in user management that controls nothing.
 
 SCREEN_KEYS: frozenset[str] = frozenset(k for k, _, _ in SCREENS)
 SCREEN_LABELS: dict[str, str] = {k: label for k, label, _ in SCREENS}
@@ -99,6 +104,7 @@ APPROVAL_ACTIONS = frozenset({
     "je_reversal_approve", "je_reversal_reject",
     "receipt_approve", "receipt_reject",
     "si_approve", "si_reject",
+    "ssi_approve", "ssi_reject",
     "rfp_approve", "rfp_approve_cnr", "rfp_reject",
     "po_approve", "po_approve_cnr", "po_reject",
     "cv_approve", "cv_clear", "cv_reject",
@@ -107,6 +113,8 @@ APPROVAL_ACTIONS = frozenset({
     "transfer_approve", "transfer_reject",
     "pcf_replenishment_approve", "pcf_replenishment_reject",
     "customer_approve", "customer_reject",
+    "supplier_approve", "supplier_reject",
+    "asset_approve", "asset_reject",
 })
 
 #: Exact UI url-name -> screen overrides (checked before prefixes).
@@ -133,8 +141,9 @@ _PREFIXES: list[tuple[str, str]] = sorted(
         ("general_journal", "general_journal"),
         ("fleet_fuel", "fleet_fuel"),
         ("coa_", "coa_list"),
-        ("customer_", "customer_list"),
-        ("si_", "si_list"),
+    ("customer_", "customer_list"),
+    ("si_", "si_list"),
+    ("ssi_", "ssi_list"),
         ("receipt_", "receipt_list"),
         ("ar_aging", "ar_aging"),
         ("ar_receipt", "receipt_list"),
@@ -173,11 +182,12 @@ _PREFIXES: list[tuple[str, str]] = sorted(
         ("statement", "statement"),
         ("month_end_", "month_end_close"),
         ("user_", "user_management"),
-        ("analytics", "analytics"),
     ],
     key=lambda kv: len(kv[0]),
     reverse=True,
 )
+# NOTE: no ("analytics", ...) prefix — see the SCREENS note above; the
+# assistant namespace is outside ADR-047 enforcement.
 
 
 def screen_for_url_name(name: str) -> str | None:
@@ -214,6 +224,7 @@ API_RESOURCE_SCREENS: dict[str, str] = {
     "customers": "customer_list",
     "price-snapshots": "customer_list",
     "invoices": "si_list",
+    "special-invoices": "ssi_list",
     "receipts": "receipt_list",
     "deposits": "receipt_list",
     "asset-categories": "asset_list",
@@ -255,6 +266,11 @@ def screen_for_api_path(path: str) -> str | None:
     Unknown resources are not gated (fail-open on the API surface is safe —
     their screens remain gated at the UI; the completeness test in
     test_screens_registry pins that every *registered* resource maps).
+
+    The assets router is mounted at the ``/api/v1/`` root (config/urls.py), so
+    its collection slug sits at ``parts[2]`` with the pk/action at
+    ``parts[3]`` — unlike section-mounted routers (``/api/v1/<section>/`` +
+    ``<resource>/``). Both shapes resolve here.
     """
     parts = [p for p in path.split("/") if p]
     if not parts or parts[0] != "api":
@@ -264,7 +280,19 @@ def screen_for_api_path(path: str) -> str | None:
     if len(parts) >= 3 and parts[1] == "v1":
         if parts[2] in API_PUBLIC_SECTIONS:
             return None
-        resource = parts[3] if len(parts) > 3 else ""
+        if len(parts) > 3:
+            resource = parts[3]
+            if (
+                resource not in API_RESOURCE_SCREENS
+                and resource not in API_SHARED_RESOURCES
+                and parts[2] in API_RESOURCE_SCREENS
+            ):
+                # Root-mounted router detail path (e.g. /api/v1/assets/7/):
+                # parts[3] is the pk/action, the collection slug is parts[2].
+                resource = parts[2]
+        else:
+            # Collection root of a root-mounted router (/api/v1/assets/).
+            resource = parts[2]
         if resource in API_SHARED_RESOURCES:
             return None
         return API_RESOURCE_SCREENS.get(resource)

@@ -497,6 +497,7 @@ class ActionLog(models.Model):
         JE = "je", "Journal Entry"
         BILL = "bill", "Billing"
         ASSET = "asset", "Fixed Asset"
+        SSI = "ssi", "Special Sales Invoice"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)

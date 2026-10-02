@@ -17,7 +17,7 @@ This supersedes ADR-016 ("deposit = state change, NO JE") — moving cash from
 on-hand to a bank account is a real transfer between cash accounts.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -39,6 +39,9 @@ from .models import (
     Deposit,
     PaymentMethod,
     ReceiptStatus,
+    SpecialSalesInvoice,
+    SpecialSalesInvoiceLine,
+    SSIStatus,
 )
 
 # Segment -> (Unearned account, AR-Other account, AR-Fuel account)
@@ -1398,3 +1401,345 @@ class CustomerService:
                 "Only approved customers can be used on transactions."
             )
         return customer
+
+
+def _resolve_ssi_line_refs(lines):
+    """Accept Account/Segment objects, codes, or pks; return object rows.
+
+    The UI grid posts codes/pks, the API may post either — both converge here
+    before the shared ``_normalize_lines`` validation runs. Unknown refs
+    raise ValidationError (never leak DoesNotExist to callers).
+    """
+    from apps.foundation.models import Account, Segment
+
+    out = []
+    for i, line in enumerate(lines or [], start=1):
+        account = line.get("account")
+        if isinstance(account, str):
+            code = account.strip()
+            try:
+                account = Account.objects.get(code=code)
+            except Account.DoesNotExist as exc:
+                raise ValidationError(f"Line {i}: COA account {code} not found.") from exc
+        elif isinstance(account, int):
+            try:
+                account = Account.objects.get(pk=account)
+            except Account.DoesNotExist as exc:
+                raise ValidationError(
+                    f"Line {i}: COA account #{line.get('account')} not found."
+                ) from exc
+        segment = _resolve_segment(line.get("segment"), line_no=i)
+        out.append({**line, "account": account, "segment": segment})
+    return out
+
+
+def _resolve_segment(ref, *, line_no=None):
+    """Segment object, pk, or code -> Segment (None passes through)."""
+    from apps.foundation.models import Segment
+
+    if ref is None or ref == "" or isinstance(ref, Segment):
+        return ref
+    where = f"Line {line_no}: " if line_no else ""
+    try:
+        if isinstance(ref, str) and not ref.isdigit():
+            return Segment.objects.get(code=ref.strip())
+        return Segment.objects.get(pk=int(ref))
+    except (Segment.DoesNotExist, ValueError, TypeError) as exc:
+        raise ValidationError(f"{where}segment '{ref}' not found.") from exc
+
+
+def _coerce_date(value, *, field="transaction_date"):
+    """date/datetime/ISO-string -> date (API callers post strings)."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise ValidationError(f"{field} must be a YYYY-MM-DD date.") from exc
+    raise ValidationError(f"{field} is required.")
+
+
+class SpecialInvoiceService:
+    """Owns the Special Sales Invoice (Fuel Delivery) lifecycle + its JE.
+
+    Lifecycle (mirrors CollectionService / InvoiceService):
+      draft     staff builds header + account-distribution lines. No JE yet.
+      submitted awaiting the Accounting & Finance Head approval.
+      posted    the Head approves; the JE is built exactly from the
+                distribution lines as entered and posted to the GL.
+
+    The document is standalone: it never enters the SI register, AR aging,
+    or the receipt apply-to picker — only its posted JE reaches the
+    General Journal, Ledger, Trial Balance, and statements.
+    """
+
+    STATUS_DRAFT = SSIStatus.DRAFT
+    STATUS_SUBMITTED = SSIStatus.SUBMITTED
+    STATUS_POSTED = SSIStatus.POSTED
+
+    # ------------------------------------------------------------------ create
+
+    @classmethod
+    def create_ssi(
+        cls,
+        *,
+        customer: Customer,
+        transaction_date: date,
+        segment,
+        delivery_receipt_no: str = "",
+        notes: str = "",
+        lines,
+        invoice_no: str | None = None,
+        created_by=None,
+    ) -> SpecialSalesInvoice:
+        """Create a DRAFT special invoice + its distribution lines.
+
+        The invoice total is the debit-line sum; debits must equal credits so
+        the posted JE balances (ADR-002: no force-balance, ever). No JE is
+        posted here — that happens when the Head approves.
+        """
+        CustomerService.require_approved(customer)
+        transaction_date = _coerce_date(transaction_date)
+        segment = _resolve_segment(segment)
+        if segment is None:
+            raise ValidationError("A segment is required for a special invoice.")
+        norm_lines = _normalize_lines(_resolve_ssi_line_refs(lines))
+        debit_total = sum((line["debit"] for line in norm_lines), Decimal("0.00"))
+        credit_total = sum((line["credit"] for line in norm_lines), Decimal("0.00"))
+        if debit_total <= 0:
+            raise ValidationError("The account distribution total must be positive.")
+        if debit_total != credit_total:
+            raise ValidationError(
+                "Account distribution is out of balance by "
+                f"{money(debit_total - credit_total)} "
+                f"(Dr {debit_total} vs Cr {credit_total})."
+            )
+        if invoice_no is None:
+            invoice_no = cls._next_invoice_no(segment, transaction_date)
+        with transaction.atomic():
+            invoice = SpecialSalesInvoice.objects.create(
+                invoice_no=invoice_no,
+                customer=customer,
+                delivery_receipt_no=(delivery_receipt_no or "")[:32],
+                transaction_date=transaction_date,
+                segment=segment,
+                total=debit_total,
+                notes=notes or "",
+                status=cls.STATUS_DRAFT,
+                created_by=created_by,
+            )
+            for i, line in enumerate(norm_lines, start=1):
+                SpecialSalesInvoiceLine.objects.create(
+                    invoice=invoice,
+                    line_no=i,
+                    account=line["account"],
+                    segment=line["segment"],
+                    cost_center=line["cost_center"],
+                    description=line["description"],
+                    debit=line["debit"],
+                    credit=line["credit"],
+                )
+            _log(invoice, "created", actor=created_by)
+        return invoice
+
+    @staticmethod
+    def _next_invoice_no(segment, transaction_date: date) -> str:
+        from apps.sequences.models import DocumentSequence
+
+        return DocumentSequence.next_number(
+            company=segment.company,
+            form_code="SSI",
+            year=transaction_date.year,
+            pattern="SSI-{YYYY}-{SEQ:05d}",
+        )
+
+    # ------------------------------------------------------------------ edit
+
+    @classmethod
+    def update_draft(
+        cls,
+        *,
+        invoice: SpecialSalesInvoice,
+        transaction_date: date | None = None,
+        segment=None,
+        delivery_receipt_no: str | None = None,
+        notes: str | None = None,
+        lines=None,
+        user=None,
+    ) -> SpecialSalesInvoice:
+        """Replace a DRAFT invoice's header/lines (immutability gate)."""
+        if invoice.status != cls.STATUS_DRAFT:
+            raise ValidationError("Only draft invoices can be edited.")
+        if segment is not None:
+            segment = _resolve_segment(segment)
+        with transaction.atomic():
+            saved = []
+            if transaction_date is not None:
+                invoice.transaction_date = _coerce_date(transaction_date)
+                saved.append("transaction_date")
+            if segment is not None:
+                invoice.segment = segment
+                saved.append("segment")
+            if delivery_receipt_no is not None:
+                invoice.delivery_receipt_no = (delivery_receipt_no or "")[:32]
+                saved.append("delivery_receipt_no")
+            if notes is not None:
+                invoice.notes = notes or ""
+                saved.append("notes")
+            if lines is not None:
+                norm_lines = _normalize_lines(_resolve_ssi_line_refs(lines))
+                debit_total = sum((line["debit"] for line in norm_lines), Decimal("0.00"))
+                credit_total = sum((line["credit"] for line in norm_lines), Decimal("0.00"))
+                if debit_total != credit_total:
+                    raise ValidationError(
+                        "Account distribution is out of balance by "
+                        f"{money(debit_total - credit_total)}."
+                    )
+                invoice.lines.all().delete()
+                for i, line in enumerate(norm_lines, start=1):
+                    SpecialSalesInvoiceLine.objects.create(
+                        invoice=invoice,
+                        line_no=i,
+                        account=line["account"],
+                        segment=line["segment"],
+                        cost_center=line["cost_center"],
+                        description=line["description"],
+                        debit=line["debit"],
+                        credit=line["credit"],
+                    )
+                invoice.total = debit_total
+                saved.append("total")
+            if saved:
+                invoice.save(update_fields=[*saved, "updated_at"])
+            _log(invoice, "revised", actor=user)
+        return invoice
+
+    # ------------------------------------------------------------------ workflow
+
+    @classmethod
+    def submit(cls, invoice: SpecialSalesInvoice, *, user=None) -> SpecialSalesInvoice:
+        """draft -> submitted (routes to the Accounting & Finance Head)."""
+        if invoice.status != cls.STATUS_DRAFT:
+            raise ValidationError("Only draft invoices can be submitted.")
+        if not invoice.lines.exists():
+            raise ValidationError("Add at least one account-distribution line.")
+        if not invoice.is_balanced:
+            raise ValidationError(
+                f"Invoice {invoice.invoice_no} is out of balance and cannot "
+                "be submitted."
+            )
+        invoice.status = cls.STATUS_SUBMITTED
+        invoice.approved_by = None
+        invoice.approved_at = None
+        invoice.rejected_by = None
+        invoice.rejected_at = None
+        invoice.rejection_note = ""
+        invoice.save(
+            update_fields=[
+                "status", "approved_by", "approved_at", "rejected_by",
+                "rejected_at", "rejection_note", "updated_at",
+            ]
+        )
+        _log(invoice, "submitted", actor=user)
+        return invoice
+
+    @classmethod
+    def approve(cls, invoice: SpecialSalesInvoice, *, user) -> SpecialSalesInvoice:
+        """Head approves a submitted invoice: build + post the JE from its
+        distribution lines, exactly as entered (mirrors the RFP/CONSO rule)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if invoice.status != cls.STATUS_SUBMITTED:
+            raise ValidationError("Only submitted invoices can be approved.")
+        if not invoice.is_balanced:
+            raise ValidationError(
+                f"Invoice {invoice.invoice_no} is out of balance by "
+                f"{money(invoice.debit_total - invoice.credit_total)}."
+            )
+        with transaction.atomic():
+            entry = cls._build_ssi_je(invoice, user=user)
+            PostingService.post(entry, approver=user, user=user)
+            invoice.journal_entry = entry
+            invoice.status = cls.STATUS_POSTED
+            invoice.approved_by = user
+            invoice.approved_at = timezone.now()
+            invoice.rejected_by = None
+            invoice.rejected_at = None
+            invoice.rejection_note = ""
+            invoice.save(
+                update_fields=[
+                    "journal_entry", "status", "approved_by", "approved_at",
+                    "rejected_by", "rejected_at", "rejection_note", "updated_at",
+                ]
+            )
+            _log(invoice, "approved", actor=user)
+        return invoice
+
+    @staticmethod
+    def _build_ssi_je(invoice: SpecialSalesInvoice, *, user) -> JournalEntry:
+        """Build the JE exactly from the distribution lines (not yet posted)."""
+        entry = JournalEntry.objects.create(
+            entry_no=invoice.invoice_no,
+            company=invoice.segment.company,
+            segment=invoice.segment,
+            fiscal_period=_fiscal_period_for(invoice.transaction_date),
+            transaction_date=invoice.transaction_date,
+            status=PostingStatus.APPROVED,
+            description=(
+                f"Special Sales Invoice (Fuel) {invoice.invoice_no} "
+                f"{invoice.customer.name}"
+            ),
+            source_doc_type="SSI",
+            source_doc_no=invoice.invoice_no,
+            created_by=user,
+            approved_by=user,
+            approved_at=timezone.now(),
+        )
+        for i, line in enumerate(
+            invoice.lines.select_related("account", "segment").order_by("line_no"),
+            start=1,
+        ):
+            JournalEntryLine.objects.create(
+                entry=entry,
+                line_no=i,
+                account=line.account,
+                segment=line.segment,
+                description=line.description,
+                cost_center=line.cost_center,
+                debit=line.debit,
+                credit=line.credit,
+            )
+        entry.recalc_totals()
+        return entry
+
+    @classmethod
+    def reject(
+        cls, invoice: SpecialSalesInvoice, *, user, note: str
+    ) -> SpecialSalesInvoice:
+        """Head rejects a submitted invoice, returning it to draft."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if invoice.status != cls.STATUS_SUBMITTED:
+            raise ValidationError("Only submitted invoices can be rejected.")
+        note = (note or "").strip()
+        if not note:
+            raise ValidationError("A rejection note is required.")
+        invoice.status = cls.STATUS_DRAFT
+        invoice.rejected_by = user
+        invoice.rejected_at = timezone.now()
+        invoice.rejection_note = note
+        invoice.approved_by = None
+        invoice.approved_at = None
+        invoice.save(
+            update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note",
+                "approved_by", "approved_at", "updated_at",
+            ]
+        )
+        _log(invoice, "rejected", actor=user, note=note)
+        return invoice

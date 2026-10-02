@@ -34,6 +34,7 @@ NAV_SECTIONS = [
         'items': [
             {'name': 'customer_list', 'label': 'Customers', 'icon': 'user-group'},
             {'name': 'si_list', 'label': 'Sales Invoices', 'icon': 'receipt'},
+            {'name': 'ssi_list', 'label': 'Special Sales Invoices (Fuel)', 'icon': 'send'},
             {'name': 'receipt_list', 'label': 'Acknowledgment Receipts', 'icon': 'document-check'},
             {'name': 'ar_aging', 'label': 'AR Aging / Register', 'icon': 'exclamation-triangle'},
             {'name': 'ar_ledger', 'label': 'AR Subsidiary Ledger', 'icon': 'rectangle-group'},

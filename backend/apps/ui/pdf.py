@@ -898,6 +898,122 @@ def build_rfp_pdf(rfp, *, paper="a5") -> bytes:
     return buf.getvalue()
 
 
+SSI_DOCUMENT_NO = "ACCTG-FOR-SSI"
+SSI_DOCUMENT_REVISION = "00"
+
+
+def _ssi_distribution_table(colw, lines, debit_total, credit_total):
+    """Account Distribution — # | COA | Account Name | Segment | Cost Center
+    | Description | Debit | Credit (14-col grid), totals row, repeatRows=1."""
+    cell = _style_cell()
+    cell_right = _style_cell_right()
+    rows = [
+        [
+            Paragraph("#", _style_hdr()),
+            Paragraph("COA", _style_hdr()),
+            Paragraph("Account Name", _style_hdr()),
+            Paragraph("Segment", _style_hdr()),
+            Paragraph("Cost Center", _style_hdr()),
+            Paragraph("Description", _style_hdr()),
+            Paragraph("Debit", _style_hdr_right()),
+            Paragraph("Credit", _style_hdr_right()),
+        ]
+    ]
+    for i, line in enumerate(lines, start=1):
+        rows.append(
+            [
+                Paragraph(str(i), cell),
+                Paragraph(_t(line.account.code), cell),
+                Paragraph(_t(line.account.name), cell),
+                Paragraph(_t(line.segment.code), cell),
+                Paragraph(_t(line.cost_center or ""), cell),
+                Paragraph(_t(line.description or ""), cell),
+                Paragraph(_money(line.debit) if line.debit else "-", cell_right),
+                Paragraph(_money(line.credit) if line.credit else "-", cell_right),
+            ]
+        )
+    if not lines:
+        rows.append([Paragraph("No distribution lines.", cell)] + [""] * 7)
+    rows.append(
+        [
+            Paragraph("TOTAL", _style_hdr()),
+            "", "", "", "", "",
+            Paragraph(_money(debit_total), _style_hdr_right()),
+            Paragraph(_money(credit_total), _style_hdr_right()),
+        ]
+    )
+    grid = Table(
+        rows,
+        colWidths=[c * colw for c in (0.6, 1.4, 2.8, 1.1, 1.4, 3.0, 1.85, 1.85)],
+        repeatRows=1,
+    )
+    grid.setStyle(TableStyle(
+        _base_style() + [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0"))]
+    ))
+    return grid
+
+
+def build_special_sales_invoice_pdf(invoice, *, requested_by="", approved_by="", paper="a5") -> bytes:
+    """Special Sales Invoice — Fuel Delivery (ACCTG-FOR-SSI), from ssi_print.html.
+
+    `paper` is "a5" (default, half-bond) or "a4" — matching the print toolbar.
+    """
+    from apps.ar.models import SpecialSalesInvoice
+
+    invoice = (
+        invoice
+        if isinstance(invoice, SpecialSalesInvoice)
+        else SpecialSalesInvoice.objects.select_related(
+            "customer", "segment", "journal_entry"
+        ).prefetch_related("lines__account", "lines__segment").get(pk=int(invoice))
+    )
+    lines = list(invoice.lines.select_related("account", "segment").order_by("line_no"))
+    debit_total = sum((line.debit for line in lines), Decimal("0.00"))
+    credit_total = sum((line.credit for line in lines), Decimal("0.00"))
+
+    pagesize = A4 if paper == "a4" else A5
+    margin = 0.9 * cm
+    colw = (pagesize[0] - 2 * margin) / GRID
+
+    story = [
+        _form_header(
+            colw, "SPECIAL SALES INVOICE - FUEL DELIVERY", ORANGE,
+            SSI_DOCUMENT_NO, invoice.transaction_date.strftime("%m.%d.%Y"),
+            SSI_DOCUMENT_REVISION,
+        ),
+        Spacer(1, 0.15 * cm),
+        _band_row_custom(colw, "Customer Information"),
+        _payee_table(colw, [
+            ("CUSTOMER:", f"{invoice.customer.code} {invoice.customer.name}",
+             "DATE:", invoice.transaction_date.strftime("%m/%d/%Y")),
+            ("TIN:", invoice.customer.tin or "-",
+             "DR NO.:", invoice.delivery_receipt_no or "-"),
+            ("SEGMENT:", f"{invoice.segment.name} ({invoice.segment.code})",
+             "SSI NO.:", invoice.invoice_no),
+        ]),
+        Spacer(1, 0.15 * cm),
+        _band_row_custom(colw, "Account Distribution"),
+        _ssi_distribution_table(colw, lines, debit_total, credit_total),
+        Spacer(1, 0.25 * cm),
+        _signature_block(
+            colw,
+            [
+                ("Prepared By:", requested_by or _signatory_name(invoice.created_by), "Print Name/Sign/Date"),
+                ("Approved By:", approved_by or _signatory_name(invoice.approved_by), "Accounting & Finance Head"),
+            ],
+            [7, 7],
+        ),
+    ]
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=pagesize, leftMargin=margin, rightMargin=margin,
+        topMargin=margin, bottomMargin=margin,
+        title=f"Special Sales Invoice {invoice.invoice_no}", author="Accounting System",
+    )
+    doc.build(story)
+    return buf.getvalue()
+
+
 def _coo_name():
     from apps.core.approvals import role_assignee
 

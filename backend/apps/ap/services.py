@@ -160,11 +160,12 @@ def log_action(doc, action, *, actor=None, note="", doc_type=None):
     """Append an immutable audit-trail entry for any tracked document.
 
     Covers RFP / Check Voucher / PO / Journal Entry / Inter-Account Transfer
-    plus the AR receipt and bank deposit audit trails (doc_type is stored so
-    histories never mix). Callers outside AP (e.g. billing) may pass an
-    explicit ``doc_type`` to avoid a reverse dependency on their app.
+    plus the AR receipt, bank deposit, and Special Sales Invoice audit trails
+    (doc_type is stored so histories never mix). Callers outside AP (e.g.
+    billing) may pass an explicit ``doc_type`` to avoid a reverse dependency
+    on their app.
     """
-    from apps.ar.models import AcknowledgmentReceipt, Deposit
+    from apps.ar.models import AcknowledgmentReceipt, Deposit, SpecialSalesInvoice
     from apps.cash.models import InterAccountTransfer
     from apps.posting.models import JournalEntry
 
@@ -172,6 +173,8 @@ def log_action(doc, action, *, actor=None, note="", doc_type=None):
         pass
     elif isinstance(doc, AcknowledgmentReceipt):
         doc_type = ActionLog.DocType.AR
+    elif isinstance(doc, SpecialSalesInvoice):
+        doc_type = ActionLog.DocType.SSI
     elif isinstance(doc, Deposit):
         doc_type = ActionLog.DocType.DEPOSIT
     elif isinstance(doc, InterAccountTransfer):

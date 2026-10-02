@@ -70,6 +70,87 @@ def test_approval_actions_map_to_inbox():
         assert S.screen_for_url_name(name) == "my_approvals"
 
 
+#: Approve/reject verbs that are deliberately NOT inbox actions: the head
+#: gate is enforced inside the register detail page instead.
+REGISTER_GATED_VERBS = frozenset({
+    # CONSO grading review (POSTING_RULES 7.3) happens on the batch page.
+    "conso_reject",
+})
+
+
+def test_every_approve_reject_action_maps_to_inbox():
+    """Completeness, reverse of test_approval_actions_map_to_inbox: every
+    approve/reject/clear verb in ui/urls.py must resolve to the My Approvals
+    screen, unless deliberately register-gated (REGISTER_GATED_VERBS).
+
+    supplier_*/asset_* approve/reject shipped without APPROVAL_ACTIONS
+    entries: the prefix rule silently gated them to their registers, 403ing
+    narrowed approvers who signed from the inbox. This guard makes that
+    class impossible."""
+    verbs = {
+        name
+        for name in _ui_url_names()
+        if name.endswith(("_approve", "_reject", "_clear")) or "_approve_cnr" in name
+    }
+    assert verbs - REGISTER_GATED_VERBS, "verb scan found nothing - test broken"
+    unmapped = [
+        n
+        for n in sorted(verbs - REGISTER_GATED_VERBS)
+        if S.screen_for_url_name(n) != "my_approvals"
+    ]
+    assert not unmapped, (
+        f"approve/reject verbs not in APPROVAL_ACTIONS (inbox 403s): {unmapped}"
+    )
+
+
+def test_every_screen_has_nav_entry():
+    """Reverse of test_every_nav_item_is_a_registered_screen: a registered
+    screen with no sidebar entry is a dead grant checkbox — the `analytics`
+    orphan showed a toggle in user management that controlled nothing."""
+    from apps.ui.nav import NAV_SECTIONS
+
+    nav_names = {item["name"] for sec in NAV_SECTIONS for item in sec["items"]}
+    orphan = [k for k, _, _ in S.SCREENS if k not in nav_names]
+    assert not orphan, f"screens with no sidebar entry: {orphan}"
+
+
+#: Queue kinds that are approve-only (no reject view exists for them).
+APPROVE_ONLY_KINDS = frozenset({
+    # Cash short is a recon worksheet: approval only, no return-for-rework.
+    "cash_short",
+})
+
+
+def _inbox_queue_kinds():
+    src = (Path(__file__).parent.parent / "core" / "approvals.py").read_text(
+        encoding="utf-8"
+    )
+    return set(re.findall(r'"kind": "([a-z0-9_]+)"', src))
+
+
+def test_inbox_kinds_have_labels_and_reject_urls():
+    """Every kind a wired queue can emit must render a filter label in My
+    Approvals — and, unless approve-only, an inbox Reject button.
+    asset_queue shipped with neither: assets showed a raw kind key in the
+    filter dropdown and no Reject button in the inbox."""
+    from django.urls import reverse
+
+    from apps.ui.views import INBOX_REJECT_URLS, KIND_LABELS
+
+    kinds = _inbox_queue_kinds()
+    assert kinds, "kind scan found nothing - test broken"
+    assert kinds <= set(KIND_LABELS), (
+        f"kinds missing KIND_LABELS: {sorted(kinds - set(KIND_LABELS))}"
+    )
+    missing_reject = kinds - set(INBOX_REJECT_URLS) - APPROVE_ONLY_KINDS
+    assert not missing_reject, (
+        f"kinds missing INBOX_REJECT_URLS (no inbox Reject button): "
+        f"{sorted(missing_reject)}"
+    )
+    for kind, url_name in INBOX_REJECT_URLS.items():
+        reverse(url_name, args=[1])  # typo-proof the endpoint
+
+
 def test_module_prefix_resolution_examples():
     assert S.screen_for_url_name("je_detail") == "je_list"
     assert S.screen_for_url_name("cv_export") == "cv_list"
