@@ -28,9 +28,9 @@
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
             <label class="text-sm font-semibold text-surface-700">Customer</label>
             {% if editing %}
-            <div class="text-sm font-medium">{{ editing.customer.code }} {{ editing.customer.name }}</div>
+            <div class="text-sm font-medium">{{ editing.customer.name }}</div>
             {% else %}
-            <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm">
+            <select name="customer" id="id_customer" required data-searchable data-search-value="id" data-search-placeholder="Type customer name or code…" data-search-url="{% url 'ui:customer_options' %}?name_only=1" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm">
               <option value="">— select customer —</option>
             </select>
             {% endif %}
@@ -398,14 +398,14 @@
       var data = invoiceData(inv.value);
       if (!data) { setDue(null); return; }
       if (cust && cust.value && String(cust.value) !== String(data.customer_id)) {
-        setDue(data, 'That invoice belongs to ' + data.customer_code + ' ' + data.customer_name + ' — set the customer first.');
+        setDue(data, 'That invoice belongs to ' + data.customer_name + ' — set the customer first.');
         clearInvoice();
         return;
       }
       if (cust && !cust.value && data.customer_id) {
         autoCust = true;
         if (window.setSearchableValue) {
-          setSearchableValue(cust, data.customer_id, data.customer_code + ' — ' + data.customer_name);
+          setSearchableValue(cust, data.customer_id, data.customer_name);
         } else {
           cust.value = data.customer_id;
           autoCust = false;

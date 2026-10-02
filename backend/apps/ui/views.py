@@ -1864,7 +1864,7 @@ def ar_receipt_export(request, pk: int, fmt: str):
         preamble=[
             ["Receipt No", receipt.receipt_no],
             ["Date", receipt.transaction_date.isoformat()],
-            ["Customer", f"{receipt.customer.code} {receipt.customer.name}"],
+            ["Customer", receipt.customer.name],
             ["Segment", receipt.segment.code],
             ["Cash Account", receipt.cash_account.code if receipt.cash_account else ""],
             ["Method", receipt.get_payment_method_display()],
@@ -6373,12 +6373,13 @@ def customer_options(request):
         keep = Customer.objects.filter(lookup).first()
         if keep:
             rows.insert(0, keep)
+    name_only = request.GET.get("name_only") in ("1", "true", "True", "yes", "on")
     return JsonResponse(
         [
             {
                 "id": c.id,
                 "code": c.code,
-                "text": f"{c.code} — {c.name}",
+                "text": c.name if name_only else f"{c.code} — {c.name}",
                 "tin": c.tin,
             }
             for c in rows

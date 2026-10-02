@@ -1218,7 +1218,8 @@ class TestReceiptScreen:
         # Client-facing customer details only - internal fields hidden.
         assert "Business Name:" in body
         assert "Owner:" in body
-        assert "C001 Fuel Client" in body
+        assert "Fuel Client" in body
+        assert "C001" not in body  # customer code removed
         assert "Maria Fuels" in body
         assert "123-456-789" in body
         assert "0917-000-0000" in body
@@ -1411,6 +1412,35 @@ class TestReceiptScreen:
         assert debit.account_id == accounts["10010"].id
         assert debit.segment_id == seg2.id
         assert receipt.segment_id == seg2.id
+
+    def test_receipt_form_edit_shows_name_only(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        body = client.get(f"/ar/receipts/{receipt.pk}/edit/").content.decode()
+        # Edit form shows customer name only, no code
+        assert "Fuel Client" in body
+        assert "C001" not in body
+
+    def test_customer_picker_name_only(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import Customer
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        customer.code = "C999"
+        customer.name = "Test Client Name"
+        customer.save()
+
+        # customer_options with name_only=1 returns name only
+        resp = client.get("/foundation/customer-options/", {"name_only": "1", "q": "Test"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["text"] == "Test Client Name"
+        assert "C999" not in data[0]["text"]
 
     def test_receipt_edit_changes_cash_segment(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
