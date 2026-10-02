@@ -711,10 +711,7 @@ class DepositService:
             amt = money(amt_raw)  # raises ValidationError on empty/malformed
             if amt <= 0:
                 raise ValidationError(f"Distribution row {idx}: amount must be positive.")
-            if acc.pk in seen_banks:
-                raise ValidationError(
-                    f"Distribution row {idx}: bank account {acc.code} is already used."
-                )
+            # Allow same bank account in multiple rows (e.g., multiple clients depositing to same account)
             seen_banks.add(acc.pk)
             seg = None
             seg_raw = str(d.get("segment_id") or "").strip()
