@@ -1763,12 +1763,18 @@ def receipt_list(request):
     from .filter_specs import receipt_list_filter_spec
 
     spec = receipt_list_filter_spec()
+    params = request.GET.copy()
+    status_val = params.get("status")
+    if status_val == "rejected":
+        params.pop("status", None)
     qs = spec.apply(
         AcknowledgmentReceipt.objects.select_related("customer", "segment").order_by(
             "-transaction_date", "-receipt_no"
         ),
-        request.GET,
+        params,
     )
+    if status_val == "rejected":
+        qs = qs.filter(rejection_note__isnull=False).exclude(rejection_note="")
     ctx = {
         "page_obj": _page(request, qs),
         "filters": spec.context(request.GET, request),

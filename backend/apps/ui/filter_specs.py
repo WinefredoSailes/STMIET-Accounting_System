@@ -104,6 +104,12 @@ def customer_list_filter_spec():
 def receipt_list_filter_spec():
     from apps.ar.models import ReceiptStatus
 
+    # Extended choices including a synthetic "rejected" filter
+    def _status_choices(req):
+        base = list(ReceiptStatus.choices)
+        base.append(("rejected", "Rejected"))
+        return base
+
     return FilterSpec(
         fields=[
             FilterField(
@@ -112,7 +118,7 @@ def receipt_list_filter_spec():
             ),
             FilterField(
                 "status", "Status", kind="choice",
-                choices=lambda req: ReceiptStatus.choices,
+                choices=_status_choices,
             ),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
