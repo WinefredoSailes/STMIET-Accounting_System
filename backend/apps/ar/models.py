@@ -333,16 +333,16 @@ class Deposit(AuditableModel):
     depositing collections moves value from Cash on Hand to a bank account, so
     the Head posts a real journal entry per deposit slip:
 
-        Dr Cash in Bank (bank_account) | Cr segment Cash on Hand
+        Dr Cash in Bank (distribution lines) | Cr segment Cash on Hand
 
-    One deposit may cover many receipts (a single bank deposit slip). The
-    recipient bank is the deposit's ``bank_account`` (a 100xx bank GL account);
-    the source is each covered receipt's segment Cash on Hand account.
+    One deposit may cover many receipts and be split across multiple bank accounts.
+    The recipient banks are defined via ``DepositLine`` records; the source is each
+    covered receipt's segment Cash on Hand account (grouped).
     """
 
-    # The bank GL account receiving the deposit (100xx).
+    # Legacy bank account (kept for backwards compatibility with old deposits).
     bank_account = models.ForeignKey(
-        "foundation.Account", on_delete=models.PROTECT, related_name="deposits", limit_choices_to={"code__startswith": "100"}
+        "foundation.Account", on_delete=models.PROTECT, null=True, blank=True, related_name="deposits", limit_choices_to={"code__startswith": "100"}
     )
     transaction_date = models.DateField(db_index=True)
     # Optional generated slip number (BD-YYYY-SEQ).
@@ -354,7 +354,7 @@ class Deposit(AuditableModel):
     )
     # Deposit proof (deposit slip scan/photo).
     attachment = models.FileField(upload_to="ar_deposits/", blank=True)
-    # The journal entry posted by this deposit (Dr Bank | Cr Cash on Hand).
+    # The journal entry posted by this deposit (Dr Bank(s) | Cr Cash on Hand).
     journal_entry = models.ForeignKey(
         "posting.JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="ar_deposits"
     )
@@ -366,7 +366,39 @@ class Deposit(AuditableModel):
         ordering = ["-transaction_date", "-id"]
 
     def __str__(self):
-        return f"Deposit {self.deposit_no or self.id} {self.bank_account} {self.amount}"
+        first_line = self.lines.first()
+        bank_label = first_line.account.code if first_line else (self.bank_account.code if self.bank_account else "—")
+        return f"Deposit {self.deposit_no or self.id} {bank_label} {self.amount}"
+
+
+class DepositLine(models.Model):
+    """One line of a bank deposit distribution (multi-bank allocation).
+
+    Each row specifies a single bank account receiving a portion of the total
+    deposit. The sum of all debit lines must equal the deposit's total amount,
+    and the credit side equals the grouped Cash on Hand amounts from covered receipts.
+    """
+
+    deposit = models.ForeignKey(
+        "Deposit", on_delete=models.CASCADE, related_name="lines"
+    )
+    line_no = models.PositiveIntegerField()
+    account = models.ForeignKey(
+        "foundation.Account", on_delete=models.PROTECT, related_name="deposit_lines"
+    )
+    segment = models.ForeignKey(
+        "foundation.Segment", on_delete=models.PROTECT, null=True, blank=True,
+    )
+    cost_center = models.CharField("Cost center", max_length=64, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["line_no"]
+        unique_together = ("deposit", "line_no")
+
+    def __str__(self):
+        return f"DepositLine #{self.line_no} {self.account.code} {self.debit}"
 
 
 class CashShortExcess(AuditableModel):

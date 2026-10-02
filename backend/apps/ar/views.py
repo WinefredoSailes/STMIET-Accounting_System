@@ -232,12 +232,15 @@ class DepositViewSet(viewsets.ModelViewSet):
             AcknowledgmentReceipt.objects.filter(pk__in=receipt_ids).select_related("segment")
         )
         try:
+            bank_id = request.data.get("bank_account")
+            bank_account = Account.objects.get(pk=bank_id) if bank_id else None
             deposit = DepositService.record_deposit(
                 receipts=receipts,
-                bank_account=Account.objects.get(pk=request.data.get("bank_account")),
+                bank_account=bank_account,
                 transaction_date=request.data.get("transaction_date"),
                 reference=request.data.get("reference", ""),
                 user=request.user,
+                distribution=request.data.get("distribution"),
             )
         except AccountingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

@@ -649,8 +649,11 @@ class DepositService:
         deposit_no: str | None = None,
         attachment=None,
         user=None,
+        distribution=None,
     ) -> Deposit:
         from apps.sequences.models import DocumentSequence
+        from apps.foundation.models import Account, Segment
+        from .models import DepositLine
 
         receipts = list(receipts)
         if not receipts:
@@ -672,7 +675,7 @@ class DepositService:
                     f"Receipt {receipt.receipt_no} was already deposited."
                 )
             coh = cash_on_hand_account(receipt.segment)
-            if coh.pk == bank_account.pk:
+            if bank_account is not None and coh.pk == bank_account.pk:
                 raise ValidationError(
                     f"Deposit account cannot be the same as the Cash on Hand "
                     f"account {coh.code}."
@@ -681,6 +684,76 @@ class DepositService:
             total += money(receipt.amount)
         if total <= 0:
             raise ValidationError("Deposit total must be positive.")
+
+        # Build distribution lines (multi-bank allocation). Blank grid rows are
+        # skipped; a row with an amount but no bank (or vice versa) is an error.
+        dist_lines = []
+        seen_banks = set()
+        for idx, d in enumerate(distribution or [], start=1):
+            acct_raw = str(d.get("account") or "").strip()
+            amt_raw = str(d.get("amount") or "").strip()
+            if not acct_raw and not amt_raw:
+                continue
+            if not acct_raw:
+                raise ValidationError(f"Distribution row {idx}: select a bank account.")
+            try:
+                acc = Account.objects.get(pk=int(acct_raw))
+            except (ValueError, Account.DoesNotExist):
+                raise ValidationError(f"Distribution row {idx}: unknown bank account.")
+            amt = money(amt_raw)  # raises ValidationError on empty/malformed
+            if amt <= 0:
+                raise ValidationError(f"Distribution row {idx}: amount must be positive.")
+            if acc.pk in seen_banks:
+                raise ValidationError(
+                    f"Distribution row {idx}: bank account {acc.code} is already used."
+                )
+            seen_banks.add(acc.pk)
+            seg = None
+            seg_raw = str(d.get("segment_id") or "").strip()
+            if seg_raw:
+                try:
+                    seg = Segment.objects.get(pk=int(seg_raw))
+                except (ValueError, Segment.DoesNotExist):
+                    seg = None
+            dist_lines.append(
+                {
+                    "account": acc,
+                    "amount": amt,
+                    "description": str(d.get("description") or "").strip()[:500],
+                    "cost_center": str(d.get("cost_center") or "").strip()[:64],
+                    "segment": seg,
+                }
+            )
+        if not dist_lines:
+            if bank_account is None:
+                raise ValidationError("Select at least one bank account to deposit into.")
+            dist_lines = [
+                {
+                    "account": bank_account,
+                    "amount": total,
+                    "description": "",
+                    "cost_center": "",
+                    "segment": None,
+                }
+            ]
+        if bank_account is None:
+            bank_account = dist_lines[0]["account"]
+        dist_total = sum((l["amount"] for l in dist_lines), Decimal("0.00"))
+        if dist_total != total:
+            raise ValidationError(
+                f"Distribution total ({dist_total}) must equal the deposit "
+                f"total ({total})."
+            )
+        for line in dist_lines:
+            for coh in credits:
+                if line["account"].pk == coh.pk:
+                    raise ValidationError(
+                        f"Deposit account cannot be the same as the Cash on Hand "
+                        f"account {coh.code}."
+                    )
+            if not line["description"]:
+                line["description"] = f"Deposit {deposit_no}" if deposit_no else "Bank deposit"
+        dist_lines.sort(key=lambda l: l["account"].pk)
 
         if deposit_no is None:
             deposit_no = DocumentSequence.next_number(
@@ -715,14 +788,28 @@ class DepositService:
                 approved_by=user,
                 approved_at=timezone.now(),
             )
-            JournalEntryLine.objects.create(
-                entry=entry,
-                line_no=1,
-                account=bank_account,
-                debit=total,
-                description=f"Deposit {deposit_no}",
-            )
-            for i, (coh, amount) in enumerate(credits.items(), start=2):
+            j = 1
+            for dist in dist_lines:
+                desc = dist["description"] or f"Deposit {deposit_no}"
+                JournalEntryLine.objects.create(
+                    entry=entry,
+                    line_no=j,
+                    account=dist["account"],
+                    debit=dist["amount"],
+                    description=desc,
+                    cost_center=dist["cost_center"],
+                )
+                DepositLine.objects.create(
+                    deposit=deposit,
+                    line_no=j,
+                    account=dist["account"],
+                    segment=dist["segment"],
+                    cost_center=dist["cost_center"],
+                    description=desc,
+                    debit=dist["amount"],
+                )
+                j += 1
+            for i, (coh, amount) in enumerate(credits.items(), start=j):
                 JournalEntryLine.objects.create(
                     entry=entry,
                     line_no=i,

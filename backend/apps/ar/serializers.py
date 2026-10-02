@@ -7,6 +7,7 @@ from .models import (
     ARInvoiceLine,
     Customer,
     Deposit,
+    DepositLine,
     PriceSnapshot,
 )
 
@@ -92,11 +93,26 @@ class AcknowledgmentReceiptSerializer(serializers.ModelSerializer):
         )
 
 
+class DepositLineSerializer(serializers.ModelSerializer):
+    account_code = serializers.CharField(source="account.code", read_only=True)
+    account_name = serializers.CharField(source="account.name", read_only=True)
+    segment_code = serializers.CharField(source="segment.code", read_only=True)
+
+    class Meta:
+        model = DepositLine
+        fields = (
+            "id", "line_no", "account", "account_code", "account_name",
+            "segment", "segment_code", "cost_center", "description", "debit",
+        )
+
+
 class DepositSerializer(serializers.ModelSerializer):
+    lines = DepositLineSerializer(many=True, read_only=True)
+
     class Meta:
         model = Deposit
         fields = (
             "id", "bank_account", "transaction_date", "deposit_no", "amount",
-            "reference", "attachment", "journal_entry",
+            "reference", "attachment", "journal_entry", "lines",
         )
-        read_only_fields = ("deposit_no", "journal_entry")
+        read_only_fields = ("deposit_no", "journal_entry", "lines")

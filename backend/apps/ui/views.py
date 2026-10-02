@@ -2590,20 +2590,34 @@ def si_print(request, pk: int):
 def receipt_deposit(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
     from apps.ar.services import DepositService
-    from apps.foundation.models import Account
 
     receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
-    bank_account = Account.objects.get(pk=request.POST.get("bank_account")) if request.method == "POST" else None
 
     if request.method == "POST":
         try:
-            # For now, create deposit with just this receipt; can be extended to multi-select
+            # Read distribution lines from the grid (list-of-dicts via POST.getlist).
+            # Blank rows are skipped; the service validates the rest.
+            raw_accounts = request.POST.getlist("distribution_account")
+            raw_amounts = request.POST.getlist("distribution_amount")
+            raw_descs = request.POST.getlist("distribution_description")
+            raw_centers = request.POST.getlist("distribution_cost_center")
+            raw_segs = request.POST.getlist("distribution_segment")
+            dist = []
+            for i, acct_id in enumerate(raw_accounts):
+                dist.append({
+                    "account": (acct_id or "").strip(),
+                    "amount": (raw_amounts[i] if i < len(raw_amounts) else "").strip(),
+                    "description": (raw_descs[i] if i < len(raw_descs) else "").strip(),
+                    "cost_center": (raw_centers[i] if i < len(raw_centers) else "").strip(),
+                    "segment_id": (raw_segs[i] if i < len(raw_segs) else "").strip() or None,
+                })
             deposit = DepositService.record_deposit(
                 receipts=[receipt],
-                bank_account=bank_account,
+                bank_account=None,
                 transaction_date=_parse_date(request.POST.get("transaction_date")),
                 reference=request.POST.get("reference", ""),
                 user=request.user,
+                distribution=dist,
             )
             messages.success(request, f"Deposit {deposit.deposit_no} recorded and posted to GL.")
         except Exception as exc:
@@ -2611,6 +2625,8 @@ def receipt_deposit(request, pk: int):
         return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
     # GET: show deposit form with the receipt and available bank accounts
+    from apps.foundation.models import CostCenter, Segment
+
     banks = Account.objects.filter(is_postable=True).order_by("code")
     return render(
         request,
@@ -2618,6 +2634,8 @@ def receipt_deposit(request, pk: int):
         {
             "receipt": receipt,
             "banks": banks,
+            "segments": Segment.objects.order_by("code"),
+            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
             "back_href": reverse("ui:receipt_detail", kwargs={"pk": receipt.pk}),
         },
     )
@@ -5037,6 +5055,10 @@ def pcf_replenishment_print(request, pk):
         from apps.core.approvals import signatory_name
         return signatory_name(user)
 
+    def _role_assignee(role):
+        from apps.core.approvals import role_assignee
+        return role_assignee(role)
+
     replen = get_object_or_404(
         PCFReplenishment.objects.select_related("fund__custodian", "fund__company", "requested_by"),
         pk=pk,
@@ -5064,7 +5086,7 @@ def pcf_replenishment_print(request, pk):
     signatories = {
         "prepared": _signatory_name(replen.requested_by) if replen.requested_by else "",
         "requested": _signatory_name(custodian) if custodian else replen.fund.fund_code,
-        "checked": _signatory_name(None) if False else _coo_name(),
+        "checked": _role_assignee("head"),
         "approved": _coo_name(),
         "received": replen.payee_name or "—",
     }

@@ -1238,6 +1238,55 @@ class TestReceiptScreen:
         assert "TOTAL" in body
         assert "15,000.00" in body
 
+    def test_receipt_deposit_multi_bank_grid(self, client, company, segment, accounts, fiscal_period, role_users):
+        from decimal import Decimal
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.foundation.models import Account
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        bank2 = Account.objects.create(
+            code="10020", name="Cash in Bank MBTC", account_type="asset",
+            segment="ALL", is_postable=True,
+        )
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        resp = self._post_grid(client, customer, accounts, segment)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+
+        # GET renders the bank allocation grid (theme tokens only).
+        body = client.get(f"/ar/receipts/{receipt.pk}/deposit/").content.decode()
+        assert "Bank Allocation" in body
+        assert "distribution_account" in body
+
+        # POST a two-bank split of the 15,000.00 receipt.
+        resp = client.post(f"/ar/receipts/{receipt.pk}/deposit/", {
+            "transaction_date": "2026-01-20",
+            "reference": "slip-1",
+            "distribution_account": [accounts["10110"].id, bank2.id],
+            "distribution_segment": [segment.id, segment.id],
+            "distribution_cost_center": ["", ""],
+            "distribution_description": ["BDO split", "MBTC split"],
+            "distribution_amount": ["10000.00", "5000.00"],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.deposit_id is not None
+        deposit = receipt.deposit
+        assert deposit.amount == Decimal("15000.00")
+        assert deposit.lines.count() == 2
+        assert deposit.lines.get(account_id=bank2.id).debit == Decimal("5000.00")
+        je = deposit.journal_entry
+        assert je.total_debit == Decimal("15000.00") == je.total_credit
+        assert je.lines.filter(debit__gt=0).count() == 2
+        assert je.lines.get(account_id=bank2.id).debit == Decimal("5000.00")
+
     def test_receipt_cash_segment_syncs_header(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
         from apps.foundation.models import Segment as SegmentModel

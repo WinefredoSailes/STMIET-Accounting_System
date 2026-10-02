@@ -8,6 +8,7 @@ from .models import (
     CashShortExcess,
     Customer,
     Deposit,
+    DepositLine,
     PriceSnapshot,
 )
 
@@ -51,10 +52,16 @@ class AcknowledgmentReceiptAdmin(admin.ModelAdmin):
     inlines = [AcknowledgmentReceiptLineInline]
 
 
+class DepositLineInline(admin.TabularInline):
+    model = DepositLine
+    extra = 0
+
+
 @admin.register(Deposit)
 class DepositAdmin(admin.ModelAdmin):
     list_display = ("deposit_no", "transaction_date", "bank_account", "amount", "reference")
     search_fields = ("reference", "deposit_no")
+    inlines = [DepositLineInline]
 
 
 @admin.register(CashShortExcess)

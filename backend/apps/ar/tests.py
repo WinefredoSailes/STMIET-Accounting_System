@@ -18,8 +18,11 @@ from apps.ar.models import (
     ARInvoiceLine,
     Customer,
     Deposit,
+    DepositLine,
+    ReceiptStatus,
 )
-from apps.ar.services import CollectionService, CycleLedgerService
+from apps.ar.services import CollectionService, CycleLedgerService, DepositService
+from apps.foundation.models import Account
 from apps.core.exceptions import ValidationError
 from apps.foundation.calendar import cycle_range_for
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -168,15 +171,128 @@ class TestCollectionPosting:
             )
 
 
-class TestDepositNoJe:
-    def test_deposit_is_state_change_only(self, customer, bank_account, segment):
-        d = Deposit.objects.create(
-            bank_account=bank_account, transaction_date=date(2026, 1, 15),
-            amount=Decimal("500.00"), reference="D1",
+class TestDepositMultiBank:
+    """Multi-bank distribution + JE posting for deposits."""
+
+    def test_deposit_with_two_banks_posts_correct_je(self, customer, segment, role_users, accounts):
+        seg = segment
+        # Use existing 10110 (BDO Checking) as bank1; create second bank 10020.
+        bank1 = accounts["10110"]
+        bank2 = Account.objects.create(code="10020", name="Cash in Bank MBTC", is_postable=True)
+
+        user = role_users["staff"]
+        head = role_users["head"]
+
+        receipt = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 15),
+            amount="115000.00",
+            cash_account=bank1,
+            segment=seg,
+            created_by=user,
         )
-        d.refresh_from_db()
-        # No journal entry is created by a deposit (ADR-016).
-        assert JournalEntry.objects.filter(source_doc_type="DEP").count() == 0
+        assert receipt.status == ReceiptStatus.DRAFT
+        # Post it first
+        CollectionService.submit(receipt, user=user)
+        CollectionService.approve(receipt, user=head)
+        receipt.refresh_from_db()
+        assert receipt.status == ReceiptStatus.POSTED
+        assert receipt.journal_entry_id is not None
+
+        # Deposit across two banks.
+        dist = [
+            {"account": bank1.pk, "amount": "100000.00"},
+            {"account": bank2.pk, "amount": "15000.00"},
+        ]
+        dep = DepositService.record_deposit(
+            receipts=[receipt],
+            bank_account=bank1,
+            transaction_date=date(2026, 1, 20),
+            user=head,
+            distribution=dist,
+        )
+        assert dep.amount == Decimal("115000.00")
+        assert dep.lines.count() == 2
+        line1 = dep.lines.filter(line_no=1).first()
+        line2 = dep.lines.filter(line_no=2).first()
+        assert line1.account_id == bank1.pk
+        assert line1.debit == Decimal("100000.00")
+        assert line2.account_id == bank2.pk
+        assert line2.debit == Decimal("15000.00")
+
+        je = dep.journal_entry
+        assert je.source_doc_type == "DEP"
+        assert je.total_debit == Decimal("115000.00")
+        assert je.total_credit == Decimal("115000.00")
+        assert je.is_posted
+        # Two debit lines (one per bank) + one credit line (COH).
+        debit_lines = list(je.lines.filter(debit__gt=0))
+        credit_lines = list(je.lines.filter(credit__gt=0))
+        assert len(debit_lines) == 2
+        assert sum(l.debit for l in debit_lines) == Decimal("115000.00")
+        assert len(credit_lines) == 1
+        assert credit_lines[0].credit == Decimal("115000.00")
+
+    def test_deposit_distribution_mismatch_raises(self, customer, segment, role_users, accounts):
+        seg = segment
+        bank1 = accounts["10110"]
+        _ = Account.objects.create(code="10020", name="Cash in Bank MBTC", is_postable=True)
+
+        user = role_users["staff"]
+        head = role_users["head"]
+
+        receipt = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 15),
+            amount="10000.00",
+            cash_account=bank1,
+            segment=seg,
+            created_by=user,
+        )
+        CollectionService.submit(receipt, user=user)
+        CollectionService.approve(receipt, user=head)
+        receipt.refresh_from_db()
+        assert receipt.status == ReceiptStatus.POSTED
+
+        # Sums to less than total -> should raise ValidationError.
+        with pytest.raises(ValidationError):
+            DepositService.record_deposit(
+                receipts=[receipt],
+                bank_account=bank1,
+                transaction_date=date(2026, 1, 20),
+                user=head,
+                distribution=[{"account": bank1.pk, "amount": "9000.00"}],
+            )
+
+    def test_deposit_single_bank_backwards_compat(self, customer, segment, role_users, accounts):
+        seg = segment
+        bank1 = accounts["10110"]
+
+        user = role_users["staff"]
+        head = role_users["head"]
+
+        receipt = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 15),
+            amount="5000.00",
+            cash_account=bank1,
+            segment=seg,
+            created_by=user,
+        )
+        CollectionService.submit(receipt, user=user)
+        CollectionService.approve(receipt, user=head)
+        receipt.refresh_from_db()
+        assert receipt.status == ReceiptStatus.POSTED
+
+        # No distribution -> falls back to single bank.
+        dep = DepositService.record_deposit(
+            receipts=[receipt],
+            bank_account=bank1,
+            transaction_date=date(2026, 1, 20),
+            user=head,
+        )
+        assert dep.lines.count() == 1
+        assert dep.lines.first().debit == Decimal("5000.00")
 
 
 class TestCycleLedger:

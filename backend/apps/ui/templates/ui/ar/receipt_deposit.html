@@ -1,5 +1,5 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}Deposit — {{ receipt.receipt_no }}{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -18,23 +18,82 @@
 
     <form method="post" class="space-y-4">
       {% csrf_token %}
-      <div>
-        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_bank_account">Bank account (Cr)</label>
-        <select name="bank_account" id="id_bank_account" required data-searchable data-search-placeholder="Type account code or name…" data-search-url="{% url 'ui:account_options' %}?scope=bank" data-search-value="id" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-          <option value="">— select —</option>
-          {% for a in banks %}
-          <option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
+
       <div>
         <label class="block text-sm font-medium text-surface-700 mb-1" for="id_transaction_date">Deposit date</label>
-        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ receipt.transaction_date|date:"Y-m-d" }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ receipt.transaction_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-surface-700 mb-1" for="id_reference">Reference <span class="text-surface-400">(optional)</span></label>
         <input type="text" name="reference" id="id_reference" maxlength="64" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
+
+      <div>
+        <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Bank Allocation</div>
+        <div class="rounded-xl border border-surface-200 bg-white shadow-sm overflow-x-auto">
+          <table class="line-table w-full text-sm" style="min-width: 1150px;">
+            <colgroup>
+              <col style="width:40px"><!-- # -->
+              <col style="width:270px"><!-- Account (GL) -->
+              <col style="width:90px"><!-- Segment -->
+              <col style="width:90px"><!-- Cost Center -->
+              <col style="width:310px"><!-- Description -->
+              <col style="width:170px"><!-- Debit -->
+              <col style="width:36px"><!-- remove -->
+            </colgroup>
+            <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+              <tr>
+                <th class="px-2 py-2">#</th>
+                <th class="px-2 py-2">Account (GL)</th>
+                <th class="px-2 py-2">Segment</th>
+                <th class="px-2 py-2">Cost Center</th>
+                <th class="px-2 py-2">Description</th>
+                <th class="px-2 py-2 text-right">Debit</th>
+                <th class="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody id="deposit-lines-body" class="divide-y divide-surface-100">
+              <tr class="deposit-dist-row">
+                <td class="px-2 py-2 text-surface-400 line-no">1</td>
+                <td class="px-2 py-2 overflow-hidden">
+                  <select name="distribution_account" data-searchable data-search-compact data-search-placeholder="Cash / bank receiving…" data-search-url="{% url 'ui:account_options' %}?scope=cash" data-search-value="id" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                    <option value="">— select —</option>
+                    {% for a in banks %}
+                      <option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="px-2 py-2 overflow-hidden">
+                  <select name="distribution_segment" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+                    {% for seg in segments %}<option value="{{ seg.id }}" {% if receipt.segment_id == seg.id %}selected{% endif %}>{{ seg.code }}</option>{% endfor %}
+                  </select>
+                </td>
+                <td class="px-2 py-2 overflow-hidden"><input type="text" name="distribution_cost_center" maxlength="64" list="cost_center_options" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+                <td class="px-2 py-2 overflow-hidden"><textarea name="distribution_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-surface-300 px-2 py-1.5 text-xs leading-5">Bank deposit</textarea></td>
+                <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="distribution_amount" value="{{ receipt.amount|money }}" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+                <td class="px-2 py-2"><button type="button" data-remove-dist class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
+              </tr>
+            </tbody>
+            <tfoot class="bg-surface-50">
+              <tr class="border-t-2 border-surface-300">
+                <td colspan="5" class="px-2 py-3 text-right text-sm font-bold uppercase tracking-wider text-surface-700">Totals</td>
+                <td id="total-deposit" class="px-2 py-3 text-right text-sm font-bold tabular-nums">0.00</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colspan="7">
+                  <button type="button" id="add-dist" class="rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">+ Add bank</button>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Total equals the receipt amount.</p>
+        <datalist id="cost_center_options">
+          {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
+        </datalist>
+      </div>
+
       <div class="flex justify-end gap-3 pt-2">
         <a href="{% url 'ui:receipt_detail' receipt.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</a>
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Record Deposit</button>
@@ -42,4 +101,79 @@
     </form>
   </div>
 </div>
+
+<template id="deposit-dist-template">
+  <tr class="deposit-dist-row">
+    <td class="px-2 py-2 text-surface-400 line-no"></td>
+    <td class="px-2 py-2 overflow-hidden">
+      <select name="distribution_account" data-searchable data-search-compact data-search-placeholder="Cash / bank receiving…" data-search-url="{% url 'ui:account_options' %}?scope=cash" data-search-value="id" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+        <option value="">— select —</option>
+        {% for a in banks %}<option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>{% endfor %}
+      </select>
+    </td>
+    <td class="px-2 py-2 overflow-hidden">
+      <select name="distribution_segment" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs">
+        {% for seg in segments %}<option value="{{ seg.id }}">{{ seg.code }}</option>{% endfor %}
+      </select>
+    </td>
+    <td class="px-2 py-2 overflow-hidden"><input type="text" name="distribution_cost_center" maxlength="64" list="cost_center_options" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+    <td class="px-2 py-2 overflow-hidden"><textarea name="distribution_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-surface-300 px-2 py-1.5 text-xs leading-5"></textarea></td>
+    <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="distribution_amount" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+    <td class="px-2 py-2"><button type="button" data-remove-dist class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
+  </tr>
+</template>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var tbody = document.getElementById('deposit-lines-body');
+    var tpl = document.getElementById('deposit-dist-template');
+    var fmt = window.AmountFormat ? window.AmountFormat.fmt : function (n) { return (n || 0).toFixed(2); };
+    var parse = window.AmountFormat ? window.AmountFormat.parse : function (v) { return parseFloat(String(v || '').replace(/,/g, '')) || 0; };
+
+    function renumber() {
+      if (!tbody) return;
+      tbody.querySelectorAll('tr.deposit-dist-row').forEach(function (r, i) {
+        var no = r.querySelector('.line-no');
+        if (no) no.textContent = String(i + 1);
+      });
+    }
+    function recalc() {
+      if (!tbody) return;
+      var total = 0;
+      tbody.querySelectorAll('tr.deposit-dist-row').forEach(function (r) {
+        var inp = r.querySelector('input[name="distribution_amount"]');
+        if (inp) total += parse(inp.value);
+      });
+      var el = document.getElementById('total-deposit');
+      if (el) el.textContent = fmt(total);
+      var hint = document.getElementById('balance-hint');
+      if (hint) {
+        hint.textContent = 'Total debited to banks: ₱' + fmt(total);
+      }
+    }
+    var add = document.getElementById('add-dist');
+    if (add) add.addEventListener('click', function () {
+      if (!tbody || !tpl) return;
+      tbody.appendChild(tpl.content.cloneNode(true));
+      renumber();
+      recalc();
+    });
+    if (tbody) {
+      tbody.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-remove-dist]');
+        if (!btn) return;
+        var row = btn.closest('tr.deposit-dist-row');
+        if (row) row.remove();
+        renumber();
+        recalc();
+      });
+      tbody.addEventListener('input', recalc);
+    }
+    renumber();
+    recalc();
+  })();
+</script>
 {% endblock %}
