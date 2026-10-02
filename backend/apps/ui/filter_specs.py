@@ -116,6 +116,14 @@ def receipt_list_filter_spec():
             ),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
+            FilterField(
+                "date_from", "Date From", kind="date", lookup="gte",
+                placeholder="From",
+            ),
+            FilterField(
+                "date_to", "Date To", kind="date", lookup="lte",
+                placeholder="To",
+            ),
         ]
     )
 
