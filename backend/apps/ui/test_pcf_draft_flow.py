@@ -505,9 +505,9 @@ class TestPcfToCheckVoucherFlow:
         lines = list(entry.lines.all().order_by("line_no"))
         assert len(lines) == 2, f"Expected 2 lines (no WHT), got {len(lines)}"
 
-        # Line 1: Dr Fund GL
+        # Line 1: Dr A/Payable-Other Current (21100)
         assert lines[0].debit > 0
-        assert lines[0].account_id == post_pc_fund.gl_account_id
+        assert lines[0].account.code == "21100"
 
         # Line 2: Cr Bank Account
         assert lines[1].credit > 0

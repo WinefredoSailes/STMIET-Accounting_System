@@ -62,6 +62,7 @@ def role_users(db):
 def accounts(db):
     """Canonical 5-digit COA slice needed by posting tests (ADR-003)."""
     rows = [
+        ("10000", "Petty Cash Fund", "asset"),
         ("10010", "Cash on Hand", "asset"),
         ("10110", "BDO Checking", "asset"),
         ("12020", "A/Receivables - Other Current-DHPP", "asset"),
@@ -70,6 +71,7 @@ def accounts(db):
         ("20000", "A/Payables - Current - DHPP", "liability"),
         ("21000", "Unearned Revenue - DHPP", "liability"),
         ("21010", "Accounts Payable-Trade", "liability"),
+        ("21100", "A/Payables - Other Current", "liability"),
         ("41010", "Sales-Retail", "revenue"),
         ("61100", "Cost of Sales", "expense"),
         ("64110", "Withholding Tax-Expanded_DHPP", "liability"),

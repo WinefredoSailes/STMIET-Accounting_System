@@ -413,7 +413,7 @@ class PCFService:
     @classmethod
     @transaction.atomic
     def _post_je(cls, replen: PCFReplenishment, user=None, *, segment=None) -> None:
-        """Dr Expense lines | Cr Cash, then mark posted (shared JE builder)."""
+        """Dr Expense lines | Cr A/Payable-Other Current (21100 or fund override), then mark posted."""
         from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
         from apps.posting.services import PostingService
 
@@ -424,7 +424,7 @@ class PCFService:
             segment=seg,
             transaction_date=replen.request_date,
             status=PostingStatus.DRAFT,
-            description=f"PCF replenishment {replen.fund}",
+            description=f"PCF {replen.fund.fund_code} {replen.voucher_no} replenishment — Cr {replen.fund.get_payable_account().code} AP-Other Current, custodian {replen.fund.custodian_name or replen.fund.name}",
             source_doc_type="PCF",
             source_doc_no=str(replen.id),
             created_by=user,
@@ -463,12 +463,13 @@ class PCFService:
             raise ValidationError(
                 "A petty cash replenishment must net-debit at least the cash out."
             )
+        payable_account = replen.fund.get_payable_account()
         JournalEntryLine.objects.create(
             entry=entry,
             line_no=line_no,
-            account=replen.fund.gl_account,
+            account=payable_account,
             credit=cash_credit,
-            description=f"PCF {replen.fund.fund_code} replenishment",
+            description=f"PCF {replen.fund.fund_code} {replen.voucher_no} replenishment — Cr {payable_account.code} AP-Other Current",
         )
         entry.recalc_totals()
         PostingService.post(entry, user=user)

@@ -182,6 +182,14 @@ class PettyCashFund(SoftDeleteMixin, AuditableModel):
     gl_account = models.ForeignKey(
         "foundation.Account", on_delete=models.PROTECT, related_name="pcf_funds"
     )
+    payable_account = models.ForeignKey(
+        "foundation.Account",
+        on_delete=models.PROTECT,
+        related_name="pcf_funds_payable",
+        null=True,
+        blank=True,
+        help_text="Payable credit account for PCF replenishment JEs (null = default 21100)",
+    )
     company = models.ForeignKey("foundation.Company", on_delete=models.PROTECT, related_name="pcf_funds")
     is_active = models.BooleanField(default=True)
 
@@ -190,6 +198,13 @@ class PettyCashFund(SoftDeleteMixin, AuditableModel):
 
     def __str__(self):
         return f"{self.name or self.fund_code} ({self.imprest_amount})"
+
+    def get_payable_account(self):
+        """Return the payable account for this fund (override or default 21100)."""
+        if self.payable_account_id:
+            return self.payable_account
+        from apps.foundation.models import Account
+        return Account.objects.get(code="21100")
 
 
 class PCFReplenishment(AuditableModel):

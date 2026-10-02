@@ -59,9 +59,7 @@ def pcf_fund(db, segment, accounts):
     """Create a PCF fund with GL account."""
     from apps.foundation.models import Account
 
-    acc = Account.objects.create(
-        code="10000", name="Petty Cash Fund-DHPP", account_type="asset", segment="DHPP"
-    )
+    acc = accounts["10000"]
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -185,7 +183,7 @@ class TestPCF:
         with pytest.raises(ValidationError):
             PCFService.submit_replenishment(replen, user=user)
 
-    def test_replenishment_creates_je(self, pcf_fund):
+    def test_replenishment_creates_je(self, pcf_fund, accounts):
         replen = PCFService.request_replenishment(
             pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
         )
@@ -198,7 +196,9 @@ class TestPCF:
         assert je.is_balanced
         lines = {l.line_no: l for l in je.lines.all()}
         assert lines[1].debit == Decimal("10000.00")  # Dr Expense
-        assert lines[2].credit == Decimal("10000.00")  # Cr PCF
+        # Credit is now A/Payable-Other Current (21100)
+        assert lines[2].credit == Decimal("10000.00")
+        assert lines[2].account.code == "21100"
 
     def test_approve_creates_conso_batch(self, pcf_fund):
         """ADR-038 §7c: approval auto-creates a CONSO batch entry."""

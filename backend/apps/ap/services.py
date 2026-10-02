@@ -1560,28 +1560,35 @@ class CVPaymentService:
         company = seg.company
 
         if is_pcf:
-            # PCF replenishment settlement: Dr Petty Cash Fund GL | Cr Bank Account.
-            # No withholding tax — internal float management.
+            # PCF replenishment settlement: Dr A/Payable-Other Current (21100 or fund override) | Cr Bank.
+            # Withholding tax leg added when tax > 0 (mirrors RFP branch).
+            payable_account = rfp.fund.get_payable_account()
             entry = JournalEntry.objects.create(
                 entry_no=cv_number,
                 company=company,
                 segment=seg,
                 transaction_date=cv_date,
                 status=PostingStatus.DRAFT,
-                description=f"Check voucher {cv_number} PCP {rfp.voucher_no}",
+                description=f"Check voucher {cv_number} PCF {rfp.voucher_no} — Dr {payable_account.code} AP-Other Current",
                 source_doc_type="CV",
                 source_doc_no=cv_number,
                 created_by=user,
             )
             JournalEntryLine.objects.create(
                 entry=entry, line_no=1,
-                account=rfp.fund.gl_account, debit=gross,
-                description=f"PCF {rfp.voucher_no} replenishment",
+                account=payable_account, debit=gross,
+                description=f"PCF {rfp.voucher_no} replenishment — Dr {payable_account.code} AP-Other Current",
             )
             JournalEntryLine.objects.create(
                 entry=entry, line_no=2, account=bank_account, credit=net,
                 description=f"Cash - {bank_account.code}",
             )
+            if tax > 0:
+                JournalEntryLine.objects.create(
+                    entry=entry, line_no=3,
+                    account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
+                    credit=tax, description="Withholding tax (expanded)",
+                )
             # Wire back the CV reference so the PCF model knows it was settled.
             rfp.cv = cv
             rfp.save(update_fields=["cv", "updated_at"])
@@ -1718,7 +1725,8 @@ class CVPaymentService:
 
         Only the issuer may revise, and only while the CV is `rejected`. The
         corrected check re-enters the chain at "created" (fresh approval); the
-        JE is rebuilt from the corrected figures as a DRAFT.
+        JE is rebuilt from the corrected figures as a DRAFT. Supports both
+        RFP-sourced and PCF-sourced CVs.
         """
         if cv.status != "rejected":
             raise ValidationError("Only rejected CVs can be revised and resubmitted.")
@@ -1732,49 +1740,90 @@ class CVPaymentService:
         net = gross - tax
         if net < 0:
             raise ValidationError("Net amount cannot be negative.")
-        if cv.rfp_id and cv.rfp.status != "posted":
-            raise ValidationError(
-                f"RFP {cv.rfp.ap_number} must be posted through a CONSO batch before "
-                "this check voucher can be reissued."
-            )
-        seg = cv.rfp.segment if cv.rfp_id else cv.payee.default_segment
-        if seg is None:
-            raise ValidationError("CV requires a segment: link an RFP or set the supplier's default segment.")
-        company = seg.company
 
-        cv.gross_amount = gross
-        cv.withheld_tax = tax
-        cv.net_amount = net
-        cv.check_no = check_no
-        cv.cv_date = cv_date or cv.cv_date
-        if bank_account is not None:
-            cv.bank_account = bank_account
-        entry = JournalEntry.objects.create(
-            entry_no=cv.cv_number,
-            company=company,
-            segment=seg,
-            transaction_date=cv.cv_date,
-            status=PostingStatus.DRAFT,
-            description=f"Check voucher {cv.cv_number} {cv.payee.name}",
-            source_doc_type="CV",
-            source_doc_no=cv.cv_number,
-            created_by=user,
-        )
-        JournalEntryLine.objects.create(
-            entry=entry, line_no=1,
-            account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP),
-            debit=gross, description=f"AP - {cv.payee.name}",
-        )
-        JournalEntryLine.objects.create(
-            entry=entry, line_no=2, account=cv.bank_account, credit=net,
-            description=f"Cash - {cv.bank_account.code}",
-        )
-        if tax > 0:
-            JournalEntryLine.objects.create(
-                entry=entry, line_no=3,
-                account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
-                credit=tax, description="Withholding tax (expanded)",
+        is_pcf = hasattr(cv, "pcf_cvs") and cv.pcf_cvs.exists()
+
+        if is_pcf:
+            # PCF-sourced CV
+            rfp = cv.pcf_cvs.first()
+            if rfp.status != "posted":
+                raise ValidationError(
+                    f"PCF {rfp.voucher_no} must be posted before this check voucher "
+                    "can be reissued."
+                )
+            seg = rfp.fund.company.segments.order_by("code").first()
+            company = seg.company
+            payable_account = rfp.fund.get_payable_account()
+            entry = JournalEntry.objects.create(
+                entry_no=cv.cv_number,
+                company=company,
+                segment=seg,
+                transaction_date=cv.cv_date,
+                status=PostingStatus.DRAFT,
+                description=f"Check voucher {cv.cv_number} PCF {rfp.voucher_no} — Dr {payable_account.code} AP-Other Current",
+                source_doc_type="CV",
+                source_doc_no=cv.cv_number,
+                created_by=user,
             )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=1,
+                account=payable_account, debit=gross,
+                description=f"PCF {rfp.voucher_no} replenishment — Dr {payable_account.code} AP-Other Current",
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=2, account=cv.bank_account, credit=net,
+                description=f"Cash - {cv.bank_account.code}",
+            )
+            if tax > 0:
+                JournalEntryLine.objects.create(
+                    entry=entry, line_no=3,
+                    account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
+                    credit=tax, description="Withholding tax (expanded)",
+                )
+        else:
+            # RFP-sourced CV (existing logic)
+            if cv.rfp_id and cv.rfp.status != "posted":
+                raise ValidationError(
+                    f"RFP {cv.rfp.ap_number} must be posted through a CONSO batch before "
+                    "this check voucher can be reissued."
+                )
+            seg = cv.rfp.segment if cv.rfp_id else cv.payee.default_segment
+            if seg is None:
+                raise ValidationError("CV requires a segment: link an RFP or set the supplier's default segment.")
+            company = seg.company
+            cv.gross_amount = gross
+            cv.withheld_tax = tax
+            cv.net_amount = net
+            cv.check_no = check_no
+            cv.cv_date = cv_date or cv.cv_date
+            if bank_account is not None:
+                cv.bank_account = bank_account
+            entry = JournalEntry.objects.create(
+                entry_no=cv.cv_number,
+                company=company,
+                segment=seg,
+                transaction_date=cv.cv_date,
+                status=PostingStatus.DRAFT,
+                description=f"Check voucher {cv.cv_number} {cv.payee.name}",
+                source_doc_type="CV",
+                source_doc_no=cv.cv_number,
+                created_by=user,
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=1,
+                account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP),
+                debit=gross, description=f"AP - {cv.payee.name}",
+            )
+            JournalEntryLine.objects.create(
+                entry=entry, line_no=2, account=cv.bank_account, credit=net,
+                description=f"Cash - {cv.bank_account.code}",
+            )
+            if tax > 0:
+                JournalEntryLine.objects.create(
+                    entry=entry, line_no=3,
+                    account=resolve_segment_account(seg, SegmentAccountMap.ROLE_AP_WHT),
+                    credit=tax, description="Withholding tax (expanded)",
+                )
         entry.recalc_totals()
         cv.journal_entry = entry
         cv.status = "created"
