@@ -319,6 +319,112 @@ class TestPCF:
         with pytest.raises(ValidationError):
             PCFService.revise_replenishment(replen, user=user)
 
+    def test_conso_reject_member_unassigns_replenishment(self, pcf_fund, user):
+        """A batched (approved) replenishment can be rejected from its CONSO
+        batch: it returns to the custodian and leaves the batch. The
+        dedicated one-voucher batch retires once emptied."""
+        from django.contrib.auth import get_user_model
+
+        from apps.ap.models import CONSOBatch
+        from apps.ap.services import CONSOService
+        from apps.foundation.models import UserProfile
+
+        head = get_user_model().objects.create_user(username="pcfhead", password="x")
+        UserProfile.objects.create(user=head, approval_role="head")
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.submit_replenishment(replen, user=user)
+        PCFService.approve_replenishment(replen, user=head)
+        batch = replen.conso
+        assert batch is not None
+
+        batch = CONSOService.reject_member(
+            batch, replen=replen, user=head, note="Receipts don't add up"
+        )
+
+        replen.refresh_from_db()
+        assert replen.status == "rejected"
+        assert replen.conso_id is None
+        assert replen.approved_by_id is None
+        assert replen.approved_at is None
+        assert replen.rejected_by_id == head.id
+        assert replen.rejection_note == "Receipts don't add up"
+        assert batch.is_active is False
+        assert CONSOBatch.objects.count() == 0
+        # the custodian can revise and the head can approve again (new batch)
+        PCFService.revise_replenishment(replen, user=user)
+        PCFService.approve_replenishment(replen, user=head)
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+        assert replen.conso_id is not None
+
+    def test_conso_reject_replenishment_requires_head(self, pcf_fund, user):
+        from apps.ap.services import CONSOService
+
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.submit_replenishment(replen, user=user)
+        PCFService.approve_replenishment(replen, user=user)
+        with pytest.raises(ValidationError):
+            CONSOService.reject_member(replen.conso, replen=replen, user=user, note="Nope")
+        replen.refresh_from_db()
+        assert replen.status == "approved"
+        assert replen.conso_id is not None
+
+    def test_conso_reject_rfp_keeps_pcf_member(self, pcf_fund, user, segment, accounts):
+        """Mixed batch, both sides: the RFP is rejected out while the PCF
+        replenishment stays batched and posts with the batch — neither side
+        floats (rejected RFP is revisable, kept PCF gets its JE)."""
+        from datetime import date
+        from decimal import Decimal
+
+        from django.contrib.auth import get_user_model
+
+        from apps.ap.models import Supplier
+        from apps.ap.services import CONSOService, RFPService
+        from apps.foundation.models import UserProfile
+
+        head = get_user_model().objects.create_user(username="mixhead", password="x")
+        UserProfile.objects.create(user=head, approval_role="head")
+        supplier = Supplier.objects.create(code="S901", name="Mixed Supplier", default_segment=segment)
+        rfp = RFPService.create_rfp(
+            ap_number="A90101", rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "15000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "15000.00"},
+            ],
+            user=user,
+        )
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        replen = PCFService.request_replenishment(
+            pcf_fund, [{"account_code": "61100", "amount": "10000.00", "description": "Supplies"}],
+        )
+        PCFService.submit_replenishment(replen, user=user)
+        PCFService.approve_replenishment(replen, user=head)
+        batch = replen.conso
+        rfp.conso = batch
+        rfp.save(update_fields=["conso", "updated_at"])
+        batch.total_amount = Decimal("25000.00")
+        batch.save(update_fields=["total_amount", "updated_at"])
+
+        CONSOService.reject_member(batch, rfp=rfp, user=head, note="Wrong charge account")
+        CONSOService.post_batch(batch, user=head)
+
+        rfp.refresh_from_db()
+        replen.refresh_from_db()
+        batch.refresh_from_db()
+        assert rfp.status == "rejected"
+        assert rfp.conso_id is None
+        assert batch.status == "posted"
+        assert batch.total_amount == Decimal("10000.00")
+        assert replen.status == "posted"
+        assert replen.journal_entry is not None
+        assert replen.journal_entry.is_posted
+        assert replen.journal_entry.is_balanced
+
 
 class TestTransfers:
     def test_transfer_requests_then_head_approves_and_posts(self, segment, bank_account, accounts):

@@ -171,6 +171,7 @@ urlpatterns = [
     path("ap/conso/export/", views.conso_list_export, name="conso_list_export"),
     path("ap/conso/<int:pk>/add-rfp/", views.conso_add_rfp, name="conso_add_rfp"),
     path("ap/conso/<int:pk>/post/", views.conso_post, name="conso_post"),
+    path("ap/conso/<int:pk>/reject/", views.conso_reject, name="conso_reject"),
     # Billing (Intercompany STPC / Third-Party)
     path("billing/", views.billing_list, name="billing_list"),
     path("billing/new/", views.billing_create, name="billing_create"),

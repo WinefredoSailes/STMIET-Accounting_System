@@ -355,6 +355,30 @@ class CONSOBatchViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(batch).data)
 
+    @action(detail=True, methods=["post"], url_path="reject-member")
+    def reject_member(self, request, pk=None):
+        """Reject one member (rfp_id= or replen_id=) out of this CONSO batch
+        with a mandatory note=; the member returns to its preparer for
+        revision and is unassigned so the rest can still post."""
+        from apps.cash.models import PCFReplenishment
+
+        batch = self.get_object()
+        try:
+            kwargs = {"user": request.user, "note": request.data.get("note", "")}
+            if request.data.get("rfp_id"):
+                kwargs["rfp"] = get_object_or_404(RFPDocument, pk=request.data["rfp_id"])
+            elif request.data.get("replen_id"):
+                kwargs["replen"] = get_object_or_404(PCFReplenishment, pk=request.data["replen_id"])
+            else:
+                return Response(
+                    {"detail": "Pass rfp_id= or replen_id= to reject exactly one member."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            batch = CONSOService.reject_member(batch, **kwargs)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(batch).data)
+
 
 class CheckVoucherViewSet(viewsets.ModelViewSet):
     queryset = CheckVoucher.objects

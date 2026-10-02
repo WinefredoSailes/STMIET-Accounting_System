@@ -1,5 +1,5 @@
 {% extends "ui/base.html" %}
-{% load ui_filters %}
+{% load static ui_filters %}
 {% block title %}CONSO {{ batch.batch_no }}{% endblock %}
 {% block content %}
 <div class="p-6">
@@ -26,6 +26,7 @@
           <th class="px-4 py-3">Particulars</th>
           <th class="px-4 py-3 text-right">Amount</th>
           <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Action</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-surface-100">
@@ -41,6 +42,17 @@
             {% if m.status == 'posted' %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">posted</span>
             {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ m.status }}</span>{% endif %}
           </td>
+          <td class="px-4 py-2 text-xs align-top">
+            {% if batch.status == "open" and m.status != "posted" %}
+            <button type="button" data-toggle-target="#reject-rfp-{{ m.id }}" class="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50">Reject</button>
+            <form method="post" action="{% url 'ui:conso_reject' batch.id %}" id="reject-rfp-{{ m.id }}" class="hidden mt-2 w-64">
+              {% csrf_token %}
+              <input type="hidden" name="rfp" value="{{ m.id }}">
+              <textarea name="note" rows="2" required class="w-full rounded-md border border-surface-300 px-2 py-1 text-xs" placeholder="Why is this being returned? The preparer will see this note before revising."></textarea>
+              <button type="submit" class="mt-1 rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white hover:bg-rose-700">Return RFP to preparer</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
         {% for r in pcf_members %}
@@ -55,10 +67,21 @@
             {% if r.status == 'posted' %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">posted</span>
             {% else %}<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">{{ r.status }}</span>{% endif %}
           </td>
+          <td class="px-4 py-2 text-xs align-top">
+            {% if batch.status == "open" and r.status != "posted" %}
+            <button type="button" data-toggle-target="#reject-pcf-{{ r.id }}" class="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50">Reject</button>
+            <form method="post" action="{% url 'ui:conso_reject' batch.id %}" id="reject-pcf-{{ r.id }}" class="hidden mt-2 w-64">
+              {% csrf_token %}
+              <input type="hidden" name="replen" value="{{ r.id }}">
+              <textarea name="note" rows="2" required class="w-full rounded-md border border-surface-300 px-2 py-1 text-xs" placeholder="Why is this being returned? The custodian will see this note before revising."></textarea>
+              <button type="submit" class="mt-1 rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white hover:bg-rose-700">Return voucher to custodian</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
         {% if not members and not pcf_members %}
-        <tr><td colspan="5" class="px-4 py-8 text-center text-surface-400">No members in this batch yet.</td></tr>
+        <tr><td colspan="6" class="px-4 py-8 text-center text-surface-400">No members in this batch yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -92,4 +115,5 @@
   <p class="mt-4 text-sm text-emerald-700">Batch posted — every member's JE is in the GL (7.3).</p>
   {% endif %}
 </div>
+<script src="{% static 'js/toggle-block.js' %}"></script>
 {% endblock %}

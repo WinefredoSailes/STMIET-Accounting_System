@@ -5478,6 +5478,10 @@ def conso_add_rfp(request, pk):
 
     batch = get_object_or_404(CONSOBatch, pk=pk)
     try:
+        if batch.status != "open":
+            raise ValueError(
+                f"CONSO {batch.batch_no} ('{batch.status}') is not open; members can only join open batches."
+            )
         rfp = RFPDocument.objects.get(pk=request.POST["rfp"])
         if rfp.status not in ("fin_approved", "cnr_approved"):
             raise ValueError("Only finance-approved RFPs can be batched.")
@@ -5486,7 +5490,9 @@ def conso_add_rfp(request, pk):
         rfp.conso = batch
         rfp.save(update_fields=["conso", "updated_at"])
         members = list(batch.rfps.all())
-        batch.total_amount = sum(m.amount for m in members)
+        batch.total_amount = sum((m.amount for m in members), Decimal("0.00")) + sum(
+            (r.amount for r in batch.pcf_replenishments.all()), Decimal("0.00")
+        )
         batch.save(update_fields=["total_amount", "updated_at"])
         messages.success(request, f"RFP {rfp.ap_number} added to {batch.batch_no}.")
     except (ObjectDoesNotExist, ValueError, AccountingError) as exc:
@@ -5505,6 +5511,48 @@ def conso_post(request, pk):
         CONSOService.post_batch(batch, user=request.user)
         messages.success(request, f"CONSO {batch.batch_no} posted — all RFPs in GL.")
     except (AccountingError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:conso_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def conso_reject(request, pk):
+    """The head rejects one member of a CONSO batch (RFP or PCF
+    replenishment) with a note: the member returns to its preparer for
+    revision and is unassigned from the batch so the rest can still post
+    (CONSOService.reject_member — the 7.3 review gate)."""
+    from apps.ap.models import CONSOBatch, RFPDocument
+    from apps.ap.services import CONSOService
+
+    batch = get_object_or_404(CONSOBatch, pk=pk)
+    try:
+        if request.POST.get("rfp"):
+            member = RFPDocument.objects.get(pk=request.POST["rfp"])
+            batch = CONSOService.reject_member(
+                batch, rfp=member, user=request.user, note=request.POST.get("note", "")
+            )
+            label = f"RFP {member.ap_number}"
+        elif request.POST.get("replen"):
+            from apps.cash.models import PCFReplenishment
+
+            member = PCFReplenishment.objects.get(pk=request.POST["replen"])
+            batch = CONSOService.reject_member(
+                batch, replen=member, user=request.user, note=request.POST.get("note", "")
+            )
+            label = f"PCF-{member.voucher_no or member.id}"
+        else:
+            raise ValueError("Choose an RFP or PCF member to reject.")
+        if batch.is_active:
+            messages.success(
+                request, f"{label} rejected and returned for revision (removed from {batch.batch_no})."
+            )
+            return redirect("ui:conso_detail", pk=pk)
+        messages.success(
+            request, f"{label} rejected and returned for revision ({batch.batch_no} had no members left and was closed)."
+        )
+        return redirect("ui:conso_list")
+    except (ObjectDoesNotExist, ValueError, AccountingError) as exc:
         messages.error(request, str(exc))
     return redirect("ui:conso_detail", pk=pk)
 

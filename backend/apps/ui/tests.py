@@ -3718,6 +3718,155 @@ class TestCONSOScreen:
         batch.refresh_from_db()
         assert batch.status == "open"
 
+    def _second_rfp(self, segment, user, accounts):
+        from apps.ap.models import Supplier
+        from apps.ap.services import RFPService
+
+        supplier = Supplier.objects.create(
+            code="S002", name="Petron Depot", supplier_type="equipment", default_segment=segment
+        )
+        rfp = RFPService.create_rfp(
+            ap_number="A0002",
+            rfp_date=date(2026, 1, 15),
+            payee=supplier,
+            segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": "5000.00"},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": "5000.00"},
+            ],
+            user=user,
+        )
+        rfp.status = "fin_approved"
+        rfp.checked_by = user
+        rfp.approved_by_acctg = user
+        rfp.approved_by_fin = user
+        rfp.save()
+        return rfp
+
+    def test_detail_shows_reject_controls(self, client, company, segment, accounts,
+                                          fiscal_period, user, approved_rfp):
+        from apps.ap.models import CONSOBatch
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-03", conso_date="2026-01-16")
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+
+        resp = client.get(f"/ap/conso/{batch.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert f"/ap/conso/{batch.id}/reject/" in body
+        assert f'name="rfp" value="{approved_rfp.id}"' in body
+        assert "Return RFP to preparer" in body
+
+    def test_head_rejects_member_from_batch(self, client, company, segment, accounts,
+                                            fiscal_period, user, approved_rfp, role_users):
+        from apps.ap.models import CONSOBatch, RFPDocument
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-04", conso_date="2026-01-16")
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+        client.force_login(role_users["head"])
+
+        resp = client.post(f"/ap/conso/{batch.id}/reject/",
+                           {"rfp": approved_rfp.id, "note": "Wrong payee"})
+        assert resp.status_code == 302
+        # last member out: the empty batch retires, so we land on the list
+        assert resp.url == "/ap/conso/"
+        approved_rfp.refresh_from_db()
+        assert approved_rfp.status == "rejected"
+        assert approved_rfp.conso_id is None
+        assert approved_rfp.rejection_note == "Wrong payee"
+        assert CONSOBatch.objects.count() == 0
+        assert RFPDocument.all_objects.get(pk=approved_rfp.pk).status == "rejected"
+
+    def test_reject_keeps_other_members_and_recalcs(self, client, company, segment, accounts,
+                                                    fiscal_period, user, approved_rfp, role_users):
+        from apps.ap.models import CONSOBatch
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-05", conso_date="2026-01-16")
+        other = self._second_rfp(segment, user, accounts)
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": other.id})
+        client.force_login(role_users["head"])
+
+        resp = client.post(f"/ap/conso/{batch.id}/reject/",
+                           {"rfp": other.id, "note": "Duplicate billing"})
+        assert resp.status_code == 302
+        assert resp.url == f"/ap/conso/{batch.id}/"
+        batch.refresh_from_db()
+        assert batch.status == "open"
+        assert batch.total_amount == Decimal("20000.00")
+        assert list(batch.rfps.all()) == [approved_rfp]
+
+    def test_staff_cannot_reject_from_batch(self, client, company, segment, accounts,
+                                            fiscal_period, user, approved_rfp):
+        from apps.ap.models import CONSOBatch
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-06", conso_date="2026-01-16")
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+
+        resp = client.post(f"/ap/conso/{batch.id}/reject/",
+                           {"rfp": approved_rfp.id, "note": "Staff attempt"})
+        assert resp.status_code == 302
+        approved_rfp.refresh_from_db()
+        assert approved_rfp.status == "fin_approved"
+        assert approved_rfp.conso_id == batch.id
+
+    def test_reject_requires_note(self, client, company, segment, accounts,
+                                   fiscal_period, user, approved_rfp, role_users):
+        from apps.ap.models import CONSOBatch
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-07", conso_date="2026-01-16")
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+        client.force_login(role_users["head"])
+
+        resp = client.post(f"/ap/conso/{batch.id}/reject/", {"rfp": approved_rfp.id, "note": ""})
+        assert resp.status_code == 302
+        approved_rfp.refresh_from_db()
+        assert approved_rfp.status == "fin_approved"
+        assert approved_rfp.conso_id == batch.id
+
+    def test_add_rfp_refused_on_posted_batch(self, client, company, segment, accounts,
+                                               fiscal_period, user, approved_rfp):
+        """Members can only join open batches: adding to a posted batch is
+        refused instead of stranding an unpostable member."""
+        from apps.ap.models import CONSOBatch
+
+        batch = CONSOBatch.objects.create(batch_no="CONSO-2026-08", conso_date="2026-01-16")
+        client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": approved_rfp.id})
+        client.post(f"/ap/conso/{batch.id}/post/")
+        batch.refresh_from_db()
+        assert batch.status == "posted"
+
+        other = self._second_rfp(segment, user, accounts)
+        resp = client.post(f"/ap/conso/{batch.id}/add-rfp/", {"rfp": other.id})
+        assert resp.status_code == 302
+        other.refresh_from_db()
+        assert other.conso_id is None
+        assert other.status == "fin_approved"
+
+    def test_detail_shows_pcf_reject_control(self, client, company, segment, accounts,
+                                             fiscal_period, user):
+        from apps.cash.models import PettyCashFund
+        from apps.cash.services import PCFService
+        from apps.ap.models import CONSOBatch
+
+        fund = PettyCashFund.objects.create(
+            fund_code="general", name="PCF-General", custodian=user,
+            imprest_amount=Decimal("20000.00"), gl_account=accounts["10110"],
+            company=company,
+        )
+        replen = PCFService.request_replenishment(
+            fund, [{"account_code": "61100", "amount": "1000.00", "description": "Supplies"}],
+        )
+        PCFService.submit_replenishment(replen, user=user)
+        PCFService.approve_replenishment(replen, user=user)
+        batch = CONSOBatch.objects.get(pk=replen.conso_id)
+
+        resp = client.get(f"/ap/conso/{batch.id}/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert f'name="replen" value="{replen.id}"' in body
+        assert "Return voucher to custodian" in body
+
 
 class TestCollectionsSummaryScreen:
     @pytest.fixture

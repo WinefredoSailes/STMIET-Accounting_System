@@ -708,6 +708,252 @@ class TestCONSOPosting:
         assert list(batch.rfps.all()) == [rfp]
 
 
+class TestCONSORejectMember:
+    """The head can reject a member out of a CONSO batch (7.3 review gate).
+
+    CONSO batches only hold fully-approved documents, which the normal
+    reject paths refuse — so without reject_member a batch with one bad
+    member is stuck (post everything or post nothing).
+    """
+
+    @pytest.fixture
+    def head(self, db):
+        from django.contrib.auth import get_user_model
+
+        from apps.foundation.models import UserProfile
+
+        u = get_user_model().objects.create_user(username="consohead", password="x")
+        UserProfile.objects.create(user=u, approval_role="head")
+        return u
+
+    def _approved(self, segment, supplier, alywin, head, ap_number, amount="30000.00"):
+        rfp = RFPService.create_rfp(
+            ap_number=ap_number, rfp_date=date(2026, 1, 15), payee=supplier, segment=segment,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100", "amount": amount},
+                {"side": "cr", "segment": segment, "account_code": "20000", "amount": amount},
+            ],
+            user=alywin,
+        )
+        for role in ("checked", "acctg_approved", "fin_approved"):
+            rfp = RFPService.advance_step(rfp, role=role, user=head)
+        return rfp
+
+    def _batched(self, *rfps, batch_no="CONSO-2026-90"):
+        batch = CONSOBatch.objects.create(batch_no=batch_no, conso_date=date(2026, 1, 20))
+        total = Decimal("0.00")
+        for r in rfps:
+            r.conso = batch
+            r.save(update_fields=["conso", "updated_at"])
+            total += r.amount
+        batch.total_amount = total
+        batch.save(update_fields=["total_amount", "updated_at"])
+        return batch
+
+    def test_reject_batched_rfp_unassigns_and_recalcs(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        keep = self._approved(segment, supplier, alywin, head, "A90001", "30000.00")
+        drop = self._approved(segment, supplier, alywin, head, "A90002", "40000.00")
+        batch = self._batched(keep, drop)
+
+        batch = CONSOService.reject_member(batch, rfp=drop, user=head, note="Wrong bank details")
+
+        drop.refresh_from_db()
+        assert drop.status == "rejected"
+        assert drop.conso_id is None
+        assert drop.rejected_by_id == head.id
+        assert drop.rejected_at is not None
+        assert drop.rejection_note == "Wrong bank details"
+        batch.refresh_from_db()
+        assert batch.status == "open"
+        assert batch.is_active
+        assert batch.total_amount == Decimal("30000.00")
+        assert list(batch.rfps.all()) == [keep]
+        trail = ActionLog.objects.filter(
+            doc_type="rfp", doc_id=drop.id, action="rejected"
+        ).first()
+        assert trail is not None
+        assert "CONSO-2026-90" in trail.note
+
+    def test_remaining_members_still_post(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        keep = self._approved(segment, supplier, alywin, head, "A90011", "30000.00")
+        drop = self._approved(segment, supplier, alywin, head, "A90012", "40000.00")
+        batch = self._batched(keep, drop)
+
+        CONSOService.reject_member(batch, rfp=drop, user=head, note="Duplicate billing")
+        CONSOService.post_batch(batch, user=head)
+
+        keep.refresh_from_db()
+        drop.refresh_from_db()
+        batch.refresh_from_db()
+        assert batch.status == "posted"
+        assert keep.status == "posted"
+        assert keep.journal_entry is not None
+        assert drop.status == "rejected"
+
+    def test_reject_last_member_closes_batch(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        drop = self._approved(segment, supplier, alywin, head, "A90021", "30000.00")
+        batch = self._batched(drop)
+
+        batch = CONSOService.reject_member(batch, rfp=drop, user=head, note="Cancelled by vendor")
+
+        assert batch.is_active is False
+        assert CONSOBatch.objects.count() == 0  # retired, not an auto_assign target
+
+    def test_reject_requires_head_role(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        drop = self._approved(segment, supplier, alywin, head, "A90031", "30000.00")
+        batch = self._batched(drop)
+
+        with pytest.raises(ValidationError, match="Accounting & Finance Head"):
+            CONSOService.reject_member(batch, rfp=drop, user=alywin, note="Nope")
+
+        drop.refresh_from_db()
+        assert drop.status == "fin_approved"
+        assert drop.conso_id == batch.id
+
+    def test_reject_requires_note(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        drop = self._approved(segment, supplier, alywin, head, "A90041", "30000.00")
+        batch = self._batched(drop)
+
+        with pytest.raises(ValidationError, match="note"):
+            CONSOService.reject_member(batch, rfp=drop, user=head, note="  ")
+
+        drop.refresh_from_db()
+        assert drop.status == "fin_approved"
+
+    def test_reject_refuses_posted_batch(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        keep = self._approved(segment, supplier, alywin, head, "A90051", "30000.00")
+        batch = self._batched(keep)
+        CONSOService.post_batch(batch, user=head)
+
+        with pytest.raises(PostingError, match="already posted"):
+            CONSOService.reject_member(batch, rfp=keep, user=head, note="Too late")
+
+    def test_reject_refuses_non_member(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        keep = self._approved(segment, supplier, alywin, head, "A90061", "30000.00")
+        outsider = self._approved(segment, supplier, alywin, head, "A90062", "30000.00")
+        batch = self._batched(keep)
+
+        with pytest.raises(ValidationError, match="not a member"):
+            CONSOService.reject_member(batch, rfp=outsider, user=head, note="Wrong batch")
+
+    def test_reject_exactly_one_member(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        drop = self._approved(segment, supplier, alywin, head, "A90071", "30000.00")
+        batch = self._batched(drop)
+
+        with pytest.raises(ValidationError, match="exactly one"):
+            CONSOService.reject_member(batch, user=head, note="Which one?")
+        with pytest.raises(ValidationError, match="exactly one"):
+            CONSOService.reject_member(batch, rfp=drop, replen=drop, user=head, note="Both?")
+
+    def test_rejected_rfp_revises_and_rebatches(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts
+    ):
+        """The full loop: reject from batch -> preparer revises -> head
+        re-approves (with finance notes) -> joins a new batch -> posts."""
+        drop = self._approved(segment, supplier, alywin, head, "A90081", "30000.00")
+        batch = self._batched(drop)
+        CONSOService.reject_member(batch, rfp=drop, user=head, note="Fix the particulars")
+        drop.refresh_from_db()
+
+        drop = RFPService.revise(
+            drop, user=alywin,
+            lines=[
+                {"side": "dr", "segment": segment, "account_code": "61100",
+                 "amount": "30000.00", "description": "Fuel delivery corrected"},
+                {"side": "cr", "segment": segment, "account_code": "20000",
+                 "amount": "30000.00", "description": "AP corrected"},
+            ],
+            purpose="corrected",
+        )
+        assert drop.status == "submitted"
+        assert drop.revision_count == 1
+        drop.finance_notes = "Cleared with Ellen: correct bank on file."
+        drop.save(update_fields=["finance_notes", "updated_at"])
+        drop = RFPService.approve_head(drop, user=head)
+        assert drop.status == "fin_approved"
+
+        batch2 = self._batched(drop, batch_no="CONSO-2026-91")
+        CONSOService.post_batch(batch2, user=head)
+        drop.refresh_from_db()
+        assert drop.status == "posted"
+
+    def test_kept_member_flows_through_post_to_cv(
+        self, company, segment, supplier, rfp_lines, alywin, head, accounts,
+        segment_account_map,
+    ):
+        """The approved side: rejecting `drop` leaves `keep` fully intact —
+        still approved, still batched — and `keep` flows all the way down:
+        batch post -> posted JE in GL -> CV issued, approved and cleared.
+        Neither side floats: the rejected RFP is revisable, the kept RFP
+        leaves every pending queue once posted."""
+        from apps.ui.services import pending_documents, unassigned_approved_rfps
+
+        keep = self._approved(segment, supplier, alywin, head, "A90091", "30000.00")
+        drop = self._approved(segment, supplier, alywin, head, "A90092", "40000.00")
+        batch = self._batched(keep, drop)
+
+        CONSOService.reject_member(batch, rfp=drop, user=head, note="Duplicate billing")
+
+        # The kept member is undisturbed: approvals, batch link, amount.
+        keep.refresh_from_db()
+        assert keep.status == "fin_approved"
+        assert keep.conso_id == batch.id
+        assert keep.checked_by_id == head.id
+        assert keep.approved_by_acctg_id == head.id
+        assert keep.approved_by_fin_id == head.id
+
+        CONSOService.post_batch(batch, user=head)
+
+        keep.refresh_from_db()
+        drop.refresh_from_db()
+        batch.refresh_from_db()
+        assert batch.status == "posted"
+        assert batch.reviewed_by_id == head.id
+        assert batch.total_amount == Decimal("30000.00")
+        assert keep.status == "posted"
+        assert keep.journal_entry is not None
+        assert keep.journal_entry.is_posted
+        assert keep.journal_entry.is_balanced
+        assert drop.status == "rejected"  # the rejected side is untouched by post
+
+        # Nothing pending anymore: keep has its JE, drop awaits its preparer.
+        pending_numbers = {row["number"] for row in pending_documents()}
+        assert "A90091" not in pending_numbers
+        assert "A90092" not in pending_numbers
+        assert "CONSO-2026-90" not in pending_numbers
+        assert unassigned_approved_rfps() == []
+
+        # Downstream CV works against the kept (posted) RFP.
+        cv = CVPaymentService.create_cv(
+            cv_number="CV-2026-0091", cv_date=date(2026, 1, 25),
+            payee=supplier, bank_account=accounts["10010"],
+            gross_amount="30000.00", withheld_tax="0.00",
+            rfp=keep, user=alywin,
+        )
+        assert cv.journal_entry.is_balanced
+        cv = CVPaymentService.approve(cv, user=head)
+        assert cv.status == "approved"
+        cv = CVPaymentService.clear(cv, user=head)
+        assert cv.status == "cleared"
+        assert cv.journal_entry.is_posted
+
+
 class TestRPFFinanceNotesGate:
     def test_revised_rfp_needs_finance_notes_for_fin_approval(
         self, company, segment, supplier, alywin, accounts

@@ -1315,6 +1315,111 @@ class CONSOService:
         batch.save(update_fields=["total_amount", "status", "reviewed_by", "updated_at"])
         return batch
 
+    #: Batch states a member may be rejected out of. Posted batches are
+    #: immutable (ADR-005: the GL entries are already booked).
+    REJECTABLE_BATCH_STATUSES = ("open", "reviewed")
+
+    @classmethod
+    @retry_on_lock()
+    @transaction.atomic
+    def reject_member(cls, batch: CONSOBatch, *, rfp=None, replen=None, user, note: str = "") -> CONSOBatch:
+        """Reject one member out of a CONSO batch and unassign it (7.3 gate).
+
+        CONSO batches only hold fully-approved documents, which the normal
+        reject paths refuse (RFPService.reject needs an in-flight step;
+        PCFService.reject_replenishment refuses batched vouchers). The head
+        reviewing a batch uses this instead: the member returns to its
+        preparer/custodian with a note AND is unassigned from the batch, so
+        the remaining members can still post. A rejected member re-enters
+        through the normal revise/resubmit flow (and drops back into an open
+        batch on re-approval).
+        """
+        from apps.core.approvals import require_approval_role
+
+        try:
+            batch = CONSOBatch.objects.select_for_update().get(pk=batch.pk)
+        except CONSOBatch.DoesNotExist:
+            raise ValidationError("That CONSO batch is closed and cannot be changed.")
+        if batch.status == "posted":
+            raise PostingError(
+                f"CONSO {batch.batch_no} is already posted; its members can no longer be rejected."
+            )
+        if batch.status not in cls.REJECTABLE_BATCH_STATUSES:
+            raise ValidationError(
+                f"CONSO {batch.batch_no} ('{batch.status}') is not open for review; "
+                "members cannot be rejected from it."
+            )
+        require_approval_role(user, "head")
+        if not (note or "").strip():
+            raise ValidationError("Enter a note explaining why this member is being rejected.")
+        members = [m for m in (rfp, replen) if m is not None]
+        if len(members) != 1:
+            raise ValidationError("Reject exactly one batch member (pass one rfp= or replen=).")
+        clean = note.strip()
+
+        if rfp is not None:
+            try:
+                rfp = batch.rfps.select_for_update().get(pk=rfp.pk)
+            except RFPDocument.DoesNotExist:
+                raise ValidationError(f"That RFP is not a member of CONSO {batch.batch_no}.")
+            if rfp.status == "posted":
+                raise PostingError(f"RFP {rfp.ap_number} is already posted and cannot be rejected.")
+            if rfp.status not in ("fin_approved", "cnr_approved"):
+                raise ValidationError(
+                    f"RFP {rfp.ap_number} ('{rfp.status}') is not a finance-approved batch "
+                    "member; it cannot be rejected from CONSO."
+                )
+            rfp.status = "rejected"
+            rfp.rejected_by = user
+            rfp.rejected_at = timezone.now()
+            rfp.rejection_note = clean
+            # Unassign: a non-approved member left in the batch would fail
+            # post_batch's all-members-approved check and wedge the batch.
+            rfp.conso = None
+            rfp.save(update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note", "conso", "updated_at",
+            ])
+            log_action(rfp, "rejected", actor=user, note=f"{clean} (from {batch.batch_no})")
+        else:
+            from apps.cash.models import PCFReplenishment
+
+            try:
+                replen = batch.pcf_replenishments.select_for_update().get(pk=replen.pk)
+            except PCFReplenishment.DoesNotExist:
+                raise ValidationError(f"That voucher is not a member of CONSO {batch.batch_no}.")
+            if replen.status == "posted":
+                raise PostingError("That replenishment is already posted and cannot be rejected.")
+            if replen.status != "approved":
+                raise ValidationError(
+                    f"Replenishment ('{replen.status}') is not an approved batch member; "
+                    "it cannot be rejected from CONSO."
+                )
+            replen.status = "rejected"
+            replen.rejected_by = user
+            replen.rejected_at = timezone.now()
+            replen.rejection_note = clean
+            replen.approved_by = None
+            replen.approved_at = None
+            replen.conso = None
+            replen.save(update_fields=[
+                "status", "rejected_by", "rejected_at", "rejection_note",
+                "approved_by", "approved_at", "conso", "updated_at",
+            ])
+
+        batch.total_amount = sum(
+            (m.amount for m in batch.rfps.all()), Decimal("0.00")
+        ) + sum(
+            (r.amount for r in batch.pcf_replenishments.all()), Decimal("0.00")
+        )
+        if batch.rfps.exists() or batch.pcf_replenishments.exists():
+            batch.save(update_fields=["total_amount", "updated_at"])
+        else:
+            # The last member left: an empty open batch would sit in the
+            # CONSO list and swallow auto-assigned RFPs (auto_assign takes
+            # the newest open batch), so retire it instead of leaving a shell.
+            batch.soft_delete(user=user)
+        return batch
+
     @classmethod
     def _post_one(cls, rfp: RFPDocument, *, user) -> JournalEntry:
         with transaction.atomic():
