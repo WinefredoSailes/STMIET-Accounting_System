@@ -563,3 +563,16 @@ html[data-theme] {
   --accent-900: 113 63 18;
 }
 }
+
+/* Print chrome: the floating assistant chat must never appear on printed
+   documents (its fixed bubble would overlay data), and app navigation must
+   not print either. Several print templates hide these individually; this
+   global rule covers every current and future page — including the reporting
+   prints, which carry no print CSS of their own. */
+@media print {
+  #chat-widget,
+  #sidebar,
+  header {
+    display: none !important;
+  }
+}
