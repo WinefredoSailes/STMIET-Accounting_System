@@ -2586,6 +2586,37 @@ def si_print(request, pk: int):
     return render(request, "ui/ar/si_print.html", {"invoice": invoice})
 
 
+def _deposit_distribution_from_post(request):
+    """Read the Bank Allocation grid rows (blank rows skipped; validated later)."""
+    raw_accounts = request.POST.getlist("distribution_account")
+    raw_amounts = request.POST.getlist("distribution_amount")
+    raw_descs = request.POST.getlist("distribution_description")
+    raw_centers = request.POST.getlist("distribution_cost_center")
+    raw_segs = request.POST.getlist("distribution_segment")
+    dist = []
+    for i, acct_id in enumerate(raw_accounts):
+        dist.append({
+            "account": (acct_id or "").strip(),
+            "amount": (raw_amounts[i] if i < len(raw_amounts) else "").strip(),
+            "description": (raw_descs[i] if i < len(raw_descs) else "").strip(),
+            "cost_center": (raw_centers[i] if i < len(raw_centers) else "").strip(),
+            "segment_id": (raw_segs[i] if i < len(raw_segs) else "").strip() or None,
+        })
+    return dist
+
+
+def _deposit_form_context(extra):
+    from apps.foundation.models import CostCenter, Segment
+
+    ctx = {
+        "banks": Account.objects.filter(is_postable=True).order_by("code"),
+        "segments": Segment.objects.order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+    }
+    ctx.update(extra)
+    return ctx
+
+
 @login_required
 def receipt_deposit(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
@@ -2595,29 +2626,14 @@ def receipt_deposit(request, pk: int):
 
     if request.method == "POST":
         try:
-            # Read distribution lines from the grid (list-of-dicts via POST.getlist).
-            # Blank rows are skipped; the service validates the rest.
-            raw_accounts = request.POST.getlist("distribution_account")
-            raw_amounts = request.POST.getlist("distribution_amount")
-            raw_descs = request.POST.getlist("distribution_description")
-            raw_centers = request.POST.getlist("distribution_cost_center")
-            raw_segs = request.POST.getlist("distribution_segment")
-            dist = []
-            for i, acct_id in enumerate(raw_accounts):
-                dist.append({
-                    "account": (acct_id or "").strip(),
-                    "amount": (raw_amounts[i] if i < len(raw_amounts) else "").strip(),
-                    "description": (raw_descs[i] if i < len(raw_descs) else "").strip(),
-                    "cost_center": (raw_centers[i] if i < len(raw_centers) else "").strip(),
-                    "segment_id": (raw_segs[i] if i < len(raw_segs) else "").strip() or None,
-                })
             deposit = DepositService.record_deposit(
                 receipts=[receipt],
                 bank_account=None,
                 transaction_date=_parse_date(request.POST.get("transaction_date")),
                 reference=request.POST.get("reference", ""),
+                attachment=request.FILES.get("attachment"),
                 user=request.user,
-                distribution=dist,
+                distribution=_deposit_distribution_from_post(request),
             )
             messages.success(request, f"Deposit {deposit.deposit_no} recorded and posted to GL.")
         except Exception as exc:
@@ -2625,19 +2641,80 @@ def receipt_deposit(request, pk: int):
         return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
     # GET: show deposit form with the receipt and available bank accounts
-    from apps.foundation.models import CostCenter, Segment
-
-    banks = Account.objects.filter(is_postable=True).order_by("code")
     return render(
         request,
         "ui/ar/receipt_deposit.html",
-        {
+        _deposit_form_context({
             "receipt": receipt,
-            "banks": banks,
-            "segments": Segment.objects.order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+            "prefill_total": receipt.amount,
+            "default_date": receipt.transaction_date,
             "back_href": reverse("ui:receipt_detail", kwargs={"pk": receipt.pk}),
-        },
+        }),
+    )
+
+
+@login_required
+def deposit_batch(request):
+    """Batch Record Deposit: one slip covering several posted receipts."""
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.ar.services import DepositService
+
+    if request.method == "POST":
+        ids = [i for i in request.POST.getlist("batch_receipt") if str(i).strip().isdigit()]
+        receipts = list(
+            AcknowledgmentReceipt.objects.select_related("customer", "segment").filter(pk__in=ids)
+        )
+        try:
+            if not receipts:
+                raise ValidationError("Select at least one receipt to deposit.")
+            deposit = DepositService.record_deposit(
+                receipts=receipts,
+                bank_account=None,
+                transaction_date=_parse_date(request.POST.get("transaction_date")),
+                reference=request.POST.get("reference", ""),
+                attachment=request.FILES.get("attachment"),
+                user=request.user,
+                distribution=_deposit_distribution_from_post(request),
+            )
+            messages.success(
+                request,
+                f"Deposit {deposit.deposit_no} recorded for {len(receipts)} receipt(s) and posted to GL.",
+            )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect("ui:receipt_list")
+
+    ids = [i.strip() for i in (request.GET.get("receipts") or "").split(",") if i.strip().isdigit()]
+    receipts = list(
+        AcknowledgmentReceipt.objects.select_related("customer", "segment")
+        .filter(pk__in=ids)
+        .order_by("receipt_no")
+    )
+    problems = [
+        r.receipt_no
+        for r in receipts
+        if r.status != "posted" or r.deposit_id
+    ]
+    if not receipts or problems:
+        messages.error(
+            request,
+            "Select posted receipts that have not been deposited yet."
+            + (f" Skipped: {', '.join(problems)}." if problems else ""),
+        )
+        return redirect("ui:receipt_list")
+    batch_total = sum((r.amount for r in receipts), Decimal("0.00"))
+    first_date = max(r.transaction_date for r in receipts)
+    return render(
+        request,
+        "ui/ar/receipt_deposit.html",
+        _deposit_form_context({
+            "batch_mode": True,
+            "receipts": receipts,
+            "batch_total": batch_total,
+            "prefill_total": batch_total,
+            "default_date": first_date,
+            "back_href": reverse("ui:receipt_list"),
+        }),
     )
 
 

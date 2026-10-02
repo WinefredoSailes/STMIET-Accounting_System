@@ -1287,6 +1287,103 @@ class TestReceiptScreen:
         assert je.lines.filter(debit__gt=0).count() == 2
         assert je.lines.get(account_id=bank2.id).debit == Decimal("5000.00")
 
+    def _post_and_approve(self, client, customer, accounts, segment, role_users):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        resp = self._post_grid(client, customer, accounts, segment)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+        return receipt
+
+    def test_deposit_batch_two_receipts(self, client, company, segment, accounts, fiscal_period, role_users):
+        from decimal import Decimal
+        from apps.foundation.models import Account
+
+        bank2 = Account.objects.create(
+            code="10020", name="Cash in Bank MBTC", account_type="asset",
+            segment="ALL", is_postable=True,
+        )
+        r1 = self._post_and_approve(
+            client, self._new_customer(segment), accounts, segment, role_users)
+        r2 = self._post_and_approve(
+            client, self._new_customer(segment, code="C002"), accounts, segment, role_users)
+
+        # GET batch form lists both receipts with the combined total.
+        body = client.get(f"/ar/deposits/new/?receipts={r1.pk},{r2.pk}").content.decode()
+        assert "Combined total" in body
+        assert r1.receipt_no in body
+        assert r2.receipt_no in body
+        assert "30,000.00" in body
+
+        # POST one slip across two banks.
+        resp = client.post("/ar/deposits/new/", {
+            "transaction_date": "2026-01-20",
+            "reference": "batch-slip-1",
+            "batch_receipt": [r1.pk, r2.pk],
+            "distribution_account": [accounts["10110"].id, bank2.id],
+            "distribution_segment": [segment.id, segment.id],
+            "distribution_cost_center": ["", ""],
+            "distribution_description": ["BDO share", "MBTC share"],
+            "distribution_amount": ["20000.00", "10000.00"],
+        })
+        assert resp.status_code == 302
+        r1.refresh_from_db()
+        r2.refresh_from_db()
+        assert r1.deposit_id is not None
+        assert r1.deposit_id == r2.deposit_id
+        deposit = r1.deposit
+        assert deposit.amount == Decimal("30000.00")
+        assert deposit.lines.count() == 2
+        je = deposit.journal_entry
+        assert je.total_debit == Decimal("30000.00") == je.total_credit
+
+    def test_deposit_batch_rejects_unposted(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        resp = self._post_grid(client, customer, accounts, segment)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        # Still a draft -> batch form refuses and bounces to the list.
+        resp = client.get(f"/ar/deposits/new/?receipts={receipt.pk}")
+        assert resp.status_code == 302
+        assert resp.url == "/ar/receipts/"
+
+    def test_receipt_deposit_saves_slip_scan(self, client, company, segment, accounts, fiscal_period, role_users, settings, tmp_path):
+        from decimal import Decimal
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        receipt = self._post_and_approve(
+            client, self._new_customer(segment), accounts, segment, role_users)
+        slip = SimpleUploadedFile("slip.pdf", b"%PDF-1.4 fake-slip", content_type="application/pdf")
+        resp = client.post(f"/ar/receipts/{receipt.pk}/deposit/", {
+            "transaction_date": "2026-01-20",
+            "reference": "with-scan",
+            "distribution_account": [accounts["10110"].id],
+            "distribution_segment": [segment.id],
+            "distribution_cost_center": [""],
+            "distribution_description": ["Full amount"],
+            "distribution_amount": ["15000.00"],
+            "attachment": slip,
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.deposit.attachment
+        assert "slip" in receipt.deposit.attachment.name
+        # Slip is linked from the receipt detail page.
+        body = client.get(f"/ar/receipts/{receipt.pk}/").content.decode()
+        assert "View deposit slip" in body
+
     def test_receipt_cash_segment_syncs_header(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
         from apps.foundation.models import Segment as SegmentModel

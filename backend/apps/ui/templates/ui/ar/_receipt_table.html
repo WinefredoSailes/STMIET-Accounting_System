@@ -4,6 +4,7 @@
   <table class="w-full text-sm min-w-[900px]">
     <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
       <tr>
+        <th class="px-4 py-3 w-10"><input type="checkbox" id="deposit-pick-all" title="Select all depositable receipts" class="h-4 w-4 rounded border-surface-300"></th>
         <th class="px-4 py-3">Receipt No</th>
         <th class="px-4 py-3">Date</th>
         <th class="px-4 py-3">Customer</th>
@@ -16,6 +17,11 @@
     <tbody class="divide-y divide-surface-100">
       {% for r in page_obj %}
       <tr class="hover:bg-surface-50">
+        <td class="px-4 py-2">
+          {% if r.status == 'posted' and not r.deposit_id %}
+          <input type="checkbox" class="deposit-pick h-4 w-4 rounded border-surface-300" value="{{ r.pk }}" aria-label="Select {{ r.receipt_no }} for deposit">
+          {% endif %}
+        </td>
         <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></td>
         <td class="px-4 py-2">{{ r.transaction_date|date:"M d, Y" }}</td>
         <td class="px-4 py-2">{{ r.customer.name }}</td>
@@ -42,7 +48,7 @@
         <td class="px-4 py-2 text-right font-medium">{{r.amount|peso}}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="7" class="px-4 py-8 text-center text-surface-400">No receipts match. Try clearing the filters.</td></tr>
+      <tr><td colspan="8" class="px-4 py-8 text-center text-surface-400">No receipts match. Try clearing the filters.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -53,6 +59,9 @@
   {% for r in page_obj %}
   <div class="mobile-card">
     <div class="mobile-card-head">
+      {% if r.status == 'posted' and not r.deposit_id %}
+      <input type="checkbox" class="deposit-pick h-4 w-4 rounded border-surface-300" value="{{ r.pk }}" aria-label="Select {{ r.receipt_no }} for deposit">
+      {% endif %}
       <span class="mobile-card-title"><a href="{% url 'ui:receipt_detail' r.pk %}" class="text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></span>
       <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
         {% if r.status == 'posted' %}bg-emerald-100 text-emerald-800

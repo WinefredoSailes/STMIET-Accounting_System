@@ -660,6 +660,11 @@ class DepositService:
             raise ValidationError("Select at least one posted receipt to deposit.")
         if transaction_date is None:
             raise ValidationError("Deposit date is required.")
+        companies = {r.segment.company_id for r in receipts}
+        if len(companies) > 1:
+            raise ValidationError(
+                "All receipts in one deposit must belong to the same company."
+            )
 
         company = receipts[0].segment.company
         # Group the credit side by each receipt's segment Cash on Hand account.

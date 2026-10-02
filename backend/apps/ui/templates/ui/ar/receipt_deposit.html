@@ -1,32 +1,89 @@
 {% extends "ui/base.html" %}
 {% load static ui_filters %}
-{% block title %}Deposit — {{ receipt.receipt_no }}{% endblock %}
+{% block title %}{% if batch_mode %}Deposit — {{ receipts|length }} receipts{% else %}Deposit — {{ receipt.receipt_no }}{% endif %}{% endblock %}
 {% block content %}
 <div class="p-6">
   {% capture as actions %}
+  {% if batch_mode %}
+  <a href="{% url 'ui:receipt_list' %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Back to receipts</a>
+  {% else %}
   <a href="{% url 'ui:receipt_detail' receipt.id %}" class="inline rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Back to receipt</a>
+  {% endif %}
   {% endcapture %}
   {% include "ui/partials/page_header.html" with title="Record Deposit" subtitle="ACCTG-FOR-005 · bank deposit" back_url_name="ui:receipt_detail" back_label="Receipts" actions=actions %}
 
   <div class="mt-6 bg-white rounded-xl border border-surface-200 p-6">
+    {% if batch_mode %}
+    <div class="mb-6 overflow-x-auto rounded-xl border border-surface-200">
+      <table class="w-full text-sm">
+        <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+          <tr>
+            <th class="px-4 py-2">Receipt No</th>
+            <th class="px-4 py-2">Date</th>
+            <th class="px-4 py-2">Customer</th>
+            <th class="px-4 py-2 text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-100">
+          {% for r in receipts %}
+          <tr>
+            <td class="px-4 py-2 font-mono text-xs">{{ r.receipt_no }}</td>
+            <td class="px-4 py-2">{{ r.transaction_date|date:"M d, Y" }}</td>
+            <td class="px-4 py-2">{{ r.customer.name }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ r.amount|peso }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-surface-50 font-semibold">
+          <tr>
+            <td colspan="3" class="px-4 py-2 text-right text-xs uppercase tracking-wider text-surface-500">Combined total</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ batch_total|peso }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% for r in receipts %}
+    <input type="hidden" name="batch_receipt" value="{{ r.pk }}">
+    {% endfor %}
+    {% else %}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
       <div><div class="text-xs text-surface-500">Receipt No</div><div class="mt-0.5 font-mono font-medium">{{ receipt.receipt_no }}</div></div>
       <div><div class="text-xs text-surface-500">Date</div><div class="mt-0.5">{{ receipt.transaction_date|date:"M d, Y" }}</div></div>
       <div><div class="text-xs text-surface-500">Customer</div><div class="mt-0.5 font-medium">{{ receipt.customer.name }}</div></div>
       <div><div class="text-xs text-surface-500">Amount</div><div class="mt-0.5 font-semibold tabular-nums">{{receipt.amount|peso}}</div></div>
     </div>
+    {% endif %}
 
-    <form method="post" class="space-y-4">
+    <form method="post" enctype="multipart/form-data" class="space-y-4">
       {% csrf_token %}
 
       <div>
         <label class="block text-sm font-medium text-surface-700 mb-1" for="id_transaction_date">Deposit date</label>
-        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ receipt.transaction_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+        <input type="date" name="transaction_date" id="id_transaction_date" required value="{{ default_date|date:'Y-m-d' }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div>
         <label class="block text-sm font-medium text-surface-700 mb-1" for="id_reference">Reference <span class="text-surface-400">(optional)</span></label>
         <input type="text" name="reference" id="id_reference" maxlength="64" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm font-medium text-surface-700">Deposit slip scan</span>
+        <label class="relative inline-flex cursor-pointer items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+          Choose file
+          <input type="file" id="id_attachment" name="attachment" accept=".pdf,.jpg,.jpeg,.png" class="absolute inset-0 cursor-pointer opacity-0">
+        </label>
+        <span id="id_attachment_hint" class="text-xs text-surface-500"></span>
+      </div>
+      <script>
+        (function () {
+          var input = document.getElementById("id_attachment");
+          var hint = document.getElementById("id_attachment_hint");
+          if (input && hint) {
+            input.addEventListener("change", function () {
+              hint.textContent = input.files && input.files.length ? input.files[0].name : "";
+            });
+          }
+        })();
+      </script>
 
       <div>
         <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Bank Allocation</div>
@@ -70,7 +127,7 @@
                 </td>
                 <td class="px-2 py-2 overflow-hidden"><input type="text" name="distribution_cost_center" maxlength="64" list="cost_center_options" class="block w-full max-w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
                 <td class="px-2 py-2 overflow-hidden"><textarea name="distribution_description" data-autogrow rows="1" class="block w-full max-w-full resize-none overflow-hidden rounded-md border border-surface-300 px-2 py-1.5 text-xs leading-5">Bank deposit</textarea></td>
-                <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="distribution_amount" value="{{ receipt.amount|money }}" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
+                <td class="px-2 py-2 overflow-hidden"><input type="text" inputmode="decimal" autocomplete="off" data-amount pattern="[0-9,]*[.]?[0-9]*" name="distribution_amount" value="{{ prefill_total|money }}" class="block w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums amount-debit"></td>
                 <td class="px-2 py-2"><button type="button" data-remove-dist class="text-surface-400 hover:text-rose-600" title="Remove line">&times;</button></td>
               </tr>
             </tbody>
@@ -95,7 +152,11 @@
       </div>
 
       <div class="flex justify-end gap-3 pt-2">
+        {% if batch_mode %}
+        <a href="{% url 'ui:receipt_list' %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</a>
+        {% else %}
         <a href="{% url 'ui:receipt_detail' receipt.id %}" class="rounded-md border border-surface-300 px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Cancel</a>
+        {% endif %}
         <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Record Deposit</button>
       </div>
     </form>

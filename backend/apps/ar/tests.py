@@ -22,7 +22,7 @@ from apps.ar.models import (
     ReceiptStatus,
 )
 from apps.ar.services import CollectionService, CycleLedgerService, DepositService
-from apps.foundation.models import Account
+from apps.foundation.models import Account, Company, Segment
 from apps.core.exceptions import ValidationError
 from apps.foundation.calendar import cycle_range_for
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -293,6 +293,89 @@ class TestDepositMultiBank:
         )
         assert dep.lines.count() == 1
         assert dep.lines.first().debit == Decimal("5000.00")
+
+    def _post_receipt(self, customer, segment, bank, amount, user, head):
+        receipt = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 15),
+            amount=amount,
+            cash_account=bank,
+            segment=segment,
+            created_by=user,
+        )
+        CollectionService.submit(receipt, user=user)
+        CollectionService.approve(receipt, user=head)
+        receipt.refresh_from_db()
+        assert receipt.status == ReceiptStatus.POSTED
+        return receipt
+
+    def test_deposit_batch_two_receipts_one_je(self, customer, segment, role_users, accounts):
+        user = role_users["staff"]
+        head = role_users["head"]
+        bank1 = accounts["10110"]
+        bank2 = Account.objects.create(code="10020", name="Cash in Bank MBTC", account_type="asset")
+        customer2 = Customer.objects.create(code="C002", name="Second Client")
+
+        r1 = self._post_receipt(customer, segment, bank1, "115000.00", user, head)
+        r2 = self._post_receipt(customer2, segment, bank1, "5000.00", user, head)
+
+        dep = DepositService.record_deposit(
+            receipts=[r1, r2],
+            bank_account=None,
+            transaction_date=date(2026, 1, 20),
+            user=head,
+            distribution=[
+                {"account": bank1.pk, "amount": "100000.00"},
+                {"account": bank2.pk, "amount": "20000.00"},
+            ],
+        )
+        assert dep.amount == Decimal("120000.00")
+        assert dep.lines.count() == 2
+        je = dep.journal_entry
+        assert je.total_debit == Decimal("120000.00") == je.total_credit
+        assert je.lines.filter(debit__gt=0).count() == 2
+        # Same segment -> one grouped Cash on Hand credit.
+        credit_lines = list(je.lines.filter(credit__gt=0))
+        assert len(credit_lines) == 1
+        assert credit_lines[0].credit == Decimal("120000.00")
+        r1.refresh_from_db()
+        r2.refresh_from_db()
+        assert r1.deposit_id == dep.pk
+        assert r2.deposit_id == dep.pk
+
+    def test_deposit_mixed_company_rejected(self, customer, segment, company, role_users, accounts):
+        user = role_users["staff"]
+        bank1 = accounts["10110"]
+        company2 = Company.objects.create(code="OTHER", name="Other Company")
+        seg2 = Segment.objects.create(code="DMIE", name="Other Segment", company=company2)
+        Account.objects.create(code="21023", name="Unearned Revenue - DMIE", account_type="liability")
+
+        r1 = CollectionService.create_receipt(
+            customer=customer,
+            transaction_date=date(2026, 1, 15),
+            amount="10000.00",
+            cash_account=bank1,
+            segment=segment,
+            created_by=user,
+        )
+        customer2 = Customer.objects.create(code="C002", name="Second Client")
+        r2 = CollectionService.create_receipt(
+            customer=customer2,
+            transaction_date=date(2026, 1, 15),
+            amount="5000.00",
+            cash_account=bank1,
+            segment=seg2,
+            receipt_no="AR-2026-0099",
+            created_by=user,
+        )
+        with pytest.raises(ValidationError):
+            DepositService.record_deposit(
+                receipts=[r1, r2],
+                bank_account=bank1,
+                transaction_date=date(2026, 1, 20),
+                user=user,
+                distribution=[{"account": bank1.pk, "amount": "15000.00"}],
+            )
 
 
 class TestCycleLedger:

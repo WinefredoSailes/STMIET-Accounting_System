@@ -3,6 +3,7 @@
 {% block title %}Receipts{% endblock %}
 {% block content %}
 {% capture as list_actions %}
+<button type="button" id="batch-deposit-btn" disabled class="inline rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white opacity-50 hover:bg-emerald-700">Record Deposit</button>
 <a href="{% url 'ui:ar_receipts_export' 'xlsx' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
 <a href="{% url 'ui:ar_receipts_export' 'csv' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">CSV</a>
 <a href="{% url 'ui:ar_receipts_export' 'pdf' %}" class="inline rounded-md border border-surface-300 px-3 py-2 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
@@ -18,4 +19,38 @@
 <div id="receipt-table">
   {% include "ui/ar/_receipt_table.html" %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var btn = document.getElementById('batch-deposit-btn');
+    if (!btn) return;
+    function picks() {
+      return Array.from(document.querySelectorAll('.deposit-pick:checked')).map(function (c) { return c.value; });
+    }
+    function refresh() {
+      var n = picks().length;
+      btn.disabled = !n;
+      btn.textContent = n ? 'Record Deposit (' + n + ' selected)' : 'Record Deposit';
+      btn.classList.toggle('opacity-50', !n);
+    }
+    document.addEventListener('change', function (e) {
+      var t = e.target;
+      if (!t || !t.classList) return;
+      if (t.id === 'deposit-pick-all') {
+        document.querySelectorAll('.deposit-pick:not(:disabled)').forEach(function (c) { c.checked = t.checked; });
+        refresh();
+      } else if (t.classList.contains('deposit-pick')) {
+        refresh();
+      }
+    });
+    btn.addEventListener('click', function () {
+      var ids = picks();
+      if (!ids.length) return;
+      location.href = "{% url 'ui:deposit_batch' %}?receipts=" + ids.join(',');
+    });
+    refresh();
+  })();
+</script>
 {% endblock %}
