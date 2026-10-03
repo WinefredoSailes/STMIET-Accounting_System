@@ -237,16 +237,43 @@ def resolve_entities(user, parsed, raw: str, lower: str, companies: list) -> Ent
             ents.account = Account.objects.filter(code=digit).first()
             if ents.account:
                 break
-    # Name-based: e.g. "the cash on hand account" (parser already filtered
-    # generic words, so this only fires on real account-name tokens).
+    # Name-based: prefer the account whose full name is contained in the
+    # query (e.g. "the cash on hand account" -> "Cash on Hand"). A single
+    # token like "cash" also matches "Petty Cash Fund" and a generic token
+    # like "account" matches "Accounts Payable", so substring matching alone
+    # resolves to whichever row the DB returns first.
     if ents.account is None:
-        for term in terms:
+        qwords = set(re.findall(r"[a-z0-9]+", lower))
+        best = None
+        best_key = None
+        for acc in Account.objects.all():
+            awords = [w for w in re.findall(r"[a-z0-9]+", acc.name.lower()) if len(w) > 2]
+            if not awords or not set(awords) <= qwords:
+                continue
+            key = (-len(awords), len(acc.name), acc.code)
+            if best_key is None or key < best_key:
+                best, best_key = acc, key
+        if best is not None:
+            ents.account = best
+    # Fallback: single-token substring match, longest token first with
+    # ranked candidates (exact > startswith > shortest name).
+    if ents.account is None:
+        for term in sorted(terms, key=len, reverse=True):
             if len(term) < 3 or re.fullmatch(r"[A-Za-z]+\d+", term):
                 continue
-            acc = Account.objects.filter(name__icontains=term).first()
-            if acc is not None:
-                ents.account = acc
+            cands = Account.objects.filter(name__icontains=term)
+            if not cands.exists():
+                continue
+            exact = cands.filter(name__iexact=term).first()
+            if exact is not None:
+                ents.account = exact
                 break
+            starts = cands.filter(name__istartswith=term).order_by("code").first()
+            if starts is not None:
+                ents.account = starts
+                break
+            ents.account = min(cands, key=lambda a: (len(a.name), a.code))
+            break
 
     # -- item text (free-text, matches POLine descriptions) ---------------
     for term in terms:

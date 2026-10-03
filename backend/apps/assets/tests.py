@@ -351,7 +351,8 @@ class TestOpeningBalanceSeed:
         if not xlsx.exists():
             xlsx = repo / "excel-files" / "SEPTEMBER-1-2026-_-FIXED-ASSETS.xlsx"
         mapping = repo / "excel-files" / "fixed-assets-mapping.json"
-        assert xlsx.exists() and mapping.exists(), "source files must exist"
+        if not (xlsx.exists() and mapping.exists()):
+            pytest.skip("workbook fixtures removed from repo (private data)")
         # DHPP segment is used by tankers; also need DMIE for boom trucks & OPS.
         from apps.foundation.models import Segment, SegmentAccountMap
 
