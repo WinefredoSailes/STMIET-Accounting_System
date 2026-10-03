@@ -4,24 +4,24 @@
 {% block content %}
 <div class="p-4 sm:p-6">
   {% capture as ledger_filters %}
-      <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-        <select name="month" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none"
-                hx-trigger="change" hx-include="closest form">
-          <option value="">Custom date range</option>
-          {% for p in period_options %}
-          <option value="{{ p.key }}" {% if win.month == p.key %}selected{% endif %}>{{ p.label }}</option>
-          {% endfor %}
-        </select>
-        {% include "ui/partials/date_range_picker.html" with name="date_range" label="Date Range" date_field="transaction_date" value_from=start value_to=end placeholder="Select date range" from_name="start" to_name="end" %}
-        <select name="segment" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none"
-                hx-trigger="change" hx-include="closest form">
-          <option value="">All segments</option>
-          {% for seg in win.segments %}
-          <option value="{{ seg.code }}" {% if segment_sel == seg.code %}selected{% endif %}>{{ seg.code }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Run</button>
-      </form>
+  <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+    <select name="month" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+      <option value="">Custom date range</option>
+      {% for p in period_options %}
+      <option value="{{ p.key }}" {% if win.month == p.key %}selected{% endif %}>{{ p.label }}</option>
+      {% endfor %}
+    </select>
+    <input type="date" name="start" value="{{ start }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+    <span class="text-surface-400">to</span>
+    <input type="date" name="end" value="{{ end }}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+    <select name="segment" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+      <option value="">All segments</option>
+      {% for seg in win.segments %}
+      <option value="{{ seg.code }}" {% if segment_sel == seg.code %}selected{% endif %}>{{ seg.code }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Run</button>
+  </form>
   <div class="flex items-center gap-2">
     <a href="{% url 'ui:ledger_export' %}?format=xlsx{% if filter_qs %}&{{ filter_qs }}{% endif %}"
        class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
