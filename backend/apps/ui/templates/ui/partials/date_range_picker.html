@@ -27,26 +27,14 @@ Parameters:
 
 {% load ui_filters %}
 
-{% with 
-  picker_name=name|default:"date_range" 
-  picker_label=label|default:"Date Range" 
-  picker_date_field=date_field|default:"transaction_date"
-  picker_value_from=value_from|default:""
-  picker_value_to=value_to|default:""
-  picker_placeholder=placeholder|default:"Select date range"
-  picker_hx_trigger=hx_trigger|default:"change"
-  picker_extra_classes=extra_classes|default:""
-  picker_required=required|default:""
-  picker_disabled=disabled|default:""
-  picker_name_prefix=name_prefix|default:""
-%}
+{% with picker_name=name|default:"date_range" picker_label=label|default:"Date Range" picker_date_field=date_field|default:"transaction_date" picker_value_from=value_from|default:"" picker_value_to=value_to|default:"" picker_placeholder=placeholder|default:"Select date range" picker_hx_trigger=hx_trigger|default:"change" picker_extra_classes=extra_classes|default:"" picker_required=required|default:"" picker_disabled=disabled|default:"" picker_name_prefix=name_prefix|default:"" %}
 <div class="w-full">
   <label class="block text-xs font-medium text-surface-500 mb-1" for="id_{{ picker_name }}">{{ picker_label }}</label>
   <input 
     type="text" 
     id="id_{{ picker_name }}" 
     name="{{ picker_name_prefix }}{{ picker_name }}"
-    class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm date-range-picker {{ picker_extra_classes }}"
+    class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm date-range-picker {{ extra_classes }}"
     placeholder="{{ picker_placeholder }}"
     data-date-field="{{ picker_date_field }}"
     {% if picker_required %}required{% endif %}
