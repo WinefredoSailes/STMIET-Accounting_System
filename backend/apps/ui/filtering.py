@@ -45,11 +45,13 @@ def _normalize_options(raw) -> list[Option]:
 class FilterField:
     """One filter control mapped to an ORM lookup.
 
-    ``kind``: text | choice | date | bool | number.
+    ``kind``: text | choice | date | date_range | bool | number.
     ``choices``: an iterable of (value, label) pairs, or a callable taking the
     request and returning them (for DB-backed option lists).
     ``lookup``: explicit ORM suffix (e.g. "gte", "lte"); defaults to
     ``icontains`` for text and ``exact`` otherwise.
+    ``date_field``: for date_range kind, the base field name (e.g. "transaction_date").
+    The filter will generate <field>__gte and <field>__lte lookups.
     """
 
     name: str
@@ -59,6 +61,7 @@ class FilterField:
     lookup: str = ""
     placeholder: str = ""
     empty_label: str = ""
+    date_field: str = ""
     # When set on a text field, the param value matches ANY of these ORM paths
     # via icontains (OR-ed together). ``name`` stays the query-string key (``q``)
     # while this lists the real model fields to search.
@@ -85,6 +88,17 @@ class FilterSpec:
     def apply(self, qs, params: dict):
         """Filter ``qs`` by the non-empty params named by this spec."""
         for f in self.fields:
+            if f.kind == "date_range":
+                # Handle date_range: generates <field>__gte and <field>__lte
+                field_name = f.date_field or f.name
+                date_from = params.get(f"{f.name}_from")
+                date_to = params.get(f"{f.name}_to")
+                if date_from not in (None, ""):
+                    qs = qs.filter(**{f"{field_name}__gte": date_from})
+                if date_to not in (None, ""):
+                    qs = qs.filter(**{f"{field_name}__lte": date_to})
+                continue
+
             raw = params.get(f.name)
             if raw in (None, ""):
                 continue
@@ -104,17 +118,22 @@ class FilterSpec:
     def context(self, params: dict, request=None) -> list[dict]:
         out = []
         for f in self.fields:
-            out.append(
-                {
-                    "name": f.name,
-                    "label": f.label,
-                    "kind": f.kind,
-                    "placeholder": f.placeholder,
-                    "empty_label": f.empty_label or f"All {f.label.lower()}",
-                    "value": params.get(f.name, ""),
-                    "options": f.resolve_choices(request),
-                }
-            )
+            ctx = {
+                "name": f.name,
+                "label": f.label,
+                "kind": f.kind,
+                "placeholder": f.placeholder,
+                "empty_label": f.empty_label or f"All {f.label.lower()}",
+                "value": params.get(f.name, ""),
+                "options": f.resolve_choices(request),
+            }
+            if f.kind == "date_range":
+                ctx["date_field"] = f.date_field or f.name
+                ctx["value_from"] = params.get(f"{f.name}_from", "")
+                ctx["value_to"] = params.get(f"{f.name}_to", "")
+            else:
+                ctx["value"] = params.get(f.name, "")
+            out.append(ctx)
         return out
 
     def export_params(self, params: dict) -> dict:

@@ -280,6 +280,10 @@ def je_filter_spec():
                 choices=lambda req: PostingStatus.choices,
             ),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="transaction_date",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -318,6 +322,10 @@ def transfer_filter_spec():
             ),
             FilterField("from_account", "From (Credit)", kind="choice", choices=bank_choices),
             FilterField("to_account", "To (Debit)", kind="choice", choices=bank_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="transaction_date",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -373,6 +381,10 @@ def si_filter_spec():
             ),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="transaction_date",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -402,6 +414,10 @@ def ssi_filter_spec():
             ),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="transaction_date",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -435,6 +451,10 @@ def billing_filter_spec():
                 choices=lambda req: BILLING_STATUS_CHOICES,
             ),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="billing_date",
+                placeholder="Date Range",
+            ),
         ]
     )
 
