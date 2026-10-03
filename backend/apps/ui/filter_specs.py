@@ -201,6 +201,14 @@ def rfp_filter_spec():
             ),
             FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_from", "Date From", kind="date", lookup="gte",
+                placeholder="From",
+            ),
+            FilterField(
+                "date_to", "Date To", kind="date", lookup="lte",
+                placeholder="To",
+            ),
         ]
     )
 
@@ -218,6 +226,14 @@ def po_filter_spec():
             ),
             FilterField("supplier", "Vendor", kind="choice", choices=supplier_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_from", "Date From", kind="date", lookup="gte",
+                placeholder="From",
+            ),
+            FilterField(
+                "date_to", "Date To", kind="date", lookup="lte",
+                placeholder="To",
+            ),
         ]
     )
 
@@ -235,6 +251,14 @@ def cv_filter_spec():
             ),
             FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
             FilterField("bank_account", "Bank Account", kind="choice", choices=account_choices),
+            FilterField(
+                "date_from", "Date From", kind="date", lookup="gte",
+                placeholder="From",
+            ),
+            FilterField(
+                "date_to", "Date To", kind="date", lookup="lte",
+                placeholder="To",
+            ),
         ]
     )
 
