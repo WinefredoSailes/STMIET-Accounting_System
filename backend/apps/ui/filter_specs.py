@@ -97,6 +97,10 @@ def customer_list_filter_spec():
                     ("rejected", "Rejected"),
                 ],
             ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -123,12 +127,8 @@ def receipt_list_filter_spec():
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField("customer", "Customer", kind="choice", choices=customer_choices),
             FilterField(
-                "date_from", "Date From", kind="date", lookup="gte",
-                placeholder="From",
-            ),
-            FilterField(
-                "date_to", "Date To", kind="date", lookup="lte",
-                placeholder="To",
+                "date_range", "Date Range", kind="date_range", date_field="transaction_date",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -151,6 +151,10 @@ def supplier_list_filter_spec():
                 choices=lambda req: SupplierType.choices,
             ),
             FilterField("default_segment", "Segment", kind="choice", choices=segment_pk_choices),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -202,12 +206,8 @@ def rfp_filter_spec():
             FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField(
-                "date_from", "Date From", kind="date", lookup="gte",
-                placeholder="From",
-            ),
-            FilterField(
-                "date_to", "Date To", kind="date", lookup="lte",
-                placeholder="To",
+                "date_range", "Date Range", kind="date_range", date_field="rfp_date",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -227,12 +227,8 @@ def po_filter_spec():
             FilterField("supplier", "Vendor", kind="choice", choices=supplier_choices),
             FilterField("segment", "Segment", kind="choice", choices=segment_pk_choices),
             FilterField(
-                "date_from", "Date From", kind="date", lookup="gte",
-                placeholder="From",
-            ),
-            FilterField(
-                "date_to", "Date To", kind="date", lookup="lte",
-                placeholder="To",
+                "date_range", "Date Range", kind="date_range", date_field="po_date",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -252,12 +248,8 @@ def cv_filter_spec():
             FilterField("payee", "Payee", kind="choice", choices=supplier_choices),
             FilterField("bank_account", "Bank Account", kind="choice", choices=account_choices),
             FilterField(
-                "date_from", "Date From", kind="date", lookup="gte",
-                placeholder="From",
-            ),
-            FilterField(
-                "date_to", "Date To", kind="date", lookup="lte",
-                placeholder="To",
+                "date_range", "Date Range", kind="date_range", date_field="cv_date",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -351,6 +343,10 @@ def asset_filter_spec():
             FilterField(
                 "status", "Status", kind="choice",
                 choices=lambda req: ASSET_STATUS_CHOICES,
+            ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="acquisition_date",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -480,6 +476,10 @@ def conso_filter_spec():
                 "status", "Status", kind="choice",
                 choices=lambda req: CONSO_STATUS_CHOICES,
             ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -502,6 +502,10 @@ def bank_filter_spec():
                 ],
             ),
             FilterField("is_active", "Active", kind="bool"),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -522,6 +526,10 @@ def cycle_filter_spec():
             FilterField(
                 "status", "Status", kind="choice",
                 choices=lambda req: CYCLE_STATUS_CHOICES,
+            ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="cycle_start",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -563,6 +571,10 @@ def pcf_replenishment_filter_spec():
                 "status", "Status", kind="choice",
                 choices=lambda req: PCF_REPLENISHMENT_STATUS_CHOICES,
             ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
+            ),
         ]
     )
 
@@ -583,6 +595,10 @@ def recon_filter_spec():
             FilterField(
                 "status", "Status", kind="choice",
                 choices=lambda req: RECON_STATUS_CHOICES,
+            ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="created_at",
+                placeholder="Date Range",
             ),
         ]
     )
@@ -615,6 +631,10 @@ def cash_short_filter_spec():
             FilterField(
                 "cause_category", "Cause", kind="choice",
                 choices=lambda req: CASH_SHORT_CAUSE_CHOICES,
+            ),
+            FilterField(
+                "date_range", "Date Range", kind="date_range", date_field="cycle_start",
+                placeholder="Date Range",
             ),
         ]
     )
