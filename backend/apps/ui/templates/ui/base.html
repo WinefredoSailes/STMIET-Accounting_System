@@ -8,9 +8,11 @@
   <link rel="icon" type="image/svg+xml" href="{% static 'img/logo.svg' %}">
   <link rel="stylesheet" href="{% static 'css/output.css' %}">
   <link rel="stylesheet" href="{% static 'css/line-table.css' %}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   {% block extra_css %}{% endblock %}
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="{% static 'js/htmx.min.js' %}" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
 </head>
 <body class="h-full {% block body_class %}{% endblock %}">
   {% if request.user.is_authenticated %}

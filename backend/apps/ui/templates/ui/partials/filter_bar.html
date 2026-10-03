@@ -32,15 +32,11 @@ hx-trigger + hx-include so it inherits the request from the form.
                  hx-trigger="change" hx-include="closest form"
                  class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
         {% elif f.kind == 'date_range' %}
-          <div class="flex items-center gap-2">
-            <input type="date" name="{{ f.name }}_from" id="id_{{ f.name }}_from" value="{{ f.value_from }}"
-                   hx-trigger="change" hx-include="closest form"
-                   class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm" placeholder="From">
-            <span class="text-xs text-surface-500 whitespace-nowrap">to</span>
-            <input type="date" name="{{ f.name }}_to" id="id_{{ f.name }}_to" value="{{ f.value_to }}"
-                   hx-trigger="change" hx-include="closest form"
-                   class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm" placeholder="To">
-          </div>
+          <input type="text" name="{{ f.name }}" id="id_{{ f.name }}" value="{{ f.value }}"
+                 class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm date-range-picker"
+                 placeholder="Select date range" data-date-field="{{ f.date_field }}">
+          <input type="hidden" name="{{ f.name }}_from" id="id_{{ f.name }}_from" value="{{ f.value_from }}">
+          <input type="hidden" name="{{ f.name }}_to" id="id_{{ f.name }}_to" value="{{ f.value_to }}">
         {% elif f.kind == 'bool' %}
           <select name="{{ f.name }}" id="id_{{ f.name }}"
                   hx-trigger="change" hx-include="closest form"
@@ -64,3 +60,37 @@ hx-trigger + hx-include so it inherits the request from the form.
     </div>
   </form>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.date-range-picker').forEach(function (input) {
+      var fromInput = document.getElementById(input.id + '_from');
+      var toInput = document.getElementById(input.id + '_to');
+      flatpickr(input, {
+        mode: 'range',
+        dateFormat: 'Y-m-d',
+        allowInput: true,
+        onChange: function (selectedDates, dateStr, instance) {
+          if (selectedDates.length === 2) {
+            var from = instance.formatDate(selectedDates[0], 'Y-m-d');
+            var to = instance.formatDate(selectedDates[1], 'Y-m-d');
+            if (fromInput) fromInput.value = from;
+            if (toInput) toInput.value = to;
+            // Trigger form submit via HTMX
+            var form = input.closest('form');
+            if (form) {
+              form.dispatchEvent(new Event('submit', { bubbles: true }));
+            }
+          } else if (selectedDates.length === 0) {
+            if (fromInput) fromInput.value = '';
+            if (toInput) toInput.value = '';
+            var form = input.closest('form');
+            if (form) {
+              form.dispatchEvent(new Event('submit', { bubbles: true }));
+            }
+          }
+        },
+      });
+    });
+  });
+</script>
