@@ -33,8 +33,6 @@ COMPENSATION-REVIEW.md
 # Project documentation to protect
 adr/
 PROJECT-CONTEXT.md
-*.md
-PROJECT-CONTEXT.md
 workspace/
 system-pricing/
 

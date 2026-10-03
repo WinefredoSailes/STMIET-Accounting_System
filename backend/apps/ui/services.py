@@ -2195,6 +2195,7 @@ def _period_for_month(company, month):
     ).first()
 
 
+def ledger_window(params):
     """Resolve a Ledger run's window + segment from GET params.
 
     `month=YYYY-MM` (fiscal-period mode) wins over explicit start/end (date
