@@ -8,17 +8,15 @@
       <h1 class="text-xl font-semibold text-surface-900">WITHHOLDING CERTIFICATES (2307 / 2306)</h1>
       <p class="text-sm text-surface-500 mt-1">Derived from posted check vouchers' withholding splits — one query, not a manual tally.</p>
     </div>
-    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-      <select name="cert_type" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
-        <option value="2307" {% if cert_type == '2307' %}selected{% endif %}>2307 — Expanded</option>
-        <option value="2306" {% if cert_type == '2306' %}selected{% endif %}>2306 — Final</option>
-      </select>
-      <input type="date" name="period_start" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
-      <span class="text-surface-400">to</span>
-      <input type="date" name="period_end" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
-      <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Filter</button>
-      {% include "ui/partials/export_buttons.html" with export_url=export_url %}
-    </form>
+    {% include "ui/partials/date_range_picker.html" with 
+     name="wht_period" 
+     label="Period" 
+     date_field="transaction_date" 
+     value_from=period_start 
+     value_to=period_end 
+     placeholder="Select period" %}
+  <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Filter</button>
+  {% include "ui/partials/export_buttons.html" with export_url=export_url %}
   </div>
 
   <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto shadow-sm">

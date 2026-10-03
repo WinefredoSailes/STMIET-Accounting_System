@@ -1,0 +1,62 @@
+{% comment %}
+Unified Date Range Picker Component
+Usage:
+  {% include "ui/partials/date_range_picker.html" with 
+       name="date_range" 
+       label="Date Range" 
+       date_field="transaction_date" 
+       value_from=start 
+       value_to=end 
+       placeholder="Select date range"
+       hx_trigger="change" 
+  %}
+  
+Parameters:
+  - name: base name for the hidden from/to inputs (generates name_from and name_to)
+  - label: label text
+  - date_field: the model field name for the date (used for filtering)
+  - value_from: initial from date value
+  - value_to: initial to date value
+  - placeholder: placeholder text for the picker input
+  - hx_trigger: HTMX trigger event (default: "change")
+  - extra_classes: additional CSS classes for the input
+  - required: whether the field is required
+  - disabled: whether the input is disabled
+  - name_prefix: optional prefix for the name (defaults to "date_range")
+{% endcomment %}
+
+{% load ui_filters %}
+
+{% with 
+  picker_name=name|default:"date_range" 
+  picker_label=label|default:"Date Range" 
+  picker_date_field=date_field|default:"transaction_date"
+  picker_value_from=value_from|default:""
+  picker_value_to=value_to|default:""
+  picker_placeholder=placeholder|default:"Select date range"
+  picker_hx_trigger=hx_trigger|default:"change"
+  picker_extra_classes=extra_classes|default:""
+  picker_required=required|default:""
+  picker_disabled=disabled|default:""
+  picker_name_prefix=name_prefix|default:""
+%}
+<div class="w-full">
+  <label class="block text-xs font-medium text-surface-500 mb-1" for="id_{{ picker_name }}">{{ picker_label }}</label>
+  <input 
+    type="text" 
+    id="id_{{ picker_name }}" 
+    name="{{ picker_name_prefix }}{{ picker_name }}"
+    class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm date-range-picker {{ picker_extra_classes }}"
+    placeholder="{{ picker_placeholder }}"
+    data-date-field="{{ picker_date_field }}"
+    {% if picker_required %}required{% endif %}
+    {% if picker_disabled %}disabled{% endif %}
+    hx-trigger="{{ picker_hx_trigger }}"
+    hx-include="closest form"
+    autocomplete="off"
+    readonly
+  >
+  <input type="hidden" name="{{ picker_name }}_from" id="id_{{ picker_name }}_from" value="{{ value_from|default:'' }}">
+  <input type="hidden" name="{{ picker_name }}_to" id="id_{{ picker_name }}_to" value="{{ value_to|default:'' }}">
+</div>
+{% endwith %}
