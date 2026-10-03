@@ -2195,7 +2195,6 @@ def _period_for_month(company, month):
     ).first()
 
 
-def ledger_window(params):
     """Resolve a Ledger run's window + segment from GET params.
 
     `month=YYYY-MM` (fiscal-period mode) wins over explicit start/end (date
@@ -2203,6 +2202,7 @@ def ledger_window(params):
     defaults to the period containing the latest posted GL date — the same
     "most recent activity" default as the Trial Balance screen.
     """
+    from datetime import date
     from apps.foundation.models import Company
     from apps.posting.models import GeneralLedger
 

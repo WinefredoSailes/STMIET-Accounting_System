@@ -30,6 +30,18 @@ COMPENSATION-REVIEW.md
 /USERGUIDE.md
 /UAT-GUIDE.md
 
+# Project documentation to protect
+adr/
+PROJECT-CONTEXT.md
+*.md
+PROJECT-CONTEXT.md
+workspace/
+system-pricing/
+
+# Private customer data
+excel-files/*.csv
+excel-files/
+
 # Office / media files (never commit to GitHub)
 *.xlsx
 *.xls

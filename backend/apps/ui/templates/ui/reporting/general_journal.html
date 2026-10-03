@@ -5,13 +5,7 @@
 <div class="p-4 sm:p-6">
   {% capture as gj_filters %}
   <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
-    {% include "ui/partials/date_range_picker.html" with 
-         name="date_range" 
-         label="Date Range" 
-         date_field="transaction_date" 
-         value_from=start 
-         value_to=end 
-         placeholder="Select date range" %}
+    {% include "ui/partials/date_range_picker.html" with name="date_range" label="Date Range" date_field="transaction_date" value_from=start value_to=end placeholder="Select date range" from_name="start" to_name="end" %}
     <select name="segment" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
       <option value="">All segments</option>
       {% for seg in segments %}

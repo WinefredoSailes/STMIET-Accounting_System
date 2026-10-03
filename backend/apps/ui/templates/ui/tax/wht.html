@@ -8,13 +8,7 @@
       <h1 class="text-xl font-semibold text-surface-900">WITHHOLDING CERTIFICATES (2307 / 2306)</h1>
       <p class="text-sm text-surface-500 mt-1">Derived from posted check vouchers' withholding splits — one query, not a manual tally.</p>
     </div>
-    {% include "ui/partials/date_range_picker.html" with 
-     name="wht_period" 
-     label="Period" 
-     date_field="transaction_date" 
-     value_from=period_start 
-     value_to=period_end 
-     placeholder="Select period" %}
+    {% include "ui/partials/date_range_picker.html" with name="wht_period" label="Period" date_field="transaction_date" value_from=period_start value_to=period_end placeholder="Select period" from_name="period_start" to_name="period_end" %}
   <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40">Filter</button>
   {% include "ui/partials/export_buttons.html" with export_url=export_url %}
   </div>

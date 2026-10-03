@@ -32,11 +32,15 @@ hx-trigger + hx-include so it inherits the request from the form.
                  hx-trigger="change" hx-include="closest form"
                  class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
         {% elif f.kind == 'date_range' %}
-          <input type="text" name="{{ f.name }}" id="id_{{ f.name }}" value="{{ f.value }}"
-                 class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm date-range-picker"
-                 placeholder="Select date range" data-date-field="{{ f.date_field }}">
-          <input type="hidden" name="{{ f.name }}_from" id="id_{{ f.name }}_from" value="{{ f.value_from }}">
-          <input type="hidden" name="{{ f.name }}_to" id="id_{{ f.name }}_to" value="{{ f.value_to }}">
+          <div class="flex items-center gap-2">
+            <input type="date" name="{{ f.name }}_from" id="id_{{ f.name }}_from" value="{{ f.value_from }}"
+                   hx-trigger="change" hx-include="closest form"
+                   class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm" placeholder="From">
+            <span class="text-xs text-surface-500 whitespace-nowrap">to</span>
+            <input type="date" name="{{ f.name }}_to" id="id_{{ f.name }}_to" value="{{ f.value_to }}"
+                   hx-trigger="change" hx-include="closest form"
+                   class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm" placeholder="To">
+          </div>
         {% elif f.kind == 'bool' %}
           <select name="{{ f.name }}" id="id_{{ f.name }}"
                   hx-trigger="change" hx-include="closest form"

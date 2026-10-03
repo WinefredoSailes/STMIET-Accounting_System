@@ -7,14 +7,7 @@
   {% capture as gen_controls %}
   <form method="post" class="flex items-center gap-2">
     {% csrf_token %}
-    {% include "ui/partials/date_range_picker.html" with 
-         name="period" 
-         label="Period" 
-         date_field="transaction_date" 
-         value_from=period_start 
-         value_to=period_end 
-         placeholder="Select period" 
-         hx_trigger="change" %}
+    {% include "ui/partials/date_range_picker.html" with name="period" label="Period" date_field="transaction_date" value_from=period_start value_to=period_end placeholder="Select period" hx_trigger="change" from_name="period_start" to_name="period_end" %}
     <button type="submit" class="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700">Generate</button>
   </form>
   {% endcapture %}
