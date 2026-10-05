@@ -55,7 +55,8 @@
     </div>
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Customer</dt>
-      <dd class="mt-1 font-medium">{{ invoice.customer.code }} {{ invoice.customer.name }}</dd>
+      <dd class="mt-1 font-medium">{{ invoice.customer.name }}</dd>
+      <dd class="text-xs text-surface-500">{{ invoice.customer.owner_name|default:"—" }}</dd>
     </div>
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Delivery Receipt No.</dt>

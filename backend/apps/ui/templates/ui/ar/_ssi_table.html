@@ -20,7 +20,7 @@
           <a class="text-brand-600 hover:underline font-mono text-xs" href="{% url 'ui:ssi_detail' inv.id %}">{{ inv.invoice_no }}</a>
         </td>
         <td class="px-4 py-2.5">{{ inv.transaction_date|date:"M d, Y" }}</td>
-        <td class="px-4 py-2.5">{{ inv.customer.code }} {{ inv.customer.name }}</td>
+        <td class="px-4 py-2.5"><div class="font-medium">{{ inv.customer.name }}</div><div class="text-xs text-surface-500">{{ inv.customer.owner_name|default:"—" }}</div></td>
         <td class="px-4 py-2.5 font-mono text-xs">{{ inv.delivery_receipt_no|default:"—" }}</td>
         <td class="px-4 py-2.5 text-xs">{{ inv.segment.code }}</td>
         <td class="px-4 py-2.5 text-right tabular-nums">{{inv.total|peso}}</td>
@@ -44,7 +44,7 @@
     <div class="mobile-card-body">
       <div class="mobile-card-rows">
         <div class="mobile-card-row"><span class="mobile-card-k">Date</span><span class="mobile-card-v">{{ inv.transaction_date|date:"M d, Y" }}</span></div>
-        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v">{{ inv.customer.code }} {{ inv.customer.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v"><span class="font-medium">{{ inv.customer.name }}</span><br><span class="text-xs text-surface-500">{{ inv.customer.owner_name|default:"—" }}</span></span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">DR No.</span><span class="mobile-card-v">{{ inv.delivery_receipt_no|default:"—" }}</span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ inv.segment.code }}</span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">Total</span><span class="mobile-card-v tabular-nums">{{inv.total|peso}}</span></div>

@@ -79,10 +79,10 @@
         </td>
       </tr>
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">Customer:</td>
-        <td colspan="6">{{ invoice.customer.code }} {{ invoice.customer.name }}</td>
-        <td colspan="2" style="font-weight:600">Date:</td>
-        <td colspan="4">{{ invoice.transaction_date|date:"M d, Y" }}</td>
+        <td colspan="2" style="font-weight:600">Business Name:</td>
+        <td colspan="6">{{ invoice.customer.name }}</td>
+        <td colspan="2" style="font-weight:600">Owner:</td>
+        <td colspan="4">{{ invoice.customer.owner_name|default:"—" }}</td>
       </tr>
       <tr style="font-size:10px">
         <td colspan="2" style="font-weight:600">TIN:</td>

@@ -79,16 +79,20 @@
         </td>
       </tr>
       <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">Customer:</td>
-        <td colspan="6">{{ invoice.customer.code }} {{ invoice.customer.name }}</td>
-        <td colspan="2" style="font-weight:600">Segment:</td>
-        <td colspan="4">{{ invoice.segment.code }}</td>
+        <td colspan="2" style="font-weight:600">Business Name:</td>
+        <td colspan="6">{{ invoice.customer.name }}</td>
+        <td colspan="2" style="font-weight:600">Owner:</td>
+        <td colspan="4">{{ invoice.customer.owner_name|default:"—" }}</td>
       </tr>
       <tr style="font-size:10px">
         <td colspan="2" style="font-weight:600">TIN:</td>
         <td colspan="6">{{ invoice.customer.tin|default:"—" }}</td>
+        <td colspan="2" style="font-weight:600">Segment:</td>
+        <td colspan="4">{{ invoice.segment.code }}</td>
+      </tr>
+      <tr style="font-size:10px">
         <td colspan="2" style="font-weight:600">Payment Mode:</td>
-        <td colspan="4">{% if invoice.is_paid_on_delivery %}PAID ON DELIVERY{% else %}ON ACCOUNT{% endif %}</td>
+        <td colspan="12">{% if invoice.is_paid_on_delivery %}PAID ON DELIVERY{% else %}ON ACCOUNT{% endif %}</td>
       </tr>
 
       <!-- TRANSACTION DETAILS: 14 full span -->

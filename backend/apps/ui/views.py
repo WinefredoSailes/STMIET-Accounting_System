@@ -6676,11 +6676,14 @@ def supplier_options(request):
 def customer_options(request):
     """Type-ahead source for searchable customer pickers (server-side).
 
-    Returns the first ~30 approved customers matching the query by code or
-    name, plus the currently-selected customer (when editing) so the picker
-    keeps a stable selection. ``?selected=`` accepts a customer code or id.
-    Pending/rejected customers are hidden: they cannot be transacted with
-    until the Accounting & Finance Head approves them.
+    Returns the first ~30 approved customers matching the query by code,
+    business name, or owner, plus the currently-selected customer (when
+    editing) so the picker keeps a stable selection. ``?selected=`` accepts
+    a customer code or id. Pending/rejected customers are hidden: they cannot
+    be transacted with until the Accounting & Finance Head approves them.
+
+    Display text always carries Business Name + Owner so staff can tell
+    same-name businesses apart; the default (SI/SSI) mode prefixes the code.
     """
     from apps.ar.models import Customer, CustomerApprovalStatus
 
@@ -6690,7 +6693,7 @@ def customer_options(request):
         approval_status=CustomerApprovalStatus.APPROVED
     ).order_by("code")
     if q:
-        qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+        qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(owner_name__icontains=q))
     rows = list(qs[:30])
     if selected and selected not in {c.code for c in rows}:
         lookup = Q(code=selected)
@@ -6700,13 +6703,22 @@ def customer_options(request):
         if keep:
             rows.insert(0, keep)
     name_only = request.GET.get("name_only") in ("1", "true", "True", "yes", "on")
+
+    def _text(c):
+        owner = (c.owner_name or "").strip()
+        if name_only:
+            return f"{c.name} — {owner}" if owner else c.name
+        base = f"{c.code} — {c.name}"
+        return f"{base} — {owner}" if owner else base
+
     return JsonResponse(
         [
             {
                 "id": c.id,
                 "code": c.code,
-                "text": c.name if name_only else f"{c.code} — {c.name}",
+                "text": _text(c),
                 "tin": c.tin,
+                "owner_name": c.owner_name or "",
             }
             for c in rows
         ],

@@ -24,7 +24,7 @@
         </td>
         <td class="px-4 py-2 font-mono text-xs"><a href="{% url 'ui:receipt_detail' r.pk %}" class="font-medium text-brand-600 hover:text-brand-800">{{ r.receipt_no }}</a></td>
         <td class="px-4 py-2">{{ r.transaction_date|date:"M d, Y" }}</td>
-        <td class="px-4 py-2">{{ r.customer.name }}</td>
+        <td class="px-4 py-2"><div class="font-medium">{{ r.customer.name }}</div><div class="text-xs text-surface-500">{{ r.customer.owner_name|default:"—" }}</div></td>
         <td class="px-4 py-2 text-xs">{{ r.segment.code }}</td>
         <td class="px-4 py-2 text-xs">
           {{ r.get_payment_method_display }}
@@ -75,7 +75,7 @@
     <div class="mobile-card-body">
       <div class="mobile-card-rows">
         <div class="mobile-card-row"><span class="mobile-card-k">Date</span><span class="mobile-card-v">{{ r.transaction_date|date:"M d, Y" }}</span></div>
-        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v">{{ r.customer.name }}</span></div>
+        <div class="mobile-card-row"><span class="mobile-card-k">Customer</span><span class="mobile-card-v"><span class="font-medium">{{ r.customer.name }}</span><br><span class="text-xs text-surface-500">{{ r.customer.owner_name|default:"—" }}</span></span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">Segment</span><span class="mobile-card-v">{{ r.segment.code }}</span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">Method</span><span class="mobile-card-v">{{ r.get_payment_method_display }}{% if r.check_no %} · {{ r.check_no }}{% endif %}</span></div>
         <div class="mobile-card-row"><span class="mobile-card-k">Amount</span><span class="mobile-card-v tabular-nums">{{r.amount|peso}}</span></div>

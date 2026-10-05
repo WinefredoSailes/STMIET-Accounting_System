@@ -207,25 +207,47 @@ function renderLocalItems(panel) {
 // types, matching the current query against both code and name. Selected
 // values are merged into the native <select> so form submission keeps
 // working while the picker exposes a fresh server-side result set. ----
-function searchableItem(wrap, value, text, code, tin, kind) {
+function searchableItem(wrap, value, text, code, tin, kind, owner) {
   var item = document.createElement('div');
   item.className = 'searchable-item flex items-baseline gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-brand-50';
   item.dataset.value = value;
   item.dataset.tin = tin || '';
   item.dataset.kind = kind || '';
+  item.dataset.owner = owner || '';
   item.title = text;  // full name on hover for long/truncated titles
   item.sbWrap = wrap;
   var codeEl = document.createElement('span');
-  codeEl.className = 'font-mono text-xs text-surface-500';
+  codeEl.className = 'font-mono text-xs text-surface-500 shrink-0';
   codeEl.textContent = code || value;
+  var body = document.createElement('span');
+  body.className = 'min-w-0 flex-1 leading-tight';
   var title = document.createElement('span');
-  title.className = 'text-surface-700 truncate';
-  // Async results carry text like "61100 — Cost of Sales"; strip the code
-  // prefix when it is duplicated so the title reads as the name only.
+  title.className = 'block text-surface-700 truncate';
+  // Async results carry text like "C001 — Business Name — Owner" or
+  // "Business Name — Owner"; strip the code prefix when it is duplicated
+  // so the title reads as the name (+ owner) only.
   var prefix = (code || value) + ' — ';
-  title.textContent = (text.indexOf(prefix) === 0) ? text.slice(prefix.length) : text;
+  var remainder = (text.indexOf(prefix) === 0) ? text.slice(prefix.length) : text;
+  // When the server sends a separate owner field, prefer a stacked layout:
+  // line 1 = business name, line 2 = owner (muted). Otherwise fall back to
+  // the single-line remainder so non-customer pickers are unaffected.
+  var ownerText = (owner || '').trim();
+  if (ownerText) {
+    var ownerSuffix = ' — ' + ownerText;
+    title.textContent = (remainder.lastIndexOf(ownerSuffix) === remainder.length - ownerSuffix.length)
+      ? remainder.slice(0, remainder.length - ownerSuffix.length)
+      : remainder;
+    var ownerEl = document.createElement('span');
+    ownerEl.className = 'block text-xs text-surface-500 truncate';
+    ownerEl.textContent = ownerText;
+    body.appendChild(title);
+    body.appendChild(ownerEl);
+  } else {
+    title.textContent = remainder;
+    body.appendChild(title);
+  }
   item.appendChild(codeEl);
-  item.appendChild(title);
+  item.appendChild(body);
   return item;
 }
 
@@ -252,9 +274,10 @@ function renderAsyncItems(panel, results, selectedValue, selectedText) {
     opt.textContent = r.text;
     opt.dataset.tin = r.tin || '';
     opt.dataset.kind = r.kind || '';
+    opt.dataset.owner = r.owner || '';
     if (r.prefill) opt.dataset.prefill = r.prefill;  // form-level autofill payloads (ADR-049: SI→AR)
     select.appendChild(opt);
-    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin, r.kind));
+    list.appendChild(searchableItem(panel.sbWrap, r.value, r.text, r.code, r.tin, r.kind, r.owner));
   });
   // Restore the pre-search selection so closing the panel without picking
   // (e.g. Escape) never wipes a filled row.
@@ -296,6 +319,7 @@ function applyAsyncFilter(wrap, panel, query) {
           return {
             value: String(v), code: String(r.code || ''), text: String(r.text || r.code),
             tin: String(r.tin || ''), kind: String(r.kind || ''),
+            owner: String(r.owner_name || r.owner || ''),
             prefill: String(r.prefill || ''),
           };
         });

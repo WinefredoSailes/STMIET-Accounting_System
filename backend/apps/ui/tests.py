@@ -1418,11 +1418,14 @@ class TestReceiptScreen:
 
         client.force_login(user)
         customer = self._new_customer(segment)
+        customer.owner_name = "Maria Fuels"
+        customer.save()
         self._post_grid(client, customer, accounts, segment)
         receipt = AcknowledgmentReceipt.objects.latest("id")
         body = client.get(f"/ar/receipts/{receipt.pk}/edit/").content.decode()
-        # Edit form shows customer name only, no code
+        # Edit form shows business name + owner, no code
         assert "Fuel Client" in body
+        assert "Maria Fuels" in body
         assert "C001" not in body
 
     def test_customer_picker_name_only(self, client, company, segment, accounts, fiscal_period, user):
@@ -1432,15 +1435,22 @@ class TestReceiptScreen:
         customer = self._new_customer(segment)
         customer.code = "C999"
         customer.name = "Test Client Name"
+        customer.owner_name = "Test Owner"
         customer.save()
 
-        # customer_options with name_only=1 returns name only
+        # customer_options with name_only=1 returns business name + owner
         resp = client.get("/foundation/customer-options/", {"name_only": "1", "q": "Test"})
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
-        assert data[0]["text"] == "Test Client Name"
+        assert data[0]["text"] == "Test Client Name — Test Owner"
+        assert data[0]["owner_name"] == "Test Owner"
         assert "C999" not in data[0]["text"]
+
+        # owner is searchable too
+        resp = client.get("/foundation/customer-options/", {"name_only": "1", "q": "Test Owner"})
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
 
     def test_receipt_edit_changes_cash_segment(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
