@@ -585,6 +585,15 @@ RECON_STATUS_CHOICES = [
     ("open", "Open"),
     ("resolved", "Resolved"),
     ("escalated", "Escalated"),
+    ("draft", "Draft"),
+    ("submitted", "Submitted"),
+    ("pre_approved", "Pre-approved"),
+    ("approved", "Approved"),
+]
+
+RECON_FREQUENCY_CHOICES = [
+    ("weekly", "Weekly"),
+    ("monthly", "Monthly"),
 ]
 
 
@@ -595,6 +604,10 @@ def recon_filter_spec():
             FilterField(
                 "status", "Status", kind="choice",
                 choices=lambda req: RECON_STATUS_CHOICES,
+            ),
+            FilterField(
+                "frequency", "Frequency", kind="choice",
+                choices=lambda req: RECON_FREQUENCY_CHOICES,
             ),
             FilterField(
                 "date_range", "Date Range", kind="date_range", date_field="created_at",

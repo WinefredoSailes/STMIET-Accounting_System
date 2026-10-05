@@ -32,6 +32,7 @@ from apps.posting.services import PostingService
 from .models import (
     AcknowledgmentReceipt,
     AcknowledgmentReceiptLine,
+    ARBillingApplication,
     ARInvoice,
     ARInvoiceLine,
     Customer,
@@ -365,6 +366,96 @@ class CollectionService:
             receipt.recalc_totals()
             _log(receipt, "created", actor=created_by)
 
+        return receipt
+
+    # ------------------------------------------------------------------
+    # Billing applications: link/apply approved Billing Module invoices
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def available_billings_for(cls, customer: Customer):
+        """Approved third-party billings usable on a receipt for `customer`.
+
+        Only APPROVED (head-approved, not yet consumed) third-party billings
+        whose counterparty is this customer are offered — STPC intercompany
+        billing flows through its own settlement path.
+        """
+        from apps.billing.models import BillingDocument, BillingStatus, BillingType
+
+        qs = BillingDocument.objects.filter(
+            status=BillingStatus.APPROVED,
+            billing_type=BillingType.THIRD_PARTY,
+        ).select_related("customer", "segment")
+        if customer is not None:
+            qs = qs.filter(customer=customer)
+        # Exclude billings already fully applied on other receipts.
+        used_ids = set(
+            ARBillingApplication.objects.values_list("billing_id", flat=True)
+        )
+        return [b for b in qs if b.id not in used_ids]
+
+    @classmethod
+    @transaction.atomic
+    def attach_billings(
+        cls, receipt: AcknowledgmentReceipt, billing_ids, *, user=None,
+    ) -> AcknowledgmentReceipt:
+        """Link approved billing invoices to a DRAFT receipt (req: AR links
+        approved Billing Invoices when making AR and attaches them)."""
+        from apps.billing.models import BillingDocument, BillingStatus, BillingType
+
+        if receipt.status != ReceiptStatus.DRAFT:
+            raise ValidationError("Billings can only be linked to draft receipts.")
+        created = []
+        for billing_id in billing_ids or []:
+            billing = BillingDocument.objects.filter(pk=billing_id).first()
+            if billing is None:
+                raise ValidationError(f"Billing #{billing_id} does not exist.")
+            if billing.status != BillingStatus.APPROVED:
+                raise ValidationError(
+                    f"Billing {billing.billing_no} is {billing.status} — "
+                    "only approved billings can be applied."
+                )
+            if billing.billing_type != BillingType.THIRD_PARTY:
+                raise ValidationError(
+                    f"Billing {billing.billing_no} is not a third-party billing."
+                )
+            if billing.customer_id and billing.customer_id != receipt.customer_id:
+                raise ValidationError(
+                    f"Billing {billing.billing_no} belongs to a different customer."
+                )
+            app, was_created = ARBillingApplication.objects.get_or_create(
+                receipt=receipt,
+                billing=billing,
+                defaults={
+                    "applied_amount": billing.amount,
+                    "created_by": user,
+                },
+            )
+            if was_created:
+                created.append(app)
+        if created:
+            _log(
+                receipt, "billings_attached",
+                actor=user,
+                note=", ".join(a.billing.billing_no for a in created),
+            )
+        return receipt
+
+    @classmethod
+    @transaction.atomic
+    def detach_billing(
+        cls, receipt: AcknowledgmentReceipt, billing_id, *, user=None,
+    ) -> AcknowledgmentReceipt:
+        """Remove a billing application from a DRAFT receipt."""
+        if receipt.status != ReceiptStatus.DRAFT:
+            raise ValidationError("Billings can only be unlinked from draft receipts.")
+        app = ARBillingApplication.objects.filter(
+            receipt=receipt, billing_id=billing_id
+        ).first()
+        if app is None:
+            raise ValidationError("That billing is not linked to this receipt.")
+        app.delete()
+        _log(receipt, "billing_detached", actor=user, note=str(billing_id))
         return receipt
 
     @staticmethod

@@ -454,3 +454,129 @@ class TestImportCustomers:
 
         call_command("import_customers", file=str(path), stdout=StringIO())
         assert Customer.objects.filter(code="X001").count() == 1
+
+
+@pytest.fixture
+def billing_accts(db):
+    from apps.foundation.models import Account
+
+    rows = [
+        ("15560", "Due from Customers—Unbilled", "asset"),
+        ("41010", "Sales-Retail", "revenue"),
+    ]
+    out = {}
+    for code, name, atype in rows:
+        out[code], _ = Account.objects.get_or_create(
+            code=code,
+            defaults={"name": name, "account_type": atype,
+                      "segment": Account.segment_for_code(code)},
+        )
+    return out
+
+
+def _approved_billing(company, segment, billing_accts, customer, *, billing_no="BI-2026-0001",
+                      billing_type="third_party", status="approved", role_users=None):
+    from apps.billing.services import BillingService
+
+    billing = BillingService.create_billing(
+        billing_no=billing_no,
+        billing_date=date(2026, 2, 1),
+        billing_type=billing_type,
+        company=company,
+        segment=segment,
+        party_name=customer.name,
+        lines=[
+            {"side": "dr", "segment": segment, "account": billing_accts["41010"],
+             "amount": "1000.00", "description": "Service billed"},
+            {"side": "cr", "segment": segment, "account": billing_accts["15560"],
+             "amount": "1000.00", "description": "Unbilled receivable"},
+        ],
+        customer=customer,
+    )
+    staff = role_users["staff"] if role_users else None
+    head = role_users["head"] if role_users else None
+    if status in ("submitted", "approved"):
+        BillingService.submit(billing, user=staff)
+    if status == "approved":
+        BillingService.approve(billing, user=head)
+    return billing
+
+
+def _draft_receipt(customer, segment, accounts):
+    return CollectionService.create_receipt(
+        customer=customer,
+        transaction_date=date(2026, 2, 5),
+        amount="1000.00",
+        cash_account=accounts["10010"],
+        segment=segment,
+    )
+
+
+class TestReceiptBillingApplications:
+    """AR links/attaches approved Billing Module invoices when making AR."""
+
+    def test_attach_approved_billing(self, company, segment, customer, accounts, billing_accts, role_users):
+        from apps.ar.models import ARBillingApplication
+
+        billing = _approved_billing(company, segment, billing_accts, customer, role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        CollectionService.attach_billings(receipt, [billing.id])
+        app = ARBillingApplication.objects.get(receipt=receipt, billing=billing)
+        assert app.applied_amount == Decimal("1000.00")
+
+    def test_reject_unapproved_billing(self, company, segment, customer, accounts, billing_accts, role_users):
+        billing = _approved_billing(company, segment, billing_accts, customer, status="draft", role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        with pytest.raises(ValidationError):
+            CollectionService.attach_billings(receipt, [billing.id])
+
+    def test_reject_wrong_customer(self, company, segment, customer, accounts, billing_accts, role_users):
+        other = Customer.objects.create(code="C002", name="Other Corp")
+        billing = _approved_billing(company, segment, billing_accts, other, role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        with pytest.raises(ValidationError):
+            CollectionService.attach_billings(receipt, [billing.id])
+
+    def test_reject_stpc_billing(self, company, segment, customer, accounts, billing_accts, role_users):
+        billing = _approved_billing(
+            company, segment, billing_accts, customer,
+            billing_no="BI-2026-0002", billing_type="stpc", role_users=role_users,
+        )
+        receipt = _draft_receipt(customer, segment, accounts)
+        with pytest.raises(ValidationError):
+            CollectionService.attach_billings(receipt, [billing.id])
+
+    def test_detach_and_resubmit_allowed(self, company, segment, customer, accounts, billing_accts, role_users):
+        billing = _approved_billing(company, segment, billing_accts, customer, role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        CollectionService.attach_billings(receipt, [billing.id])
+        CollectionService.detach_billing(receipt, billing.id)
+        from apps.ar.models import ARBillingApplication
+
+        assert not ARBillingApplication.objects.filter(receipt=receipt).exists()
+        CollectionService.submit(receipt)
+
+    def test_available_excludes_used(self, company, segment, customer, accounts, billing_accts, role_users):
+        b1 = _approved_billing(company, segment, billing_accts, customer, role_users=role_users)
+        _approved_billing(company, segment, billing_accts, customer, billing_no="BI-2026-0002", role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        CollectionService.attach_billings(receipt, [b1.id])
+        available = CollectionService.available_billings_for(customer)
+        assert {b.billing_no for b in available} == {"BI-2026-0002"}
+
+    def test_api_attach_and_picker(self, company, segment, customer, accounts, billing_accts, user, role_users):
+        from rest_framework.test import APIClient
+
+        billing = _approved_billing(company, segment, billing_accts, customer, role_users=role_users)
+        receipt = _draft_receipt(customer, segment, accounts)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        resp = client.post(
+            f"/api/v1/ar/receipts/{receipt.id}/attach-billings/",
+            {"billing_ids": [billing.id]}, format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["billing_applications"][0]["billing_no"] == billing.billing_no
+        resp = client.get(f"/api/v1/ar/receipts/available-billings/?customer={customer.id}")
+        assert resp.status_code == 200
+        assert all(b["billing_no"] != billing.billing_no for b in resp.json())

@@ -3649,6 +3649,140 @@ class TestReconScreen:
         assert recon.status == "resolved"
 
 
+class TestReconStatementScreen:
+    """Monthly statement UI: create → detail → capture → lines → approvals → exports."""
+
+    @pytest.fixture
+    def cycle(self, db, company, segment, accounts):
+        from apps.cash.models import WeeklyCashCycle
+
+        return WeeklyCashCycle.objects.create(
+            cycle_start="2026-01-27",
+            cycle_end="2026-02-02",
+            segment=segment,
+        )
+
+    @pytest.fixture
+    def bank(self, db, company, segment, accounts):
+        from apps.cash.models import BankAccount
+
+        return BankAccount.objects.create(
+            code="PNB-UI",
+            name="PNB UI Checking",
+            account_type="checking",
+            gl_account=accounts["10010"],
+            company=company,
+        )
+
+    def _monthly(self, client, segment, bank):
+        resp = client.post("/cash/recon/monthly/new/", {
+            "segment": segment.id, "bank_account": bank.id,
+            "year": "2026", "month": "1",
+        })
+        assert resp.status_code == 302
+        from apps.cash.models import BankReconciliation
+
+        recon = BankReconciliation.objects.get()
+        assert recon.period_start == date(2026, 1, 1)
+        assert recon.period_end == date(2026, 1, 31)
+        return recon
+
+    def test_monthly_create_and_detail_renders(self, client, segment, bank):
+        recon = self._monthly(client, segment, bank)
+        resp = client.get(f"/cash/recon/{recon.id}/")
+        assert resp.status_code == 200
+        assert "Unadjusted balances" in resp.content.decode()
+
+    def test_capture_and_line_flow(self, client, segment, bank):
+        recon = self._monthly(client, segment, bank)
+        resp = client.post(f"/cash/recon/{recon.id}/capture/", {
+            "bank_statement_balance": "5000.00",
+        })
+        assert resp.status_code == 302
+        resp = client.post(f"/cash/recon/{recon.id}/lines/add/", {
+            "side": "bank", "category": "deposit_in_transit",
+            "amount": "200.00", "reference": "DEP-1", "description": "",
+        })
+        assert resp.status_code == 302
+        from apps.cash.models import BankReconciliation
+
+        recon.refresh_from_db()
+        assert recon.adjusted_bank_balance == Decimal("5200.00")
+
+    def test_submit_pre_final_as_roles(self, client, segment, bank, role_users):
+        from django.test import Client as DjClient
+
+        recon = self._monthly(client, segment, bank)
+        client.post(f"/cash/recon/{recon.id}/capture/", {"bank_statement_balance": "0.00"})
+        assert client.post(f"/cash/recon/{recon.id}/submit/").status_code == 302
+        head = DjClient()
+        head.force_login(role_users["head"])
+        assert head.post(f"/cash/recon/{recon.id}/pre-approve/").status_code == 302
+        assert head.post(f"/cash/recon/{recon.id}/final-approve/").status_code == 302
+        from apps.cash.models import BankReconciliation
+
+        assert BankReconciliation.objects.get().status == "approved"
+
+    def test_consolidated_and_exports(self, client, company, segment, bank):
+        recon = self._monthly(client, segment, bank)
+        resp = client.get(
+            f"/cash/recon/consolidated/?company={company.id}"
+            "&period_start=2026-01-01&period_end=2026-01-31"
+        )
+        assert resp.status_code == 200
+        assert "PNB-UI" in resp.content.decode()
+        assert client.get(f"/cash/recon/{recon.id}/export/xlsx/").status_code == 200
+        assert client.get(f"/cash/recon/{recon.id}/export/pdf/").status_code == 200
+        resp = client.get(
+            f"/cash/recon/consolidated/export/xlsx/?company={company.id}"
+            "&period_start=2026-01-01&period_end=2026-01-31"
+        )
+        assert resp.status_code == 200
+
+    def test_receipt_attach_billings_ui(self, client, company, segment, accounts):
+        from apps.ar.models import ARBillingApplication, Customer
+        from apps.billing.services import BillingService
+        from apps.ar.services import CollectionService
+        from django.test import Client as DjClient
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        head = User.objects.create_user(username="uihead", password="x")
+        from apps.foundation.models import UserProfile
+
+        UserProfile.objects.create(user=head, approval_role="head")
+        for code, name, atype in [("15560", "Due from Customers—Unbilled", "asset"),
+                                  ("41010", "Sales-Retail", "revenue")]:
+            Account.objects.get_or_create(
+                code=code, defaults={"name": name, "account_type": atype,
+                                      "segment": Account.segment_for_code(code)})
+        customer = Customer.objects.create(code="CU1", name="UI Client")
+        billing = BillingService.create_billing(
+            billing_no="BI-2026-0099", billing_date=date(2026, 2, 1),
+            billing_type="third_party", company=company, segment=segment,
+            party_name=customer.name,
+            lines=[
+                {"side": "dr", "segment": segment, "account": Account.objects.get(code="41010"), "amount": "1000.00"},
+                {"side": "cr", "segment": segment, "account": Account.objects.get(code="15560"), "amount": "1000.00"},
+            ],
+            customer=customer,
+        )
+        # submit/approve as head (service gates on role)
+        BillingService.submit(billing, user=head)
+        BillingService.approve(billing, user=head)
+        receipt = CollectionService.create_receipt(
+            customer=customer, transaction_date=date(2026, 2, 5),
+            amount="1000.00", cash_account=accounts["10010"], segment=segment,
+        )
+        resp = client.post(f"/ar/receipts/{receipt.id}/attach-billings/",
+                           {"billing_ids": [str(billing.id)]})
+        assert resp.status_code == 302
+        assert ARBillingApplication.objects.filter(receipt=receipt).exists()
+        resp = client.get(f"/ar/receipts/{receipt.id}/")
+        assert resp.status_code == 200
+        assert "BI-2026-0099" in resp.content.decode()
+
+
 class TestCashShortScreen:
     @pytest.fixture
     def cycle(self, db, company, segment, accounts):
@@ -6103,3 +6237,125 @@ class TestAgingPayableReconciliation:
         ctx = ap_aging_context(date(2026, 1, 31))
         assert ctx["register_total"] == Decimal("0.00")
         assert self._ap_gl_balance(accounts) == Decimal("0.00")
+
+
+class TestReconEndToEnd:
+    """Full chain on real HTTP: create → capture → lines → submit → inbox →
+    pre-approve → final-approve → exports (parsed) → locked."""
+
+    @pytest.fixture
+    def bank(self, db, company, segment, accounts):
+        from apps.cash.models import BankAccount
+
+        return BankAccount.objects.create(
+            code="PNB-E2E",
+            name="PNB E2E Checking",
+            account_type="checking",
+            gl_account=accounts["10010"],
+            company=company,
+        )
+
+    def test_full_statement_lifecycle(self, client, company, segment, accounts, bank, role_users, user):
+        from django.test import Client as DjClient
+
+        from apps.cash.models import BankReconciliation
+
+        # 1. Posted GL activity the capture must snapshot.
+        entry = _draft_entry(entry_no="JE-E2E-1", transaction_date=date(2026, 1, 15),
+                             lines=[("10010", "3000.00"), ("21000", "-3000.00")], user=user)
+        PostingService.post(entry, user=user)
+
+        # 2. Monthly create → detail renders.
+        resp = client.post("/cash/recon/monthly/new/", {
+            "segment": segment.id, "bank_account": bank.id,
+            "year": "2026", "month": "1",
+        })
+        assert resp.status_code == 302
+        recon = BankReconciliation.objects.get()
+        assert client.get(f"/cash/recon/{recon.id}/").status_code == 200
+
+        # 3. Capture + one line per formula block.
+        assert client.post(f"/cash/recon/{recon.id}/capture/",
+                           {"bank_statement_balance": "3200.00"}).status_code == 302
+        for side, category, amount in [
+            ("bank", "deposit_in_transit", "200.00"),
+            ("bank", "outstanding_checks", "150.00"),
+            ("book", "bank_interest_earned", "50.00"),
+            ("book", "bank_service_charge", "25.00"),
+        ]:
+            resp = client.post(f"/cash/recon/{recon.id}/lines/add/", {
+                "side": side, "category": category, "amount": amount,
+                "reference": "E2E", "description": "",
+            })
+            assert resp.status_code == 302
+        recon.refresh_from_db()
+        # Bank: 3200 + 200 − 150 = 3250. Book: 3000 + 50 − 25 = 3025.
+        assert recon.adjusted_bank_balance == Decimal("3250.00")
+        assert recon.adjusted_book_balance == Decimal("3025.00")
+        assert recon.difference == Decimal("225.00")
+
+        # 4. Submit as staff → head inbox renders the item with working URLs.
+        assert client.post(f"/cash/recon/{recon.id}/submit/").status_code == 302
+        head = DjClient()
+        head.force_login(role_users["head"])
+        resp = head.get("/approvals/")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert f"RECON-{bank.code}-Jan 2026" in body
+
+        # 5. Inbox action URLs drive the two-step approval.
+        resp = head.post(f"/cash/recon/{recon.id}/pre-approve/")
+        assert resp.status_code == 302
+        resp = head.post(f"/cash/recon/{recon.id}/final-approve/")
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "approved"
+
+        # 6. Locked: edits refused.
+        resp = client.post(f"/cash/recon/{recon.id}/lines/add/", {
+            "side": "bank", "category": "deposit_in_transit", "amount": "1.00",
+        })
+        assert resp.status_code == 302  # redirect with error message
+        assert recon.lines.count() == 4
+
+        # 7. Single-bank Excel parses with the right numbers.
+        from openpyxl import load_workbook
+
+        resp = client.get(f"/cash/recon/{recon.id}/export/xlsx/")
+        assert resp.status_code == 200
+        wb = load_workbook(filename=__import__("io").BytesIO(resp.content))
+        assert wb.sheetnames == ["PNB-E2E"]
+        ws = wb["PNB-E2E"]
+        texts = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+        assert "BANK RECONCILIATION STATEMENT" in texts
+        assert "Equals: ADJUSTED BANK BALANCE" in texts
+        assert "Equals: ADJUSTED BOOK BALANCE" in texts
+        adj_bank = adj_book = None
+        for row in ws.iter_rows():
+            vals = [c.value for c in row]
+            if "Equals: ADJUSTED BANK BALANCE" in vals:
+                adj_bank = Decimal(str(row[3].value))
+            if "Equals: ADJUSTED BOOK BALANCE" in vals:
+                adj_book = Decimal(str(row[3].value))
+        assert adj_bank == Decimal("3250.00")
+        assert adj_book == Decimal("3025.00")
+
+        # 8. PDF downloads are real PDFs.
+        resp = client.get(f"/cash/recon/{recon.id}/export/pdf/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "application/pdf"
+        assert resp.content[:4] == b"%PDF"
+
+        # 9. Consolidated Excel: summary + per-bank sheet, totals tie.
+        resp = client.get(
+            f"/cash/recon/consolidated/export/xlsx/?company={company.id}"
+            "&period_start=2026-01-01&period_end=2026-01-31"
+        )
+        assert resp.status_code == 200
+        conso = load_workbook(filename=__import__("io").BytesIO(resp.content))
+        assert conso.sheetnames[0] == "SUMMARY"
+        assert "PNB-E2E" in conso.sheetnames
+        summary = conso["SUMMARY"]
+        total_row = [c.value for c in summary[summary.max_row]]
+        assert Decimal(str(total_row[2])) == Decimal("3250.00")
+        assert Decimal(str(total_row[4])) == Decimal("3025.00")

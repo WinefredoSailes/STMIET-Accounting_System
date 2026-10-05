@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     BankAccount,
     BankReconciliation,
+    BankReconLine,
     CashCycleActivity,
     CashFlowStatement,
     CashShortExcessWorksheet,
@@ -26,7 +27,33 @@ class CashCycleActivitySerializer(serializers.ModelSerializer):
 class BankAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = BankAccount
-        fields = ("id", "code", "name", "account_type", "bank_name", "bank_code", "gl_account", "company", "adb_required", "custodian", "is_active")
+        fields = ("id", "code", "name", "account_type", "bank_name", "bank_code", "gl_account", "company", "adb_required", "reconciliation_frequency", "custodian", "is_active")
+
+
+class BankReconLineSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="get_category_display", read_only=True)
+
+    class Meta:
+        model = BankReconLine
+        fields = ("id", "recon", "side", "category", "category_label", "amount", "reference", "description", "match_status", "adjustment_je")
+        read_only_fields = ("recon",)
+
+
+class BankReconciliationSerializer(serializers.ModelSerializer):
+    lines = BankReconLineSerializer(many=True, read_only=True)
+    variance = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    is_locked = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = BankReconciliation
+        fields = ("id", "cycle", "bank_account", "period_start", "period_end", "frequency",
+                  "book_balance", "bank_statement_balance", "difference",
+                  "typo_adjustment", "pop_adjustment", "cashier_adjustment", "unresolved",
+                  "unadjusted_book_balance", "unadjusted_bank_balance", "is_balances_captured",
+                  "adjusted_bank_balance", "adjusted_book_balance", "variance", "is_locked",
+                  "status", "prepared_by", "prepared_at",
+                  "pre_approved_by", "pre_approved_at", "approved_by", "approved_at",
+                  "rejection_note", "lines")
 
 
 class WeeklyCashCycleSerializer(serializers.ModelSerializer):
@@ -35,12 +62,6 @@ class WeeklyCashCycleSerializer(serializers.ModelSerializer):
     class Meta:
         model = WeeklyCashCycle
         fields = ("id", "cycle_start", "cycle_end", "segment", "closing_balance", "status", "notes", "activities")
-
-
-class BankReconciliationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BankReconciliation
-        fields = ("id", "cycle", "bank_account", "book_balance", "bank_statement_balance", "difference", "typo_adjustment", "pop_adjustment", "cashier_adjustment", "unresolved", "status")
 
 
 class PettyCashFundSerializer(serializers.ModelSerializer):

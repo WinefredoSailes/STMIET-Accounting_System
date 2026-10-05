@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     BankAccount,
     BankReconciliation,
+    BankReconLine,
     CashCycleActivity,
     CashFlowStatement,
     CashShortExcessWorksheet,
@@ -17,8 +18,8 @@ from .models import (
 
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "bank_name", "account_type", "company", "adb_required", "is_active")
-    list_filter = ("account_type", "company", "is_active")
+    list_display = ("code", "name", "bank_name", "account_type", "company", "adb_required", "reconciliation_frequency", "is_active")
+    list_filter = ("account_type", "company", "is_active", "reconciliation_frequency")
     search_fields = ("code", "name", "bank_name")
 
 
@@ -38,9 +39,15 @@ class CashCycleActivityAdmin(admin.ModelAdmin):
 
 @admin.register(BankReconciliation)
 class BankReconciliationAdmin(admin.ModelAdmin):
-    list_display = ("cycle", "bank_account", "book_balance", "bank_statement_balance", "difference", "status")
-    list_filter = ("status", "cycle__segment")
+    list_display = ("cycle", "bank_account", "period_start", "period_end", "frequency", "book_balance", "bank_statement_balance", "difference", "status")
+    list_filter = ("status", "frequency", "cycle__segment")
     search_fields = ("bank_account__code",)
+
+
+@admin.register(BankReconLine)
+class BankReconLineAdmin(admin.ModelAdmin):
+    list_display = ("recon", "side", "category", "amount", "reference", "match_status")
+    list_filter = ("side", "category", "match_status")
 
 
 @admin.register(PettyCashFund)

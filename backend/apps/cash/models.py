@@ -44,6 +44,11 @@ class ActivityType(models.TextChoices):
     LOAN_CLEARED = "loan_cleared", "Checks Cleared for Loan / Fuel"
 
 
+class ReconFrequency(models.TextChoices):
+    WEEKLY = "weekly", "Weekly"
+    MONTHLY = "monthly", "Monthly"
+
+
 class BankAccount(SoftDeleteMixin, AuditableModel):
     """One bank account or PCF/COH fund (ADR-026). 12 accounts / 9 banks + PCF&COH.
 
@@ -69,6 +74,11 @@ class BankAccount(SoftDeleteMixin, AuditableModel):
     # For PCF funds: custodian
     custodian = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     is_active = models.BooleanField(default=True)
+    # Bank Reconciliation Statement cadence (default monthly; flip per
+    # account to weekly once the process is stable).
+    reconciliation_frequency = models.CharField(
+        max_length=8, choices=ReconFrequency.choices, default=ReconFrequency.MONTHLY,
+    )
 
     class Meta:
         ordering = ["bank_name", "code"]
@@ -132,30 +142,151 @@ class CashCycleActivity(AuditableModel):
 
 
 class BankReconciliation(AuditableModel):
-    """Bank reconciliation per cycle per bank account (ADR-026).
-    Target: <15 min/bank. Difference causes = typo/POP/cashier.
+    """Bank reconciliation per period per bank account (ADR-026 + statement module).
+
+    Weekly path: one row per weekly cycle (``cycle`` + ``period_*`` = cycle
+    bounds, ``frequency='weekly'``). Monthly path (default): ``cycle`` is the
+    anchor (last weekly cycle in the month) while ``period_start/end`` span
+    the calendar month. Target: <15 min/bank.
     """
 
     cycle = models.ForeignKey(WeeklyCashCycle, on_delete=models.PROTECT, related_name="reconciliations")
     bank_account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="reconciliations")
+    # Statement period (calendar month for monthly; cycle bounds for weekly).
+    period_start = models.DateField(null=True, blank=True, db_index=True)
+    period_end = models.DateField(null=True, blank=True, db_index=True)
+    frequency = models.CharField(
+        max_length=8, choices=ReconFrequency.choices, default=ReconFrequency.MONTHLY,
+    )
     book_balance = models.DecimalField(max_digits=18, decimal_places=2)
     bank_statement_balance = models.DecimalField(max_digits=18, decimal_places=2)
     difference = models.DecimalField(max_digits=18, decimal_places=2)
-    # Difference breakdown
+    # Difference breakdown (legacy aggregate root-cause buckets).
     typo_adjustment = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     pop_adjustment = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     cashier_adjustment = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     unresolved = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
-    status = models.CharField(max_length=16, default="open")  # open / resolved / escalated
+    # --- Bank Reconciliation Statement fields --------------------------------
+    # Unadjusted balances are captured ONCE (GL snapshot for books, statement
+    # figure for bank) and then locked; later GL postings must not move them.
+    unadjusted_book_balance = models.DecimalField(
+        max_digits=18, decimal_places=2, null=True, blank=True,
+    )
+    unadjusted_bank_balance = models.DecimalField(
+        max_digits=18, decimal_places=2, null=True, blank=True,
+    )
+    is_balances_captured = models.BooleanField(default=False)
+    # Computed from the statement formula (BankReconLine rows).
+    adjusted_bank_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    adjusted_book_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    # Status: legacy (open / resolved / escalated) + statement workflow
+    # (draft / submitted / pre_approved / approved).
+    status = models.CharField(max_length=16, default="open")
     reconciled_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     reconciled_at = models.DateTimeField(null=True, blank=True)
+    # Statement approval: staff prepares -> submitted -> head pre-approves
+    # (temporary) -> head final-approves.
+    prepared_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    prepared_at = models.DateTimeField(null=True, blank=True)
+    pre_approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    pre_approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
 
     class Meta:
         unique_together = ("cycle", "bank_account")
         ordering = ["cycle", "bank_account"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["bank_account", "period_start", "period_end"],
+                name="uniq_recon_bank_period",
+            ),
+        ]
 
     def __str__(self):
         return f"Recon {self.cycle} {self.bank_account}: diff {self.difference}"
+
+    @property
+    def variance(self) -> Decimal:
+        """Adjusted bank balance minus adjusted book balance (must be 0)."""
+        return (self.adjusted_bank_balance or Decimal("0.00")) - (
+            self.adjusted_book_balance or Decimal("0.00")
+        )
+
+    @property
+    def is_locked(self) -> bool:
+        return self.status == "approved"
+
+
+class BankReconLine(AuditableModel):
+    """One statement line of a bank reconciliation (formula requirement c).
+
+    Bank side: Deposit in Transit / Bank Error (add) / Outstanding Checks /
+    Bank Error (less). Book side: Bank Interest Earned / Book Error (add) /
+    Bank Service Charge / NSF-DAIF Charges / Book Error (less).
+    """
+
+    class Side(models.TextChoices):
+        BANK = "bank", "Bank Side"
+        BOOK = "book", "Book Side"
+
+    class Category(models.TextChoices):
+        DEPOSIT_IN_TRANSIT = "deposit_in_transit", "Deposit in Transit"
+        BANK_ERROR_ADD = "bank_error_add", "Bank Error (Add)"
+        OUTSTANDING_CHECKS = "outstanding_checks", "Outstanding Checks"
+        BANK_ERROR_LESS = "bank_error_less", "Bank Error (Less)"
+        BANK_INTEREST_EARNED = "bank_interest_earned", "Bank Interest Earned"
+        BOOK_ERROR_ADD = "book_error_add", "Book Error (Add)"
+        BANK_SERVICE_CHARGE = "bank_service_charge", "Bank Service Charge"
+        NSF_DAIF_CHARGES = "nsf_daif_charges", "NSF/DAIF Charges"
+        BOOK_ERROR_LESS = "book_error_less", "Book Error (Less)"
+
+    #: Which categories belong to which side of the statement.
+    BANK_CATEGORIES = frozenset({
+        "deposit_in_transit", "bank_error_add",
+        "outstanding_checks", "bank_error_less",
+    })
+    BOOK_CATEGORIES = frozenset({
+        "bank_interest_earned", "book_error_add",
+        "bank_service_charge", "nsf_daif_charges", "book_error_less",
+    })
+    #: Categories that ADD to their side's unadjusted balance.
+    ADD_CATEGORIES = frozenset({
+        "deposit_in_transit", "bank_error_add",
+        "bank_interest_earned", "book_error_add",
+    })
+
+    recon = models.ForeignKey(BankReconciliation, on_delete=models.CASCADE, related_name="lines")
+    side = models.CharField(max_length=4, choices=Side.choices)
+    category = models.CharField(max_length=24, choices=Category.choices)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    reference = models.CharField(max_length=128, blank=True)  # check #, deposit slip #, etc.
+    description = models.TextField(blank=True)
+    match_status = models.CharField(
+        max_length=16, default="unmatched",
+        choices=[
+            ("unmatched", "Unmatched"),
+            ("matched", "Matched"),
+            ("adjusted", "Adjusted"),
+        ],
+    )
+    adjustment_je = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="bank_recon_lines",
+    )
+
+    class Meta:
+        ordering = ["recon", "side", "category", "id"]
+
+    def __str__(self):
+        return f"{self.recon_id} {self.side}/{self.category} {self.amount}"
 
 
 class PettyCashFund(SoftDeleteMixin, AuditableModel):

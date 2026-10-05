@@ -125,6 +125,24 @@
     </div>
     {% endif %}
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
+      <dt class="text-xs text-surface-500">Applied billing invoices</dt>
+      <dd class="mt-1 text-xs">
+        {% for app in receipt.billing_applications.all %}
+        <div class="flex items-center justify-between py-0.5">
+          <span class="font-mono">{{ app.billing.billing_no }} <span class="text-surface-500">({{ app.applied_amount|peso }})</span></span>
+          {% if can_edit %}
+          <form method="post" action="{% url 'ui:receipt_detach_billing' receipt.id app.billing_id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="text-rose-600 hover:text-rose-800">Unlink</button>
+          </form>
+          {% endif %}
+        </div>
+        {% empty %}
+        <span class="text-surface-400">—</span>
+        {% endfor %}
+      </dd>
+    </div>
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Collected By</dt>
       <dd class="mt-1 font-medium">{{ receipt.collected_by|default:"—" }}</dd>
     </div>
@@ -161,6 +179,26 @@
     <span class="ml-2 font-medium">{{ receipt.rejected_by.get_full_name|default:receipt.rejected_by.username }}</span>
     <span class="text-xs text-surface-400 ml-2">{{ receipt.rejected_at|date:"M d, Y H:i" }}</span>
     {% if receipt.rejection_note %}<p class="mt-1 text-xs text-rose-700">{{ receipt.rejection_note }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_edit and available_billings %}
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 px-4 py-3">
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">Link approved billing invoices</div>
+    <form method="post" action="{% url 'ui:receipt_attach_billings' receipt.id %}">
+      {% csrf_token %}
+      <div class="space-y-1 text-sm">
+        {% for b in available_billings %}
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="billing_ids" value="{{ b.id }}" class="rounded border-surface-300">
+          <span class="font-mono text-xs">{{ b.billing_no }}</span>
+          <span class="text-surface-500 text-xs">{{ b.party_name }}</span>
+          <span class="ml-auto tabular-nums">{{ b.amount|peso }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="mt-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Link selected billings</button>
+    </form>
   </div>
   {% endif %}
 

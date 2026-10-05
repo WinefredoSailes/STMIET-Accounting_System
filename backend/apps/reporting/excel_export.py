@@ -619,6 +619,153 @@ def build_cash_flow_statement(company, period_start: date, period_end: date) -> 
 
 
 # ---------------------------------------------------------------------------
+# Bank Reconciliation Statement (unified template, requirement c/f/g)
+# ---------------------------------------------------------------------------
+
+# Category order = statement order within each add/less block.
+RECON_BANK_ADDS = ["deposit_in_transit", "bank_error_add"]
+RECON_BANK_LESS = ["outstanding_checks", "bank_error_less"]
+RECON_BOOK_ADDS = ["bank_interest_earned", "book_error_add"]
+RECON_BOOK_LESS = ["bank_service_charge", "nsf_daif_charges", "book_error_less"]
+
+
+def _recon_lines_by_category(recon) -> dict:
+    from collections import defaultdict
+
+    grouped: dict = defaultdict(list)
+    for line in recon.lines.all():
+        grouped[line.category].append(line)
+    return grouped
+
+
+def _write_recon_sheet(ws, recon) -> None:
+    """Render one bank's statement onto `ws` (unified template)."""
+    from openpyxl.styles import Font
+
+    bank = recon.bank_account
+    period_start = recon.period_start or recon.cycle.cycle_start
+    period_end = recon.period_end or recon.cycle.cycle_end
+    grouped = _recon_lines_by_category(recon)
+
+    def put(row, col, value, bold=False):
+        ws.cell(row=row, column=col, value=value)
+        if bold:
+            ws.cell(row=row, column=col).font = Font(bold=True)
+
+    row = 1
+    put(row, 1, COMPANY_NAME, bold=True); row += 1
+    put(row, 1, "BANK RECONCILIATION STATEMENT", bold=True); row += 1
+    put(row, 1, f"{bank.bank_name or bank.name} — {bank.code} {bank.account_number or ''}".strip()); row += 1
+    put(row, 1, f"For the period {period_start:%B %d, %Y} – {period_end:%B %d, %Y}"); row += 1
+    put(row, 1, f"Status: {recon.status}"); row += 1
+    row += 1
+
+    def section(title, unadj_label, unadj_value, adds, less, adjusted_label, adjusted_value):
+        nonlocal row
+        put(row, 1, title, bold=True); row += 1
+        put(row, 1, unadj_label); ws.cell(row=row, column=4, value=unadj_value); row += 1
+        put(row, 1, "Add:"); row += 1
+        for cat in adds:
+            lines = grouped.get(cat, [])
+            subtotal = sum((l.amount for l in lines), Decimal("0.00"))
+            label = dict(recon.lines.model.Category.choices).get(cat, cat)
+            put(row, 1, f"  {label}"); ws.cell(row=row, column=4, value=subtotal); row += 1
+            for line in lines:
+                put(row, 2, f"{line.reference} {line.description}".strip())
+                ws.cell(row=row, column=4, value=line.amount); row += 1
+        put(row, 1, "Less:"); row += 1
+        for cat in less:
+            lines = grouped.get(cat, [])
+            subtotal = sum((l.amount for l in lines), Decimal("0.00"))
+            label = dict(recon.lines.model.Category.choices).get(cat, cat)
+            put(row, 1, f"  {label}"); ws.cell(row=row, column=4, value=subtotal); row += 1
+            for line in lines:
+                put(row, 2, f"{line.reference} {line.description}".strip())
+                ws.cell(row=row, column=4, value=line.amount); row += 1
+        put(row, 1, adjusted_label, bold=True)
+        ws.cell(row=row, column=4, value=adjusted_value)
+        ws.cell(row=row, column=4).font = Font(bold=True); row += 2
+
+    section(
+        "BANK SIDE", "Unadjusted Cash Balance per Bank Statement",
+        recon.unadjusted_bank_balance or recon.bank_statement_balance,
+        RECON_BANK_ADDS, RECON_BANK_LESS,
+        "Equals: ADJUSTED BANK BALANCE", recon.adjusted_bank_balance,
+    )
+    section(
+        "BOOK SIDE", "Unadjusted Cash Balance per Books",
+        recon.unadjusted_book_balance or recon.book_balance,
+        RECON_BOOK_ADDS, RECON_BOOK_LESS,
+        "Equals: ADJUSTED BOOK BALANCE", recon.adjusted_book_balance,
+    )
+    variance = (recon.adjusted_bank_balance or Decimal("0.00")) - (
+        recon.adjusted_book_balance or Decimal("0.00")
+    )
+    put(row, 1, "VARIANCE (Adjusted Bank − Adjusted Book)", bold=True)
+    ws.cell(row=row, column=4, value=variance)
+    ws.cell(row=row, column=4).font = Font(bold=True); row += 2
+    put(row, 1, "Prepared by:"); ws.cell(row=row, column=2, value=str(recon.prepared_by or ""))
+    ws.cell(row=row, column=4, value=str(recon.prepared_at or "")); row += 1
+    put(row, 1, "Pre-approved by:"); ws.cell(row=row, column=2, value=str(recon.pre_approved_by or ""))
+    ws.cell(row=row, column=4, value=str(recon.pre_approved_at or "")); row += 1
+    put(row, 1, "Approved by:"); ws.cell(row=row, column=2, value=str(recon.approved_by or ""))
+    ws.cell(row=row, column=4, value=str(recon.approved_at or "")); row += 1
+    ws.column_dimensions["A"].width = 48
+    ws.column_dimensions["B"].width = 42
+    ws.column_dimensions["D"].width = 20
+
+
+def build_bank_reconciliation_statement(recon) -> "Workbook":
+    """Single-bank statement workbook (unified template)."""
+    if Workbook is None:  # pragma: no cover
+        raise ImportError("openpyxl required for Excel export.")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (recon.bank_account.code or "RECON")[:31]
+    _write_recon_sheet(ws, recon)
+    return wb
+
+
+def build_consolidated_bank_reconciliation(company, period_start: date, period_end: date) -> "Workbook":
+    """All banks for the period: summary sheet + one sheet per bank."""
+    from apps.cash.services import BankReconService
+
+    if Workbook is None:  # pragma: no cover
+        raise ImportError("openpyxl required for Excel export.")
+
+    data = BankReconService.get_consolidated_data(company, period_start, period_end)
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "SUMMARY"
+    summary.append([COMPANY_NAME])
+    summary.append(["CONSOLIDATED BANK RECONCILIATION"])
+    summary.append([f"For the period {period_start:%B %d, %Y} – {period_end:%B %d, %Y}"])
+    summary.append([])
+    summary.append(["Bank", "Unadjusted Bank", "Adjusted Bank", "Unadjusted Book",
+                    "Adjusted Book", "Variance", "Status"])
+    for recon in data["recons"]:
+        summary.append([
+            recon.bank_account.code,
+            recon.unadjusted_bank_balance or recon.bank_statement_balance,
+            recon.adjusted_bank_balance,
+            recon.unadjusted_book_balance or recon.book_balance,
+            recon.adjusted_book_balance,
+            (recon.adjusted_bank_balance or Decimal("0.00"))
+            - (recon.adjusted_book_balance or Decimal("0.00")),
+            recon.status,
+        ])
+    summary.append([
+        "TOTAL", "", data["total_adjusted_bank"], "",
+        data["total_adjusted_book"], data["total_variance"], "",
+    ])
+    for recon in data["recons"]:
+        ws = wb.create_sheet(title=(recon.bank_account.code or "RECON")[:31])
+        _write_recon_sheet(ws, recon)
+    return wb
+
+
+# ---------------------------------------------------------------------------
 # Income Statement (INCOME-STATEMENT.xlsx — sheet "MARCH 2026")
 # ---------------------------------------------------------------------------
 

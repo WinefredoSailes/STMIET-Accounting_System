@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     BankAccountViewSet,
     BankReconciliationViewSet,
+    BankReconLineViewSet,
     CashFlowStatementViewSet,
     CashShortExcessViewSet,
     CheckDisbursementViewSet,
@@ -17,6 +18,7 @@ router = DefaultRouter()
 router.register("bank-accounts", BankAccountViewSet, basename="bankaccount")
 router.register("cycles", WeeklyCashCycleViewSet, basename="weeklycashcycle")
 router.register("reconciliations", BankReconciliationViewSet, basename="bankreconciliation")
+router.register("recon-lines", BankReconLineViewSet, basename="bankreconline")
 router.register("pcf-funds", PettyCashFundViewSet, basename="pcffund")
 router.register("pcf-replenishments", PCFReplenishmentViewSet, basename="pcfreplenishment")
 router.register("transfers", InterAccountTransferViewSet, basename="interaccounttransfer")

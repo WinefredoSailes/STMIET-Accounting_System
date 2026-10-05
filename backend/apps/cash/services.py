@@ -27,6 +27,7 @@ from .models import (
     ActivityType,
     BankAccount,
     BankReconciliation,
+    BankReconLine,
     CashCycleActivity,
     CashFlowStatement,
     CashShortExcessWorksheet,
@@ -210,6 +211,315 @@ class BankReconService:
             },
         )
         return recon
+
+    # ------------------------------------------------------------------
+    # Bank Reconciliation Statement (monthly default; requirement a–g)
+    # ------------------------------------------------------------------
+
+    #: Approval statuses of the statement workflow (legacy weekly rows keep
+    #: open / resolved / escalated and are untouched by these transitions).
+    #: Lines may be edited while the statement has not entered approval.
+    STATEMENT_EDITABLE = ("draft", "open")
+
+    @classmethod
+    def _book_balance_as_of(cls, bank_account: BankAccount, segment, as_of: date) -> Decimal:
+        """Posted GL balance of the bank's cash account up to `as_of`."""
+        from apps.posting.models import GL_EFFECTIVE_STATUSES, GeneralLedger
+
+        return (
+            GeneralLedger.objects.filter(
+                account=bank_account.gl_account,
+                segment=segment,
+                entry__status__in=GL_EFFECTIVE_STATUSES,
+                transaction_date__lte=as_of,
+            ).aggregate(bal=Sum("debit") - Sum("credit"))["bal"]
+        ) or Decimal("0.00")
+
+    @classmethod
+    def _anchor_cycle(cls, segment, period_end: date) -> WeeklyCashCycle:
+        """Weekly cycle covering `period_end` (created when missing)."""
+        from apps.foundation.calendar import cycle_range_for
+
+        start, _ = cycle_range_for(period_end, company=segment.company)
+        return CashCycleService.generate_cycle(segment, start)
+
+    @classmethod
+    @transaction.atomic
+    def create_monthly_reconciliation(
+        cls, *, segment, bank_account: BankAccount, year: int, month: int, user=None
+    ) -> BankReconciliation:
+        """Create (or return) the monthly statement for a bank account.
+
+        The period is the calendar month; the anchor `cycle` is the weekly
+        cycle covering month-end (traceability into cycle sheets).
+        """
+        from apps.foundation.calendar import month_bounds
+
+        period_start, period_end = month_bounds(date(year, month, 1))
+        existing = BankReconciliation.objects.filter(
+            bank_account=bank_account,
+            period_start=period_start,
+            period_end=period_end,
+        ).first()
+        if existing is not None:
+            return existing
+        anchor = cls._anchor_cycle(segment, period_end)
+        clash = BankReconciliation.objects.filter(
+            cycle=anchor, bank_account=bank_account,
+        ).exclude(period_start=period_start, period_end=period_end).first()
+        if clash is not None:
+            raise ValidationError(
+                f"A weekly reconciliation already exists for {bank_account.code} "
+                f"in cycle {anchor.cycle_start}–{anchor.cycle_end}. Resolve or "
+                "remove it before creating the monthly statement."
+            )
+        return BankReconciliation.objects.create(
+            cycle=anchor,
+            bank_account=bank_account,
+            period_start=period_start,
+            period_end=period_end,
+            frequency="monthly",
+            book_balance=Decimal("0.00"),
+            bank_statement_balance=Decimal("0.00"),
+            difference=Decimal("0.00"),
+            status="draft",
+            prepared_by=user,
+            created_by=user,
+        )
+
+    @classmethod
+    @transaction.atomic
+    def capture_balances(
+        cls, recon: BankReconciliation, *, bank_statement_balance, user=None
+    ) -> BankReconciliation:
+        """Capture unadjusted balances ONCE (requirement d) and lock them.
+
+        The book side is a GL snapshot as of the period end; later postings
+        never move it. Re-capture is refused — corrections go through lines.
+        """
+        if recon.is_locked:
+            raise ValidationError("Approved statements cannot be changed.")
+        if recon.is_balances_captured:
+            raise ValidationError(
+                "Balances were already captured for this statement. "
+                "Record corrections as statement lines instead."
+            )
+        as_of = recon.period_end or recon.cycle.cycle_end
+        book_bal = cls._book_balance_as_of(
+            recon.bank_account, recon.cycle.segment, as_of
+        )
+        bank_stmt = money(bank_statement_balance)
+        recon.unadjusted_book_balance = book_bal
+        recon.unadjusted_bank_balance = bank_stmt
+        recon.book_balance = book_bal
+        recon.bank_statement_balance = bank_stmt
+        recon.is_balances_captured = True
+        recon.prepared_by = recon.prepared_by or user
+        if recon.prepared_at is None:
+            recon.prepared_at = timezone.now()
+        recon.save(
+            update_fields=[
+                "unadjusted_book_balance", "unadjusted_bank_balance",
+                "book_balance", "bank_statement_balance",
+                "is_balances_captured", "prepared_by", "prepared_at",
+                "updated_at",
+            ]
+        )
+        return cls.compute_adjusted_balances(recon)
+
+    @classmethod
+    def _validate_line_side(cls, side: str, category: str) -> None:
+        if side == BankReconLine.Side.BANK and category not in BankReconLine.BANK_CATEGORIES:
+            raise ValidationError(f"{category} does not belong to the bank side.")
+        if side == BankReconLine.Side.BOOK and category not in BankReconLine.BOOK_CATEGORIES:
+            raise ValidationError(f"{category} does not belong to the book side.")
+
+    @classmethod
+    def _assert_line_editable(cls, recon: BankReconciliation) -> None:
+        if recon.is_locked:
+            raise ValidationError("Approved statements cannot be changed.")
+        if recon.status not in cls.STATEMENT_EDITABLE:
+            raise ValidationError(
+                "Only draft statements can be edited. "
+                "Reject it first to revise."
+            )
+
+    @classmethod
+    @transaction.atomic
+    def add_line(
+        cls, recon: BankReconciliation, *, side: str, category: str, amount,
+        reference: str = "", description: str = "", user=None,
+    ) -> BankReconLine:
+        """Append a statement line, then recompute adjusted balances."""
+        cls._assert_line_editable(recon)
+        cls._validate_line_side(side, category)
+        amount = money(amount)
+        if amount <= 0:
+            raise ValidationError("Statement line amount must be positive.")
+        line = BankReconLine.objects.create(
+            recon=recon, side=side, category=category, amount=amount,
+            reference=reference or "", description=description or "",
+            created_by=user,
+        )
+        cls.compute_adjusted_balances(recon)
+        return line
+
+    @classmethod
+    @transaction.atomic
+    def update_line(cls, line: BankReconLine, **fields) -> BankReconLine:
+        """Edit a statement line (draft only), then recompute."""
+        recon = line.recon
+        cls._assert_line_editable(recon)
+        side = fields.get("side", line.side)
+        category = fields.get("category", line.category)
+        cls._validate_line_side(side, category)
+        if "amount" in fields:
+            amount = money(fields["amount"])
+            if amount <= 0:
+                raise ValidationError("Statement line amount must be positive.")
+            line.amount = amount
+        line.side = side
+        line.category = category
+        if "reference" in fields:
+            line.reference = fields["reference"] or ""
+        if "description" in fields:
+            line.description = fields["description"] or ""
+        if "match_status" in fields:
+            line.match_status = fields["match_status"]
+        line.save()
+        cls.compute_adjusted_balances(recon)
+        return line
+
+    @classmethod
+    @transaction.atomic
+    def delete_line(cls, line: BankReconLine) -> None:
+        """Remove a statement line (draft only), then recompute."""
+        recon = line.recon
+        cls._assert_line_editable(recon)
+        line.delete()
+        cls.compute_adjusted_balances(recon)
+
+    @classmethod
+    @transaction.atomic
+    def compute_adjusted_balances(cls, recon: BankReconciliation) -> BankReconciliation:
+        """Run the statement formula (requirement c) over the lines.
+
+        Adjusted bank = unadjusted bank + deposits in transit + bank-error
+        adds − outstanding checks − bank-error lesses. Adjusted book mirrors
+        with interest / book-error adds and charges / NSF / book-error lesses.
+        """
+        unadj_bank = recon.unadjusted_bank_balance or Decimal("0.00")
+        unadj_book = recon.unadjusted_book_balance or Decimal("0.00")
+        bank_adj = unadj_bank
+        book_adj = unadj_book
+        for line in recon.lines.all():
+            signed = line.amount if line.category in BankReconLine.ADD_CATEGORIES else -line.amount
+            if line.side == BankReconLine.Side.BANK:
+                bank_adj += signed
+            else:
+                book_adj += signed
+        recon.adjusted_bank_balance = money(bank_adj)
+        recon.adjusted_book_balance = money(book_adj)
+        recon.difference = money(bank_adj - book_adj)
+        recon.save(
+            update_fields=[
+                "adjusted_bank_balance", "adjusted_book_balance",
+                "difference", "updated_at",
+            ]
+        )
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def submit(cls, recon: BankReconciliation, *, user=None) -> BankReconciliation:
+        """draft/open -> submitted: the preparer sends it for review."""
+        if recon.status not in ("draft", "open"):
+            raise ValidationError("Only draft statements can be submitted.")
+        if not recon.is_balances_captured:
+            raise ValidationError("Capture the unadjusted balances first.")
+        cls.compute_adjusted_balances(recon)
+        recon.status = "submitted"
+        recon.rejection_note = ""
+        recon.save(update_fields=["status", "rejection_note", "updated_at"])
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def pre_approve(cls, recon: BankReconciliation, *, user=None) -> BankReconciliation:
+        """submitted -> pre_approved: temporary head pre-approval (req. e)."""
+        if recon.status != "submitted":
+            raise ValidationError("Only submitted statements can be pre-approved.")
+        recon.status = "pre_approved"
+        recon.pre_approved_by = user
+        recon.pre_approved_at = timezone.now()
+        recon.save(
+            update_fields=["status", "pre_approved_by", "pre_approved_at", "updated_at"]
+        )
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def final_approve(cls, recon: BankReconciliation, *, user=None) -> BankReconciliation:
+        """pre_approved -> approved: final head approval; locks the statement."""
+        if recon.status != "pre_approved":
+            raise ValidationError("Only pre-approved statements can be finally approved.")
+        recon = cls.compute_adjusted_balances(recon)
+        recon.status = "approved"
+        recon.approved_by = user
+        recon.approved_at = timezone.now()
+        recon.reconciled_by = user
+        recon.reconciled_at = timezone.now()
+        recon.save(
+            update_fields=[
+                "status", "approved_by", "approved_at",
+                "reconciled_by", "reconciled_at", "updated_at",
+            ]
+        )
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, recon: BankReconciliation, *, user=None, note: str = "") -> BankReconciliation:
+        """submitted/pre_approved -> draft: the head returns it with a note."""
+        if recon.status not in ("submitted", "pre_approved"):
+            raise ValidationError("Only submitted or pre-approved statements can be rejected.")
+        if not (note or "").strip():
+            raise ValidationError("A rejection note is required.")
+        recon.status = "draft"
+        recon.pre_approved_by = None
+        recon.pre_approved_at = None
+        recon.rejection_note = note.strip()
+        recon.save(
+            update_fields=[
+                "status", "pre_approved_by", "pre_approved_at",
+                "rejection_note", "updated_at",
+            ]
+        )
+        return recon
+
+    @classmethod
+    def get_consolidated_data(cls, company, period_start: date, period_end: date) -> dict:
+        """Aggregate every bank's statement for the period (requirement g)."""
+        recons = list(
+            BankReconciliation.objects.filter(
+                bank_account__company=company,
+                period_start=period_start,
+                period_end=period_end,
+            ).select_related("bank_account", "cycle").prefetch_related("lines")
+        )
+        total_bank = Decimal("0.00")
+        total_book = Decimal("0.00")
+        for recon in recons:
+            total_bank += recon.adjusted_bank_balance or Decimal("0.00")
+            total_book += recon.adjusted_book_balance or Decimal("0.00")
+        return {
+            "recons": recons,
+            "period_start": period_start,
+            "period_end": period_end,
+            "total_adjusted_bank": money(total_bank),
+            "total_adjusted_book": money(total_book),
+            "total_variance": money(total_bank - total_book),
+        }
 
 
 class PCFService:

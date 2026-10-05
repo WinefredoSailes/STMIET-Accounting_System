@@ -1,0 +1,187 @@
+{% extends "ui/base.html" %}
+{% load ui_filters %}
+{% block title %}Recon {{ recon.bank_account.code }} {{ recon.period_start|date:"M Y" }}{% endblock %}
+{% block content %}
+<div class="p-6">
+  <a href="{% url 'ui:recon_list' %}" class="text-sm text-surface-500 hover:text-surface-700">&larr;
+    Reconciliations</a>
+
+  <div class="mt-2 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-surface-900">{{ recon.bank_account.code }} — Bank Reconciliation Statement</h1>
+      <p class="text-sm text-surface-500 mt-1">
+        {% if recon.period_start and recon.period_end %}{{ recon.period_start|date:"M d, Y" }} – {{ recon.period_end|date:"M d, Y" }}{% else %}{{ recon.cycle.cycle_start|date:"M d, Y" }} – {{ recon.cycle.cycle_end|date:"M d, Y" }}{% endif %}
+        · {{ recon.get_frequency_display|default:recon.frequency }} · {{ recon.bank_account.bank_name }}
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {% if recon.status == 'approved' %}bg-emerald-100 text-emerald-800{% elif recon.status == 'draft' or recon.status == 'open' %}bg-surface-100 text-surface-700{% else %}bg-amber-100 text-amber-800{% endif %}">{{ recon.status }}</span>
+      <a href="{% url 'ui:recon_statement_export' recon.id 'pdf' %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">PDF</a>
+      <a href="{% url 'ui:recon_statement_export' recon.id 'xlsx' %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">Excel</a>
+    </div>
+  </div>
+
+  {% if recon.rejection_note and recon.status == 'draft' %}
+  <div class="mt-4 rounded-md bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-800">
+    <span class="font-medium">Returned by head:</span> {{ recon.rejection_note }}
+  </div>
+  {% endif %}
+
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 p-6">
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-3">Unadjusted balances (captured once, then locked)</div>
+    {% if recon.is_balances_captured %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div class="rounded-lg bg-surface-50 px-4 py-3">
+        <div class="text-xs text-surface-500">Unadjusted Cash Balance per Bank Statement</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums">{{ recon.unadjusted_bank_balance|peso }}</div>
+      </div>
+      <div class="rounded-lg bg-surface-50 px-4 py-3">
+        <div class="text-xs text-surface-500">Unadjusted Cash Balance per Books (GL snapshot)</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums">{{ recon.unadjusted_book_balance|peso }}</div>
+      </div>
+    </div>
+    {% else %}
+    <form method="post" action="{% url 'ui:recon_capture' recon.id %}" class="flex flex-wrap items-end gap-3">
+      {% csrf_token %}
+      <div>
+        <label class="block text-sm font-medium text-surface-700 mb-1" for="id_bank_statement_balance">Bank statement balance (₱)</label>
+        <input type="text" inputmode="decimal" autocomplete="off" data-amount name="bank_statement_balance" id="id_bank_statement_balance" required
+               class="w-64 rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Capture balances</button>
+      <p class="w-full text-xs text-surface-500">Pulls the GL cash balance once as of the period end and saves it as the Unadjusted Book Balance.</p>
+    </form>
+    {% endif %}
+  </div>
+
+  {% for section in grouped %}
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 p-6">
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-2">{{ section.title }}</div>
+    {% for row in section.rows %}
+    <div class="mt-3">
+      <div class="flex items-center justify-between text-sm">
+        <span class="font-medium">{{ row.label }}</span>
+        <span class="tabular-nums font-medium">{{ row.subtotal|peso }}</span>
+      </div>
+      {% for line in row.lines %}
+      <div class="mt-1 flex items-center justify-between text-sm text-surface-600 pl-4">
+        <span>{{ line.reference }} {{ line.description }}</span>
+        <span class="flex items-center gap-3">
+          <span class="tabular-nums">{{ line.amount|peso }}</span>
+          {% if recon.status == 'draft' or recon.status == 'open' %}
+          <form method="post" action="{% url 'ui:recon_line_delete' recon.id line.id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="text-xs text-rose-600 hover:text-rose-800">Remove</button>
+          </form>
+          {% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  {% if recon.status == 'draft' or recon.status == 'open' %}
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 p-6">
+    <div class="text-xs uppercase tracking-wider text-surface-500 mb-3">Add statement line</div>
+    <form method="post" action="{% url 'ui:recon_line_add' recon.id %}" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs font-medium text-surface-700 mb-1">Side</label>
+        <select name="side" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          <option value="bank">Bank side</option>
+          <option value="book">Book side</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-surface-700 mb-1">Category</label>
+        <select name="category" required class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+          {% for value, label in category_choices %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-surface-700 mb-1">Amount (₱)</label>
+        <input type="text" inputmode="decimal" autocomplete="off" data-amount name="amount" required
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-surface-700 mb-1">Reference</label>
+        <input type="text" name="reference" placeholder="Check / slip #"
+               class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-surface-700 mb-1">Description</label>
+        <input type="text" name="description" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+      </div>
+      <div class="md:col-span-5 flex justify-end">
+        <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Add line</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="mt-4 bg-white rounded-xl border border-surface-200 p-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+      <div class="rounded-lg bg-surface-50 px-4 py-3">
+        <div class="text-xs text-surface-500">Adjusted Bank Balance</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums">{{ recon.adjusted_bank_balance|peso }}</div>
+      </div>
+      <div class="rounded-lg bg-surface-50 px-4 py-3">
+        <div class="text-xs text-surface-500">Adjusted Book Balance</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums">{{ recon.adjusted_book_balance|peso }}</div>
+      </div>
+      <div class="rounded-lg px-4 py-3 {% if recon.variance %}bg-rose-50{% else %}bg-emerald-50{% endif %}">
+        <div class="text-xs text-surface-500">Variance (must be zero)</div>
+        <div class="mt-1 text-lg font-semibold tabular-nums {% if recon.variance %}text-rose-700{% else %}text-emerald-700{% endif %}">{{ recon.variance|peso }}</div>
+      </div>
+    </div>
+    <div class="mt-2 text-xs text-surface-500">Prepared: {{ recon.prepared_by.username|default:"—" }} · Pre-approved: {{ recon.pre_approved_by.username|default:"—" }} · Approved: {{ recon.approved_by.username|default:"—" }}</div>
+  </div>
+
+  <div class="mt-4 flex flex-wrap items-center gap-3">
+    {% if recon.status == 'draft' or recon.status == 'open' %}
+    <form method="post" action="{% url 'ui:recon_submit' recon.id %}">
+      {% csrf_token %}
+      <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Submit for pre-approval</button>
+    </form>
+    {% elif recon.status == 'submitted' %}
+      {% if request.user|approval_role_of == 'head' %}
+      <form method="post" action="{% url 'ui:recon_pre_approve' recon.id %}">
+        {% csrf_token %}
+        <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Pre-approve</button>
+      </form>
+      <button type="button" data-toggle-target="#recon-reject-form" class="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject with note</button>
+      {% else %}
+      <span class="text-sm text-amber-700">Submitted — awaiting Accounting &amp; Finance Head pre-approval.</span>
+      {% endif %}
+    {% elif recon.status == 'pre_approved' %}
+      {% if request.user|approval_role_of == 'head' %}
+      <form method="post" action="{% url 'ui:recon_final_approve' recon.id %}">
+        {% csrf_token %}
+        <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Final approve &amp; lock</button>
+      </form>
+      <button type="button" data-toggle-target="#recon-reject-form" class="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Reject with note</button>
+      {% else %}
+      <span class="text-sm text-amber-700">Pre-approved — awaiting final approval.</span>
+      {% endif %}
+    {% elif recon.status == 'approved' %}
+    <span class="text-sm text-emerald-700">Approved and locked.</span>
+    {% endif %}
+  </div>
+
+  {% if recon.status == 'submitted' or recon.status == 'pre_approved' %}
+  {% if request.user|approval_role_of == 'head' %}
+  <form method="post" action="{% url 'ui:recon_reject' recon.id %}" id="recon-reject-form" class="mt-3 hidden max-w-xl">
+    {% csrf_token %}
+    <textarea name="note" data-autogrow rows="3" required
+      class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm"
+      placeholder="Why is this statement being returned? The preparer will see this note."></textarea>
+    <button type="submit" class="mt-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Return statement to preparer</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

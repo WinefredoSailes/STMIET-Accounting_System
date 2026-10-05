@@ -98,6 +98,14 @@ TRANSFER_NEXT_ROLE = {
     "submitted": "head",
 }
 
+# Bank Reconciliation Statement status -> next approval role (temporary
+# two-step head gate): staff prepares/submits -> head pre-approves ->
+# head final-approves (locks the statement).
+BANK_RECON_NEXT_ROLE = {
+    "submitted": "head",
+    "pre_approved": "head",
+}
+
 
 # Purchase Order status -> next approval role (ADR-0XX). Same matrix as the
 # RFP: the head checks and approves at every step; the COO only above P100k
@@ -384,6 +392,53 @@ def transfer_queue(user_roles):
                 "detail": ("ui:transfer_detail", transfer.id),
                 "action": ("ui:transfer_approve", transfer.id),
                 "action_label": "Approve",
+            }
+        )
+    return out
+
+
+def bank_recon_queue(user_roles):
+    """Bank Reconciliation Statements waiting on the head.
+
+    Submitted statements await pre-approval; pre-approved ones await final
+    approval (temporary two-step head gate). Drafts stay with the preparer.
+    """
+    if "head" not in user_roles:
+        return []
+    from apps.cash.models import BankReconciliation
+
+    out = []
+    docs = BankReconciliation.objects.filter(
+        status__in=("submitted", "pre_approved")
+    ).select_related("bank_account", "cycle")
+    for recon in docs:
+        period = ""
+        if recon.period_start and recon.period_end:
+            period = f"{recon.period_start:%b %Y}"
+        elif recon.cycle_id:
+            period = f"{recon.cycle.cycle_start:%b %d}-{recon.cycle.cycle_end:%b %d}"
+        next_action = (
+            "ui:recon_pre_approve"
+            if recon.status == "submitted"
+            else "ui:recon_final_approve"
+        )
+        out.append(
+            {
+                "kind": "bank_recon",
+                "role": "head",
+                "doc": recon,
+                "number": f"RECON-{recon.bank_account.code}-{period}",
+                "title": (
+                    f"{recon.bank_account.code} {period} · "
+                    f"variance {recon.difference}"
+                ),
+                "date": recon.period_end or (recon.cycle.cycle_end if recon.cycle_id else None),
+                "amount": abs(recon.difference or 0),
+                "detail": ("ui:recon_detail", recon.id),
+                "action": (next_action, recon.id),
+                "action_label": (
+                    "Pre-approve" if recon.status == "submitted" else "Approve"
+                ),
             }
         )
     return out
@@ -795,6 +850,7 @@ def pending_approval_queue(user):
         + cv_queue({role})
         + cash_short_queue({role})
         + transfer_queue({role})
+        + bank_recon_queue({role})
         + je_queue({role})
         + reversal_queue({role})
         + ar_receipt_queue({role})

@@ -9,9 +9,11 @@
       <p class="text-sm text-surface-500 mt-1">Per cycle per bank: book vs bank statement, target &lt; 15 min/bank (ADR-026).</p>
     </div>
     <div class="flex items-center gap-3">
+      <a href="{% url 'ui:recon_consolidated' %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">Consolidated</a>
       <a href="{% url 'ui:cycle_list' %}" class="text-sm font-medium text-brand-600 hover:text-brand-800">← Cycles</a>
       {% url 'ui:recon_export' as export_url %}{% include "ui/partials/export_buttons.html" with export_url=export_url %}
-      <a href="{% url 'ui:recon_create' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ Reconcile</a>
+      <a href="{% url 'ui:recon_monthly_new' %}" class="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">+ Monthly statement</a>
+      <a href="{% url 'ui:recon_create' %}" class="rounded-md border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-700 hover:bg-surface-50">+ Weekly reconcile</a>
     </div>
   </div>
 

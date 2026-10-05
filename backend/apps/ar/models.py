@@ -249,6 +249,32 @@ class AcknowledgmentReceiptLine(models.Model):
         return f"{self.receipt.receipt_no} #{self.line_no} {side} {self.account.code} {amount}"
 
 
+class ARBillingApplication(AuditableModel):
+    """Link/apply an approved BillingDocument when making an AR receipt.
+
+    Billing invoices (STPC intercompany / third-party) are prepared and
+    approved in the Billing Module; the collection receipt then applies them
+    here. Kept separate from ``applied_to`` (AR invoices) so invoice balance
+    validation is untouched. Draft receipts only.
+    """
+
+    receipt = models.ForeignKey(
+        AcknowledgmentReceipt, on_delete=models.CASCADE, related_name="billing_applications"
+    )
+    billing = models.ForeignKey(
+        "billing.BillingDocument", on_delete=models.PROTECT, related_name="ar_applications"
+    )
+    applied_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    notes = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        unique_together = ("receipt", "billing")
+        ordering = ["receipt", "billing"]
+
+    def __str__(self):
+        return f"{self.receipt.receipt_no} applies {self.billing.billing_no} {self.applied_amount}"
+
+
 class ARInvoice(AuditableModel):
     """Sales invoice / delivery billing (SI# per catalog events #48/#49).
 

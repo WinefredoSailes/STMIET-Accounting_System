@@ -140,3 +140,31 @@ class BillingViewSet(viewsets.ModelViewSet):
         return Response(
             {"billing": self.get_serializer(billing).data, "journal_entry": entry.entry_no}
         )
+
+    @action(detail=False, methods=["get"], url_path="available-for-ar")
+    def available_for_ar(self, request):
+        """Approved third-party billings usable on an AR receipt.
+
+        GET ?customer= — compliance and AR preparers pick from this list when
+        making Acknowledgment Receipts (STPC + 3rd-party billing flows through
+        the Billing Module first).
+        """
+        from apps.ar.models import ARBillingApplication, Customer
+
+        from .models import BillingStatus, BillingType
+
+        qs = BillingDocument.objects.filter(
+            status=BillingStatus.APPROVED,
+            billing_type=BillingType.THIRD_PARTY,
+        ).select_related("customer", "segment").order_by("-billing_date")
+        if request.query_params.get("customer"):
+            qs = qs.filter(customer_id=request.query_params.get("customer"))
+        used_ids = set(ARBillingApplication.objects.values_list("billing_id", flat=True))
+        return Response([
+            {
+                "id": b.id, "billing_no": b.billing_no,
+                "billing_date": b.billing_date, "party_name": b.party_name,
+                "customer": b.customer_id, "amount": b.amount,
+            }
+            for b in qs if b.id not in used_ids
+        ])

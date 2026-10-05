@@ -225,6 +225,45 @@ class AcknowledgmentReceiptViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(receipt).data)
 
+    @action(detail=True, methods=["post"], url_path="attach-billings")
+    def attach_billings(self, request, pk=None):
+        """Link approved Billing Module invoices to this draft receipt."""
+        receipt = self.get_object()
+        try:
+            CollectionService.attach_billings(
+                receipt, request.data.get("billing_ids") or [], user=request.user
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=True, methods=["post"], url_path="detach-billing")
+    def detach_billing(self, request, pk=None):
+        receipt = self.get_object()
+        try:
+            CollectionService.detach_billing(
+                receipt, request.data.get("billing_id"), user=request.user
+            )
+        except AccountingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(receipt).data)
+
+    @action(detail=False, methods=["get"], url_path="available-billings")
+    def available_billings(self, request):
+        """GET ?customer= — approved third-party billings usable on a receipt."""
+        customer = None
+        if request.query_params.get("customer"):
+            customer = Customer.objects.get(pk=request.query_params.get("customer"))
+        billings = CollectionService.available_billings_for(customer)
+        return Response([
+            {
+                "id": b.id, "billing_no": b.billing_no,
+                "billing_type": b.billing_type, "billing_date": b.billing_date,
+                "party_name": b.party_name, "amount": b.amount,
+            }
+            for b in billings
+        ])
+
 
 class DepositViewSet(viewsets.ModelViewSet):
     queryset = Deposit.objects.select_related("bank_account", "journal_entry")

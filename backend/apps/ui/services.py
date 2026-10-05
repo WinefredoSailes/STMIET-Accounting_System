@@ -1053,6 +1053,10 @@ def recon_summary():
         "open": qs.filter(status="open").count(),
         "resolved": qs.filter(status="resolved").count(),
         "escalated": qs.filter(status="escalated").count(),
+        "draft": qs.filter(status__in=("draft", "open")).count(),
+        "submitted": qs.filter(status="submitted").count(),
+        "pre_approved": qs.filter(status="pre_approved").count(),
+        "approved": qs.filter(status="approved").count(),
     }
 
 

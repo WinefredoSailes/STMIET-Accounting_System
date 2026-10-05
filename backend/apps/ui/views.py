@@ -343,6 +343,7 @@ def logout_view(request):
 KIND_LABELS = {
     "ar_receipt": "Acknowledgment Receipts",
     "asset": "Assets",
+    "bank_recon": "Bank Reconciliations",
     "billing": "Billing",
     "cash_short": "Cash Short/Excess",
     "cv": "Check Vouchers",
@@ -374,6 +375,7 @@ INBOX_REJECT_URLS = {
     "po": "ui:po_reject",
     "cv": "ui:cv_reject",
     "billing": "ui:billing_reject",
+    "bank_recon": "ui:recon_reject",
     "transfer": "ui:transfer_reject",
     "pcf": "ui:pcf_replenishment_reject",
     "customer": "ui:customer_reject",
@@ -2286,12 +2288,14 @@ def receipt_edit(request, pk: int):
 @login_required
 def receipt_detail(request, pk: int):
     from apps.ar.models import AcknowledgmentReceipt
+    from apps.ar.services import CollectionService
 
     receipt = get_object_or_404(
         AcknowledgmentReceipt.objects.select_related(
             "journal_entry", "customer", "segment", "cash_account", "applied_to"
         ).prefetch_related(
-            "lines__account", "lines__segment"
+            "lines__account", "lines__segment",
+            "billing_applications__billing",
         ),
         pk=pk,
     )
@@ -2329,8 +2333,44 @@ def receipt_detail(request, pk: int):
                 receipt.created_by_id == request.user.id
                 or get_approval_role(request.user) == "head"
             ),
+            "available_billings": (
+                CollectionService.available_billings_for(receipt.customer)
+                if receipt.status == "draft" else []
+            ),
         },
     )
+
+
+@login_required
+@require_POST
+def receipt_attach_billings(request, pk: int):
+    """Link approved Billing Module invoices to a draft receipt."""
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    try:
+        billing_ids = request.POST.getlist("billing_ids") or request.POST.getlist("billing_id")
+        CollectionService.attach_billings(receipt, billing_ids, user=request.user)
+        messages.success(request, f"Billing invoice(s) linked to receipt {receipt.receipt_no}.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:receipt_detail", pk))
+
+
+@login_required
+@require_POST
+def receipt_detach_billing(request, pk: int, billing_id: int):
+    from apps.ar.models import AcknowledgmentReceipt
+    from apps.ar.services import CollectionService
+
+    receipt = get_object_or_404(AcknowledgmentReceipt, pk=pk)
+    try:
+        CollectionService.detach_billing(receipt, billing_id, user=request.user)
+        messages.success(request, "Billing invoice unlinked.")
+    except Exception as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:receipt_detail", pk))
 
 
 @login_required
@@ -5977,6 +6017,286 @@ def recon_create(request):
             "banks": list_banks(),
             "selected_cycle": selected_cycle,
         },
+    )
+
+
+@login_required
+def recon_monthly_new(request):
+    """Create a monthly statement: pick segment + bank + month."""
+    from apps.cash.models import BankAccount
+    from apps.cash.services import BankReconService
+    from apps.foundation.models import Segment
+
+    if request.method == "POST":
+        try:
+            segment = Segment.objects.get(pk=request.POST["segment"])
+            bank = BankAccount.objects.get(pk=request.POST["bank_account"])
+            recon = BankReconService.create_monthly_reconciliation(
+                segment=segment, bank_account=bank,
+                year=int(request.POST["year"]), month=int(request.POST["month"]),
+                user=request.user,
+            )
+            messages.success(
+                request,
+                f"Monthly statement {bank.code} {recon.period_start:%b %Y} ready.",
+            )
+            return redirect("ui:recon_detail", pk=recon.pk)
+        except (ObjectDoesNotExist, ValueError, AccountingError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/cash/recon_monthly_form.html",
+        {
+            "segments": Segment.objects.order_by("code"),
+            "banks": list_banks(),
+        },
+    )
+
+
+@login_required
+def recon_detail(request, pk):
+    """Statement detail: balances, formula sections with lines, approvals."""
+    from apps.cash.models import BankReconciliation, BankReconLine
+
+    recon = get_object_or_404(
+        BankReconciliation.objects.select_related(
+            "cycle", "cycle__segment", "bank_account",
+            "prepared_by", "pre_approved_by", "approved_by",
+        ).prefetch_related("lines"),
+        pk=pk,
+    )
+    labels = dict(BankReconLine.Category.choices)
+    sections = [
+        ("Bank side — Add", "bank", ["deposit_in_transit", "bank_error_add"]),
+        ("Bank side — Less", "bank", ["outstanding_checks", "bank_error_less"]),
+        ("Book side — Add", "book", ["bank_interest_earned", "book_error_add"]),
+        ("Book side — Less", "book", ["bank_service_charge", "nsf_daif_charges", "book_error_less"]),
+    ]
+    grouped = []
+    for title, side, cats in sections:
+        rows = []
+        for cat in cats:
+            lines = [l for l in recon.lines.all() if l.category == cat]
+            rows.append({
+                "category": cat, "label": labels.get(cat, cat),
+                "lines": lines,
+                "subtotal": sum((l.amount for l in lines), Decimal("0.00")),
+            })
+        grouped.append({"title": title, "side": side, "rows": rows})
+    return render(
+        request,
+        "ui/cash/recon_detail.html",
+        {
+            "recon": recon,
+            "grouped": grouped,
+            "category_choices": BankReconLine.Category.choices,
+        },
+    )
+
+
+@login_required
+@require_POST
+def recon_capture(request, pk):
+    """Capture unadjusted balances ONCE for the statement."""
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        BankReconService.capture_balances(
+            recon,
+            bank_statement_balance=request.POST["bank_statement_balance"],
+            user=request.user,
+        )
+        messages.success(request, "Unadjusted balances captured and locked.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_line_add(request, pk):
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        BankReconService.add_line(
+            recon,
+            side=request.POST["side"],
+            category=request.POST["category"],
+            amount=request.POST["amount"],
+            reference=request.POST.get("reference", ""),
+            description=request.POST.get("description", ""),
+            user=request.user,
+        )
+        messages.success(request, "Statement line added.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_line_delete(request, pk, line_id):
+    from apps.cash.models import BankReconLine
+    from apps.cash.services import BankReconService
+
+    line = get_object_or_404(BankReconLine, pk=line_id, recon_id=pk)
+    try:
+        BankReconService.delete_line(line)
+        messages.success(request, "Statement line removed.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_submit(request, pk):
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        BankReconService.submit(recon, user=request.user)
+        messages.success(request, "Statement submitted for pre-approval.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_pre_approve(request, pk):
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+    from apps.core.approvals import require_approval_role
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        BankReconService.pre_approve(recon, user=request.user)
+        messages.success(request, "Statement pre-approved.")
+    except (AccountingError, ValidationError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_final_approve(request, pk):
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+    from apps.core.approvals import require_approval_role
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        BankReconService.final_approve(recon, user=request.user)
+        messages.success(request, "Statement approved and locked.")
+    except (AccountingError, ValidationError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def recon_reject(request, pk):
+    from apps.cash.models import BankReconciliation
+    from apps.cash.services import BankReconService
+    from apps.core.approvals import require_approval_role
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    try:
+        require_approval_role(request.user, "head")
+        BankReconService.reject(
+            recon, user=request.user, note=request.POST.get("note", "")
+        )
+        messages.success(request, "Statement returned to the preparer.")
+    except (AccountingError, ValidationError, PermissionDenied) as exc:
+        messages.error(request, str(exc))
+    return redirect("ui:recon_detail", pk=pk)
+
+
+@login_required
+def recon_statement_export(request, pk, fmt):
+    """Single-bank statement download (unified template): xlsx or pdf."""
+    from apps.cash.models import BankReconciliation
+
+    recon = get_object_or_404(
+        BankReconciliation.objects.select_related("bank_account", "cycle").prefetch_related("lines"),
+        pk=pk,
+    )
+    if fmt == "pdf":
+        from apps.reporting.recon_export import bank_recon_pdf_response
+
+        return bank_recon_pdf_response(recon)
+    from apps.reporting.excel_export import build_bank_reconciliation_statement, xlsx_response
+
+    code = recon.bank_account.code
+    ps = recon.period_start or recon.cycle.cycle_start
+    pe = recon.period_end or recon.cycle.cycle_end
+    return xlsx_response(
+        build_bank_reconciliation_statement(recon),
+        f"BANK-RECON-{code}-{ps:%Y%m%d}-{pe:%Y%m%d}.xlsx",
+    )
+
+
+@login_required
+def recon_consolidated(request):
+    """All banks for a period: summary + per-bank status, with exports."""
+    from apps.cash.services import BankReconService
+    from apps.foundation.models import Company
+
+    companies = Company.objects.order_by("code")
+    company = None
+    data = None
+    period_start = request.GET.get("period_start") or ""
+    period_end = request.GET.get("period_end") or ""
+    if request.GET.get("company") and period_start and period_end:
+        try:
+            company = Company.objects.get(pk=request.GET["company"])
+            data = BankReconService.get_consolidated_data(
+                company,
+                date.fromisoformat(period_start),
+                date.fromisoformat(period_end),
+            )
+        except (ObjectDoesNotExist, ValueError) as exc:
+            messages.error(request, str(exc))
+    return render(
+        request,
+        "ui/cash/recon_consolidated.html",
+        {
+            "companies": companies,
+            "company": company,
+            "period_start": period_start,
+            "period_end": period_end,
+            "data": data,
+        },
+    )
+
+
+@login_required
+def recon_consolidated_export(request, fmt):
+    """Consolidated download for a period: xlsx or pdf."""
+    from apps.cash.services import BankReconService
+    from apps.foundation.models import Company
+
+    company = Company.objects.get(pk=request.GET["company"])
+    period_start = date.fromisoformat(request.GET["period_start"])
+    period_end = date.fromisoformat(request.GET["period_end"])
+    if fmt == "pdf":
+        from apps.reporting.recon_export import consolidated_recon_pdf_response
+
+        return consolidated_recon_pdf_response(company, period_start, period_end)
+    from apps.reporting.excel_export import build_consolidated_bank_reconciliation, xlsx_response
+
+    BankReconService.get_consolidated_data(company, period_start, period_end)
+    return xlsx_response(
+        build_consolidated_bank_reconciliation(company, period_start, period_end),
+        f"BANK-RECON-CONSO-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx",
     )
 
 

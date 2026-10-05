@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     AcknowledgmentReceipt,
     AcknowledgmentReceiptLine,
+    ARBillingApplication,
     ARInvoice,
     ARInvoiceLine,
     Customer,
@@ -77,8 +78,18 @@ class AcknowledgmentReceiptLineSerializer(serializers.ModelSerializer):
         )
 
 
+class ARBillingApplicationSerializer(serializers.ModelSerializer):
+    billing_no = serializers.CharField(source="billing.billing_no", read_only=True)
+    billing_type = serializers.CharField(source="billing.billing_type", read_only=True)
+
+    class Meta:
+        model = ARBillingApplication
+        fields = ("id", "billing", "billing_no", "billing_type", "applied_amount", "notes")
+
+
 class AcknowledgmentReceiptSerializer(serializers.ModelSerializer):
     lines = AcknowledgmentReceiptLineSerializer(many=True, read_only=True)
+    billing_applications = ARBillingApplicationSerializer(many=True, read_only=True)
 
     class Meta:
         model = AcknowledgmentReceipt
@@ -86,6 +97,7 @@ class AcknowledgmentReceiptSerializer(serializers.ModelSerializer):
             "id", "receipt_no", "customer", "transaction_date", "amount",
             "payment_method", "cash_account", "check_no", "transaction_no", "ref_po_no",
             "segment", "applied_to", "journal_entry", "status", "lines",
+            "billing_applications",
             "approved_by", "approved_at", "rejected_by", "rejected_at",
             "rejection_note", "attachment", "deposit",
         )

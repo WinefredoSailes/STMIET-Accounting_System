@@ -670,3 +670,298 @@ class TestImportBanks:
         call_command("import_banks", file=str(path), stdout=out)
         assert not BankAccount.objects.filter(code="NEWBK").exists()
         assert "already used" in out.getvalue()
+
+
+def _post_cash_gl(company, segment, accounts, txn_date, debit="0.00", credit="0.00"):
+    """Post GL activity on the 10010 cash account for capture tests."""
+    je = JournalEntry.objects.create(
+        entry_no=f"STMT-{txn_date.isoformat()}-{debit}-{credit}",
+        company=company, segment=segment,
+        transaction_date=txn_date, status=PostingStatus.POSTED,
+        description="statement capture", source_doc_type="AR",
+    )
+    l1 = JournalEntryLine.objects.create(
+        entry=je, line_no=1, account=accounts["10010"], debit=debit, credit="0.00",
+    )
+    l2 = JournalEntryLine.objects.create(
+        entry=je, line_no=2, account=accounts["21000"],
+        debit="0.00", credit=credit or debit,
+    )
+    je.recalc_totals()
+    GeneralLedger.objects.create(
+        entry=je, line=l1, account=accounts["10010"],
+        company=company, segment=segment,
+        transaction_date=txn_date, debit=debit, credit="0.00",
+    )
+    GeneralLedger.objects.create(
+        entry=je, line=l2, account=accounts["21000"],
+        company=company, segment=segment,
+        transaction_date=txn_date, debit="0.00", credit=credit or debit,
+    )
+    return je
+
+
+@pytest.fixture
+def stmt_bank(db, segment, accounts):
+    return BankAccount.objects.create(
+        code="PNB-STMT", name="PNB Statement", account_type="checking",
+        bank_name="PNB", bank_code="PNB", gl_account=accounts["10010"],
+        company=segment.company,
+    )
+
+
+class TestBankReconStatement:
+    """Monthly statement module: capture-once, formula, approvals, exports."""
+
+    def test_create_monthly_period_and_idempotent(self, segment, stmt_bank):
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        assert recon.period_start == date(2026, 1, 1)
+        assert recon.period_end == date(2026, 1, 31)
+        assert recon.frequency == "monthly"
+        assert recon.status == "draft"
+        again = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        assert again.pk == recon.pk
+
+    def test_capture_locks_snapshot(self, segment, stmt_bank, company, accounts, user):
+        _post_cash_gl(company, segment, accounts, date(2026, 1, 15), debit="1000.00", credit="1000.00")
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1, user=user,
+        )
+        recon = BankReconService.capture_balances(
+            recon, bank_statement_balance="1200.00", user=user,
+        )
+        assert recon.unadjusted_book_balance == Decimal("1000.00")
+        assert recon.unadjusted_bank_balance == Decimal("1200.00")
+        assert recon.is_balances_captured is True
+        # Later GL postings must not move the captured snapshot.
+        _post_cash_gl(company, segment, accounts, date(2026, 1, 20), debit="500.00", credit="500.00")
+        recon.refresh_from_db()
+        assert recon.unadjusted_book_balance == Decimal("1000.00")
+        with pytest.raises(ValidationError):
+            BankReconService.capture_balances(recon, bank_statement_balance="1.00")
+
+    def test_capture_uses_period_end_cutoff(self, segment, stmt_bank, company, accounts):
+        _post_cash_gl(company, segment, accounts, date(2026, 1, 15), debit="1000.00", credit="1000.00")
+        _post_cash_gl(company, segment, accounts, date(2026, 2, 10), debit="700.00", credit="700.00")
+        jan = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        jan = BankReconService.capture_balances(jan, bank_statement_balance="1000.00")
+        assert jan.unadjusted_book_balance == Decimal("1000.00")
+        feb = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=2,
+        )
+        feb = BankReconService.capture_balances(feb, bank_statement_balance="1700.00")
+        assert feb.unadjusted_book_balance == Decimal("1700.00")
+
+    def test_line_side_validation(self, segment, stmt_bank):
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        with pytest.raises(ValidationError):
+            BankReconService.add_line(
+                recon, side="book", category="deposit_in_transit", amount="100.00",
+            )
+        with pytest.raises(ValidationError):
+            BankReconService.add_line(
+                recon, side="bank", category="bank_service_charge", amount="100.00",
+            )
+        with pytest.raises(ValidationError):
+            BankReconService.add_line(
+                recon, side="bank", category="deposit_in_transit", amount="0.00",
+            )
+
+    def test_compute_formula(self, segment, stmt_bank):
+        from apps.cash.models import BankReconLine
+
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        recon.unadjusted_bank_balance = Decimal("1000.00")
+        recon.unadjusted_book_balance = Decimal("900.00")
+        recon.is_balances_captured = True
+        recon.save()
+        BankReconService.add_line(recon, side="bank", category="deposit_in_transit", amount="200.00")
+        BankReconService.add_line(recon, side="bank", category="outstanding_checks", amount="150.00")
+        BankReconService.add_line(recon, side="book", category="bank_interest_earned", amount="50.00")
+        BankReconService.add_line(recon, side="book", category="bank_service_charge", amount="25.00")
+        BankReconService.add_line(recon, side="book", category="nsf_daif_charges", amount="25.00")
+        recon.refresh_from_db()
+        # Bank: 1000 + 200 − 150 = 1050. Book: 900 + 50 − 25 − 25 = 900.
+        assert recon.adjusted_bank_balance == Decimal("1050.00")
+        assert recon.adjusted_book_balance == Decimal("900.00")
+        assert recon.difference == Decimal("150.00")
+        assert BankReconLine.objects.filter(recon=recon).count() == 5
+
+    def test_approval_flow_and_lock(self, segment, stmt_bank, user):
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1, user=user,
+        )
+        with pytest.raises(ValidationError):
+            BankReconService.submit(recon, user=user)  # balances not captured
+        BankReconService.capture_balances(recon, bank_statement_balance="0.00", user=user)
+        recon = BankReconService.submit(recon, user=user)
+        assert recon.status == "submitted"
+        with pytest.raises(ValidationError):
+            BankReconService.add_line(
+                recon, side="bank", category="deposit_in_transit", amount="10.00",
+            )
+        with pytest.raises(ValidationError):
+            # final approval requires the pre-approved step first
+            BankReconService.final_approve(recon, user=user)
+        recon = BankReconService.pre_approve(recon, user=user)
+        assert recon.status == "pre_approved"
+        recon = BankReconService.final_approve(recon, user=user)
+        assert recon.status == "approved"
+        assert recon.approved_by_id == user.id
+        with pytest.raises(ValidationError):
+            BankReconService.capture_balances(recon, bank_statement_balance="1.00")
+
+    def test_reject_requires_note_and_reopens(self, segment, stmt_bank, user):
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1, user=user,
+        )
+        BankReconService.capture_balances(recon, bank_statement_balance="0.00", user=user)
+        BankReconService.submit(recon, user=user)
+        with pytest.raises(ValidationError):
+            BankReconService.reject(recon, user=user, note="  ")
+        recon = BankReconService.reject(recon, user=user, note="Missing deposit slip")
+        assert recon.status == "draft"
+        assert recon.rejection_note == "Missing deposit slip"
+        # Revisable after rejection.
+        BankReconService.add_line(
+            recon, side="bank", category="deposit_in_transit", amount="10.00",
+        )
+
+    def test_legacy_weekly_row_can_enter_workflow(self, segment, stmt_bank, posted_je):
+        cycle = CashCycleService.generate_cycle(segment, date(2026, 1, 13))
+        recon = BankReconService.reconcile(
+            cycle=cycle, bank_account=stmt_bank, bank_statement_balance="1000.00",
+        )
+        assert recon.status == "resolved"
+        recon.status = "open"
+        recon.save(update_fields=["status"])
+        BankReconService.capture_balances(recon, bank_statement_balance="1000.00")
+        recon = BankReconService.submit(recon)
+        assert recon.status == "submitted"
+
+    def test_consolidated_totals(self, segment, stmt_bank, accounts):
+        other = BankAccount.objects.create(
+            code="BDO-STMT", name="BDO Statement", account_type="checking",
+            bank_name="BDO", bank_code="BDO", gl_account=accounts["10110"],
+            company=segment.company,
+        )
+        for bank in (stmt_bank, other):
+            recon = BankReconService.create_monthly_reconciliation(
+                segment=segment, bank_account=bank, year=2026, month=1,
+            )
+            recon.unadjusted_bank_balance = Decimal("500.00")
+            recon.unadjusted_book_balance = Decimal("400.00")
+            recon.is_balances_captured = True
+            recon.save()
+            BankReconService.compute_adjusted_balances(recon)
+        data = BankReconService.get_consolidated_data(
+            segment.company, date(2026, 1, 1), date(2026, 1, 31),
+        )
+        assert len(data["recons"]) == 2
+        assert data["total_adjusted_bank"] == Decimal("1000.00")
+        assert data["total_adjusted_book"] == Decimal("800.00")
+        assert data["total_variance"] == Decimal("200.00")
+
+    def test_submitted_appears_in_head_queue(self, segment, stmt_bank, user, role_users):
+        from apps.core.approvals import bank_recon_queue
+
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1, user=user,
+        )
+        BankReconService.capture_balances(recon, bank_statement_balance="0.00", user=user)
+        BankReconService.submit(recon, user=user)
+        items = bank_recon_queue({"head"})
+        assert any(item["doc"].pk == recon.pk for item in items)
+        assert bank_recon_queue({"staff"}) == []
+
+    def test_excel_builder_sheets(self, segment, stmt_bank):
+        from apps.reporting.excel_export import (
+            build_bank_reconciliation_statement,
+            build_consolidated_bank_reconciliation,
+        )
+
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        wb = build_bank_reconciliation_statement(recon)
+        assert wb.sheetnames == ["PNB-STMT"]
+        assert wb["PNB-STMT"]["A2"].value == "BANK RECONCILIATION STATEMENT"
+        conso = build_consolidated_bank_reconciliation(
+            segment.company, date(2026, 1, 1), date(2026, 1, 31),
+        )
+        assert conso.sheetnames[0] == "SUMMARY"
+        assert "PNB-STMT" in conso.sheetnames
+
+    def test_pdf_responses(self, segment, stmt_bank):
+        from apps.reporting.recon_export import (
+            bank_recon_pdf_response,
+            consolidated_recon_pdf_response,
+        )
+
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=stmt_bank, year=2026, month=1,
+        )
+        resp = bank_recon_pdf_response(recon)
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "application/pdf"
+        resp2 = consolidated_recon_pdf_response(
+            segment.company, date(2026, 1, 1), date(2026, 1, 31),
+        )
+        assert resp2.status_code == 200
+
+
+class TestBankReconStatementAPI:
+    def test_full_api_flow(self, segment, stmt_bank, role_users):
+        from rest_framework.test import APIClient
+
+        staff = APIClient()
+        staff.force_authenticate(user=role_users["staff"])
+        head = APIClient()
+        head.force_authenticate(user=role_users["head"])
+
+        resp = staff.post(
+            "/api/v1/cash/reconciliations/create-monthly/",
+            {"segment_id": segment.id, "bank_account_id": stmt_bank.id,
+             "year": 2026, "month": 1},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+        rid = resp.json()["id"]
+
+        resp = staff.post(
+            f"/api/v1/cash/reconciliations/{rid}/capture-balances/",
+            {"bank_statement_balance": "1000.00"}, format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["is_balances_captured"] is True
+
+        resp = staff.post(
+            "/api/v1/cash/recon-lines/",
+            {"recon": rid, "side": "bank", "category": "deposit_in_transit",
+             "amount": "200.00", "reference": "DEP-1"},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+
+        assert staff.post(f"/api/v1/cash/reconciliations/{rid}/submit/").status_code == 200
+        # Staff cannot pre-approve (head-only gate).
+        assert staff.post(f"/api/v1/cash/reconciliations/{rid}/pre-approve/").status_code == 422
+        assert head.post(f"/api/v1/cash/reconciliations/{rid}/pre-approve/").status_code == 200
+        assert head.post(f"/api/v1/cash/reconciliations/{rid}/final-approve/").status_code == 200
+
+        resp = staff.get(f"/api/v1/cash/reconciliations/{rid}/export-excel/")
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]
+        resp = staff.get(f"/api/v1/cash/reconciliations/{rid}/export-pdf/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "application/pdf"

@@ -7,6 +7,7 @@ from apps.reporting.excel_export import build_cash_flow_statement, xlsx_response
 from .models import (
     BankAccount,
     BankReconciliation,
+    BankReconLine,
     CashFlowStatement,
     CashShortExcessWorksheet,
     CheckDisbursement,
@@ -19,6 +20,7 @@ from .models import (
 from .serializers import (
     BankAccountSerializer,
     BankReconciliationSerializer,
+    BankReconLineSerializer,
     CashFlowStatementSerializer,
     CashShortExcessWorksheetSerializer,
     CheckDisbursementSerializer,
@@ -267,9 +269,9 @@ class CashFlowStatementViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class BankReconciliationViewSet(viewsets.ModelViewSet):
-    queryset = BankReconciliation.objects
+    queryset = BankReconciliation.objects.prefetch_related("lines")
     serializer_class = BankReconciliationSerializer
-    filterset_fields = ["cycle", "bank_account", "status"]
+    filterset_fields = ["cycle", "bank_account", "status", "frequency", "period_start", "period_end"]
 
     def create(self, request, *args, **kwargs):
         from apps.cash.models import WeeklyCashCycle, BankAccount
@@ -282,6 +284,152 @@ class BankReconciliationViewSet(viewsets.ModelViewSet):
         )
         out = self.get_serializer(recon)
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="create-monthly")
+    def create_monthly(self, request):
+        """POST /cash/reconciliations/create-monthly/ with
+        {segment_id, bank_account_id, year, month} — idempotent."""
+        from apps.cash.models import BankAccount
+        from apps.foundation.models import Segment
+
+        segment = Segment.objects.get(pk=request.data.get("segment_id"))
+        bank = BankAccount.objects.get(pk=request.data.get("bank_account_id"))
+        recon = BankReconService.create_monthly_reconciliation(
+            segment=segment, bank_account=bank,
+            year=int(request.data.get("year")), month=int(request.data.get("month")),
+            user=request.user,
+        )
+        return Response(self.get_serializer(recon).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="capture-balances")
+    def capture_balances(self, request, pk=None):
+        """Capture unadjusted balances ONCE (locks the snapshot)."""
+        recon = BankReconService.capture_balances(
+            self.get_object(),
+            bank_statement_balance=request.data.get("bank_statement_balance"),
+            user=request.user,
+        )
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["post"])
+    def compute(self, request, pk=None):
+        recon = BankReconService.compute_adjusted_balances(self.get_object())
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """draft/open -> submitted (preparer sends it for review)."""
+        recon = BankReconService.submit(self.get_object(), user=request.user)
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["post"], url_path="pre-approve")
+    def pre_approve(self, request, pk=None):
+        """submitted -> pre_approved (head only; temporary pre-approval)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        recon = BankReconService.pre_approve(self.get_object(), user=request.user)
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["post"], url_path="final-approve")
+    def final_approve(self, request, pk=None):
+        """pre_approved -> approved (head only; locks the statement)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        recon = BankReconService.final_approve(self.get_object(), user=request.user)
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """submitted/pre_approved -> draft (head only, note required)."""
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(request.user, "head")
+        recon = BankReconService.reject(
+            self.get_object(), user=request.user, note=request.data.get("note", "")
+        )
+        return Response(self.get_serializer(recon).data)
+
+    @action(detail=True, methods=["get"], url_path="export-excel")
+    def export_excel(self, request, pk=None):
+        """GET single-bank statement workbook (unified template)."""
+        from apps.reporting.excel_export import build_bank_reconciliation_statement, xlsx_response
+
+        recon = self.get_object()
+        wb = build_bank_reconciliation_statement(recon)
+        code = recon.bank_account.code
+        return xlsx_response(
+            wb, f"BANK-RECON-{code}-{recon.period_start:%Y%m%d}-{recon.period_end:%Y%m%d}.xlsx"
+        )
+
+    @action(detail=True, methods=["get"], url_path="export-pdf")
+    def export_pdf(self, request, pk=None):
+        """GET single-bank statement PDF (same template as Excel)."""
+        from apps.reporting.recon_export import bank_recon_pdf_response
+
+        return bank_recon_pdf_response(self.get_object())
+
+    @action(detail=False, methods=["get"], url_path="consolidated/export-excel")
+    def consolidated_excel(self, request):
+        """GET ?company=&period_start=&period_end= — all banks workbook."""
+        from datetime import date
+
+        from apps.foundation.models import Company
+        from apps.reporting.excel_export import build_consolidated_bank_reconciliation, xlsx_response
+
+        company = Company.objects.get(pk=request.query_params.get("company"))
+        period_start = date.fromisoformat(request.query_params.get("period_start"))
+        period_end = date.fromisoformat(request.query_params.get("period_end"))
+        wb = build_consolidated_bank_reconciliation(company, period_start, period_end)
+        return xlsx_response(
+            wb, f"BANK-RECON-CONSO-{period_start:%Y%m%d}-{period_end:%Y%m%d}.xlsx"
+        )
+
+    @action(detail=False, methods=["get"], url_path="consolidated/export-pdf")
+    def consolidated_pdf(self, request):
+        """GET ?company=&period_start=&period_end= — all banks PDF."""
+        from datetime import date
+
+        from apps.foundation.models import Company
+        from apps.reporting.recon_export import consolidated_recon_pdf_response
+
+        company = Company.objects.get(pk=request.query_params.get("company"))
+        period_start = date.fromisoformat(request.query_params.get("period_start"))
+        period_end = date.fromisoformat(request.query_params.get("period_end"))
+        return consolidated_recon_pdf_response(company, period_start, period_end)
+
+
+class BankReconLineViewSet(viewsets.ModelViewSet):
+    """Statement lines: create/update/delete recompute adjusted balances."""
+
+    queryset = BankReconLine.objects.select_related("recon")
+    serializer_class = BankReconLineSerializer
+    filterset_fields = ["recon", "side", "category", "match_status"]
+
+    def create(self, request, *args, **kwargs):
+        recon = BankReconciliation.objects.get(pk=request.data.get("recon"))
+        line = BankReconService.add_line(
+            recon,
+            side=request.data.get("side"),
+            category=request.data.get("category"),
+            amount=request.data.get("amount"),
+            reference=request.data.get("reference", ""),
+            description=request.data.get("description", ""),
+            user=request.user,
+        )
+        return Response(self.get_serializer(line).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        line = BankReconService.update_line(self.get_object(), **request.data)
+        return Response(self.get_serializer(line).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        BankReconService.delete_line(self.get_object())
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CheckDisbursementViewSet(viewsets.ModelViewSet):
