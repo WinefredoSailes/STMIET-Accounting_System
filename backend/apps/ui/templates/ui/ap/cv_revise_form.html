@@ -29,8 +29,15 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-surface-700 mb-1">NAME</label>
+          {% if cv.rfp_id %}
           <input type="text" readonly value="{{ cv.payee.name }}"
                  class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
+          <p class="mt-1 text-xs text-surface-500">Payee comes from the linked RFP and cannot be changed here.</p>
+          {% else %}
+          <select name="payee" id="id_payee" required data-searchable data-search-value="id" data-search-placeholder="Type supplier name or code…" data-search-url="{% url 'ui:supplier_options' %}?selected={{ cv.payee.code }}" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
+            {% if cv.payee %}<option value="{{ cv.payee_id }}" selected>{{ cv.payee.code }} — {{ cv.payee.name }}</option>{% else %}<option value="" selected>— select supplier —</option>{% endif %}
+          </select>
+          {% endif %}
         </div>
         <div>
           <label class="block text-sm font-medium text-surface-700 mb-1">DATE OF REQUEST</label>

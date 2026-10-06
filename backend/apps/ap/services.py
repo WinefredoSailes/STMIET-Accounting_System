@@ -43,6 +43,12 @@ from .models import (
 
 CNR_ESCALATION_THRESHOLD = Decimal("100000.00")
 
+#: Sentinel distinguishing "revise() caller did not touch this header field"
+#: (keep the stored value) from an explicit ``None`` (clear the optional FK,
+#: e.g. unlink the PO on an RFP revise). Plain ``None`` defaults cannot express
+#: "clear the PO" because ``None`` already means "no PO".
+_REVISE_UNSET = object()
+
 
 def coo_required(rfp) -> bool:
     """CNR (COO) review is due only when the escalation gate is enabled AND
@@ -648,13 +654,30 @@ class RFPService:
     @classmethod
     @retry_on_lock()
     @transaction.atomic
-    def revise(cls, rfp: RFPDocument, *, user, lines: list[dict], purpose: str = "") -> RFPDocument:
+    def revise(
+        cls,
+        rfp: RFPDocument,
+        *,
+        user,
+        lines: list[dict],
+        purpose: str = "",
+        payee=None,
+        segment=None,
+        rfp_date: date | None = None,
+        po=_REVISE_UNSET,
+    ) -> RFPDocument:
         """The preparer revises a rejected RFP and resubmits it.
 
         Only the preparer may revise, and only while the RFP is `rejected`.
         The distribution lines are replaced wholesale (mirroring create_rfp
         validation), rejection context is cleared, and the RFP re-enters the
         chain at "submitted" so the approvers see the corrected request.
+
+        The header (payee NAME, segment, date, PO) is persisted alongside the
+        lines — the revise form renders the same payee picker as the edit
+        form, so a changed NAME must not be silently dropped. Optional header
+        args default to "keep the stored value"; pass ``po=None`` explicitly
+        to unlink the PO.
         """
         if rfp.status != "rejected":
             raise ValidationError("Only rejected RFPs can be revised and resubmitted.")
@@ -684,8 +707,18 @@ class RFPService:
             raise ValidationError(
                 f"Charge lines do not balance: Dr {dr_total} vs Cr {cr_total} — the posted entry must balance."
             )
-        if rfp.po_id:
-            validate_po_for_rfp(rfp.po, payee_id=rfp.payee_id, amount=dr_total)
+        effective_payee = payee if payee is not None else rfp.payee
+        effective_po = rfp.po if po is _REVISE_UNSET else po
+        if effective_po is not None:
+            validate_po_for_rfp(effective_po, payee_id=effective_payee.id, amount=dr_total)
+        if payee is not None:
+            rfp.payee = payee
+        if segment is not None:
+            rfp.segment = segment
+        if rfp_date is not None:
+            rfp.rfp_date = rfp_date
+        if po is not _REVISE_UNSET:
+            rfp.po = po
         rfp.lines.all().delete()
         rfp.amount = dr_total
         rfp.particulars = lines[0].get("description", "") if lines else ""
@@ -705,6 +738,7 @@ class RFPService:
         rfp.approved_by_cnr = None
         rfp.save(update_fields=[
             "amount", "particulars", "purpose", "status",
+            "payee", "segment", "rfp_date", "po",
             "rejected_by", "rejected_at", "rejection_note", "revision_count",
             "checked_by", "approved_by_acctg", "approved_by_fin", "approved_by_cnr",
             "updated_at",
@@ -1156,11 +1190,20 @@ class PurchaseOrderService:
         ship_to_address: str = "",
         contact_person: str = "",
         notes: str = "",
+        supplier=None,
+        segment=None,
+        po_date: date | None = None,
     ) -> PurchaseOrder:
         """The preparer corrects a rejected PO and resubmits it (mirror of RFP
         revise). Lines are replaced wholesale; rejection context is cleared;
         the PO re-enters the chain at 'submitted' with voided approval records
-        so the same approvers can re-run the steps."""
+        so the same approvers can re-run the steps.
+
+        The header (vendor NAME/supplier, segment, date) is persisted alongside
+        the lines — the revise form renders the same vendor picker as the edit
+        form, so a changed NAME must not be silently dropped. Optional header
+        args default to "keep the stored value".
+        """
         if po.status != "rejected":
             raise ValidationError("Only rejected POs can be revised and resubmitted.")
         if user.id != po.created_by_id:
@@ -1212,6 +1255,12 @@ class PurchaseOrderService:
         if total <= 0:
             raise ValidationError("PO grand total must be greater than zero.")
         po.amount = total
+        if supplier is not None:
+            po.supplier = supplier
+        if segment is not None:
+            po.segment = segment
+        if po_date is not None:
+            po.po_date = po_date
         po.particulars = particulars
         po.payment_terms = (payment_terms or "").strip()
         po.contract_duration = (contract_duration or "").strip()
@@ -1230,6 +1279,7 @@ class PurchaseOrderService:
         po.approved_by_cnr = None
         po.save(update_fields=[
             "subtotal", "discount", "vat_amount", "other_charges", "amount",
+            "supplier", "segment", "po_date",
             "particulars", "payment_terms", "contract_duration",
             "ship_to_company", "ship_to_address", "contact_person", "notes",
             "status", "rejected_by", "rejected_at", "rejection_note",
@@ -1720,6 +1770,7 @@ class CVPaymentService:
         withheld_tax: Decimal | None = None,
         check_no: str = "",
         cv_date: date | None = None,
+        payee=None,
     ) -> CheckVoucher:
         """The issuer corrects a rejected CV and resubmits it for approval.
 
@@ -1727,6 +1778,12 @@ class CVPaymentService:
         corrected check re-enters the chain at "created" (fresh approval); the
         JE is rebuilt from the corrected figures as a DRAFT. Supports both
         RFP-sourced and PCF-sourced CVs.
+
+        The payee NAME is persisted for direct (non-RFP, non-PCF) vouchers so
+        a changed NAME is not silently dropped. RFP-sourced vouchers derive
+        their payee from the posted RFP and PCF-sourced vouchers carry no
+        supplier payee, so a payee change there is rejected with a clear
+        message instead of being ignored.
         """
         if cv.status != "rejected":
             raise ValidationError("Only rejected CVs can be revised and resubmitted.")
@@ -1742,6 +1799,21 @@ class CVPaymentService:
             raise ValidationError("Net amount cannot be negative.")
 
         is_pcf = hasattr(cv, "pcf_cvs") and cv.pcf_cvs.exists()
+        if payee is not None:
+            if is_pcf:
+                raise ValidationError(
+                    "PCF-sourced check vouchers carry no supplier payee; "
+                    "the payee cannot be changed on revise."
+                )
+            if cv.rfp_id:
+                if payee.id != cv.payee_id:
+                    raise ValidationError(
+                        "The payee comes from the linked RFP "
+                        f"({cv.rfp.ap_number if cv.rfp else 'posted'}); "
+                        "it cannot be changed on a check voucher revise."
+                    )
+            else:
+                cv.payee = payee
 
         if is_pcf:
             # PCF-sourced CV
@@ -1835,7 +1907,7 @@ class CVPaymentService:
         cv.revision_count += 1
         cv.save(update_fields=[
             "gross_amount", "withheld_tax", "net_amount", "check_no", "cv_date",
-            "bank_account", "journal_entry", "status", "approved_by", "approved_at",
+            "payee", "bank_account", "journal_entry", "status", "approved_by", "approved_at",
             "rejected_by", "rejected_at", "rejection_note", "revision_count",
             "updated_at",
         ])

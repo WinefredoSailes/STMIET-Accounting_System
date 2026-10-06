@@ -3680,19 +3680,46 @@ def rfp_revise(request, pk):
 
     if request.method == "POST":
         try:
+            from apps.ap.models import PurchaseOrder, Supplier
+
+            # Header fields fall back to the stored values when the post does
+            # not carry them (legacy callers submit lines + purpose only); a
+            # supplied-but-unresolvable value still raises instead of being
+            # silently dropped.
+            payee = None
+            raw_payee = (request.POST.get("payee") or "").strip()
+            if raw_payee:
+                payee = Supplier.objects.filter(pk=raw_payee).first()
+                if payee is None:
+                    raise ValidationError("Choose a payee.")
+            segment = None
+            raw_segment = (request.POST.get("segment") or "").strip()
+            if raw_segment:
+                segment = Segment.objects.filter(pk=raw_segment).first()
+                if segment is None:
+                    raise ValidationError("Choose a segment (set on the first charge line).")
+            rfp_date = None
+            if (request.POST.get("rfp_date") or "").strip():
+                rfp_date = _form_date(request.POST.get("rfp_date", ""), "date of request")
+            from apps.ap.services import _REVISE_UNSET
+
+            if "po" not in request.POST:
+                po = _REVISE_UNSET
+            else:
+                po_pk = (request.POST.get("po") or "").strip()
+                po = get_object_or_404(PurchaseOrder, pk=po_pk) if po_pk else None
             lines = _rfp_lines_from_form(request)
             if not lines:
                 raise ValidationError("Add at least one charge line.")
-            po_pk = (request.POST.get("po") or "").strip()
-            if po_pk and rfp.po_id != int(po_pk):
-                from apps.ap.models import PurchaseOrder
-
-                rfp.po = get_object_or_404(PurchaseOrder, pk=po_pk)
             rfp = RFPService.revise(
                 rfp,
                 user=request.user,
                 lines=lines,
                 purpose=request.POST.get("purpose", ""),
+                payee=payee,
+                segment=segment,
+                rfp_date=rfp_date,
+                po=po,
             )
             messages.success(request, f"RFP {rfp.ap_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:rfp_detail", pk))
@@ -4117,6 +4144,17 @@ def po_revise(request, pk):
 
     if request.method == "POST":
         try:
+            # Header fields fall back to the stored values when the post does
+            # not carry them (legacy callers submit lines only); a supplied
+            # value is validated strictly, never silently dropped.
+            supplier = segment = None
+            if (request.POST.get("supplier") or "").strip() or (
+                request.POST.get("segment") or ""
+            ).strip():
+                supplier, segment = _po_supplier_and_segment_from_form(request)
+            po_date = None
+            if (request.POST.get("po_date") or "").strip():
+                po_date = date.fromisoformat(request.POST.get("po_date"))
             lines = _po_lines_from_form(request)
             if not lines:
                 raise ValidationError("Add at least one line item.")
@@ -4134,6 +4172,9 @@ def po_revise(request, pk):
                 ship_to_address=request.POST.get("ship_to_address", ""),
                 contact_person=request.POST.get("contact_person", ""),
                 notes=request.POST.get("notes", ""),
+                supplier=supplier,
+                segment=segment,
+                po_date=po_date,
             )
             _capture_po_receipt_fields(request, po)
             messages.success(request, f"PO {po.po_number} revised and resubmitted.")
@@ -5162,6 +5203,13 @@ def cv_revise(request, pk):
 
     if request.method == "POST":
         try:
+            from apps.ap.models import Supplier
+
+            payee = None
+            if request.POST.get("payee"):
+                payee = Supplier.objects.filter(pk=request.POST.get("payee")).first()
+                if payee is None:
+                    raise ValidationError("Choose a payee.")
             cv = CVPaymentService.revise(
                 cv,
                 user=request.user,
@@ -5170,6 +5218,7 @@ def cv_revise(request, pk):
                 withheld_tax=request.POST.get("withheld_tax", "0.00"),
                 check_no=request.POST.get("check_no", ""),
                 cv_date=date.fromisoformat(request.POST["cv_date"]),
+                payee=payee,
             )
             messages.success(request, f"CV {cv.cv_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:cv_detail", pk))
@@ -5351,15 +5400,32 @@ def _pcf_prepare(request, replen, *, submit: bool):
 
     fund = _pcf_fund_from_post(request)
     expenses = _pcf_expenses_from_post(request)
+    payee_name = request.POST.get("payee_name")
+    reference = request.POST.get("reference")
+    request_date = None
+    if request.POST.get("request_date"):
+        request_date = date.fromisoformat(request.POST["request_date"])
     if submit:
-        PCFService.revise_replenishment(replen, user=request.user)
+        # Single atomic revise: status + full header (NAME, fund, expenses)
+        # persist together so a changed NAME is never silently dropped.
+        return PCFService.revise_replenishment(
+            replen,
+            user=request.user,
+            fund=fund,
+            expenses=expenses,
+            payee_name=payee_name,
+            reference=reference,
+            request_date=request_date,
+        )
     replen.fund = fund
     replen.expenses = expenses
     replen.amount = sum(money(e["amount"]) for e in expenses)
-    replen.payee_name = request.POST.get("payee_name", "")
-    replen.reference = request.POST.get("reference", "")
-    if request.POST.get("request_date"):
-        replen.request_date = date.fromisoformat(request.POST["request_date"])
+    if payee_name is not None:
+        replen.payee_name = payee_name
+    if reference is not None:
+        replen.reference = reference
+    if request_date is not None:
+        replen.request_date = request_date
     replen.save(
         update_fields=[
             "fund", "expenses", "amount", "payee_name",

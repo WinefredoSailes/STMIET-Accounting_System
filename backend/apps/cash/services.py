@@ -680,19 +680,50 @@ class PCFService:
 
     @classmethod
     @transaction.atomic
-    def revise_replenishment(cls, replen: PCFReplenishment, *, user) -> PCFReplenishment:
-        """rejected -> requested: reopen so the custodian can edit/resubmit."""
+    def revise_replenishment(
+        cls,
+        replen: PCFReplenishment,
+        *,
+        user,
+        payee_name: str | None = None,
+        reference: str | None = None,
+        request_date=None,
+        fund=None,
+        expenses: list[dict] | None = None,
+    ) -> PCFReplenishment:
+        """rejected -> requested: reopen so the custodian can edit/resubmit.
+
+        The full voucher header (NAME/payee_name, reference, date, fund,
+        expenses) is persisted atomically alongside the status change, so a
+        changed NAME is never silently dropped. Optional args default to
+        "keep the stored value". The UI revise form posts the whole document
+        and the API revise action forwards the same fields, so both paths
+        share this single save (no split-brain two-step write).
+        """
         if replen.status != "rejected":
             raise ValidationError("Only rejected replenishments can be revised.")
         replen.status = "requested"
         replen.rejected_by = None
         replen.rejected_at = None
         replen.rejection_note = ""
-        replen.save(
-            update_fields=[
-                "status", "rejected_by", "rejected_at", "rejection_note", "updated_at",
-            ]
-        )
+        touched = ["status", "rejected_by", "rejected_at", "rejection_note"]
+        if fund is not None:
+            replen.fund = fund
+            touched.append("fund")
+        if expenses is not None:
+            replen.expenses = expenses
+            replen.amount = sum(money(e["amount"]) for e in expenses)
+            touched += ["expenses", "amount"]
+        if payee_name is not None:
+            replen.payee_name = payee_name
+            touched.append("payee_name")
+        if reference is not None:
+            replen.reference = reference
+            touched.append("reference")
+        if request_date is not None:
+            replen.request_date = request_date
+            touched.append("request_date")
+        replen.save(update_fields=[*touched, "updated_at"])
         return replen
 
     @classmethod

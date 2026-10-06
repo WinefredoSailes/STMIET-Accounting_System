@@ -163,9 +163,27 @@ class PCFReplenishmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def revise(self, request, pk=None):
-        """rejected -> requested: reopen for the custodian to edit/resubmit."""
+        """rejected -> requested: reopen for the custodian to edit/resubmit.
+
+        Accepts the same header fields as the UI revise form (payee_name,
+        reference, request_date, fund, expenses) so a changed NAME persists
+        through the API path too; omitted fields keep their stored values.
+        """
+        from datetime import date as _date
+
         replen = self.get_object()
-        replen = PCFService.revise_replenishment(replen, user=request.user)
+        kwargs = {}
+        if "payee_name" in request.data:
+            kwargs["payee_name"] = request.data.get("payee_name") or ""
+        if "reference" in request.data:
+            kwargs["reference"] = request.data.get("reference") or ""
+        if request.data.get("request_date"):
+            kwargs["request_date"] = _date.fromisoformat(request.data.get("request_date"))
+        if request.data.get("fund"):
+            kwargs["fund"] = PettyCashFund.objects.get(pk=request.data.get("fund"))
+        if "expenses" in request.data and request.data.get("expenses") is not None:
+            kwargs["expenses"] = request.data.get("expenses")
+        replen = PCFService.revise_replenishment(replen, user=request.user, **kwargs)
         return Response(self.get_serializer(replen).data)
 
 
