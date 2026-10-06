@@ -638,6 +638,12 @@ class CollectionService:
             description=f"Collection {receipt.receipt_no} {receipt.customer.name}",
             source_doc_type="AR",
             source_doc_no=receipt.receipt_no,
+            # Voucher header (ACCTG-FOR-012): carry the customer + refs onto
+            # the JE itself — je_detail renders them from the entry, and a
+            # later reversal copies them via PostingService.reverse().
+            supplier_name=_voucher_party_name(receipt.customer),
+            po=(receipt.ref_po_no or "")[:128],
+            ref_number=(receipt.transaction_no or receipt.check_no or "")[:128],
             created_by=user,
             approved_by=user,
             approved_at=timezone.now(),
@@ -1308,6 +1314,9 @@ class InvoiceService:
             description=f"Sales Invoice {invoice.invoice_no} {invoice.customer.name}",
             source_doc_type="SI",
             source_doc_no=invoice.invoice_no,
+            # Voucher header (ACCTG-FOR-012): SI carries no PO/ref fields, so
+            # only the customer name travels onto the JE.
+            supplier_name=_voucher_party_name(invoice.customer),
             created_by=user,
             approved_by=user,
             approved_at=timezone.now(),
@@ -1489,6 +1498,17 @@ class CustomerService:
                 "Only approved customers can be used on transactions."
             )
         return customer
+
+
+def _voucher_party_name(customer) -> str:
+    """Voucher header party: Business Name + Owner, capped at 255 chars.
+
+    Matches the manual-JE form, which slices supplier_name to 255
+    (apps/ui/views.py). Blank owner renders name only — no dangling " — ".
+    """
+    owner = (getattr(customer, "owner_name", "") or "").strip()
+    text = f"{customer.name} — {owner}" if owner else (customer.name or "")
+    return text[:255]
 
 
 def _resolve_ssi_line_refs(lines):
@@ -1783,6 +1803,10 @@ class SpecialInvoiceService:
             ),
             source_doc_type="SSI",
             source_doc_no=invoice.invoice_no,
+            # Voucher header (ACCTG-FOR-012): customer + driver's paper DR no.
+            # as the ref (same free-text cross-reference role as ref_po_no).
+            supplier_name=_voucher_party_name(invoice.customer),
+            ref_number=(invoice.delivery_receipt_no or "")[:128],
             created_by=user,
             approved_by=user,
             approved_at=timezone.now(),

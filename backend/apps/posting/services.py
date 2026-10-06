@@ -250,6 +250,12 @@ class PostingService:
                 description=f"Reversal of {entry.entry_no}: {reason}",
                 source_doc_type=entry.source_doc_type,
                 source_doc_no=entry.source_doc_no,
+                # Keep the voucher header party/refs identical to the
+                # original: je_detail renders these from the entry itself,
+                # and a REV-* entry has no source-doc row of its own.
+                supplier_name=entry.supplier_name,
+                po=entry.po,
+                ref_number=entry.ref_number,
                 reversal_token=token,
                 created_by=user,
             )
