@@ -1307,8 +1307,8 @@ def _source_parties():
     """Map source_doc_no -> party name from the AR/AP document masters.
 
     Register/ledger rows always resolve the counterparty from the current
-    master record (AR receipt customer / RFP & CV payee), never a stale copy
-    held on the journal entry.
+    master record (AR receipt customer / RFP & CV payee / PCF employee),
+    never a stale copy held on the journal entry.
     """
     from apps.ap.models import CheckVoucher, RFPDocument
     from apps.ar.models import AcknowledgmentReceipt
@@ -1327,6 +1327,22 @@ def _source_parties():
     for billing in BillingDocument.objects.exclude(journal_entry__isnull=True):
         if billing.party_name:
             parties[billing.billing_no] = billing.party_name
+    # PCF replenishment JEs carry source_doc_no=str(replen.id) (see
+    # PCFService._post_je), so map both the id and the voucher_no to the
+    # canonical employee / payee name — otherwise 12070 PCF lines land in
+    # "(Unidentified)" and never reach the Advances module.
+    from apps.cash.models import PCFReplenishment
+
+    for replen in PCFReplenishment.objects.exclude(journal_entry__isnull=True).select_related("employee"):
+        name = (replen.employee.name if replen.employee else "") or (replen.payee_name or "")
+        name = name.strip()
+        if not name:
+            continue
+        parties[str(replen.id)] = name
+        if replen.journal_entry_id:
+            parties[replen.journal_entry.entry_no] = name
+        if replen.voucher_no:
+            parties[replen.voucher_no] = name
     return parties
 
 
@@ -1341,7 +1357,7 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
 
     qs = (
         JournalEntry.objects.filter(status__in=GL_EFFECTIVE_STATUSES)
-        .select_related("segment", "company")
+        .select_related("segment", "company", "supplier")
         .prefetch_related("lines__account")
     )
     if start:
@@ -1361,8 +1377,15 @@ def general_journal(*, start=None, end=None, segment=None, limit=500):
         else:
             cycle_label = f"{cycle_start:%b} {cycle_start.day} - {cycle_end:%b} {cycle_end.day}, {cycle_end:%Y}"
         party = party_by.get(entry.source_doc_no, "") if entry.source_doc_no else ""
-        # Manual voucher JEs carry their party/PO on the header (supplier_name
-        # / po); master-derived parties still win when the entry has one.
+        # Manual voucher JEs carry their party on the header: the canonical
+        # Supplier FK first, then the plain-name snapshot (supplier_name), so
+        # a picked employee groups with its RFP/PCF lines; master-derived
+        # parties still win when the entry has one.
+        if not party and getattr(entry, "supplier_id", None):
+            try:
+                party = (entry.supplier.name or "").strip()
+            except AttributeError:
+                party = ""
         party = party or entry.supplier_name or ""
         po = entry.po or ""
         balanced = entry.is_balanced
@@ -2484,15 +2507,21 @@ ADVANCE_LEDGER_STATUS_LABELS = {
 }
 
 
-def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
+def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None, employee=None):
     """Derived subsidiary ledger for Advances to Employees (COA 12070).
 
     Every row is a posted GL line touching account 12070 within the window;
     ``net`` is the per-employee running balance, Dr positive (ADR-005), so a
     reversal pair nets to zero. ``sections`` carry the per-employee summary
     (opening, period Dr/Cr, closing, status). Parties resolve from the source
-    document masters like the General Journal register; rows with no resolvable
-    counterparty are grouped under ``(Unidentified)``.
+    document masters like the General Journal register — Journal supplier FK,
+    RFP/CV payee, PCF employee/payee (see ``_source_parties``); rows with no
+    resolvable counterparty are grouped under ``(Unidentified)``.
+
+    Pass ``employee`` (party name, case-insensitive, or a Supplier pk) to
+    return just that employee's breakdown for the drill-down page — the
+    date-range window still applies, and opening balances still carry over
+    from before ``start``.
     """
     from collections import defaultdict
 
@@ -2511,8 +2540,16 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
         gs = gs.filter(segment__code=segment)
 
     def _party(gl, parties):
-        name = parties.get(gl.entry.source_doc_no or "", "")
-        name = name.strip() or (gl.entry.supplier_name or "").strip()
+        supplier = getattr(gl.entry, "supplier", None)
+        name = ""
+        if supplier is not None:
+            try:
+                name = (supplier.name or "").strip()
+            except AttributeError:
+                name = ""
+        if not name:
+            name = parties.get(gl.entry.source_doc_no or "", "")
+        name = (name or "").strip() or (gl.entry.supplier_name or "").strip()
         return name or "(Unidentified)"
 
     def _signed_for(gl):
@@ -2520,18 +2557,36 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
 
     parties = _source_parties()
 
+    wanted = (employee or "").strip() if not isinstance(employee, int) else ""
+    wanted_id = None
+    if isinstance(employee, int) or (isinstance(employee, str) and employee.strip().isdigit()):
+        try:
+            from apps.ap.models import Supplier
+
+            wanted_id = int(employee)
+            sup = Supplier.objects.filter(pk=wanted_id).first()
+            if sup is not None:
+                wanted = sup.name.strip()
+        except (TypeError, ValueError):
+            wanted_id = None
+
     # Opening balance per employee = signed movement before the window start.
     opening = defaultdict(Decimal)
     if start:
-        for gl in gs.filter(transaction_date__lt=start).select_related("entry"):
+        for gl in gs.filter(transaction_date__lt=start).select_related("entry", "entry__supplier"):
             opening[_party(gl, parties)] += _signed_for(gl)
 
     window = gs.filter(transaction_date__gte=start) if start else gs
     if end:
         window = window.filter(transaction_date__lte=end)
     window = window.order_by("transaction_date", "id").select_related(
-        "entry", "line__account", "segment"
+        "entry", "entry__supplier", "line__account", "segment"
     )
+
+    def _wanted(party):
+        if not wanted:
+            return True
+        return party.casefold() == wanted.casefold()
 
     running = defaultdict(Decimal)
     sections = {party: {
@@ -2541,10 +2596,32 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
         "row_count": 0,
     } for party in opening}
 
+    # Source-document links so each 12070 line jumps to its originating
+    # Journal / RFP / PCF voucher, not just the JE detail.
+    from apps.ap.models import RFPDocument, Supplier
+    from apps.cash.models import PCFReplenishment
+
+    rfp_ids = {
+        r.ap_number: r.id
+        for r in RFPDocument.objects.exclude(journal_entry__isnull=True).only("id", "ap_number")
+    }
+    pcf_ids = {}
+    for replen in PCFReplenishment.objects.exclude(journal_entry__isnull=True).only("id", "voucher_no"):
+        pcf_ids[str(replen.id)] = replen.id
+        if replen.voucher_no:
+            pcf_ids[replen.voucher_no] = replen.id
+
+    supplier_ids = {
+        s.name.casefold(): s.id
+        for s in Supplier.objects.only("id", "name")
+    }
+
     rows = []
     period_debit = period_credit = Decimal("0.00")
     for gl in window:
         party = _party(gl, parties)
+        if not _wanted(party):
+            continue
         section = sections.setdefault(party, {
             "opening": opening.get(party, Decimal("0.00")),
             "period_debit": Decimal("0.00"),
@@ -2562,13 +2639,17 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
         status = (
             "advances" if net > 0 else "payable" if net < 0 else "liquidated"
         )
+        src_no = gl.entry.source_doc_no or ""
         rows.append(
             {
                 "date": gl.transaction_date,
                 "ref": gl.entry.entry_no,
                 "entry_pk": gl.entry.id,
                 "source_type": gl.entry.source_doc_type or "",
-                "source_doc_no": gl.entry.source_doc_no or "",
+                "source_doc_no": src_no,
+                "rfp_pk": rfp_ids.get(src_no),
+                "pcf_pk": pcf_ids.get(src_no),
+                "supplier_id": supplier_ids.get(party.casefold()),
                 "party": party,
                 "particulars": gl.line.description or gl.entry.description,
                 "segment": gl.segment.code if gl.segment else "",
@@ -2581,6 +2662,29 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
             }
         )
 
+    if wanted:
+        sections = {p: s for p, s in sections.items() if p.casefold() == wanted.casefold()}
+        if wanted not in sections and wanted.casefold() not in {p.casefold() for p in sections}:
+            sections.setdefault(wanted, {
+                "opening": opening.get(wanted, Decimal("0.00")),
+                "period_debit": Decimal("0.00"),
+                "period_credit": Decimal("0.00"),
+                "row_count": 0,
+            })
+
+    # Latest manual reconciliation per employee (any period): the ledger
+    # header shows whether the section was reviewed/locked and its variance.
+    recon_by_party = {}
+    try:
+        from apps.ap.models import AdvanceReconciliation
+
+        for recon in AdvanceReconciliation.objects.order_by("employee_name", "-period_end", "-id"):
+            key = (recon.employee_name or "").strip().casefold()
+            if key and key not in recon_by_party:
+                recon_by_party[key] = recon
+    except Exception:
+        recon_by_party = {}
+
     section_list = []
     for party in sorted(sections, key=str.casefold):
         s = sections[party]
@@ -2588,9 +2692,11 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
         status = (
             "advances" if closing > 0 else "payable" if closing < 0 else "liquidated"
         )
+        recon = recon_by_party.get(party.casefold())
         section_list.append(
             {
                 "party": party,
+                "supplier_id": supplier_ids.get(party.casefold()),
                 "opening": s["opening"],
                 "opening_dr": _balance_cell(s["opening"], "debit", "debit") if s["opening"] else None,
                 "opening_cr": _balance_cell(s["opening"], "debit", "credit") if s["opening"] else None,
@@ -2601,12 +2707,16 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
                 "closing_cr": _balance_cell(closing, "debit", "credit") if closing else None,
                 "row_count": s["row_count"],
                 "status": status,
+                "recon_status": recon.status if recon else "",
+                "recon_variance": recon.variance if recon else None,
+                "recon_period_end": recon.period_end if recon else None,
             }
         )
 
     return {
         "start": start,
         "end": end,
+        "employee": wanted or "",
         "sections": section_list,
         "rows": rows,
         "period_debit": period_debit,
@@ -2619,6 +2729,10 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None):
             for k in ADVANCE_LEDGER_STATUS_LABELS
         },
         "unidentified_count": sum(1 for s in section_list if s["party"] == "(Unidentified)"),
+        "recon_open_count": sum(
+            1 for s in section_list
+            if not s["recon_status"] or s["recon_status"] == "draft"
+        ),
     }
 
 

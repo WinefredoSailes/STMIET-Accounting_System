@@ -1,12 +1,20 @@
 from django.contrib import admin
 
-from .models import AdvanceToEmployee, CheckVoucher, CONSOBatch, RFPDocument, RFPLine, Supplier
+from .models import (
+    AdvanceReconciliation,
+    AdvanceToEmployee,
+    CheckVoucher,
+    CONSOBatch,
+    RFPDocument,
+    RFPLine,
+    Supplier,
+)
 
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "supplier_type", "tin", "last_ap")
-    list_filter = ("supplier_type",)
+    list_display = ("code", "name", "supplier_type", "is_employee", "tin", "last_ap")
+    list_filter = ("supplier_type", "is_employee")
     search_fields = ("code", "name")
 
 
@@ -39,3 +47,13 @@ class CheckVoucherAdmin(admin.ModelAdmin):
 class AdvanceToEmployeeAdmin(admin.ModelAdmin):
     list_display = ("employee_name", "kind", "granted_date", "amount", "liquidated_amount", "status")
     list_filter = ("kind", "status", "segment")
+
+
+@admin.register(AdvanceReconciliation)
+class AdvanceReconciliationAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee_name", "period_start", "period_end",
+        "gl_balance", "reviewed_balance", "variance", "status",
+    )
+    list_filter = ("status",)
+    search_fields = ("employee_name",)

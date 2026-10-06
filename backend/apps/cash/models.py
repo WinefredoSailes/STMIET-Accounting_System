@@ -346,6 +346,12 @@ class PCFReplenishment(AuditableModel):
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     # ACCTG-FOR-002 PAYEE INFORMATION: who received / is reimbursed.
     payee_name = models.CharField(max_length=255, blank=True)
+    # Canonical employee party for Advances (Supplier flagged is_employee).
+    # payee_name stays as the printed snapshot; this FK groups 12070 lines.
+    employee = models.ForeignKey(
+        "ap.Supplier", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="pcf_replenishments",
+    )
     reference = models.CharField(max_length=64, blank=True)
     # Who requested the petty cash
     requested_by = models.ForeignKey(

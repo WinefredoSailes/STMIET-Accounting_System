@@ -165,6 +165,7 @@
       </table>
       <p id="balance-hint" class="mt-2 text-xs text-emerald-700">Debits and credits balance.</p>
       <p class="mt-1 text-xs text-surface-500">Enter each line's amount in either the Debit or the Credit column — not both. Every line carries its own cost center / ref. (e.g. OS — offsite, GEN-FUEL); start typing to pick a standard code (AG, OS, TL, HRAC) or type any reference. Credit accounts (AP, payables to officers, advances clearing, WHT) are entered as credit lines just like expenses. Debits must equal credits; minimum RFP is ₱2,500 (use PCV below it).</p>
+      <p class="mt-1 text-xs text-surface-500">Advances: when any line uses 12070 (Advances to Employees), set the payee to the employee (flag suppliers as Employee in the supplier master) — the posted RFP then flows into the Advances Subsidiary Ledger automatically.</p>
       <datalist id="cost_center_options">
         {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
       </datalist>

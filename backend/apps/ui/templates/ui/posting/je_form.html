@@ -47,6 +47,9 @@
                 {% endif %}
               </select>
               <input type="hidden" name="supplier_name" id="id_supplier_name" value="{{ editing.supplier_name|default:'' }}">
+              <input type="hidden" name="supplier_id" id="id_supplier_id" value="{% if editing and editing.supplier_id %}{{ editing.supplier_id }}{% endif %}">
+              <input type="hidden" name="supplier_kind" id="id_supplier_kind" value="">
+              <p class="text-xs text-surface-500">Advances: when any line uses 12070 (Advances to Employees), pick the employee here so the entry flows into the Advances Subsidiary Ledger.</p>
             </div>
           </div>
           <div class="grid grid-cols-[140px_1fr] items-baseline gap-2">
@@ -277,15 +280,29 @@
 
     // Supplier / Customer picker -> hidden supplier_name input. The async
     // results carry "CODE — Name"; we store just the recorded name so the
-    // voucher header/print/exports show the plain party name.
+    // voucher header/print/exports show the plain party name. The canonical
+    // Supplier FK (supplier_id + kind) is synced alongside so 12070 lines
+    // group under one employee in the Advances subsidiary.
     function syncPartyName(sel) {
       var hidden = document.getElementById('id_supplier_name');
+      var hidId = document.getElementById('id_supplier_id');
+      var hidKind = document.getElementById('id_supplier_kind');
       if (!hidden) return;
       var opt = sel.options[sel.selectedIndex];
-      if (!opt || !opt.value) { hidden.value = ''; return; }
+      if (!opt || !opt.value) {
+        hidden.value = '';
+        if (hidId) hidId.value = '';
+        if (hidKind) hidKind.value = '';
+        return;
+      }
       var raw = opt.textContent;
       var m = raw.match(/^[^\s—]+\s*[—-]?\s*(.+)$/);
       hidden.value = m && m[1] ? m[1].trim() : raw.trim();
+      // The edit-form seed option carries the plain name as its value (not
+      // a pk); only forward numeric ids, otherwise the server resolves the
+      // canonical supplier by the snapshot name.
+      if (hidId) hidId.value = /^\d+$/.test(opt.value) ? opt.value : '';
+      if (hidKind) hidKind.value = (opt.dataset && opt.dataset.kind) || '';
     }
     var partySel = document.getElementById('id_supplier_picker');
     if (partySel) {

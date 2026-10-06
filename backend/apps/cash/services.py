@@ -690,6 +690,7 @@ class PCFService:
         request_date=None,
         fund=None,
         expenses: list[dict] | None = None,
+        employee=None,
     ) -> PCFReplenishment:
         """rejected -> requested: reopen so the custodian can edit/resubmit.
 
@@ -717,6 +718,9 @@ class PCFService:
         if payee_name is not None:
             replen.payee_name = payee_name
             touched.append("payee_name")
+        if employee is not None:
+            replen.employee = employee
+            touched.append("employee")
         if reference is not None:
             replen.reference = reference
             touched.append("reference")
@@ -759,6 +763,9 @@ class PCFService:
         from apps.posting.services import PostingService
 
         seg = segment or replen.fund.company.segments.order_by("code").first()
+        party_name = (
+            (replen.employee.name if replen.employee_id else "") or (replen.payee_name or "")
+        ).strip()
         entry = JournalEntry.objects.create(
             entry_no=f"PCF-REP-{replen.id}",
             company=replen.fund.company,
@@ -768,6 +775,8 @@ class PCFService:
             description=f"PCF {replen.fund.fund_code} {replen.voucher_no} replenishment — Cr {replen.fund.get_payable_account().code} AP-Other Current, custodian {replen.fund.custodian_name or replen.fund.name}",
             source_doc_type="PCF",
             source_doc_no=str(replen.id),
+            supplier_name=party_name[:255],
+            supplier_id=replen.employee_id,
             created_by=user,
         )
         line_no = 1

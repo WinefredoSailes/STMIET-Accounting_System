@@ -84,6 +84,12 @@ class Supplier(SoftDeleteMixin, AuditableModel):
     default_segment = models.ForeignKey(
         "foundation.Segment", null=True, blank=True, on_delete=models.SET_NULL, related_name="suppliers"
     )
+    # Advances to Employees (user-confirmed): employees are canonical Supplier
+    # records flagged here, so Journal / RFP / PCF all pick the same party and
+    # the 12070 subsidiary ledger groups by one name instead of free text.
+    is_employee = models.BooleanField(
+        "Employee (appears in Advances pickers)", default=False, db_index=True
+    )
 
     class Meta:
         ordering = ["name"]
@@ -498,6 +504,7 @@ class ActionLog(models.Model):
         BILL = "bill", "Billing"
         ASSET = "asset", "Fixed Asset"
         SSI = "ssi", "Special Sales Invoice"
+        ADV = "adv", "Advance Reconciliation"
 
     doc_type = models.CharField(max_length=8, choices=DocType.choices, db_index=True)
     doc_id = models.PositiveBigIntegerField(db_index=True)
@@ -514,3 +521,64 @@ class ActionLog(models.Model):
 
     def __str__(self):
         return f"{self.doc_type}#{self.doc_id} {self.action} by {self.actor}"
+
+
+class AdvanceReconciliation(AuditableModel):
+    """Manual reconciliation of the Advances to Employees subsidiary (COA 12070).
+
+    There is no payroll feed that auto-deducts employee advances, so the GL
+    control balance and the per-employee subsidiary can drift. Accounting
+    reviews one employee for one period, records the reviewed (true) balance
+    plus a memo, and optionally links the posted adjusting Journal Entry that
+    fixes it (e.g. payroll deduction Dr Salary / Cr 12070). Proper accounting:
+    the memo alone never moves the GL — only a posted JE does — and the memo
+    alone never proves the fix; both live here so the executive dashboard can
+    trust locked periods.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        REVIEWED = "reviewed", "Reviewed"
+        LOCKED = "locked", "Locked"
+
+    supplier = models.ForeignKey(
+        Supplier, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="advance_reconciliations",
+        help_text="Canonical employee (Supplier flagged is_employee).",
+    )
+    # Snapshot of the party name so legacy free-text rows stay reconcilable
+    # even before they are mapped to a Supplier record.
+    employee_name = models.CharField(max_length=255, db_index=True)
+    period_start = models.DateField(db_index=True)
+    period_end = models.DateField(db_index=True)
+    # Signed GL-side closing for the employee at review time (Dr positive).
+    gl_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    # The manually verified true balance accounting signs off (Dr positive).
+    reviewed_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    # reviewed_balance - gl_balance at review time (what the adjusting JE must book).
+    variance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    adjustment_je = models.ForeignKey(
+        "posting.JournalEntry", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="advance_reconciliations",
+        help_text="Posted adjusting JE that books the variance into 12070.",
+    )
+    memo = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    reviewed_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    locked_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    locked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-period_end", "employee_name"]
+        indexes = [
+            models.Index(fields=["employee_name", "period_end"]),
+            models.Index(fields=["status", "period_end"]),
+        ]
+
+    def __str__(self):
+        return f"{self.employee_name} {self.period_start}..{self.period_end} ({self.status})"

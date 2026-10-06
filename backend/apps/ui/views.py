@@ -548,6 +548,60 @@ def je_create(request):
     return render(request, "ui/posting/je_form.html", ctx)
 
 
+def _resolve_je_supplier(request, supplier_name):
+    """Resolve the canonical Supplier for a Journal Voucher.
+
+    The picker posts ``supplier_id`` (Supplier or Customer pk prefixed by
+    kind); older posts carry only the plain ``supplier_name`` snapshot, which
+    we match exactly (case-insensitive) against both masters. Returns
+    ``(supplier_or_None, clean_name)`` — the FK is what the Advances
+    subsidiary groups 12070 lines by, the name stays for print/history.
+    """
+    from apps.ap.models import Supplier
+    from apps.ar.models import Customer
+
+    raw_id = (request.POST.get("supplier_id") or "").strip()
+    supplier = None
+    if raw_id:
+        kind = (request.POST.get("supplier_kind") or "").strip().lower()
+        if kind == "customer":
+            cust = Customer.objects.filter(pk=raw_id).first() if raw_id.isdigit() else None
+            if cust is None:
+                cust = Customer.objects.filter(code=raw_id).first()
+            if cust is not None:
+                owner = (cust.owner_name or "").strip()
+                supplier_name = f"{cust.name} — {owner}" if owner else cust.name
+                return None, supplier_name[:255]
+        else:
+            if raw_id.isdigit():
+                supplier = Supplier.objects.filter(pk=int(raw_id)).first()
+            if supplier is None:
+                supplier = Supplier.objects.filter(code=raw_id).first()
+            if supplier is not None:
+                return supplier, supplier.name[:255]
+    if supplier_name:
+        supplier = Supplier.objects.filter(name__iexact=supplier_name).first()
+        if supplier is not None:
+            return supplier, supplier.name[:255]
+    return None, supplier_name
+
+
+def _require_advances_party(parsed, supplier, supplier_name):
+    """Manual JE gate: a 12070 (Advances to Employees) line must name the
+    employee via the Supplier/Customer picker so the line reaches the
+    Advances subsidiary instead of '(Unidentified)'."""
+    touches = any(
+        (p["account"].code == "12070" or p["account"].code.startswith("12070-"))
+        for p in parsed
+    )
+    if touches and supplier is None and not (supplier_name or "").strip():
+        raise ValueError(
+            "This entry touches 12070 (Advances to Employees) — pick the "
+            "employee from the Supplier / Customer picker so it appears in "
+            "the Advances Subsidiary Ledger."
+        )
+
+
 def _create_entry_from_form(request):
     """Build a draft JE from the form POST (lines as parallel arrays)."""
     company_id = request.POST.get("company")
@@ -609,6 +663,9 @@ def _create_entry_from_form(request):
     if not parsed:
         raise ValueError("Add at least one line with an amount.")
 
+    supplier, supplier_name = _resolve_je_supplier(request, supplier_name)
+    _require_advances_party(parsed, supplier, supplier_name)
+
     header_segment = parsed[0]["segment"]
     header_description = next((p["description"].strip() for p in parsed if p["description"].strip()), "")[:500]
     if not header_description:
@@ -640,6 +697,7 @@ def _create_entry_from_form(request):
                     source_doc_type=source_doc_type,
                     source_doc_no=source_doc_no,
                     supplier_name=supplier_name,
+                    supplier=supplier,
                     po=po,
                     ref_number=ref_number,
                     created_by=request.user,
@@ -1240,6 +1298,9 @@ def _update_entry_from_form(request, entry):
     if not header_description:
         header_description = f"{source_doc_type} {source_doc_no}".strip() or f"Journal entry {transaction_date.isoformat()}"
 
+    supplier, supplier_name = _resolve_je_supplier(request, supplier_name)
+    _require_advances_party(parsed, supplier, supplier_name)
+
     with transaction.atomic():
         entry.transaction_date = transaction_date
         entry.segment = header_segment
@@ -1247,10 +1308,11 @@ def _update_entry_from_form(request, entry):
         entry.source_doc_type = source_doc_type
         entry.source_doc_no = source_doc_no
         entry.supplier_name = supplier_name
+        entry.supplier = supplier
         entry.po = po
         entry.ref_number = ref_number
         entry.fiscal_period = period
-        entry.save(update_fields=["transaction_date", "segment", "description", "source_doc_type", "source_doc_no", "supplier_name", "po", "ref_number", "fiscal_period", "updated_at"])
+        entry.save(update_fields=["transaction_date", "segment", "description", "source_doc_type", "source_doc_no", "supplier_name", "supplier", "po", "ref_number", "fiscal_period", "updated_at"])
 
         # Delete existing lines and recreate
         entry.lines.all().delete()
@@ -3142,6 +3204,7 @@ def supplier_create(request):
                 contact_person=request.POST.get("contact_person", ""),
                 position=request.POST.get("position", ""),
                 attachments_required=bool(request.POST.get("attachments_required")),
+                is_employee=bool(request.POST.get("is_employee")),
                 default_segment=Segment.objects.get(pk=segment) if segment else None,
             )
             SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
@@ -3196,6 +3259,7 @@ def supplier_update(request, pk):
                 contact_person=request.POST.get("contact_person", ""),
                 position=request.POST.get("position", ""),
                 attachments_required=bool(request.POST.get("attachments_required")),
+                is_employee=bool(request.POST.get("is_employee")),
                 default_segment=Segment.objects.get(pk=segment) if segment else None,
             )
             SupplierService.save_contacts(supplier, _supplier_contacts_from_post(request.POST))
@@ -5358,6 +5422,36 @@ def _pcf_fund_from_post(request):
     return fund
 
 
+def _pcf_employee_from_post(request):
+    """Resolve the canonical employee Supplier for a PCF voucher (optional).
+
+    The form posts ``employee`` (Supplier pk); when set, ``payee_name`` is
+    defaulted from it so legacy snapshots stay consistent. Returns the
+    Supplier or None.
+    """
+    from apps.ap.models import Supplier
+
+    raw = (request.POST.get("employee") or "").strip()
+    if raw.isdigit():
+        return Supplier.objects.filter(pk=int(raw)).first()
+    return None
+
+
+def _require_pcf_advances_party(expenses, employee, payee_name):
+    """PCF gate: a 12070 (Advances to Employees) expense line must name the
+    employee so the posted JE reaches the Advances subsidiary."""
+    touches = any(
+        (e.get("account_code") == "12070" or str(e.get("account_code", "")).startswith("12070-"))
+        for e in expenses
+    )
+    if touches and employee is None and not (payee_name or "").strip():
+        raise ValidationError(
+            "This voucher charges 12070 (Advances to Employees) — pick the "
+            "employee (or enter the NAME) so it appears in the Advances "
+            "Subsidiary Ledger."
+        )
+
+
 @login_required
 def pcf_replenish(request):
     from apps.cash.services import PCFService
@@ -5366,16 +5460,22 @@ def pcf_replenish(request):
         try:
             fund = _pcf_fund_from_post(request)
             expenses = _pcf_expenses_from_post(request)
+            employee = _pcf_employee_from_post(request)
+            payee_name = (request.POST.get("payee_name", "") or "").strip()
+            if employee is not None and not payee_name:
+                payee_name = employee.name
+            _require_pcf_advances_party(expenses, employee, payee_name)
             replen = PCFService.request_replenishment(
                 fund,
                 expenses,
                 user=request.user,
             )
-            replen.payee_name = request.POST.get("payee_name", "")
+            replen.payee_name = payee_name
+            replen.employee = employee
             replen.reference = request.POST.get("reference", "")
             if request.POST.get("request_date"):
                 replen.request_date = date.fromisoformat(request.POST["request_date"])
-            replen.save(update_fields=["payee_name", "reference", "request_date", "updated_at"])
+            replen.save(update_fields=["payee_name", "employee", "reference", "request_date", "updated_at"])
             messages.success(
                 request,
                 f"PCF voucher {replen.voucher_no} created (draft) — submit it for "
@@ -5401,6 +5501,12 @@ def _pcf_prepare(request, replen, *, submit: bool):
     fund = _pcf_fund_from_post(request)
     expenses = _pcf_expenses_from_post(request)
     payee_name = request.POST.get("payee_name")
+    employee = _pcf_employee_from_post(request)
+    if employee is not None and not (payee_name or "").strip():
+        payee_name = employee.name
+    _require_pcf_advances_party(
+        expenses, employee if employee is not None else replen.employee, payee_name
+    )
     reference = request.POST.get("reference")
     request_date = None
     if request.POST.get("request_date"):
@@ -5414,6 +5520,7 @@ def _pcf_prepare(request, replen, *, submit: bool):
             fund=fund,
             expenses=expenses,
             payee_name=payee_name,
+            employee=employee,
             reference=reference,
             request_date=request_date,
         )
@@ -5422,13 +5529,15 @@ def _pcf_prepare(request, replen, *, submit: bool):
     replen.amount = sum(money(e["amount"]) for e in expenses)
     if payee_name is not None:
         replen.payee_name = payee_name
+    if employee is not None:
+        replen.employee = employee
     if reference is not None:
         replen.reference = reference
     if request_date is not None:
         replen.request_date = request_date
     replen.save(
         update_fields=[
-            "fund", "expenses", "amount", "payee_name",
+            "fund", "expenses", "amount", "payee_name", "employee",
             "reference", "request_date", "updated_at",
         ]
     )
@@ -6711,9 +6820,12 @@ def supplier_options(request):
 
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
+    employees = request.GET.get("employees", "").strip().lower() in ("1", "true", "yes", "on")
     qs = Supplier.objects.filter(
         approval_status=SupplierApprovalStatus.APPROVED
     ).order_by("code")
+    if employees:
+        qs = qs.filter(is_employee=True)
     if q:
         qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
     rows = list(qs[:30])
@@ -6722,7 +6834,7 @@ def supplier_options(request):
         if selected.isdigit():
             lookup |= Q(pk=selected)
         keep = Supplier.objects.filter(lookup).first()
-        if keep:
+        if keep and (not employees or keep.is_employee):
             rows.insert(0, keep)
     return JsonResponse(
         [
@@ -6731,6 +6843,7 @@ def supplier_options(request):
                 "code": a.code,
                 "text": f"{a.code} — {a.name}",
                 "tin": a.tin,
+                "is_employee": a.is_employee,
             }
             for a in rows
         ],
@@ -6936,7 +7049,7 @@ def party_options(request):
         for s in suppliers[:20]:
             rows_by_name[f"{s.code} — {s.name}"] = {
                 "id": s.id, "code": s.code, "text": f"{s.code} — {s.name}",
-                "tin": s.tin, "kind": "supplier",
+                "tin": s.tin, "kind": "supplier", "is_employee": s.is_employee,
             }
     customers = pool(Customer.objects.all())
     for c in customers[:20]:
@@ -6952,7 +7065,7 @@ def party_options(request):
         chosen = {
             "id": keep_s.id, "code": keep_s.code,
             "text": f"{keep_s.code} — {keep_s.name}",
-            "tin": keep_s.tin, "kind": "supplier",
+            "tin": keep_s.tin, "kind": "supplier", "is_employee": keep_s.is_employee,
         }
     elif keep_c:
         chosen = {
@@ -9403,6 +9516,233 @@ def advances_ledger_print(request):
         "ui/ap/advances_ledger_print.html",
         _ledger_ctx(request, data),
     )
+
+
+def _advances_employee_name(key):
+    """Resolve an employee drill-down key to its canonical party name.
+
+    Numeric keys are Supplier pks (stable links from ledger sections); any
+    other key is the party name itself (legacy free-text rows, incl.
+    "(Unidentified)"). Returns "" when nothing resolves.
+    """
+    from urllib.parse import unquote
+
+    raw = unquote(key or "").strip()
+    if raw.isdigit():
+        from apps.ap.models import Supplier
+
+        sup = Supplier.objects.filter(pk=int(raw)).first()
+        if sup is not None:
+            return sup.name.strip()
+        return ""
+    return raw
+
+
+def _advances_employee_context(request, key):
+    """Shared window + filtered ledger + recon history for one employee."""
+    from apps.ap.models import AdvanceReconciliation, Supplier
+
+    name = _advances_employee_name(key)
+    win = _ledger_ctx(request)["win"]
+    supplier = Supplier.objects.filter(name__iexact=name).first() if name else None
+    data = advances_subsidiary_ledger(
+        company=win["company"],
+        start=win["start"],
+        end=win["end"],
+        segment=win["segment"] or None,
+        employee=name,
+    )
+    section = next(iter(data.get("sections") or []), None)
+    recons = list(
+        AdvanceReconciliation.objects.filter(employee_name__iexact=name).select_related(
+            "adjustment_je", "supplier"
+        ).order_by("-period_end", "-id")[:20]
+    ) if name else []
+    return name, supplier, section, recons, data, win
+
+
+@login_required
+def advances_ledger_employee(request, key):
+    """Per-employee breakdown of the Advances subsidiary for a date range.
+
+    Clicking an employee name on the ledger opens this page: opening /
+    period / closing summary plus every posted Journal / RFP / PCF line in
+    the selected window, each linked to its originating document, with the
+    manual reconciliation panel underneath.
+    """
+    name, supplier, section, recons, data, win = _advances_employee_context(request, key)
+    if not name:
+        messages.error(request, "Unknown employee.")
+        return redirect("ui:advances_ledger")
+    rows = data.pop("rows")
+    page_obj = _page(request, rows)
+    page_obj.is_last = not page_obj.has_next()
+    data["page_obj"] = page_obj
+    data["status_labels"] = ADVANCE_LEDGER_STATUS_LABELS
+    data["employee"] = name
+    data["supplier"] = supplier
+    data["section"] = section
+    data["recons"] = recons
+    params = request.GET.copy()
+    for drop in ("page", "format"):
+        params.pop(drop, None)
+    data["employee_qs"] = params.urlencode()
+    return render(
+        request,
+        "ui/ap/advances_ledger_employee.html",
+        _ledger_ctx(request, data),
+    )
+
+
+@login_required
+def advances_ledger_employee_export(request, key):
+    """Exports one employee's breakdown (xlsx/pdf/csv), honoring the same
+    window + segment filters as the detail page."""
+    fmt = request.GET.get("format", "xlsx")
+    name, supplier, section, recons, data, win = _advances_employee_context(request, key)
+    if not name:
+        messages.error(request, "Unknown employee.")
+        return redirect("ui:advances_ledger")
+    rows = [
+        [
+            r["ref"],
+            r["date"].isoformat(),
+            r["party"],
+            r["source_type"],
+            r["source_doc_no"],
+            r["particulars"],
+            r["debit"],
+            r["credit"],
+            r["net"],
+            ADVANCE_LEDGER_STATUS_LABELS.get(r["status"], r["status"]),
+        ]
+        for r in data["rows"]
+    ]
+    return _table_response(
+        f"ADVANCES — {name}",
+        ["Reference", "Date", "Employee", "Source", "Source No.", "Particulars",
+         "Debit", "Credit", "Net Amount", "Status"],
+        rows,
+        fmt,
+        f"ADVANCES-{name}"[:60] or "ADVANCES-EMPLOYEE",
+        sheet_title="ADVANCES",
+        money_cols=(6, 7, 8),
+        page="landscape",
+        totals_row=[
+            "Period Totals", "", "", "", "", "",
+            data["period_debit"], data["period_credit"], data["total_net"], "",
+        ],
+    )
+
+
+@login_required
+def advances_ledger_employee_print(request, key):
+    """Print-optimized copy of one employee's breakdown."""
+    name, supplier, section, recons, data, win = _advances_employee_context(request, key)
+    if not name:
+        messages.error(request, "Unknown employee.")
+        return redirect("ui:advances_ledger")
+    data["status_labels"] = ADVANCE_LEDGER_STATUS_LABELS
+    data["employee"] = name
+    data["supplier"] = supplier
+    data["section"] = section
+    data["recons"] = recons
+    return render(
+        request,
+        "ui/ap/advances_ledger_employee_print.html",
+        _ledger_ctx(request, data),
+    )
+
+
+@login_required
+@require_POST
+def advances_recon_record(request, key):
+    """Accounting manually reconciles one employee for one period.
+
+    Records the GL-side closing next to the verified-true balance plus a
+    memo; the variance is what a posted adjusting JE (e.g. the missing
+    payroll deduction) must book. Drafts can be edited; reviewed/locked
+    follow the review/lock endpoints below.
+    """
+    from apps.ap.services import AdvanceReconService
+
+    name = _advances_employee_name(key)
+    if not name:
+        messages.error(request, "Unknown employee.")
+        return redirect("ui:advances_ledger")
+    try:
+        recon = AdvanceReconService.record(
+            employee_name=name,
+            period_start=request.POST.get("period_start", ""),
+            period_end=request.POST.get("period_end", ""),
+            gl_balance=request.POST.get("gl_balance", "0"),
+            reviewed_balance=request.POST.get("reviewed_balance", "0"),
+            memo=request.POST.get("memo", ""),
+            user=request.user,
+        )
+        messages.success(
+            request,
+            f"{recon.employee_name} {recon.period_start}..{recon.period_end} "
+            f"reconciled (variance {recon.variance:,.2f}) — draft.",
+        )
+    except (AccountingError, ValidationError, ValueError, ArithmeticError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:advances_ledger_employee", key))
+
+
+@login_required
+@require_POST
+def advances_recon_link(request, pk):
+    """Link a POSTED adjusting JE to a reconciliation (closes the variance)."""
+    from apps.ap.models import AdvanceReconciliation
+    from apps.ap.services import AdvanceReconService
+
+    recon = get_object_or_404(AdvanceReconciliation, pk=pk)
+    try:
+        entry_no = (request.POST.get("entry_no") or "").strip()
+        if not entry_no:
+            raise ValidationError("Enter the posted adjusting JE number (e.g. JE-2026-0007).")
+        entry = JournalEntry.objects.filter(entry_no=entry_no).first()
+        if entry is None:
+            raise ValidationError(f"Journal entry {entry_no} not found.")
+        AdvanceReconService.link_adjustment(recon, entry, user=request.user)
+        messages.success(request, f"Adjusting entry {entry.entry_no} linked.")
+    except (AccountingError, ValidationError, ValueError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
+
+
+@login_required
+@require_POST
+def advances_recon_review(request, pk):
+    """draft -> reviewed: accounting signs off the reconciliation."""
+    from apps.ap.models import AdvanceReconciliation
+    from apps.ap.services import AdvanceReconService
+
+    recon = get_object_or_404(AdvanceReconciliation, pk=pk)
+    try:
+        AdvanceReconService.review(recon, user=request.user)
+        messages.success(request, f"{recon.employee_name} reconciliation reviewed.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
+
+
+@login_required
+@require_POST
+def advances_recon_lock(request, pk):
+    """reviewed -> locked (Head only): the period is final; later postings
+    surface as a new variance instead of rewriting history."""
+    from apps.ap.models import AdvanceReconciliation
+    from apps.ap.services import AdvanceReconService
+
+    recon = get_object_or_404(AdvanceReconciliation, pk=pk)
+    try:
+        AdvanceReconService.lock(recon, user=request.user)
+        messages.success(request, f"{recon.employee_name} reconciliation locked.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
 
 
 @login_required

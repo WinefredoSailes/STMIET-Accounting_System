@@ -175,8 +175,12 @@ def log_action(doc, action, *, actor=None, note="", doc_type=None):
     from apps.cash.models import InterAccountTransfer
     from apps.posting.models import JournalEntry
 
+    from .models import AdvanceReconciliation
+
     if doc_type is not None:
         pass
+    elif isinstance(doc, AdvanceReconciliation):
+        doc_type = ActionLog.DocType.ADV
     elif isinstance(doc, AcknowledgmentReceipt):
         doc_type = ActionLog.DocType.AR
     elif isinstance(doc, SpecialSalesInvoice):
@@ -1940,3 +1944,131 @@ class AdvanceService:
             advance.status = "partially_liquidated"
         advance.save(update_fields=["liquidated_amount", "liquidated_date", "status", "updated_at"])
         return advance
+
+
+class AdvanceReconService:
+    """Manual reconciliation of the Advances subsidiary (no payroll feed).
+
+    Accounting reviews one employee for one period: the GL-side closing is
+    captured, the verified-true balance is recorded with a memo, and the
+    variance (reviewed - GL) is what a posted adjusting JE must book. Only a
+    POSTED adjusting JE moves the GL; the memo only explains. ``locked`` is
+    the head's sign-off and is immutable — later postings surface as a new
+    variance instead of rewriting history.
+    """
+
+    @classmethod
+    def _resolve_supplier(cls, supplier, employee_name):
+        if supplier is None and employee_name:
+            supplier = Supplier.objects.filter(name__iexact=employee_name.strip()).first()
+        name = (supplier.name if supplier else (employee_name or "")).strip()
+        if not name:
+            raise ValidationError("Enter the employee to reconcile.")
+        return supplier, name
+
+    @classmethod
+    @transaction.atomic
+    def record(cls, *, supplier=None, employee_name="", period_start, period_end,
+               gl_balance, reviewed_balance, memo="", user=None):
+        from .models import AdvanceReconciliation
+
+        if isinstance(period_start, str):
+            period_start = date.fromisoformat(period_start)
+        if isinstance(period_end, str):
+            period_end = date.fromisoformat(period_end)
+        if period_end < period_start:
+            raise ValidationError("The reconciliation period end is before its start.")
+        supplier, name = cls._resolve_supplier(supplier, employee_name)
+        gl = money(gl_balance)
+        reviewed = money(reviewed_balance)
+        existing = AdvanceReconciliation.objects.filter(
+            employee_name__iexact=name,
+            period_start=period_start, period_end=period_end,
+        ).first()
+        if existing is not None and existing.status == AdvanceReconciliation.Status.LOCKED:
+            raise ValidationError(
+                f"{name} for {period_start}..{period_end} is locked and cannot be changed."
+            )
+        if existing is not None:
+            if existing.status != AdvanceReconciliation.Status.DRAFT:
+                raise ValidationError(
+                    f"{name} for {period_start}..{period_end} is already {existing.status}; "
+                    "only drafts can be edited."
+                )
+            existing.supplier = supplier
+            existing.employee_name = name
+            existing.gl_balance = gl
+            existing.reviewed_balance = reviewed
+            existing.variance = reviewed - gl
+            existing.memo = (memo or "").strip()
+            existing.updated_by = user
+            existing.save(update_fields=[
+                "supplier", "employee_name", "gl_balance", "reviewed_balance",
+                "variance", "memo", "updated_by", "updated_at",
+            ])
+            log_action(existing, "reconciled", actor=user, note=(memo or "").strip())
+            return existing
+        recon = AdvanceReconciliation.objects.create(
+            supplier=supplier, employee_name=name,
+            period_start=period_start, period_end=period_end,
+            gl_balance=gl, reviewed_balance=reviewed, variance=reviewed - gl,
+            memo=(memo or "").strip(), status=AdvanceReconciliation.Status.DRAFT,
+            created_by=user,
+        )
+        log_action(recon, "reconciled", actor=user, note=(memo or "").strip())
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def link_adjustment(cls, recon, journal_entry, *, user=None):
+        from .models import AdvanceReconciliation
+
+        if recon.status == AdvanceReconciliation.Status.LOCKED:
+            raise ValidationError("A locked reconciliation cannot be changed.")
+        if journal_entry.status != PostingStatus.POSTED:
+            raise ValidationError(
+                f"JE {journal_entry.entry_no} is '{journal_entry.status}' — "
+                "only a POSTED adjusting entry can close a variance."
+            )
+        recon.adjustment_je = journal_entry
+        recon.updated_by = user
+        recon.save(update_fields=["adjustment_je", "updated_by", "updated_at"])
+        log_action(recon, "adjustment_linked", actor=user, note=journal_entry.entry_no)
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def review(cls, recon, *, user=None):
+        from .models import AdvanceReconciliation
+
+        if recon.status != AdvanceReconciliation.Status.DRAFT:
+            raise ValidationError(f"Only drafts can be reviewed (status '{recon.status}').")
+        recon.status = AdvanceReconciliation.Status.REVIEWED
+        recon.reviewed_by = user
+        recon.reviewed_at = timezone.now()
+        recon.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        log_action(recon, "reviewed", actor=user)
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def lock(cls, recon, *, user=None):
+        from .models import AdvanceReconciliation
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if recon.status != AdvanceReconciliation.Status.REVIEWED:
+            raise ValidationError(
+                f"Only reviewed reconciliations can be locked (status '{recon.status}')."
+            )
+        if recon.variance != Decimal("0.00") and recon.adjustment_je_id is None:
+            raise ValidationError(
+                f"Variance is {recon.variance}: link the POSTED adjusting JE "
+                "before locking, or correct the reviewed balance."
+            )
+        recon.status = AdvanceReconciliation.Status.LOCKED
+        recon.locked_by = user
+        recon.locked_at = timezone.now()
+        recon.save(update_fields=["status", "locked_by", "locked_at", "updated_at"])
+        log_action(recon, "locked", actor=user)
+        return recon

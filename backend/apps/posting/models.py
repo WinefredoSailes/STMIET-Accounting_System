@@ -82,6 +82,13 @@ class JournalEntry(AuditableModel):
     total_credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     # Document metadata for voucher layout (ACCTG-FOR-012).
     supplier_name = models.CharField(max_length=255, blank=True, default="")
+    # Canonical party (Supplier master, incl. employees flagged is_employee).
+    # The plain supplier_name snapshot stays for print/history; this FK is
+    # what the Advances subsidiary uses to group 12070 lines reliably.
+    supplier = models.ForeignKey(
+        "ap.Supplier", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="journal_entries",
+    )
     po = models.CharField(max_length=128, blank=True, default="")
     ref_number = models.CharField(max_length=128, blank=True, default="")
 
