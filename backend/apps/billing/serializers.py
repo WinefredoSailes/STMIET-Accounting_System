@@ -28,7 +28,7 @@ class BillingDocumentSerializer(serializers.ModelSerializer):
         model = BillingDocument
         fields = (
             "id", "billing_no", "billing_type", "billing_date", "company",
-            "segment", "party_name", "customer", "supplier", "rfp", "reference",
+            "segment", "party_name", "customer", "rfp", "reference",
             "particulars", "amount", "status", "journal_entry",
             "approved_by", "approved_at", "rejected_by", "rejected_at",
             "rejection_note", "revision_count", "lines",

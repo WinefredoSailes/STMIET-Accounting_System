@@ -10,8 +10,10 @@ team asked for:
 
     COA | Account Name | Segment | Cost Center | Description | Debit | Credit
 
-The counterparty is picked from the existing AR customers + AP suppliers
-masters (one shared picker); Intercompany billing defaults it to STPC.
+The counterparty is always an AR customer (customer-only picker).
+Intercompany billing defaults it to the STPC customer record. The printed
+customer-facing invoice renders from ``BillingInvoiceItem`` rows
+(description + amount), which are separate from the posting grid.
 
 When an RFP is used as the basis of the billing, the posted Journal Entry
 captures the RFP number in its Note/Reference field (``ref_number`` and the
@@ -64,17 +66,31 @@ class BillingDocument(AuditableModel):
     segment = models.ForeignKey(
         "foundation.Segment", on_delete=models.PROTECT, related_name="billing_documents"
     )
-    # Counterparty (shared customer/supplier picker). Plain name so the JE
-    # header and General Journal show it without a stale master copy; the
-    # optional links keep the subledger trace when the party is a known master.
+    # Counterparty is always an AR customer. Plain name so the JE header and
+    # General Journal show it without a stale master copy; the optional link
+    # keeps the subledger trace when the party is a known customer master.
     party_name = models.CharField(max_length=255)
     customer = models.ForeignKey(
         "ar.Customer", null=True, blank=True, on_delete=models.PROTECT,
         related_name="billing_documents",
     )
-    supplier = models.ForeignKey(
-        "ap.Supplier", null=True, blank=True, on_delete=models.PROTECT,
-        related_name="billing_documents",
+    # Customer-facing invoice header (print template). statement_date defaults
+    # to billing_date; due_text holds display text such as "IMMEDIATELY".
+    statement_date = models.DateField(null=True, blank=True)
+    due_text = models.CharField(max_length=32, default="IMMEDIATELY", blank=True)
+    customer_id_display = models.CharField(max_length=32, blank=True)
+    downpayment_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("50.00")
+    )
+    downpayment_amount = models.DecimalField(
+        max_digits=18, decimal_places=2, default=Decimal("0.00")
+    )
+    downpayment_ref = models.CharField(max_length=32, blank=True)
+    downpayment_date = models.DateField(null=True, blank=True)
+    remaining_note = models.CharField(
+        max_length=255,
+        default="REMAINING BALANCE TO BE PAID AFTER THE ONLINE APPROVAL OF DOE",
+        blank=True,
     )
     # The RFP this billing is based on (optional). Its number is captured in the
     # posted JE's Note/Reference field.
@@ -135,6 +151,20 @@ class BillingDocument(AuditableModel):
         self.amount = totals["debit"] or Decimal("0.00")
         self.save(update_fields=["amount", "updated_at"])
 
+    @property
+    def effective_statement_date(self):
+        return self.statement_date or self.billing_date
+
+    @property
+    def invoice_total(self) -> Decimal:
+        return sum(
+            (i.amount for i in self.invoice_items.all()), Decimal("0.00")
+        )
+
+    @property
+    def remaining_balance(self) -> Decimal:
+        return self.invoice_total - (self.downpayment_amount or Decimal("0.00"))
+
 
 class BillingLine(models.Model):
     """One line of a billing's Account Distribution grid.
@@ -173,3 +203,27 @@ class BillingLine(models.Model):
         side = "Dr" if self.debit else "Cr"
         amount = self.debit or self.credit
         return f"{self.billing.billing_no} #{self.line_no} {side} {self.account.code} {amount}"
+
+
+class BillingInvoiceItem(models.Model):
+    """One row of the customer-facing invoice table.
+
+    Separate from ``BillingLine`` (the balanced Dr/Cr posting grid):
+    transaction date + billing ref + plain description + amount.
+    """
+
+    billing = models.ForeignKey(
+        BillingDocument, on_delete=models.CASCADE, related_name="invoice_items"
+    )
+    order_no = models.PositiveIntegerField(default=1)
+    transaction_date = models.DateField(null=True, blank=True)
+    billing_ref = models.CharField(max_length=32, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["billing", "order_no"]
+        unique_together = ("billing", "order_no")
+
+    def __str__(self):
+        return f"{self.billing.billing_no} #{self.order_no} {self.description} {self.amount}"

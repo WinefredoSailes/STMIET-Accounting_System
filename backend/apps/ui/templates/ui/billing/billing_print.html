@@ -1,112 +1,239 @@
 {% extends "ui/base.html" %}
 {% load static ui_filters %}
-{% block title %}Billing {{ billing.billing_no }} — Print{% endblock %}
+{% block title %}Billing Invoice {{ billing.billing_no }} — Print{% endblock %}
 {% block content %}
 <style>
   @page { size: A4 portrait; margin: 8mm; }
   @media print {
     html, body { width: 100%; margin: 0; padding: 0; background: #fff !important; }
     #sidebar, header, footer, .p-4, .no-print, .print-toolbar { display: none !important; }
-    .billing-paper { box-shadow: none; margin: 0; padding: 0; border: none; width: 100% !important; max-width: none !important; }
-    .billing-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .billing-paper td, .billing-paper th { padding: 1px 4px; }
-    .billing-paper thead { display: table-header-group; }
-    .billing-paper tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    .bi-wrap { margin: 0; padding: 0; }
+    .bi-paper { box-shadow: none; margin: 0; width: 100% !important; max-width: none !important; }
+    .bi-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .bi-paper thead { display: table-header-group; }
+    .bi-paper tr { page-break-inside: avoid; break-inside: avoid; }
   }
   .print-toolbar { display:flex; justify-content:center; gap:8px; padding:12px 16px; background:#f1f5f9; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:10; }
   .print-toolbar button { padding:6px 14px; border:1px solid #cbd5e1; border-radius:4px; font-size:12px; cursor:pointer; background:#fff; }
   .print-toolbar button:last-child { background:#16a34a; color:#fff; border-color:#16a34a; }
-  .billing-paper { background:#fff; margin:0 auto; padding:0; max-width:190mm; }
-  .billing-paper table { width:100%; table-layout:fixed; border-collapse:collapse; }
-  .billing-paper td, .billing-paper th { border:1px solid #000; box-sizing:border-box; padding:1px 4px; }
-  .billing-paper * { -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
+  .bi-wrap { background:#e5e5e5; padding:12px; overflow-x:auto; }
+  .bi-paper {
+    background:#fff; color:#222; margin:0 auto; width:190mm; max-width:190mm;
+    border:1.5px solid #222; padding:4mm 5mm;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .bi-paper * { -webkit-print-color-adjust:exact; print-color-adjust:exact; box-sizing:border-box; border-radius:0 !important; }
+  /* ---- header ---- */
+  .bi-head { display:flex; justify-content:space-between; align-items:flex-start; gap:6mm; }
+  .bi-logo { width:34mm; min-width:34mm; }
+  .bi-logo img { height:14mm; width:auto; max-width:100%; display:block; }
+  .bi-title { flex:1; text-align:center; font-size:40px; font-weight:800; letter-spacing:.06em; color:#888; line-height:1; margin-top:1mm; text-transform:uppercase; }
+  .bi-summary { width:62mm; min-width:62mm; border:1px solid #BDBDBD; }
+  .bi-sumrow { display:flex; }
+  .bi-sumcell { flex:1; border-left:1px solid #BDBDBD; }
+  .bi-sumcell:first-child { border-left:none; }
+  .bi-sumlabel { background:#E8E8E8; font-size:7.5px; font-weight:700; text-transform:uppercase; text-align:center; padding:1mm; border-bottom:1px solid #BDBDBD; color:#555; }
+  .bi-sumval { font-size:8.5px; font-weight:700; text-align:center; padding:1.2mm 1mm; }
+  .bi-totalrow { display:flex; justify-content:space-between; align-items:center; border-top:1px solid #BDBDBD; padding:1.5mm 2mm; }
+  .bi-totalabel { font-size:8px; font-weight:700; text-transform:uppercase; color:#555; }
+  .bi-totalamt { font-size:12px; font-weight:800; color:#E00000; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bi-company { margin-top:1mm; max-width:110mm; }
+  .bi-coname { font-size:11.5px; font-weight:700; text-transform:uppercase; color:#222; line-height:1.25; }
+  .bi-coaddr { font-size:8.5px; color:#777; line-height:1.45; margin-top:.5mm; }
+  /* ---- customer strip ---- */
+  .bi-rule { border:none; border-top:1px solid #222; margin:2.5mm 0; }
+  .bi-cust { display:flex; justify-content:space-between; align-items:flex-start; gap:6mm; }
+  .bi-custname { font-size:11.5px; font-weight:700; text-transform:uppercase; color:#222; }
+  .bi-custaddr { font-size:8.5px; color:#777; line-height:1.45; margin-top:.5mm; }
+  .bi-custid { width:52mm; min-width:52mm; border:1px solid #BDBDBD; }
+  .bi-custid-label { background:#E8E8E8; font-size:8px; font-weight:700; text-transform:uppercase; padding:1mm 2mm; border-bottom:1px solid #BDBDBD; color:#555; }
+  .bi-custid-val { font-size:10px; font-weight:700; padding:2mm; min-height:8mm; }
+  /* ---- main table ---- */
+  .bi-table { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2.5mm; }
+  .bi-table th, .bi-table td { border:1px solid #BDBDBD; padding:1mm 2mm; }
+  .bi-table thead th { background:#C99A00; color:#fff; font-size:8.5px; font-weight:700; text-transform:uppercase; text-align:center; }
+  .bi-table thead th.amt { background:#9aa3ab; }
+  .bi-table tbody td { background:#FFF3CC; font-size:8.5px; }
+  .bi-table td.c { text-align:center; }
+  .bi-table td.l { text-align:left; }
+  .bi-table td.r { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bi-table tr.total td { border-top:2px solid #555; font-weight:700; }
+  .bi-table tr.dp td { font-weight:700; }
+  .bi-table tr.dp td .peso { font-weight:800; }
+  .bi-table tr.rem td { font-size:7.5px; font-style:italic; color:#555; }
+  .bi-table tr.rem td.r { font-style:normal; font-weight:700; color:#E00000; font-size:9px; }
+  /* ---- banks ---- */
+  .bi-banks { border:1px solid #BDBDBD; margin-top:2.5mm; padding:2mm; }
+  .bi-bankstitle { font-size:8.5px; font-weight:700; text-transform:uppercase; margin-bottom:1.5mm; }
+  .bi-bankcols { display:flex; gap:4mm; }
+  .bi-bank { flex:1; display:flex; gap:2mm; align-items:flex-start; }
+  .bi-bank img { height:9mm; width:auto; max-width:22mm; }
+  .bi-bankinfo { font-size:8px; color:#555; line-height:1.5; }
+  .bi-bankinfo b { color:#222; }
+  .bi-acct { font-weight:800; color:#222; font-size:9px; letter-spacing:.02em; }
+  /* ---- reminders / signatures ---- */
+  .bi-remind { font-size:8px; color:#555; line-height:1.5; margin-top:2mm; }
+  .bi-remind b { color:#222; }
+  .bi-remind ul { margin:.5mm 0 0 4mm; padding:0; }
+  .bi-remind li { margin-bottom:.5mm; }
+  .bi-sign { display:flex; justify-content:space-between; margin-top:5mm; }
+  .bi-sig { width:70mm; }
+  .bi-siglabel { font-size:8.5px; color:#555; margin-bottom:8mm; }
+  .bi-sigimg { height:12mm; width:auto; max-width:60mm; display:block; }
+  .bi-signame { font-size:10px; font-weight:700; text-transform:uppercase; border-top:1px solid #222; padding-top:1mm; }
+  .bi-sigrole { font-size:8px; color:#777; }
+  .bi-foot { margin-top:3mm; font-size:7px; color:#777; text-transform:uppercase; letter-spacing:.04em; }
 </style>
 
 <div class="no-print print-toolbar">
   <button onclick="window.print()">Export PDF</button>
 </div>
 
-<div class="billing-paper">
-  <table>
+<div class="bi-wrap">
+<div class="bi-paper">
+  <!-- ================= HEADER ================= -->
+  <div class="bi-head">
+    <div class="bi-logo">
+      <img src="{% static 'stmiet-trans-logo.png' %}" alt="Company logo">
+    </div>
+    <div class="bi-title">Billing Invoice</div>
+    <div class="bi-summary">
+      <div class="bi-sumrow">
+        <div class="bi-sumcell">
+          <div class="bi-sumlabel">Statement Date</div>
+          <div class="bi-sumval">{{ billing.effective_statement_date|date:"M d, Y"|upper }}</div>
+        </div>
+        <div class="bi-sumcell">
+          <div class="bi-sumlabel">Due Date</div>
+          <div class="bi-sumval">{{ billing.due_text|upper }}</div>
+        </div>
+      </div>
+      <div class="bi-totalrow">
+        <span class="bi-totalabel">Total Amount&nbsp;&nbsp;₱</span>
+        <span class="bi-totalamt">{{ invoice_total|money }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="bi-company">
+    <div class="bi-coname">{{ billing.company.name|default:"SEVEN-TRENT MACHINERIES INDUSTRIAL EQUIPMENT TRADING" }}</div>
+    <div class="bi-coaddr">
+      {{ billing.company.address|default:"821 Fr. N. Patangan St., Sta. Isabel, Dipolog City, Zamboanga del Norte" }}<br>
+      0969-179-740 / 065 917-1329<br>
+      seventrentmachineries@gmail.com
+    </div>
+  </div>
+
+  <hr class="bi-rule">
+
+  <!-- ================= CUSTOMER ================= -->
+  <div class="bi-cust">
+    <div>
+      <div class="bi-custname">{{ billing.party_name|upper }}</div>
+      <div class="bi-custaddr">
+        {% if billing.customer %}{{ billing.customer.owner_name }}<br>{{ billing.customer.address }}{% if billing.customer.contact_no %}<br>{{ billing.customer.contact_no }}{% endif %}{% endif %}
+      </div>
+    </div>
+    <div class="bi-custid">
+      <div class="bi-custid-label">Customer ID:</div>
+      <div class="bi-custid-val">{% if billing.customer_id_display %}{{ billing.customer_id_display }}{% elif billing.customer %}{{ billing.customer.code }}{% endif %}</div>
+    </div>
+  </div>
+
+  <!-- ================= MAIN TABLE ================= -->
+  <table class="bi-table">
     <colgroup>
-      <col><col><col><col><col><col><col><col>
+      <col style="width:20%"><col style="width:10%"><col style="width:53%"><col style="width:17%">
     </colgroup>
-    <tbody>
+    <thead>
       <tr>
-        <td colspan="8" style="text-align:center; background:#f8d7d0">
-          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em">{{ billing.company.name }}</div>
-          <div style="font-size:15px; font-weight:900; letter-spacing:.06em">BILLING TRANSACTION</div>
-          <div style="font-size:10px">{{ billing.get_billing_type_display }}</div>
-        </td>
+        <th>Transaction Date</th>
+        <th>Billing Ref.</th>
+        <th>Description</th>
+        <th class="amt">Amount</th>
       </tr>
-      <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">BILLING NO.:</td>
-        <td colspan="2" style="font-weight:700">{{ billing.billing_no }}</td>
-        <td colspan="2" style="font-weight:600">DATE:</td>
-        <td colspan="2">{{ billing.billing_date|date:"m/d/Y" }}</td>
+    </thead>
+    <tbody>
+      {% for item in invoice_items %}
+      <tr>
+        <td class="c">{{ item.transaction_date|date:"M d, Y"|upper }}</td>
+        <td class="c">{{ item.billing_ref }}</td>
+        <td class="l">{{ item.description }}</td>
+        <td class="r"><span class="peso">₱</span>&nbsp;&nbsp;{{ item.amount|money }}</td>
       </tr>
-      <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">PARTY:</td>
-        <td colspan="2">{{ billing.party_name }}</td>
-        <td colspan="2" style="font-weight:600">SEGMENT:</td>
-        <td colspan="2">{{ billing.segment.code }}</td>
+      {% empty %}
+      <tr><td class="c" colspan="4">No invoice items — add them on the billing form.</td></tr>
+      {% endfor %}
+      <tr class="total">
+        <td></td><td></td>
+        <td class="l">TOTAL</td>
+        <td class="r"><span class="peso">₱</span>&nbsp;&nbsp;{{ invoice_total|money }}</td>
       </tr>
-      <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">RFP BASIS:</td>
-        <td colspan="2">{{ billing.rfp.ap_number|default:"—" }}</td>
-        <td colspan="2" style="font-weight:600">REFERENCE:</td>
-        <td colspan="2">{{ billing.reference|default:"—" }}</td>
+      {% if downpayment %}
+      <tr class="dp">
+        <td class="c">{{ billing.downpayment_date|date:"M d, Y"|upper }}</td>
+        <td class="c">{{ billing.downpayment_ref|default:billing.billing_no }}</td>
+        <td class="l">LESS: {{ billing.downpayment_percent|money }}% DOWNPAYMENT</td>
+        <td class="r"><span class="peso">₱</span>&nbsp;&nbsp;{{ downpayment|money }}</td>
       </tr>
-      {% if billing.particulars %}
-      <tr style="font-size:10px">
-        <td colspan="2" style="font-weight:600">PARTICULARS:</td>
-        <td colspan="6">{{ billing.particulars }}</td>
+      <tr class="rem">
+        <td></td><td></td>
+        <td class="l">{{ billing.remaining_note }}</td>
+        <td class="r">₱&nbsp;&nbsp;{{ remaining_balance|money }}</td>
       </tr>
       {% endif %}
-
-      <tr style="font-size:10px; text-transform:uppercase; background:#f8d7d0">
-        <th style="font-weight:700">#</th>
-        <th style="font-weight:700">COA</th>
-        <th style="font-weight:700">Account Name</th>
-        <th style="font-weight:700">Segment</th>
-        <th style="font-weight:700">Cost Center</th>
-        <th style="font-weight:700">Description</th>
-        <th style="font-weight:700; text-align:right">Debit</th>
-        <th style="font-weight:700; text-align:right">Credit</th>
-      </tr>
-      {% for line in billing.lines.all %}
-      <tr style="font-size:10px">
-        <td style="text-align:center">{{ line.line_no }}</td>
-        <td style="font-family:monospace; font-size:9px">{{ line.account.code }}</td>
-        <td style="white-space:normal">{{ line.account.name }}</td>
-        <td>{{ line.segment.code }}</td>
-        <td>{{ line.cost_center|default:"—" }}</td>
-        <td style="white-space:normal">{{ line.description|default:"—" }}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ line.debit|money }}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ line.credit|money }}</td>
-      </tr>
-      {% endfor %}
-      <tr style="font-size:10px; font-weight:700; background:#f8d7d0">
-        <td colspan="6" style="text-align:right">TOTALS</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.debit_total|money }}</td>
-        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ billing.credit_total|money }}</td>
-      </tr>
-
-      <tr style="font-size:10px; font-weight:700; text-transform:uppercase">
-        <td colspan="4">Prepared By:</td>
-        <td colspan="4">Approved By:</td>
-      </tr>
-      <tr style="height:24px"><td colspan="4"></td><td colspan="4"></td></tr>
-      <tr style="font-size:10px; font-weight:600">
-        <td colspan="4" style="text-align:center">{{ prepared_by|default:"—" }}</td>
-        <td colspan="4" style="text-align:center">{{ approved_by|default:"—" }}</td>
-      </tr>
-      <tr style="font-size:8px; text-transform:uppercase; color:#64748b">
-        <td colspan="4" style="text-align:center">Signature over Printed Name</td>
-        <td colspan="4" style="text-align:center">Signature over Printed Name</td>
-      </tr>
     </tbody>
   </table>
+
+  <!-- ================= BANKS ================= -->
+  <div class="bi-banks">
+    <div class="bi-bankstitle">You may deposit your payment through our bank accounts:</div>
+    <div class="bi-bankcols">
+      <div class="bi-bank">
+        <img src="{% static 'img/chinabank-logo.png' %}" alt="" onerror="this.style.display='none'">
+        <div class="bi-bankinfo">
+          Bank: <b>Chinabank</b><br>
+          Account Name: <b>Ermie P. Bagatua</b><br>
+          Account Number: <span class="bi-acct">11760250564</span>
+        </div>
+      </div>
+      <div class="bi-bank">
+        <img src="{% static 'img/katipunan-logo.png' %}" alt="" onerror="this.style.display='none'">
+        <div class="bi-bankinfo">
+          Bank: <b>Katipunan Bank</b><br>
+          Account Name: <b>Seven-Trent Machineries Industrial Equipment Trading</b><br>
+          Account Number: <span class="bi-acct">02000042182</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= REMINDERS ================= -->
+  <div class="bi-remind">
+    <b>Important reminders:</b>
+    <ul>
+      <li>Once the payment has been made, kindly send us a notification with proof of payment through our official messenger account.</li>
+      <li>For more information and assistance, please call our numbers.</li>
+    </ul>
+  </div>
+
+  <!-- ================= SIGNATURES ================= -->
+  <div class="bi-sign">
+    <div class="bi-sig">
+      <div class="bi-siglabel">Prepared by:</div>
+      <img class="bi-sigimg" src="{% static 'img/signature-prepared.png' %}" alt="" onerror="this.style.display='none'">
+      <div class="bi-signame">{{ prepared_by|default:"ETHELAINE O. MANUEL"|upper }}</div>
+      <div class="bi-sigrole">Processor</div>
+    </div>
+    <div class="bi-sig">
+      <div class="bi-siglabel">Approved by:</div>
+      <img class="bi-sigimg" src="{% static 'img/signature-approved.png' %}" alt="" onerror="this.style.display='none'">
+      <div class="bi-signame">{{ approved_by|default:"ERMIE P. BAGATUA"|upper }}</div>
+      <div class="bi-sigrole">Proprietor</div>
+    </div>
+  </div>
+
+  <div class="bi-foot">{{ billing.billing_no }} · {{ billing.get_billing_type_display }} · {{ billing.status|upper }}</div>
+</div>
 </div>
 {% endblock %}
 

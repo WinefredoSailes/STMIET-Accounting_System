@@ -24,14 +24,14 @@
             </select>
           </div>
           <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
-            <label class="text-sm font-semibold text-surface-700" for="id_party_picker">Party</label>
+            <label class="text-sm font-semibold text-surface-700" for="id_party_picker">Party (Customer)</label>
             <div class="flex flex-col gap-1 min-w-0">
               <select id="id_party_picker" data-searchable data-search-compact
-                      data-search-placeholder="Pick from recorded suppliers / customers…"
-                      data-search-url="{% url 'ui:party_options' %}"
+                      data-search-placeholder="Pick from recorded customers…"
+                      data-search-url="{% url 'ui:party_options' %}?kind=customer"
                       data-search-value="id"
                       class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-sm">
-                <option value="">— select supplier / customer —</option>
+                <option value="">— select customer —</option>
               </select>
               <input type="hidden" name="party_name" id="id_party_name" value="">
               <input type="hidden" name="party_kind" id="id_party_kind" value="">
@@ -71,6 +71,104 @@
       </div>
     </div>
     <input type="hidden" name="segment" id="id_segment" value="">
+
+    <!-- ===================== INVOICE DETAILS (customer-facing print) ===================== -->
+    <div class="rounded-xl border border-surface-200 bg-white px-6 py-5 shadow-sm">
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Invoice Details</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_statement_date">Statement Date</label>
+            <input type="date" name="statement_date" id="id_statement_date"
+                   value="{{ today|date:'Y-m-d' }}"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_due_text">Due Date / Terms</label>
+            <input type="text" name="due_text" id="id_due_text" maxlength="32" value="IMMEDIATELY"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_customer_id_display">Customer ID</label>
+            <input type="text" name="customer_id_display" id="id_customer_id_display" maxlength="32"
+                   placeholder="Defaults to customer code"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_downpayment_percent">Downpayment %</label>
+            <input type="text" inputmode="decimal" name="downpayment_percent" id="id_downpayment_percent" value="50.00"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm text-right tabular-nums">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_downpayment_amount">Downpayment Amt</label>
+            <input type="text" inputmode="decimal" data-amount name="downpayment_amount" id="id_downpayment_amount" value=""
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm text-right tabular-nums">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_downpayment_ref">Downpayment Ref</label>
+            <input type="text" name="downpayment_ref" id="id_downpayment_ref" maxlength="32" placeholder="e.g. BI#0019"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_downpayment_date">Downpayment Date</label>
+            <input type="date" name="downpayment_date" id="id_downpayment_date"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+          <div class="grid grid-cols-[150px_1fr] items-baseline gap-2">
+            <label class="text-sm font-semibold text-surface-700" for="id_remaining_note">Balance Note</label>
+            <input type="text" name="remaining_note" id="id_remaining_note" maxlength="255"
+                   value="REMAINING BALANCE TO BE PAID AFTER THE ONLINE APPROVAL OF DOE"
+                   class="w-full rounded-md border border-surface-300 px-3 py-1.5 text-sm">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== INVOICE ITEMS (customer-facing rows, optional) ===================== -->
+    <div>
+      <div class="text-center text-sm font-bold uppercase tracking-[0.15em] text-surface-700 mb-3">Invoice Items <span class="normal-case font-normal tracking-normal text-surface-400">— optional</span></div>
+      <div class="rounded-xl border border-surface-200 bg-white shadow-sm overflow-x-auto">
+        <table class="w-full text-sm" style="min-width: 900px;">
+          <colgroup>
+            <col style="width:44px"><col style="width:150px"><col style="width:130px">
+            <col><col style="width:170px"><col style="width:36px">
+          </colgroup>
+          <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+            <tr>
+              <th class="px-3 py-3">#</th>
+              <th class="px-3 py-3">Transaction Date</th>
+              <th class="px-3 py-3">Billing Ref.</th>
+              <th class="px-3 py-3">Description</th>
+              <th class="px-3 py-3 text-right">Amount</th>
+              <th class="px-3 py-3"></th>
+            </tr>
+          </thead>
+          <tbody id="inv-body" class="divide-y divide-surface-100">
+            <tr>
+              <td class="px-3 py-2 text-surface-400 inv-no">1</td>
+              <td class="px-3 py-2"><input type="date" name="inv_date" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2"><input type="text" name="inv_ref" maxlength="32" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2"><input type="text" name="inv_description" maxlength="500" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>
+              <td class="px-3 py-2"><input type="text" inputmode="decimal" data-amount name="inv_amount" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>
+              <td class="px-3 py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>
+            </tr>
+          </tbody>
+          <tfoot class="bg-surface-50">
+            <tr>
+              <td colspan="6" class="px-3 py-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" id="add-inv" style="min-width:190px" class="inline-flex items-center justify-center rounded-md border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-700 hover:bg-surface-100">+ Add invoice item</button>
+                  <button type="button" id="autofill-inv" style="min-width:190px" class="inline-flex items-center justify-center rounded-md border border-brand-300 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50">Autofill from distribution</button>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="mt-2 text-xs text-surface-500">Only needed when the printed invoice wording should differ from the distribution lines (e.g. "Processing Fee" instead of the COA description). Leave blank and the print auto-uses the distribution's debit lines — no double entry. The Account Distribution grid below stays the posting source of truth and must balance.</p>
+    </div>
 
     <!-- ===================== ACCOUNT DISTRIBUTION ===================== -->
     <div>
@@ -166,8 +264,8 @@
     });
     syncSegment();
 
-    // Party picker -> hidden party_name (store the plain recorded name, like
-    // the Journal Voucher's party field).
+    // Party picker (customers only) -> hidden party_name. Billing is
+    // customer-only: kind is always "customer".
     var partySel = document.getElementById("id_party_picker");
     var partyName = document.getElementById("id_party_name");
     var partyKind = document.getElementById("id_party_kind");
@@ -184,10 +282,68 @@
       var raw = opt.textContent;
       var m = raw.match(/^[^\s—]+\s*[—-]?\s*(.+)$/);
       partyName.value = m && m[1] ? m[1].trim() : raw.trim();
-      if (partyKind) partyKind.value = opt.dataset.kind || '';
+      if (partyKind) partyKind.value = 'customer';
       if (partyId) partyId.value = opt.value;
     }
     if (partySel) { partySel.addEventListener("change", syncParty); syncParty(); }
+
+    // Invoice items grid: add rows + renumber.
+    var invBody = document.getElementById("inv-body");
+    var addInv = document.getElementById("add-inv");
+    var autofillInv = document.getElementById("autofill-inv");
+    function renumberInv() {
+      if (!invBody) return;
+      var rows = invBody.querySelectorAll("tr");
+      rows.forEach(function (tr, i) {
+        var n = tr.querySelector(".inv-no");
+        if (n) n.textContent = String(i + 1);
+      });
+    }
+    function blankInvRow() {
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td class="px-3 py-2 text-surface-400 inv-no"></td>' +
+        '<td class="px-3 py-2"><input type="date" name="inv_date" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>' +
+        '<td class="px-3 py-2"><input type="text" name="inv_ref" maxlength="32" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>' +
+        '<td class="px-3 py-2"><input type="text" name="inv_description" maxlength="500" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs"></td>' +
+        '<td class="px-3 py-2"><input type="text" inputmode="decimal" data-amount name="inv_amount" class="w-full rounded-md border border-surface-300 px-2 py-1.5 text-xs text-right tabular-nums"></td>' +
+        '<td class="px-3 py-2"><button type="button" data-remove-row class="text-surface-400 hover:text-rose-600" title="Remove row">&times;</button></td>';
+      return tr;
+    }
+    if (autofillInv && invBody) {
+      autofillInv.addEventListener("click", function () {
+        // Copy each distribution debit line into an invoice row (editable).
+        var distRows = document.querySelectorAll('#lines-body tr');
+        invBody.innerHTML = "";
+        distRows.forEach(function (dr) {
+          var descEl = dr.querySelector('textarea[name="line_description"], input[name="line_description"]');
+          var debitEl = dr.querySelector('input[name="line_debit"]');
+          var desc = descEl ? descEl.value.trim() : "";
+          var amt = debitEl ? debitEl.value.trim() : "";
+          if (!desc && !amt) return;
+          var tr = blankInvRow();
+          tr.querySelector('input[name="inv_description"]').value = desc;
+          tr.querySelector('input[name="inv_amount"]').value = amt;
+          invBody.appendChild(tr);
+        });
+        if (!invBody.querySelectorAll("tr").length) invBody.appendChild(blankInvRow());
+        renumberInv();
+      });
+    }
+    if (addInv && invBody) {
+      addInv.addEventListener("click", function () {
+        invBody.appendChild(blankInvRow());
+        renumberInv();
+      });
+      invBody.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest("[data-remove-row]") : null;
+        if (!btn) return;
+        var rows = invBody.querySelectorAll("tr");
+        if (rows.length <= 1) return;
+        btn.closest("tr").remove();
+        renumberInv();
+      });
+    }
 
     // Split the account picker display into COA code + Account Name.
     function splitAccountText(text) {
@@ -236,9 +392,9 @@
           headers: { "X-Requested-With": "XMLHttpRequest" }
         }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
           if (!data) return;
+          // RFP payee is a supplier record, but billing is customer-only:
+          // take the name as free text and leave the customer picker alone.
           if (partyName && data.party_name && !partyName.value) partyName.value = data.party_name;
-          if (partyKind && !partyKind.value && data.party_kind) partyKind.value = data.party_kind;
-          if (partyId && !partyId.value && data.party_id) partyId.value = data.party_id;
           if (segSel && data.segment_id) segSel.value = String(data.segment_id);
           if (refInput && !refInput.value) refInput.value = data.reference || data.rfp_no || "";
           if (!data.lines || !data.lines.length) return;

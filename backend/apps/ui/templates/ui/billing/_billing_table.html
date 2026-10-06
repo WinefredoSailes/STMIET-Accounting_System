@@ -28,7 +28,7 @@
         <td class="px-3 py-2 whitespace-nowrap">
           {% include "ui/partials/status_badge.html" with status=b.status %}
         </td>
-        <td class="px-3 py-2">{{ b.created_by.get_full_name|default:b.created_by.username|default:"—" }}</td>
+        <td class="px-3 py-2">{% if b.created_by %}{{ b.created_by.get_full_name|default:b.created_by.username }}{% else %}—{% endif %}</td>
       </tr>
       {% empty %}
       <tr><td colspan="8" class="px-4 py-8 text-center text-surface-400">No billing transactions match. Try clearing the filters.</td></tr>

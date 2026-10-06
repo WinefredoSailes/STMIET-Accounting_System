@@ -97,8 +97,9 @@ def test_billing_rfp_prefill(segment, billing_accounts, posted_rfp, role_users):
     data = json.loads(resp.content)
     assert data["rfp_no"] == "A0001"
     assert data["party_name"] == "STPC Holdings"
-    assert data["party_kind"] == "supplier"
-    assert data["party_id"] == posted_rfp.payee_id
+    # Billing is customer-only: the RFP payee arrives as free text, unlinked.
+    assert data["party_kind"] == ""
+    assert data["party_id"] == ""
     assert len(data["lines"]) == 2
     assert data["lines"][0]["account_code"] == "41010"
     assert data["lines"][1]["side"] == "cr"
@@ -182,7 +183,7 @@ def test_print_page_renders(client, segment, billing_accounts, posted_rfp, role_
         user=role_users["head"],
     )
     body = client.get(f"/billing/{billing.id}/print/").content.decode()
-    assert "BILLING TRANSACTION" in body
+    assert "Billing Invoice" in body
     assert "BI-2026-0010" in body
 
 
@@ -209,12 +210,14 @@ def test_create_links_customer_party_fk(client, segment, billing_accounts, role_
     assert resp.status_code == 302
     billing = BillingDocument.objects.get()
     assert billing.customer_id == customer.id
-    assert billing.supplier_id is None
+    assert not hasattr(billing, "supplier_id")
     assert billing.party_name == "Acme Corp"
 
 
-def test_create_links_supplier_party_fk(client, segment, billing_accounts, supplier, role_users):
+def test_create_rejects_supplier_party(client, segment, billing_accounts, supplier, role_users):
+    """Billing is customer-only: posting a supplier party must not create."""
     client.force_login(role_users["staff"])
+    before = BillingDocument.objects.count()
     client.post(
         "/billing/new/",
         {
@@ -230,6 +233,20 @@ def test_create_links_supplier_party_fk(client, segment, billing_accounts, suppl
             "line_credit": ["", "100.00"],
         },
     )
-    billing = BillingDocument.objects.get()
-    assert billing.supplier_id == supplier.id
-    assert billing.customer_id is None
+    assert BillingDocument.objects.count() == before
+
+
+def test_party_options_customers_only(client, role_users):
+    """?kind=customer restricts the shared picker to customers."""
+    from apps.ar.models import Customer
+
+    Customer.objects.create(code="C900", name="Only Customer")
+    client.force_login(role_users["staff"])
+    resp = client.get("/foundation/party-options/?kind=customer")
+    assert resp.status_code == 200
+    import json
+
+    rows = json.loads(resp.content)
+    assert rows, "expected at least one customer row"
+    assert all(r["kind"] == "customer" for r in rows)
+    assert any(r["code"] == "C900" for r in rows)

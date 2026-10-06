@@ -6838,13 +6838,17 @@ def party_options(request):
     single picker can assign the voucher party. ``?q=`` filters by code or
     name; results cap at 30, newest first. ``?selected=`` accepts a code, an
     id, or an exact recorded name (the journal stores the plain name, so
-    editing re-attaches the stored party by name).
+    editing re-attaches the stored party by name). ``?kind=customer``
+    restricts the pool to customers only (used by the customer-only billing
+    form); the Journal Voucher keeps the combined default.
     """
     from apps.ap.models import Supplier
     from apps.ar.models import Customer
 
     q = request.GET.get("q", "").strip()
     selected = request.GET.get("selected", "").strip()
+    kind = (request.GET.get("kind") or "").strip().lower()
+    customers_only = kind == "customer"
     rows_by_name = {}
 
     def pool(base_qs):
@@ -6861,21 +6865,21 @@ def party_options(request):
             keep = base_qs.filter(lookup).first()
         return keep
 
-    suppliers = pool(Supplier.objects.select_related("default_segment"))
+    if not customers_only:
+        suppliers = pool(Supplier.objects.select_related("default_segment"))
+        for s in suppliers[:20]:
+            rows_by_name[f"{s.code} — {s.name}"] = {
+                "id": s.id, "code": s.code, "text": f"{s.code} — {s.name}",
+                "tin": s.tin, "kind": "supplier",
+            }
     customers = pool(Customer.objects.all())
-
-    for s in suppliers[:20]:
-        rows_by_name[f"{s.code} — {s.name}"] = {
-            "id": s.id, "code": s.code, "text": f"{s.code} — {s.name}",
-            "tin": s.tin, "kind": "supplier",
-        }
     for c in customers[:20]:
         rows_by_name[f"{c.code} — {c.name}"] = {
             "id": c.id, "code": c.code, "text": f"{c.code} — {c.name}",
             "tin": c.tin, "kind": "customer",
         }
 
-    keep_s = match_selected(set(), Supplier.objects.all())
+    keep_s = None if customers_only else match_selected(set(), Supplier.objects.all())
     keep_c = match_selected(set(), Customer.objects.all())
     chosen = None
     if keep_s:
@@ -9610,6 +9614,83 @@ def _billing_lines_from_form(request):
     return lines
 
 
+def _billing_invoice_from_form(request, billing):
+    """Persist the customer-facing invoice header + item rows from the form.
+
+    Invoice items are display-only (description + amount); the balanced
+    Account Distribution grid remains the posting source of truth.
+    """
+    from decimal import Decimal
+
+    from apps.billing.models import BillingInvoiceItem
+
+    def _dec(value, default="0"):
+        try:
+            return money(value or default)
+        except Exception:
+            return Decimal(default)
+
+    billing.statement_date = _parse_date(request.POST.get("statement_date", "")) or billing.billing_date
+    billing.due_text = (request.POST.get("due_text") or "IMMEDIATELY").strip()[:32] or "IMMEDIATELY"
+    billing.customer_id_display = (request.POST.get("customer_id_display") or "").strip()[:32]
+    if billing.customer_id and not billing.customer_id_display:
+        billing.customer_id_display = billing.customer.code
+    billing.downpayment_percent = _dec(request.POST.get("downpayment_percent"), "50.00")
+    billing.downpayment_amount = _dec(request.POST.get("downpayment_amount"), "0")
+    billing.downpayment_ref = (request.POST.get("downpayment_ref") or "").strip()[:32]
+    billing.downpayment_date = _parse_date(request.POST.get("downpayment_date", ""))
+    billing.remaining_note = (
+        request.POST.get("remaining_note")
+        or "REMAINING BALANCE TO BE PAID AFTER THE ONLINE APPROVAL OF DOE"
+    ).strip()[:255]
+    billing.save(
+        update_fields=[
+            "statement_date", "due_text", "customer_id_display",
+            "downpayment_percent", "downpayment_amount", "downpayment_ref",
+            "downpayment_date", "remaining_note", "updated_at",
+        ]
+    )
+    descs = request.POST.getlist("inv_description")
+    amounts = request.POST.getlist("inv_amount")
+    dates = request.POST.getlist("inv_date")
+    refs = request.POST.getlist("inv_ref")
+    rows = []
+    order = 0
+    for i, desc in enumerate(descs):
+        desc = (desc or "").strip()
+        try:
+            amt = money((amounts[i] if i < len(amounts) else "") or 0)
+        except Exception:
+            amt = Decimal("0.00")
+        if not desc and not amt:
+            continue
+        order += 1
+        rows.append(
+            BillingInvoiceItem(
+                billing=billing,
+                order_no=order,
+                transaction_date=_parse_date(dates[i] if i < len(dates) else ""),
+                billing_ref=(refs[i] if i < len(refs) else "").strip()[:32],
+                description=desc[:500],
+                amount=amt,
+            )
+        )
+    if rows:
+        BillingInvoiceItem.objects.bulk_create(rows)
+    if not (request.POST.get("downpayment_amount") or "").strip():
+        # Amount left blank: compute it from the percent x invoice base, where
+        # the base prefers custom rows and falls back to the distribution Dr
+        # total (same derivation the print view uses).
+        base = sum((r.amount for r in rows), Decimal("0.00")) or billing.amount
+        billing.downpayment_amount = (base * billing.downpayment_percent / Decimal("100")).quantize(
+            Decimal("0.01")
+        )
+        billing.save(update_fields=["downpayment_amount", "updated_at"])
+    if billing.downpayment_amount and not billing.downpayment_date:
+        billing.downpayment_date = billing.effective_statement_date
+        billing.save(update_fields=["downpayment_date", "updated_at"])
+
+
 @login_required
 def billing_list(request):
     """Billing transactions register (Intercompany STPC / Third-Party)."""
@@ -9668,18 +9749,17 @@ def billing_create(request):
             if billing_type == "stpc" and not party_name:
                 party_name = "STPC"
 
-            # Resolve the picked party into its master link (customer/supplier).
-            # The shared picker's `kind` distinguishes the two masters.
-            from apps.ap.models import Supplier
+            # Resolve the picked party into its customer master link.
+            # Billing is customer-only; a supplier kind is rejected outright.
             from apps.ar.models import Customer
 
-            customer = supplier = None
+            customer = None
             party_kind = (request.POST.get("party_kind") or "").strip()
             party_id = (request.POST.get("party_id") or "").strip()
+            if party_kind == "supplier" or (party_id and party_kind not in ("", "customer")):
+                raise ValidationError("Billing parties must be customers.")
             if party_id:
-                if party_kind == "supplier":
-                    supplier = Supplier.objects.filter(pk=party_id).first()
-                elif party_kind == "customer":
+                if party_kind == "customer":
                     customer = Customer.objects.filter(pk=party_id).first()
             if customer is not None and not customer.is_approved:
                 raise ValidationError(
@@ -9689,8 +9769,6 @@ def billing_create(request):
                 )
             if not party_name and customer:
                 party_name = customer.name
-            if not party_name and supplier:
-                party_name = supplier.name
 
             billing_no = DocumentSequence.next_number(
                 company=segment.company,
@@ -9706,13 +9784,13 @@ def billing_create(request):
                 segment=segment,
                 party_name=party_name,
                 customer=customer,
-                supplier=supplier,
                 lines=lines,
                 rfp=rfp,
                 reference=request.POST.get("reference", ""),
                 particulars=request.POST.get("particulars", ""),
                 user=request.user,
             )
+            _billing_invoice_from_form(request, billing)
             messages.success(request, f"Billing {billing.billing_no} created (draft).")
             return redirect("ui:billing_detail", pk=billing.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
@@ -9735,8 +9813,10 @@ def billing_detail(request, pk):
     from apps.core.approvals import approval_role_of, role_assignee, ROLE_LABELS, BILLING_NEXT_ROLE
 
     billing = get_object_or_404(
-        BillingDocument.objects.select_related("journal_entry").prefetch_related(
-            "lines__account", "lines__segment"
+        BillingDocument.objects.select_related(
+            "journal_entry", "customer", "company", "segment"
+        ).prefetch_related(
+            "lines__account", "lines__segment", "invoice_items"
         ), pk=pk
     )
     awaiting = None
@@ -9831,12 +9911,30 @@ def billing_print(request, pk):
 
     billing = get_object_or_404(
         BillingDocument.objects.select_related(
-            "segment", "rfp", "created_by", "approved_by"
-        ).prefetch_related("lines__account", "lines__segment"),
+            "segment", "rfp", "created_by", "approved_by",
+            "company", "customer",
+        ).prefetch_related("lines__account", "lines__segment", "invoice_items"),
         pk=pk,
     )
     from apps.core.approvals import signatory_name
 
+    items = list(billing.invoice_items.order_by("order_no"))
+    if not items:
+        # No custom invoice rows entered: derive print rows from the debit
+        # lines of the Account Distribution grid so users never type amounts
+        # twice. The grid stays the single source of truth.
+        items = [
+            {
+                "transaction_date": billing.billing_date,
+                "billing_ref": billing.reference or "",
+                "description": line.description or line.account.name,
+                "amount": line.debit or line.credit,
+            }
+            for line in billing.lines.order_by("line_no")
+            if line.side == "dr" and (line.debit or line.credit)
+        ]
+    invoice_total = sum((i.amount if hasattr(i, "amount") else i["amount"] for i in items), Decimal("0.00"))
+    downpayment = billing.downpayment_amount or Decimal("0.00")
     return render(
         request,
         "ui/billing/billing_print.html",
@@ -9844,6 +9942,10 @@ def billing_print(request, pk):
             "billing": billing,
             "prepared_by": signatory_name(billing.created_by),
             "approved_by": signatory_name(billing.approved_by),
+            "invoice_items": items,
+            "invoice_total": invoice_total,
+            "downpayment": downpayment,
+            "remaining_balance": invoice_total - downpayment,
         },
     )
 
@@ -9929,7 +10031,12 @@ def billing_rfp_options(request):
 
 @login_required
 def billing_rfp_prefill(request, pk):
-    """JSON payload that pre-fills the billing grid from an RFP basis."""
+    """JSON payload that pre-fills the billing grid from an RFP basis.
+
+    The RFP module itself is untouched (payee stays a supplier), but billing
+    is customer-only: the payee name is returned as free text and never
+    linked to a supplier master record.
+    """
     from apps.ap.models import RFPDocument
 
     rfp = get_object_or_404(
@@ -9942,8 +10049,8 @@ def billing_rfp_prefill(request, pk):
         {
             "rfp_no": rfp.ap_number,
             "party_name": rfp.payee.name if rfp.payee_id else "",
-            "party_kind": "supplier" if rfp.payee_id else "",
-            "party_id": rfp.payee_id or "",
+            "party_kind": "",
+            "party_id": "",
             "segment_id": rfp.segment_id,
             "reference": rfp.ap_number,
             "lines": [

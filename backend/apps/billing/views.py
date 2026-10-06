@@ -58,7 +58,7 @@ class BillingViewSet(viewsets.ModelViewSet):
         return out
 
     def create(self, request, *args, **kwargs):
-        from apps.ap.models import RFPDocument, Supplier
+        from apps.ap.models import RFPDocument
         from apps.ar.models import Customer
 
         data = request.data
@@ -72,6 +72,8 @@ class BillingViewSet(viewsets.ModelViewSet):
         billing_type = data.get("billing_type", "third_party")
 
         rfp = RFPDocument.objects.filter(pk=data.get("rfp")).first() if data.get("rfp") else None
+        if data.get("supplier"):
+            raise ValidationError("Billing parties must be customers; suppliers are no longer accepted.")
         customer = Customer.objects.filter(pk=data.get("customer")).first() if data.get("customer") else None
         if customer is not None and not customer.is_approved:
             raise ValidationError(
@@ -79,17 +81,14 @@ class BillingViewSet(viewsets.ModelViewSet):
                 f"({customer.get_approval_status_display()}); only approved "
                 "customers can be linked to billing."
             )
-        supplier = Supplier.objects.filter(pk=data.get("supplier")).first() if data.get("supplier") else None
 
         party_name = (data.get("party_name") or "").strip()
         if billing_type == "stpc" and not party_name:
             party_name = "STPC"
         if not party_name and customer:
             party_name = customer.name
-        if not party_name and supplier:
-            party_name = supplier.name
         if not party_name:
-            raise ValidationError("A party (customer/supplier) is required.")
+            raise ValidationError("A party (customer) is required.")
 
         billing_no = data.get("billing_no") or DocumentSequence.next_number(
             company=segment.company,
@@ -106,7 +105,6 @@ class BillingViewSet(viewsets.ModelViewSet):
             party_name=party_name,
             lines=self._lines(data, segment),
             customer=customer,
-            supplier=supplier,
             rfp=rfp,
             reference=data.get("reference", ""),
             particulars=data.get("particulars", ""),
