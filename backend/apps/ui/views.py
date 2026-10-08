@@ -537,8 +537,8 @@ def je_create(request):
             entry = _create_entry_from_form(request)
             messages.success(request, f"Entry {entry.entry_no} saved as draft.")
             return redirect("ui:je_detail", pk=entry.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="Journal entry number"))
     ctx = {
         "company": company,
         "segments": Segment.objects.order_by("code"),
@@ -731,6 +731,21 @@ def _form_date(value, label):
         return date.fromisoformat(value)
     except (ValueError, TypeError) as exc:
         raise ValidationError(f"Enter a valid {label}.") from exc
+
+
+def _duplicate_number_message(exc, *, label):
+    """Friendly retry message for duplicate document numbers, never a 500.
+
+    Sequence-allocated numbers collide only when the counter lags rows
+    minted outside it (imports/seeds) or on rare allocation races; either
+    way the remedy is a resubmit. Non-collision integrity errors keep their
+    raw message so genuine defects stay visible.
+    """
+    msg = str(exc)
+    low = msg.lower()
+    if "unique" in low or "duplicate" in low:
+        return f"{label} was just taken — please resubmit the form."
+    return msg
 
 
 def _rfp_lines_from_form(request):
@@ -2354,8 +2369,8 @@ def receipt_create(request):
                 f"Receipt {receipt.receipt_no} saved as draft — submit it when ready.",
             )
             return redirect("ui:receipt_detail", pk=receipt.pk)
-        except (AccountingError, ValidationError, Customer.DoesNotExist, Account.DoesNotExist) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValidationError, Customer.DoesNotExist, Account.DoesNotExist, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="Receipt number"))
     return render(
         request,
         "ui/ar/receipt_form.html",
@@ -2674,8 +2689,8 @@ def si_create(request):
                 f"Invoice {invoice.invoice_no} saved as draft — submit it when ready.",
             )
             return redirect("ui:si_detail", pk=invoice.pk)
-        except (AccountingError, ValidationError, Customer.DoesNotExist, Segment.DoesNotExist) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValidationError, Customer.DoesNotExist, Segment.DoesNotExist, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="Invoice number"))
     return render(
         request,
         "ui/ar/si_form.html",
@@ -3535,8 +3550,8 @@ def rfp_create(request):
             _capture_rfp_invoice_fields(request, rfp)
             messages.success(request, f"RFP {rfp.ap_number} created (prepared).")
             return redirect("ui:rfp_detail", pk=rfp.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="RFP number"))
     return render(
         request,
         "ui/ap/rfp_form.html",
@@ -4098,6 +4113,11 @@ def po_create(request):
             _capture_po_receipt_fields(request, po)
             messages.success(request, f"PO {po.po_number} created (prepared).")
             return redirect("ui:po_detail", pk=po.id)
+        except IntegrityError as exc:
+            # Duplicate PO number (sequence lag / allocation race): retryable,
+            # not a defect — no traceback.
+            logger.warning("PO create hit duplicate number for %s: %s", request.user, exc)
+            messages.error(request, _duplicate_number_message(exc, label="PO number"))
         except ValidationError as exc:
             # Expected user-input rejection: the flash message is the whole
             # user-facing contract, so this is not an error condition.
@@ -4594,17 +4614,12 @@ def cycle_generate(request):
 def asset_create(request):
     from apps.assets.models import AssetCategory
     from apps.assets.services import AssetService
-    from apps.sequences.models import DocumentSequence
 
     if request.method == "POST":
         try:
             company = Company.objects.first()
             segment = Segment.objects.get(pk=request.POST["segment"])
             category = AssetCategory.objects.get(pk=request.POST["category"])
-            asset_no = DocumentSequence.next_number(
-                company=company, form_code="FA", year=int(request.POST["acquisition_date"][:4]),
-                pattern="FA-{YYYY}-{SEQ:04d}",
-            )
             lines = _billing_lines_from_form(request)
             if not lines:
                 raise ValidationError("Add at least one account distribution line.")
@@ -4629,8 +4644,8 @@ def asset_create(request):
                         f"PO {po.po_number} belongs to {po.supplier.name}, not {supplier.name}."
                     )
 
-            asset = AssetService.create_asset(
-                asset_no=asset_no,
+            asset = AssetService.create_asset_with_sequence(
+                company=company,
                 name=request.POST["name"].strip(),
                 category=category,
                 segment=segment,
@@ -4645,7 +4660,7 @@ def asset_create(request):
             )
             messages.success(request, f"Asset {asset.asset_no} saved as a draft — submit it for approval.")
             return redirect("ui:asset_detail", pk=asset.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
             messages.error(request, str(exc))
     return render(
         request,
@@ -5026,8 +5041,8 @@ def cv_create(request):
             )
             messages.success(request, f"Check voucher {cv.cv_number} issued.")
             return redirect("ui:cv_detail", pk=cv.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError, RFPDocument.DoesNotExist, PCFReplenishment.DoesNotExist) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError, RFPDocument.DoesNotExist, PCFReplenishment.DoesNotExist) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="Check voucher number"))
 
     selected_rfp = None
     selected_pcf = None
@@ -5656,8 +5671,8 @@ def pcf_replenish(request):
                 "approval from its detail page.",
             )
             return redirect("ui:pcf_replenishment_detail", pk=replen.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="PCV number"))
     return render(
         request,
         "ui/cash/pcf_replenish_form.html",
@@ -6167,8 +6182,8 @@ def conso_create(request):
             )
             messages.success(request, f"CONSO batch {batch.batch_no} opened.")
             return redirect("ui:conso_detail", pk=batch.id)
-        except (ValueError, KeyError) as exc:
-            messages.error(request, str(exc))
+        except (ValueError, KeyError, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="CONSO batch number"))
     return render(request, "ui/ap/conso_form.html", {"today": date.today()})
 
 
@@ -8291,6 +8306,9 @@ def transfer_create(request):
                 raise AccountingError("Add at least one transfer line before posting.")
     except AccountingError as exc:
         messages.error(request, str(exc))
+        return redirect("ui:transfer_create")
+    except IntegrityError as exc:
+        messages.error(request, _duplicate_number_message(exc, label="Transfer voucher number"))
         return redirect("ui:transfer_create")
     messages.success(
         request,
@@ -10496,8 +10514,8 @@ def billing_create(request):
             _billing_invoice_from_form(request, billing)
             messages.success(request, f"Billing {billing.billing_no} created (draft).")
             return redirect("ui:billing_detail", pk=billing.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
-            messages.error(request, str(exc))
+        except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
+            messages.error(request, _duplicate_number_message(exc, label="Billing number"))
     return render(
         request,
         "ui/billing/billing_form.html",

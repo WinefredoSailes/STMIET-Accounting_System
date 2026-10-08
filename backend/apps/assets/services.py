@@ -148,6 +148,96 @@ class AssetService:
         cls._log(asset, "created (draft)", actor=user)
         return asset
 
+    # How many times to retry number allocation when the FA sequence lags
+    # behind rows minted outside it (e.g. the opening-balance import, which
+    # writes FA-YYYY-#### numbers directly). Each retry heals the counter
+    # forward, so a lag of any size converges instead of 500ing per submit.
+    MAX_NUMBER_RETRIES = 5
+
+    @staticmethod
+    def is_asset_no_collision(exc: BaseException) -> bool:
+        """True when a DB error is a duplicate asset_no on either backend.
+
+        PostgreSQL names the constraint
+        (``assets_asset_asset_no_key``); SQLite names the column
+        (``UNIQUE constraint failed: assets_asset.asset_no``).
+        """
+        msg = str(exc).lower()
+        return "asset_no" in msg and ("unique" in msg or "duplicate" in msg)
+
+    @classmethod
+    def heal_fa_sequence(cls, *, company, year) -> int:
+        """Fast-forward the FA/<year> counter past the highest existing number.
+
+        Rows created outside the sequence (imports, seeds) leave
+        ``DocumentSequence.next_seq`` behind ``max(asset_no)``; the next UI
+        allocation then collides with an existing row. Healing sets the
+        counter to ``max + 1`` (never backwards) and returns the new value.
+        """
+        from apps.sequences.models import DocumentSequence
+
+        prefix = f"FA-{year}-"
+        peak = 0
+        for (asset_no,) in Asset.objects.filter(
+            asset_no__startswith=prefix
+        ).values_list("asset_no"):
+            tail = asset_no[len(prefix):]
+            if tail.isdigit():
+                peak = max(peak, int(tail))
+        with transaction.atomic():
+            seq, _ = DocumentSequence.objects.select_for_update().get_or_create(
+                company=company,
+                form_code="FA",
+                year=year,
+                cost_center="",
+                defaults={"pattern": "FA-{YYYY}-{SEQ:04d}"},
+            )
+            if seq.next_seq <= peak:
+                seq.next_seq = peak + 1
+                seq.save(update_fields=["next_seq", "updated_at"])
+            return seq.next_seq
+
+    @classmethod
+    def create_asset_with_sequence(
+        cls, *, company, acquisition_date: date, max_attempts: int = MAX_NUMBER_RETRIES,
+        **kwargs,
+    ) -> Asset:
+        """Create a draft asset, allocating its FA number with self-healing.
+
+        Each attempt allocates a fresh number (its own committed transaction,
+        so concurrent submits still get distinct numbers) and inserts the
+        asset. On a duplicate ``asset_no`` the counter is healed forward past
+        existing rows before retrying, per the ``DocumentSequence``
+        caller-retries-on-duplicate contract. ``max_attempts`` bounds the
+        loop; exhaustion raises ``ValidationError`` (rendered friendly by
+        callers) instead of leaking ``IntegrityError`` as a 500.
+        """
+        from django.db import IntegrityError
+
+        from apps.sequences.models import DocumentSequence
+
+        year = acquisition_date.year
+        last_exc = None
+        for _ in range(max(1, max_attempts)):
+            asset_no = DocumentSequence.next_number(
+                company=company,
+                form_code="FA",
+                year=year,
+                pattern="FA-{YYYY}-{SEQ:04d}",
+            )
+            try:
+                return cls.create_asset(
+                    asset_no=asset_no, acquisition_date=acquisition_date, **kwargs
+                )
+            except IntegrityError as exc:
+                if not cls.is_asset_no_collision(exc):
+                    raise
+                last_exc = exc
+                cls.heal_fa_sequence(company=company, year=year)
+        raise ValidationError(
+            "Could not allocate an asset number — please try submitting again."
+        ) from last_exc
+
     @staticmethod
     def _validate_lines(lines: list[dict]) -> tuple[Decimal, Decimal]:
         if not lines:

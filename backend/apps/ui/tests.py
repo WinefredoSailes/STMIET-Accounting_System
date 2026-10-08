@@ -238,6 +238,34 @@ class TestEntryWorkflow:
         assert je is not None
         assert je.description == "Retry-me entry"
 
+    def test_duplicate_number_exhaustion_is_friendly_not_500(
+        self, client, company, segment, accounts, fiscal_period, monkeypatch
+    ):
+        """Every JE allocation retry colliding still re-renders the form with
+        a retry message instead of 500ing."""
+        from apps.sequences.models import DocumentSequence
+
+        monkeypatch.setattr(
+            DocumentSequence, "next_number",
+            classmethod(lambda cls, **kwargs: "2026-00001"),
+        )
+        payload = {
+            "company": company.id,
+            "segment": segment.id,
+            "transaction_date": "2026-01-15",
+            "description": "UI-created entry",
+            "source_doc_type": "JE",
+            "account": [accounts["10010"].id, accounts["20000"].id],
+            "debit": ["1000.00", ""],
+            "credit": ["", "1000.00"],
+            "line_description": ["Cash in", "AP"],
+        }
+        assert client.post("/journal/new/", payload).status_code == 302
+        resp = client.post("/journal/new/", payload)
+        assert resp.status_code == 200  # friendly message, not 500
+        assert "Journal entry number was just taken" in resp.content.decode()
+        assert JournalEntry.objects.count() == 1
+
     def test_long_source_fields_clamped_to_column_limits(self, client, company, segment, accounts, fiscal_period):
         """Free-form JE fields are clamped to model lengths so Postgres never
         raises StringDataRightTruncation (varchar limits are only enforced on
@@ -2066,6 +2094,37 @@ class TestRFPScreen:
         assert rfp.particulars == "Fuel purchase"  # mirrors the first line
         supplier.refresh_from_db()
         assert supplier.last_ap == rfp.ap_number
+
+    def test_rfp_duplicate_number_is_friendly_not_500(
+        self, client, company, segment, accounts, supplier, monkeypatch
+    ):
+        """A lagging RFP counter (duplicate ap_number) re-renders the form
+        with a retry message instead of 500ing."""
+        from apps.sequences.models import DocumentSequence
+
+        monkeypatch.setattr(
+            DocumentSequence, "next_number",
+            classmethod(lambda cls, **kwargs: "A0001"),
+        )
+        payload = {
+            "payee": supplier.id,
+            "segment": segment.id,
+            "rfp_date": "2026-01-15",
+            "purpose": "GEN-FUEL",
+            "line_segment": [segment.id, segment.id],
+            "line_account": ["61100", "20000"],
+            "line_debit": ["50000.00", ""],
+            "line_credit": ["", "50000.00"],
+            "line_description": ["Fuel purchase", "AP - Shell Fuel Depot"],
+            "line_cost_center": ["OS — offsite", "GEN-FUEL"],
+        }
+        assert client.post("/ap/rfps/new/", payload).status_code == 302
+        resp = client.post("/ap/rfps/new/", payload)
+        assert resp.status_code == 200  # friendly message, not 500
+        assert "RFP number was just taken" in resp.content.decode()
+        from apps.ap.models import RFPDocument
+
+        assert RFPDocument.objects.count() == 1
 
     def test_rfp_create_missing_payee_segment_or_lines_prompts_not_500(
             self, client, company, segment, accounts, supplier):

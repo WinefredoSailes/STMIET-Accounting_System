@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -108,6 +109,13 @@ class AssetViewSet(viewsets.ModelViewSet):
             )
         except CoreValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError as exc:
+            if AssetService.is_asset_no_collision(exc):
+                return Response(
+                    {"detail": f"Asset number {data.get('asset_no')} already exists."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            raise
         out = self.get_serializer(asset)
         return Response(out.data, status=status.HTTP_201_CREATED)
 

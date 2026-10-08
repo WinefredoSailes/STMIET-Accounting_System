@@ -50,3 +50,20 @@ def test_previous_month_start():
 
     today = dt.date.today()
     assert scheduler._previous_month_start() == today.replace(day=1) - dt.timedelta(days=1)
+
+
+def test_api_exception_handler_maps_integrity_error_to_400():
+    """Duplicate document numbers (and other constraint conflicts) surface
+    as a retryable API 400, never a 500."""
+    from django.db import IntegrityError
+
+    from apps.core.exceptions import AccountingError, api_exception_handler
+
+    resp = api_exception_handler(
+        IntegrityError('duplicate key value violates unique constraint "x"'), None
+    )
+    assert resp.status_code == 400
+    assert resp.data["code"] == "conflict"
+
+    resp = api_exception_handler(AccountingError("nope"), None)
+    assert resp.status_code == 422

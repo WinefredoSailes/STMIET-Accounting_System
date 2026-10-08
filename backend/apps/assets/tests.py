@@ -438,3 +438,156 @@ class TestReversal:
         assert row.journal_entry.is_balanced
         asset.refresh_from_db()
         assert asset.accumulated_depreciation == Decimal("250.00")
+
+
+@pytest.fixture
+def ui_client(db, user):
+    from django.test import Client
+
+    c = Client()
+    c.force_login(user)
+    return c
+
+
+def _seed_imported_rows(segment, tanker_category):
+    """Mimic import_fixed_assets: FA numbers minted outside the sequence."""
+    for i, name in ((1, "Imported Genset"), (2, "Imported Truck"), (3, "Imported Lathe")):
+        AssetService.acquire(
+            asset_no=f"FA-2026-{i:04d}",
+            name=name,
+            category=tanker_category,
+            segment=segment,
+            acquisition_date=date(2026, 1, 15),
+            cost="60000.00",
+            funding_source="cash",
+        )
+
+
+def _draft_lines(segment):
+    return [
+        {"side": "dr", "segment": segment, "account_code": "17010",
+         "amount": "60000.00", "description": "Tanker", "cost_center": "OS"},
+        {"side": "cr", "segment": segment, "account_code": "10010",
+         "amount": "60000.00", "description": "Cash", "cost_center": "OS"},
+    ]
+
+
+class TestSequenceSelfHealing:
+    """Live regression: FA counter lagging behind imported rows must heal
+    instead of 500ing on /assets/new/ (duplicate FA-2026-XXXX)."""
+
+    def test_create_with_sequence_heals_lagging_counter(
+        self, company, segment, tanker_category, asset_accounts, segment_account_map
+    ):
+        from apps.sequences.models import DocumentSequence
+
+        _seed_imported_rows(segment, tanker_category)
+        seq = DocumentSequence.objects.create(
+            company=company, form_code="FA", year=2026,
+            pattern="FA-{YYYY}-{SEQ:04d}", next_seq=1,
+        )
+        asset = AssetService.create_asset_with_sequence(
+            company=company,
+            name="Healed Tanker",
+            category=tanker_category,
+            segment=segment,
+            acquisition_date=date(2026, 2, 1),
+            lines=_draft_lines(segment),
+        )
+        assert asset.asset_no == "FA-2026-0004"
+        seq.refresh_from_db()
+        assert seq.next_seq == 5
+
+    def test_heal_never_moves_counter_backwards(self, company):
+        from apps.sequences.models import DocumentSequence
+
+        seq = DocumentSequence.objects.create(
+            company=company, form_code="FA", year=2026,
+            pattern="FA-{YYYY}-{SEQ:04d}", next_seq=10,
+        )
+        assert AssetService.heal_fa_sequence(company=company, year=2026) == 10
+        seq.refresh_from_db()
+        assert seq.next_seq == 10
+
+    def test_ui_create_heals_lagging_counter(
+        self, ui_client, company, segment, tanker_category, asset_accounts, segment_account_map
+    ):
+        from apps.sequences.models import DocumentSequence
+
+        _seed_imported_rows(segment, tanker_category)
+        DocumentSequence.objects.create(
+            company=company, form_code="FA", year=2026,
+            pattern="FA-{YYYY}-{SEQ:04d}", next_seq=1,
+        )
+        resp = ui_client.post("/assets/new/", {
+            "segment": segment.pk,
+            "category": tanker_category.pk,
+            "name": "UI Tanker",
+            "acquisition_date": "2026-03-01",
+            "residual_value": "0.00",
+            "useful_life_months": "120",
+            "reference": "",
+            "line_segment": [segment.pk, segment.pk],
+            "line_account": [asset_accounts["17010"].pk, asset_accounts["10010"].pk],
+            "line_debit": ["60000.00", ""],
+            "line_credit": ["", "60000.00"],
+            "line_description": ["Tanker", "Cash"],
+            "line_cost_center": ["OS", "OS"],
+        })
+        assert resp.status_code == 302  # no 500
+        asset = Asset.objects.get(name="UI Tanker")
+        assert asset.asset_no == "FA-2026-0004"
+
+    def test_ui_create_exhaustion_is_friendly_not_500(
+        self, ui_client, company, segment, tanker_category, asset_accounts,
+        segment_account_map, monkeypatch,
+    ):
+        from apps.sequences.models import DocumentSequence
+
+        _seed_imported_rows(segment, tanker_category)
+        monkeypatch.setattr(
+            DocumentSequence, "next_number",
+            classmethod(lambda cls, **kwargs: "FA-2026-0001"),
+        )
+        resp = ui_client.post("/assets/new/", {
+            "segment": segment.pk,
+            "category": tanker_category.pk,
+            "name": "Unlucky Tanker",
+            "acquisition_date": "2026-03-01",
+            "residual_value": "0.00",
+            "useful_life_months": "120",
+            "reference": "",
+            "line_segment": [segment.pk, segment.pk],
+            "line_account": [asset_accounts["17010"].pk, asset_accounts["10010"].pk],
+            "line_debit": ["60000.00", ""],
+            "line_credit": ["", "60000.00"],
+            "line_description": ["Tanker", "Cash"],
+            "line_cost_center": ["OS", "OS"],
+        })
+        assert resp.status_code == 200  # friendly message, not 500
+        assert "Could not allocate an asset number" in resp.content.decode()
+        assert not Asset.objects.filter(name="Unlucky Tanker").exists()
+
+    def test_api_duplicate_asset_no_returns_400(
+        self, company, segment, tanker_category, asset_accounts, segment_account_map, user
+    ):
+        from rest_framework.test import APIClient
+
+        AssetService.acquire(
+            asset_no="FA-2026-0001", name="Existing", category=tanker_category,
+            segment=segment, acquisition_date=date(2026, 1, 15), cost="60000.00",
+            funding_source="cash",
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        resp = client.post("/api/v1/assets/", {
+            "asset_no": "FA-2026-0001",
+            "name": "Dup",
+            "category": tanker_category.pk,
+            "segment": segment.pk,
+            "acquisition_date": "2026-03-01",
+            "asset_account": asset_accounts["17010"].pk,
+            "cost": "60000.00",
+        }, format="json")
+        assert resp.status_code == 400
+        assert "already exists" in resp.json()["detail"]

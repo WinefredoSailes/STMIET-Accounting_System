@@ -47,6 +47,9 @@ COST_HEADERS = {"COST", "TOTAL COST"}
 ACCUM_HEADERS = {"ACCUMULATED DEPRECIATION"}
 # Column whose header hints an item's brand/serial (used to disambiguate names).
 BRAND_HEADERS = {"BRAND /SERIAL NUMBER / INDICATOR", "PLATE NO."}
+# Year embedded in the FA numbers this importer mints (kept in one place so
+# the post-import sequence heal always targets the same series).
+IMPORT_NUMBER_YEAR = 2026
 
 DECIMAL_RE = re.compile(r"^-?[\d,]+(\.\d+)?$")
 MONTH_NAMES = {m: i + 1 for i, m in enumerate(
@@ -161,6 +164,12 @@ class Command(BaseCommand):
                 wb[sheet_name], section_map, categories, as_of, seq,
             )
             created += sheet_created
+        # The importer mints FA-YYYY-#### numbers directly, bypassing the
+        # DocumentSequence counter. Advance the counter past the highest
+        # imported number so later UI-created assets never collide with
+        # them (duplicate-key 500 on /assets/new/).
+        healed = AssetService.heal_fa_sequence(company=company, year=IMPORT_NUMBER_YEAR)
+        self.stdout.write(f"FA sequence for {IMPORT_NUMBER_YEAR} advanced to {healed}.")
         self.stdout.write(
             self.style.SUCCESS(f"Imported {created} fixed assets from the September 1, 2026 register.")
         )
@@ -277,7 +286,7 @@ class Command(BaseCommand):
             name = self._build_name(row, first, name_col, brand_col)
             acquisition_date = _parse_date(row[date_col] if date_col is not None and date_col < len(row) else None, as_of)
             seq += 1
-            asset_no = f"FA-2026-{seq:04d}"
+            asset_no = f"FA-{IMPORT_NUMBER_YEAR}-{seq:04d}"
             if Asset.objects.filter(asset_no=asset_no).exists():
                 continue  # idempotent
             segment = Segment.objects.filter(code=cfg.get("segment", "OPS")).first()

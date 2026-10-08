@@ -2,6 +2,7 @@
 
 import logging
 
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -50,5 +51,16 @@ def api_exception_handler(exc, context):
         return Response(
             {"detail": exc.message, "code": exc.code},
             status=exc.status_code,
+        )
+    if isinstance(exc, IntegrityError):
+        # Duplicate document numbers (sequence lag / allocation races) and
+        # other constraint conflicts: a retryable 400, never a 500.
+        logger.warning("API integrity conflict: %s", exc)
+        return Response(
+            {
+                "detail": "This record conflicts with an existing one — please retry.",
+                "code": "conflict",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
     return drf_exception_handler(exc, context)
