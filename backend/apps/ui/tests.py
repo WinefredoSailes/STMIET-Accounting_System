@@ -1200,6 +1200,240 @@ class TestReceiptScreen:
         assert debit.description == "Cash received"
         assert debit.cost_center == ""
 
+    def _post_grid_rfp_style(self, client, customer, accounts, segment, rows):
+        """Post the RFP-style distribution grid (line_account/line_debit/line_credit)."""
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
+            "line_account": [accounts[r[0]].id for r in rows],
+            "line_segment": [segment.id for _ in rows],
+            "line_debit": [r[1] for r in rows],
+            "line_credit": [r[2] for r in rows],
+            "line_description": [r[3] for r in rows],
+            "line_cost_center": [""],
+        }
+        return client.post("/ar/receipts/new/", data)
+
+    def test_receipt_form_renders_rfp_style_grid(self, client, company, segment, accounts, fiscal_period, user):
+        client.force_login(user)
+        body = client.get("/ar/receipts/new/").content.decode()
+        # RFP parity markers: shared line-grid, editable Dr/Cr columns, add line, drag.
+        assert 'data-line-grid="rfp"' in body
+        assert "+ Add line" in body
+        assert 'name="line_debit"' in body
+        assert 'name="line_credit"' in body
+        assert "data-drag-handle" in body
+        # Old credit-only markers are gone.
+        assert 'id="add-credit"' not in body
+        assert 'data-remove-credit' not in body
+        assert 'name="credit"' not in body
+
+    def test_receipt_rfp_style_editable_debits_with_charge_line(self, client, company, segment, accounts, fiscal_period, user):
+        """Distribution charges like RFP: extra debit lines + editable debit entries."""
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        resp = self._post_grid_rfp_style(client, customer, accounts, segment, [
+            ("10010", "15000.00", "", "Cash received"),
+            ("61100", "500.00", "", "Bank charge"),
+            ("41010", "", "15500.00", "Sales collection"),
+        ])
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.cash_account_id == accounts["10010"].id
+        assert receipt.lines.count() == 3
+        assert receipt.is_balanced
+        assert receipt.amount == Decimal("15500.00")
+        cash_dr = receipt.lines.get(account_id=accounts["10010"].id)
+        assert cash_dr.debit == Decimal("15000.00")
+        charge_dr = receipt.lines.get(account_id=accounts["61100"].id)
+        assert charge_dr.debit == Decimal("500.00")
+        assert charge_dr.description == "Bank charge"
+        credit = receipt.lines.get(account_id=accounts["41010"].id)
+        assert credit.credit == Decimal("15500.00")
+        assert resp.url == f"/ar/receipts/{receipt.pk}/"
+
+    def test_receipt_rfp_style_credits_only_autofills_cash(self, client, company, segment, accounts, fiscal_period, user):
+        """New field names with credit rows only keep the simple flow: cash Dr auto-added."""
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        resp = self._post_grid_rfp_style(client, customer, accounts, segment, [
+            ("41010", "", "15000.00", "Sales collection"),
+        ])
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.lines.count() == 2  # auto Dr cash + Cr revenue
+        assert receipt.lines.get(debit__gt=0).account_id == accounts["10010"].id
+        assert receipt.is_balanced
+
+    def test_receipt_rfp_style_rejects_cash_missing_from_debits(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        before = AcknowledgmentReceipt.objects.count()
+        resp = self._post_grid_rfp_style(client, customer, accounts, segment, [
+            ("10110", "15000.00", "", "Other bank"),
+            ("41010", "", "15000.00", "Sales collection"),
+        ])
+        assert resp.status_code == 200
+        assert AcknowledgmentReceipt.objects.count() == before
+        assert "must appear as a" in resp.content.decode()
+        assert "debit line" in resp.content.decode()
+
+    def test_receipt_rfp_style_rejects_both_sides_one_row(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        before = AcknowledgmentReceipt.objects.count()
+        resp = self._post_grid_rfp_style(client, customer, accounts, segment, [
+            ("10010", "15000.00", "15000.00", "Both sides"),
+        ])
+        assert resp.status_code == 200
+        assert AcknowledgmentReceipt.objects.count() == before
+        assert "only one of Debit or Credit" in resp.content.decode()
+
+    def test_receipt_edit_rfp_style_add_charge_line(self, client, company, segment, accounts, fiscal_period, user):
+        from apps.ar.models import AcknowledgmentReceipt
+
+        client.force_login(user)
+        customer = self._new_customer(segment)
+        self._post_grid(client, customer, accounts, segment)
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.lines.count() == 2
+
+        resp = client.post(f"/ar/receipts/{receipt.pk}/edit/", {
+            "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "line_account": [accounts["10010"].id, accounts["61100"].id, accounts["41010"].id],
+            "line_segment": [segment.id, segment.id, segment.id],
+            "line_debit": ["15000.00", "500.00", ""],
+            "line_credit": ["", "", "15500.00"],
+            "line_description": ["Cash received", "Bank charge", "Sales collection"],
+            "line_cost_center": ["", "", ""],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.lines.count() == 3
+        assert receipt.is_balanced
+        assert receipt.amount == Decimal("15500.00")
+
+    def test_receipt_rfp_style_full_lifecycle_to_deposit(self, client, company, segment, accounts, fiscal_period, role_users):
+        """End to end with RFP-style distribution: create -> edit -> submit ->
+        approve/post (JE carries every line) -> bank deposit (JE balances)."""
+        from decimal import Decimal
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.posting.models import PostingStatus
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        resp = self._post_grid_rfp_style(client, customer, accounts, segment, [
+            ("10010", "15000.00", "", "Cash received"),
+            ("61100", "500.00", "", "Bank charge"),
+            ("41010", "", "15500.00", "Sales collection"),
+        ])
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.status == "draft"
+
+        # preparer submits
+        resp = client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.status == "submitted"
+
+        # appears in the head's approvals inbox
+        client.force_login(head)
+        body = client.get("/approvals/").content.decode()
+        assert receipt.receipt_no in body
+
+        # head approves: the posted JE carries every distribution line
+        resp = client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+        je = receipt.journal_entry
+        assert je is not None
+        assert je.status == PostingStatus.POSTED
+        assert je.is_balanced
+        assert je.lines.count() == 3
+        assert je.lines.get(account_id=accounts["10010"].id).debit == Decimal("15000.00")
+        assert je.lines.get(account_id=accounts["61100"].id).debit == Decimal("500.00")
+        assert je.lines.get(account_id=accounts["41010"].id).credit == Decimal("15500.00")
+
+        # head records the bank deposit: deposit JE balances too
+        resp = client.post(f"/ar/receipts/{receipt.pk}/deposit/", {
+            "transaction_date": "2026-01-20",
+            "reference": "rfp-style-slip",
+            "distribution_account": [accounts["10110"].id],
+            "distribution_segment": [segment.id],
+            "distribution_cost_center": [""],
+            "distribution_description": ["Full amount"],
+            "distribution_amount": ["15500.00"],
+        })
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.deposit_id is not None
+        dep_je = receipt.deposit.journal_entry
+        assert dep_je.total_debit == Decimal("15500.00") == dep_je.total_credit
+
+    def test_receipt_rfp_style_applied_lifecycle_with_charge_line(self, client, company, segment, accounts, fiscal_period, role_users):
+        """Applied-to-invoice end to end with an extra debit charge line: the
+        AR-credit guard and balance guard hold, and posting relieves the invoice."""
+        from decimal import Decimal
+        from apps.ar.models import AcknowledgmentReceipt
+        from apps.posting.models import PostingStatus
+
+        staff = role_users["staff"]
+        head = role_users["head"]
+        client.force_login(staff)
+        customer = self._new_customer(segment)
+        inv = self._new_invoice(customer, segment, total="5000.00", invoice_no="SI-RFP-001")
+
+        data = {
+            "customer": customer.id,
+            "transaction_date": "2026-01-15",
+            "payment_method": "cash",
+            "check_no": "",
+            "cash_account": accounts["10010"].id,
+            "cash_segment": segment.id,
+            "applied_to": inv.id,
+            "line_account": [accounts["10010"].id, accounts["61100"].id, accounts["12020"].id],
+            "line_segment": [segment.id, segment.id, segment.id],
+            "line_debit": ["4800.00", "200.00", ""],
+            "line_credit": ["", "", "5000.00"],
+            "line_description": ["Cash received", "Collection fee", "Applied to SI-RFP-001"],
+            "line_cost_center": ["", "", ""],
+        }
+        resp = client.post("/ar/receipts/new/", data)
+        assert resp.status_code == 302
+        receipt = AcknowledgmentReceipt.objects.latest("id")
+        assert receipt.applied_to_id == inv.id
+        assert receipt.is_balanced
+
+        client.post(f"/ar/receipts/{receipt.pk}/submit/")
+        client.force_login(head)
+        resp = client.post(f"/ar/receipts/{receipt.pk}/approve/")
+        assert resp.status_code == 302
+        receipt.refresh_from_db()
+        assert receipt.status == "posted"
+        assert receipt.journal_entry.status == PostingStatus.POSTED
+        assert receipt.journal_entry.is_balanced
+        inv.refresh_from_db()
+        assert inv.status == "paid"
+
     def test_receipt_print_client_view(self, client, company, segment, accounts, fiscal_period, user):
         from apps.ar.models import AcknowledgmentReceipt
 

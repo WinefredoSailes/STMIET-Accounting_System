@@ -779,11 +779,90 @@ def _rfp_lines_from_form(request):
 def _ar_receipt_lines_from_form(request, cash_account, segment):
     """Build the full Dr/Cr lines for an AR receipt from its grid.
 
-    Option (i): the Debit is the single cash/bank account (auto); the grid
-    carries the preparer-entered credit lines ("what the money was for").
+    RFP-style distribution grid (same behavior as the RFP form): every row
+    carries its amount in exactly one of the Debit or Credit columns — both
+    columns are editable, rows can be added/removed/reordered, and the grid
+    must balance (Dr total == Cr total). The header cash/bank account must
+    appear among the debit lines so ``receipt.cash_account`` stays meaningful.
+
+    Legacy fallback: posts using the old credit-only field names (``account``
+    / ``credit`` with no per-row debit inputs) keep the previous behavior —
+    the cash Dr line is auto-generated as the sum of the credit lines.
     Returns a list of line dicts (account/segment/cost_center/description/
-    debit/credit) with the cash Dr line first.
+    debit/credit).
     """
+    # New RFP-style grid posts `line_account` per row; the legacy grid posts
+    # `account`. Detect which format arrived.
+    if "line_account" in request.POST:
+        codes = request.POST.getlist("line_account")
+        seg_ids = request.POST.getlist("line_segment")
+        debits = request.POST.getlist("line_debit")
+        credits = request.POST.getlist("line_credit")
+        descs = request.POST.getlist("line_description")
+        centers = request.POST.getlist("line_cost_center")
+
+        lines = []
+        for i, account_id in enumerate(codes):
+            seg_id = seg_ids[i] if i < len(seg_ids) else ""
+            if not account_id or not seg_id:
+                continue
+            try:
+                debit = money((debits[i] if i < len(debits) else 0) or 0)
+                credit = money((credits[i] if i < len(credits) else 0) or 0)
+            except (ValidationError, ValueError, TypeError, ArithmeticError) as exc:
+                detail = getattr(exc, "message", None) or str(exc)
+                raise ValidationError(f"Line {i + 1}: {detail}") from exc
+            if not debit and not credit:
+                continue
+            if debit and credit:
+                raise ValidationError(
+                    f"Line {i + 1}: enter the amount in only one of Debit or Credit."
+                )
+            account = Account.objects.filter(pk=account_id).first()
+            if account is None:
+                raise ValidationError(f"Line {i + 1}: unknown account.")
+            line_segment = Segment.objects.filter(pk=seg_id).first()
+            if line_segment is None:
+                raise ValidationError(f"Line {i + 1}: select a segment.")
+            lines.append(
+                {
+                    "account": account,
+                    "segment": line_segment,
+                    "cost_center": (centers[i] if i < len(centers) else "")[:64],
+                    "description": (descs[i] if i < len(descs) else "")[:500],
+                    "debit": debit,
+                    "credit": credit,
+                }
+            )
+        if not lines:
+            raise ValidationError("Add at least one distribution line with an amount.")
+
+        debit_total = sum((l["debit"] for l in lines), money(0))
+        credit_total = sum((l["credit"] for l in lines), money(0))
+        if not debit_total and credit_total and cash_account is not None:
+            # Preparer filled credit lines only (old habit): auto-balance with
+            # the header cash account as the single debit line.
+            lines = [
+                {
+                    "account": cash_account,
+                    "segment": segment,
+                    "cost_center": (request.POST.get("cash_cost_center") or "").strip()[:64],
+                    "description": (
+                        (request.POST.get("cash_description") or "").strip() or "Cash received"
+                    )[:500],
+                    "debit": credit_total,
+                    "credit": money(0),
+                }
+            ] + lines
+        elif cash_account is not None and not any(
+            l["debit"] and l["account"].id == cash_account.id for l in lines
+        ):
+            raise ValidationError(
+                f"The cash / bank account {cash_account.code} must appear as a "
+                "debit line — enter its amount in the Debit column."
+            )
+        return lines
+
     accounts = request.POST.getlist("account")
     seg_ids = request.POST.getlist("line_segment")
     credits = request.POST.getlist("credit")
