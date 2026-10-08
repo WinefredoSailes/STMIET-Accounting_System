@@ -9634,8 +9634,8 @@ def _advances_employee_context(request, key):
     section = next(iter(data.get("sections") or []), None)
     recons = list(
         AdvanceReconciliation.objects.filter(employee_name__iexact=name).select_related(
-            "adjustment_je", "supplier"
-        ).order_by("-period_end", "-id")[:20]
+            "supplier"
+        ).prefetch_related("entries").order_by("-period_end", "-id")[:20]
     ) if name else []
     return name, supplier, section, recons, data, win
 
@@ -9733,16 +9733,26 @@ def advances_ledger_employee_print(request, key):
     )
 
 
+def _recon_entries_from_post(request):
+    """Parse memorandum entry parallel arrays from the reconciliation form."""
+    dates = request.POST.getlist("entry_date")
+    descs = request.POST.getlist("entry_description")
+    amounts = request.POST.getlist("entry_amount")
+    entries = []
+    for i in range(len(dates)):
+        d = (dates[i] if i < len(dates) else "").strip()
+        desc = (descs[i] if i < len(descs) else "").strip()
+        amt = (amounts[i] if i < len(amounts) else "").strip()
+        if not d and not desc and not amt:
+            continue
+        entries.append({"date": d, "description": desc, "amount": amt})
+    return entries
+
+
 @login_required
 @require_POST
 def advances_recon_record(request, key):
-    """Accounting manually reconciles one employee for one period.
-
-    Records the GL-side closing next to the verified-true balance plus a
-    memo; the variance is what a posted adjusting JE (e.g. the missing
-    payroll deduction) must book. Drafts can be edited; reviewed/locked
-    follow the review/lock endpoints below.
-    """
+    """Accounting creates/updates a draft reconciliation with memorandum entries."""
     from apps.ap.services import AdvanceReconService
 
     name = _advances_employee_name(key)
@@ -9755,14 +9765,13 @@ def advances_recon_record(request, key):
             period_start=request.POST.get("period_start", ""),
             period_end=request.POST.get("period_end", ""),
             gl_balance=request.POST.get("gl_balance", "0"),
-            reviewed_balance=request.POST.get("reviewed_balance", "0"),
-            memo=request.POST.get("memo", ""),
+            entries=_recon_entries_from_post(request),
             user=request.user,
         )
         messages.success(
             request,
             f"{recon.employee_name} {recon.period_start}..{recon.period_end} "
-            f"reconciled (variance {recon.variance:,.2f}) — draft.",
+            f"reconciliation saved (draft).",
         )
     except (AccountingError, ValidationError, ValueError, ArithmeticError) as exc:
         messages.error(request, str(exc))
@@ -9771,37 +9780,15 @@ def advances_recon_record(request, key):
 
 @login_required
 @require_POST
-def advances_recon_link(request, pk):
-    """Link a POSTED adjusting JE to a reconciliation (closes the variance)."""
+def advances_recon_submit(request, pk):
+    """draft -> submitted: accounting sends it to the Head for approval."""
     from apps.ap.models import AdvanceReconciliation
     from apps.ap.services import AdvanceReconService
 
     recon = get_object_or_404(AdvanceReconciliation, pk=pk)
     try:
-        entry_no = (request.POST.get("entry_no") or "").strip()
-        if not entry_no:
-            raise ValidationError("Enter the posted adjusting JE number (e.g. JE-2026-0007).")
-        entry = JournalEntry.objects.filter(entry_no=entry_no).first()
-        if entry is None:
-            raise ValidationError(f"Journal entry {entry_no} not found.")
-        AdvanceReconService.link_adjustment(recon, entry, user=request.user)
-        messages.success(request, f"Adjusting entry {entry.entry_no} linked.")
-    except (AccountingError, ValidationError, ValueError) as exc:
-        messages.error(request, str(exc))
-    return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
-
-
-@login_required
-@require_POST
-def advances_recon_review(request, pk):
-    """draft -> reviewed: accounting signs off the reconciliation."""
-    from apps.ap.models import AdvanceReconciliation
-    from apps.ap.services import AdvanceReconService
-
-    recon = get_object_or_404(AdvanceReconciliation, pk=pk)
-    try:
-        AdvanceReconService.review(recon, user=request.user)
-        messages.success(request, f"{recon.employee_name} reconciliation reviewed.")
+        AdvanceReconService.submit(recon, user=request.user)
+        messages.success(request, f"{recon.employee_name} reconciliation submitted for approval.")
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
     return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
@@ -9809,16 +9796,31 @@ def advances_recon_review(request, pk):
 
 @login_required
 @require_POST
-def advances_recon_lock(request, pk):
-    """reviewed -> locked (Head only): the period is final; later postings
-    surface as a new variance instead of rewriting history."""
+def advances_recon_approve(request, pk):
+    """submitted -> approved (Head only)."""
     from apps.ap.models import AdvanceReconciliation
     from apps.ap.services import AdvanceReconService
 
     recon = get_object_or_404(AdvanceReconciliation, pk=pk)
     try:
-        AdvanceReconService.lock(recon, user=request.user)
-        messages.success(request, f"{recon.employee_name} reconciliation locked.")
+        AdvanceReconService.approve(recon, user=request.user)
+        messages.success(request, f"{recon.employee_name} reconciliation approved.")
+    except (AccountingError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))
+
+
+@login_required
+@require_POST
+def advances_recon_reject(request, pk):
+    """submitted -> draft: the Head returns it to accounting with a note."""
+    from apps.ap.models import AdvanceReconciliation
+    from apps.ap.services import AdvanceReconService
+
+    recon = get_object_or_404(AdvanceReconciliation, pk=pk)
+    try:
+        AdvanceReconService.reject(recon, user=request.user, note=request.POST.get("note", ""))
+        messages.success(request, f"{recon.employee_name} reconciliation returned to draft.")
     except (AccountingError, ValidationError) as exc:
         messages.error(request, str(exc))
     return redirect(_safe_next(request, "ui:advances_ledger_employee", recon.employee_name))

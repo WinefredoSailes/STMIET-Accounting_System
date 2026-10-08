@@ -2673,7 +2673,7 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None, e
             })
 
     # Latest manual reconciliation per employee (any period): the ledger
-    # header shows whether the section was reviewed/locked and its variance.
+    # header shows whether the section was submitted/approved and its variance.
     recon_by_party = {}
     try:
         from apps.ap.models import AdvanceReconciliation
@@ -2731,7 +2731,7 @@ def advances_subsidiary_ledger(*, company, start=None, end=None, segment=None, e
         "unidentified_count": sum(1 for s in section_list if s["party"] == "(Unidentified)"),
         "recon_open_count": sum(
             1 for s in section_list
-            if not s["recon_status"] or s["recon_status"] == "draft"
+            if s["recon_status"] in ("", "draft", "submitted", "rejected")
         ),
     }
 

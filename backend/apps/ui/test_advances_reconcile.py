@@ -6,8 +6,8 @@ Covers the full feature set:
   - PCF Replenishment employee FK
   - Party resolution: JE/RFP/PCF all group under one employee name
   - Employee drill-down detail + export + print
-  - Manual reconciliation: record → review → lock, adjusting JE linkage
-  - Lock immutability and variance math
+  - Manual reconciliation (memorandum entries): record → submit → approve,
+    reject returns to draft; variance = GL − entries total; approved is immutable.
 """
 
 from datetime import date
@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import pytest
 
-from apps.ap.models import AdvanceReconciliation, Supplier
+from apps.ap.models import AdvanceReconEntry, AdvanceReconciliation, Supplier
 from apps.cash.models import PCFReplenishment, PettyCashFund
 from apps.foundation.models import Account, Segment
 from apps.posting.models import JournalEntry, JournalEntryLine, PostingStatus
@@ -384,203 +384,177 @@ class TestLedgerEmployeeLinks:
         assert data["sections"][0]["party"] == "Juan Dela Cruz"
 
 
+def _recon_form(gl="30000.00", entries=()):
+    """Build POST data for the memorandum-entry reconciliation form."""
+    dates = [e[0] for e in entries]
+    descs = [e[1] for e in entries]
+    amounts = [e[2] for e in entries]
+    return {
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "gl_balance": gl,
+        "entry_date": dates,
+        "entry_description": descs,
+        "entry_amount": amounts,
+    }
+
+
 class TestManualReconciliation:
-    def test_recon_record_creates_draft(self, client, user, advance_activity, employee):
+    def test_recon_record_creates_draft_with_entries(self, client, user, advance_activity, employee):
         client.force_login(user)
-        resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "25000.00",
-            "memo": "Payroll deduction not yet posted",
-        })
+        resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[
+                ("2026-01-06", "Cash advance outstanding", "20000.00"),
+                ("2026-01-20", "Second advance", "5000.00"),
+            ],
+        ))
         assert resp.status_code == 302
         recon = AdvanceReconciliation.objects.get()
         assert recon.employee_name == "Juan Dela Cruz"
         assert recon.gl_balance == Decimal("30000.00")
-        assert recon.reviewed_balance == Decimal("25000.00")
-        assert recon.variance == Decimal("-5000.00")
         assert recon.status == "draft"
-        assert recon.memo == "Payroll deduction not yet posted"
+        assert recon.entries.count() == 2
+        assert recon.grand_total == Decimal("25000.00")
 
-    def test_recon_variance_zero_when_matching(self, client, user, advance_activity, employee):
+    def test_recon_record_ignores_blank_rows(self, client, user, advance_activity, employee):
         client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "All clear",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        assert recon.variance == Decimal("0.00")
-
-    def test_recon_review_transitions_status(self, client, user, advance_activity, employee):
-        client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "OK",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        resp = client.post(f"/ap/advances/recon/{recon.id}/review/")
-        assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.status == "reviewed"
-        assert recon.reviewed_by == user
-
-    def test_recon_lock_requires_head(self, client, user, advance_activity, employee):
-        client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "OK",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        client.post(f"/ap/advances/recon/{recon.id}/review/")
-        resp = client.post(f"/ap/advances/recon/{recon.id}/lock/")
-        assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.status == "reviewed"
-
-    def test_recon_lock_succeeds_as_head(self, client, role_users, advance_activity, employee):
-        head = role_users["head"]
-        client.force_login(head)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "OK",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        client.post(f"/ap/advances/recon/{recon.id}/review/")
-        resp = client.post(f"/ap/advances/recon/{recon.id}/lock/")
-        assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.status == "locked"
-        assert recon.locked_by == head
-
-    def test_recon_lock_requires_zero_variance_or_adjustment(self, client, role_users, advance_activity, employee):
-        head = role_users["head"]
-        client.force_login(head)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "25000.00",
-            "memo": "Variance exists",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        client.post(f"/ap/advances/recon/{recon.id}/review/")
-        resp = client.post(f"/ap/advances/recon/{recon.id}/lock/")
-        assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.status == "reviewed"
-
-    def test_recon_locked_is_immutable(self, client, role_users, advance_activity, employee):
-        head = role_users["head"]
-        client.force_login(head)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "OK",
-        })
-        recon = AdvanceReconciliation.objects.get()
-        client.post(f"/ap/advances/recon/{recon.id}/review/")
-        client.post(f"/ap/advances/recon/{recon.id}/lock/")
         resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
             "period_start": "2026-01-01",
             "period_end": "2026-01-31",
             "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "Try to overwrite",
+            "entry_date": ["2026-01-06", "", ""],
+            "entry_description": ["Cash advance outstanding", "", ""],
+            "entry_amount": ["20000.00", "", ""],
         })
         assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.memo == "OK"
-
-    def test_recon_link_adjustment_je(self, client, user, company, segment, advance_activity, employee):
-        client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "25000.00",
-            "memo": "Payroll deduction",
-        })
         recon = AdvanceReconciliation.objects.get()
+        assert recon.entries.count() == 1
 
-        adj_je = _post(
-            company, segment, date(2026, 1, 31),
-            [("61100", "5000.00"), ("12070", "-5000.00")], "JE-ADJ-001",
-            "Payroll deduction - Juan", supplier=employee,
-        )
-
-        resp = client.post(f"/ap/advances/recon/{recon.id}/link/", {
-            "entry_no": adj_je.entry_no,
-        })
-        assert resp.status_code == 302
-        recon.refresh_from_db()
-        assert recon.adjustment_je == adj_je
-
-    def test_recon_link_requires_posted_je(self, client, user, company, segment, advance_activity, employee):
+    def test_recon_entry_date_outside_period_rejected(self, client, user, advance_activity, employee):
         client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "25000.00",
-            "memo": "Payroll deduction",
-        })
+        resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-02-01", "Outside period", "5000.00")],
+        ))
+        assert resp.status_code == 302
+        assert AdvanceReconciliation.objects.count() == 0
+
+    def test_recon_entry_missing_description_rejected(self, client, user, advance_activity, employee):
+        client.force_login(user)
+        resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "", "5000.00")],
+        ))
+        assert resp.status_code == 302
+        assert AdvanceReconciliation.objects.count() == 0
+
+    def test_recon_submit_transitions_status(self, client, user, advance_activity, employee):
+        client.force_login(user)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
         recon = AdvanceReconciliation.objects.get()
-
-        je = JournalEntry.objects.create(
-            entry_no="JE-DRAFT-001",
-            company=company,
-            segment=segment,
-            transaction_date=date(2026, 1, 31),
-            status=PostingStatus.DRAFT,
-            description="Draft adjustment",
-        )
-
-        resp = client.post(f"/ap/advances/recon/{recon.id}/link/", {
-            "entry_no": je.entry_no,
-        })
+        resp = client.post(f"/ap/advances/recon/{recon.id}/submit/")
         assert resp.status_code == 302
         recon.refresh_from_db()
-        assert recon.adjustment_je is None
+        assert recon.status == "submitted"
+        assert recon.submitted_by == user
+        assert recon.submitted_at is not None
 
-    def test_recon_link_with_adjustment_allows_lock(self, client, role_users, company, segment, advance_activity, employee):
+    def test_recon_submit_requires_entries(self, client, user, advance_activity, employee):
+        client.force_login(user)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(entries=[]))
+        recon = AdvanceReconciliation.objects.get()
+        resp = client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "draft"
+
+    def test_recon_approve_requires_head(self, client, user, advance_activity, employee):
+        client.force_login(user)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
+        recon = AdvanceReconciliation.objects.get()
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        resp = client.post(f"/ap/advances/recon/{recon.id}/approve/")
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "submitted"
+
+    def test_recon_approve_succeeds_as_head_zero_variance(self, client, role_users, advance_activity, employee):
         head = role_users["head"]
         client.force_login(head)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "25000.00",
-            "memo": "Payroll deduction",
-        })
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
         recon = AdvanceReconciliation.objects.get()
-
-        adj_je = _post(
-            company, segment, date(2026, 1, 31),
-            [("61100", "5000.00"), ("12070", "-5000.00")], "JE-ADJ-002",
-            "Payroll deduction - Juan", supplier=employee,
-        )
-
-        client.post(f"/ap/advances/recon/{recon.id}/link/", {"entry_no": adj_je.entry_no})
-        client.post(f"/ap/advances/recon/{recon.id}/review/")
-        resp = client.post(f"/ap/advances/recon/{recon.id}/lock/")
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        resp = client.post(f"/ap/advances/recon/{recon.id}/approve/")
         assert resp.status_code == 302
         recon.refresh_from_db()
-        assert recon.status == "locked"
+        assert recon.status == "approved"
+        assert recon.approved_by == head
+        assert recon.approved_at is not None
+        assert recon.variance == Decimal("0.00")
+
+    def test_recon_approve_computes_variance_gl_minus_entries(self, client, role_users, advance_activity, employee):
+        head = role_users["head"]
+        client.force_login(head)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "25000.00")],
+        ))
+        recon = AdvanceReconciliation.objects.get()
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        resp = client.post(f"/ap/advances/recon/{recon.id}/approve/")
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "approved"
+        # Variance = GL − entries total: 30000 − 25000 = +5000 (GL higher).
+        assert recon.variance == Decimal("5000.00")
+
+    def test_recon_approved_is_immutable(self, client, role_users, advance_activity, employee):
+        head = role_users["head"]
+        client.force_login(head)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
+        recon = AdvanceReconciliation.objects.get()
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        client.post(f"/ap/advances/recon/{recon.id}/approve/")
+        resp = client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Tampered", "1.00")],
+        ))
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "approved"
+        assert recon.grand_total == Decimal("30000.00")
+
+    def test_recon_reject_returns_to_draft_with_note(self, client, role_users, advance_activity, employee):
+        head = role_users["head"]
+        client.force_login(head)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
+        recon = AdvanceReconciliation.objects.get()
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        resp = client.post(f"/ap/advances/recon/{recon.id}/reject/", {"note": "Add the missing line"})
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "draft"
+        assert recon.rejected_by == head
+        assert recon.rejection_note == "Add the missing line"
+
+    def test_recon_reject_requires_note(self, client, role_users, advance_activity, employee):
+        head = role_users["head"]
+        client.force_login(head)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
+        recon = AdvanceReconciliation.objects.get()
+        client.post(f"/ap/advances/recon/{recon.id}/submit/")
+        resp = client.post(f"/ap/advances/recon/{recon.id}/reject/", {"note": ""})
+        assert resp.status_code == 302
+        recon.refresh_from_db()
+        assert recon.status == "submitted"
 
 
 class TestReconService:
@@ -593,7 +567,7 @@ class TestReconService:
                 period_start=date(2026, 1, 31),
                 period_end=date(2026, 1, 1),
                 gl_balance="0",
-                reviewed_balance="0",
+                entries=[],
             )
 
     def test_record_resolves_supplier_by_name(self, employee):
@@ -604,11 +578,11 @@ class TestReconService:
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
             gl_balance="10000",
-            reviewed_balance="10000",
+            entries=[{"date": date(2026, 1, 6), "description": "Advance", "amount": "10000"}],
         )
         assert recon.supplier == employee
 
-    def test_record_duplicate_period_reuses_draft(self, employee):
+    def test_record_duplicate_period_reuses_draft_and_replaces_entries(self, employee):
         from apps.ap.services import AdvanceReconService
 
         r1 = AdvanceReconService.record(
@@ -616,19 +590,21 @@ class TestReconService:
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
             gl_balance="10000",
-            reviewed_balance="10000",
+            entries=[{"date": date(2026, 1, 6), "description": "Old", "amount": "10000"}],
         )
         r2 = AdvanceReconService.record(
             employee_name="Juan Dela Cruz",
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
             gl_balance="12000",
-            reviewed_balance="10000",
+            entries=[{"date": date(2026, 1, 6), "description": "New", "amount": "11000"}],
         )
         assert r1.id == r2.id
         assert r2.gl_balance == Decimal("12000.00")
+        assert r2.entries.count() == 1
+        assert r2.entries.first().description == "New"
 
-    def test_record_rejects_edit_of_reviewed(self, employee):
+    def test_record_rejects_edit_of_submitted(self, employee):
         from apps.ap.services import AdvanceReconService
 
         recon = AdvanceReconService.record(
@@ -636,29 +612,59 @@ class TestReconService:
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
             gl_balance="10000",
-            reviewed_balance="10000",
+            entries=[{"date": date(2026, 1, 6), "description": "Advance", "amount": "10000"}],
         )
-        AdvanceReconService.review(recon, user=None)
+        AdvanceReconService.submit(recon, user=None)
         with pytest.raises(Exception):
             AdvanceReconService.record(
                 employee_name="Juan Dela Cruz",
                 period_start=date(2026, 1, 1),
                 period_end=date(2026, 1, 31),
                 gl_balance="99999",
-                reviewed_balance="10000",
+                entries=[{"date": date(2026, 1, 6), "description": "Tamper", "amount": "1"}],
+            )
+
+    def test_record_rejects_edit_of_approved(self, employee, role_users):
+        from apps.ap.services import AdvanceReconService
+
+        head = role_users["head"]
+        recon = AdvanceReconService.record(
+            employee_name="Juan Dela Cruz",
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+            gl_balance="10000",
+            entries=[{"date": date(2026, 1, 6), "description": "Advance", "amount": "10000"}],
+        )
+        AdvanceReconService.submit(recon, user=None)
+        AdvanceReconService.approve(recon, user=head)
+        with pytest.raises(Exception):
+            AdvanceReconService.record(
+                employee_name="Juan Dela Cruz",
+                period_start=date(2026, 1, 1),
+                period_end=date(2026, 1, 31),
+                gl_balance="99999",
+                entries=[{"date": date(2026, 1, 6), "description": "Tamper", "amount": "1"}],
+            )
+
+    def test_entry_date_outside_period_rejected(self, employee):
+        from apps.ap.services import AdvanceReconService
+
+        with pytest.raises(Exception):
+            AdvanceReconService.record(
+                employee_name="Juan Dela Cruz",
+                period_start=date(2026, 1, 1),
+                period_end=date(2026, 1, 31),
+                gl_balance="10000",
+                entries=[{"date": date(2026, 2, 1), "description": "Late", "amount": "5"}],
             )
 
 
 class TestReconLedgerIntegration:
     def test_ledger_shows_recon_status(self, client, user, advance_activity, employee):
         client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "OK",
-        })
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
         resp = client.get("/ap/advances/ledger/?start=2026-01-01&end=2026-01-31")
         assert resp.status_code == 200
         body = resp.content.decode()
@@ -666,18 +672,26 @@ class TestReconLedgerIntegration:
 
     def test_employee_detail_shows_recon_history(self, client, user, advance_activity, employee):
         client.force_login(user)
-        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", {
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "gl_balance": "30000.00",
-            "reviewed_balance": "30000.00",
-            "memo": "All clear",
-        })
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
         resp = client.get(f"/ap/advances/ledger/employee/{employee.id}/?start=2026-01-01&end=2026-01-31")
         assert resp.status_code == 200
         body = resp.content.decode()
-        assert "All clear" in body
+        assert "Cash advance outstanding" in body
+        assert "Submit for approval" in body
         assert "2026-01-01" in body
+
+    def test_employee_detail_print_shows_entries(self, client, user, advance_activity, employee):
+        client.force_login(user)
+        client.post(f"/ap/advances/ledger/employee/{employee.id}/reconcile/", _recon_form(
+            entries=[("2026-01-06", "Cash advance outstanding", "30000.00")],
+        ))
+        resp = client.get(f"/ap/advances/ledger/employee/{employee.id}/print/?start=2026-01-01&end=2026-01-31")
+        assert resp.status_code == 200
+        body = resp.content.decode()
+        assert "Cash advance outstanding" in body
+        assert "Entries Total" in body
 
     def test_ledger_recon_open_count(self, company, segment, employee, advance_activity):
         data = advances_subsidiary_ledger(

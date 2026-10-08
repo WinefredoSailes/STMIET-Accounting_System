@@ -1949,12 +1949,13 @@ class AdvanceService:
 class AdvanceReconService:
     """Manual reconciliation of the Advances subsidiary (no payroll feed).
 
-    Accounting reviews one employee for one period: the GL-side closing is
-    captured, the verified-true balance is recorded with a memo, and the
-    variance (reviewed - GL) is what a posted adjusting JE must book. Only a
-    POSTED adjusting JE moves the GL; the memo only explains. ``locked`` is
-    the head's sign-off and is immutable — later postings surface as a new
-    variance instead of rewriting history.
+    Accounting reviews one employee for one period and records memorandum
+    entries (date / description / amount) that make up the verified true
+    balance. The entries are memorandum only — they never post to the GL,
+    Trial Balance, or financial statements. The Head approves the
+    reconciliation; approved periods appear in the history.
+
+    Variance = gl_balance − grand_total (sum of memorandum entries).
     """
 
     @classmethod
@@ -1967,10 +1968,34 @@ class AdvanceReconService:
         return supplier, name
 
     @classmethod
+    def _validate_entries(cls, recon, entries):
+        """Every memorandum entry date must fall within the period."""
+        for i, entry in enumerate(entries):
+            d = entry.get("date")
+            if isinstance(d, str):
+                try:
+                    d = date.fromisoformat(d)
+                except ValueError:
+                    raise ValidationError(f"Entry {i + 1}: enter a valid date.")
+            if d is None:
+                raise ValidationError(f"Entry {i + 1}: enter a date.")
+            if d < recon.period_start or d > recon.period_end:
+                raise ValidationError(
+                    f"Entry {i + 1}: date {d} is outside the reconciliation period "
+                    f"({recon.period_start}..{recon.period_end})."
+                )
+            desc = (entry.get("description") or "").strip()
+            if not desc:
+                raise ValidationError(f"Entry {i + 1}: enter a description.")
+            if entry.get("amount") in (None, ""):
+                raise ValidationError(f"Entry {i + 1}: enter an amount.")
+
+    @classmethod
     @transaction.atomic
     def record(cls, *, supplier=None, employee_name="", period_start, period_end,
-               gl_balance, reviewed_balance, memo="", user=None):
-        from .models import AdvanceReconciliation
+               gl_balance, entries=None, user=None):
+        """Create or update a draft reconciliation with memorandum entries."""
+        from .models import AdvanceReconciliation, AdvanceReconEntry
 
         if isinstance(period_start, str):
             period_start = date.fromisoformat(period_start)
@@ -1980,95 +2005,130 @@ class AdvanceReconService:
             raise ValidationError("The reconciliation period end is before its start.")
         supplier, name = cls._resolve_supplier(supplier, employee_name)
         gl = money(gl_balance)
-        reviewed = money(reviewed_balance)
+        entries = entries or []
         existing = AdvanceReconciliation.objects.filter(
             employee_name__iexact=name,
             period_start=period_start, period_end=period_end,
         ).first()
-        if existing is not None and existing.status == AdvanceReconciliation.Status.LOCKED:
+        if existing is not None and existing.status == AdvanceReconciliation.Status.APPROVED:
             raise ValidationError(
-                f"{name} for {period_start}..{period_end} is locked and cannot be changed."
+                f"{name} for {period_start}..{period_end} is approved and cannot be changed."
+            )
+        if existing is not None and existing.status != AdvanceReconciliation.Status.DRAFT:
+            raise ValidationError(
+                f"{name} for {period_start}..{period_end} is {existing.status}; "
+                "only drafts can be edited."
             )
         if existing is not None:
-            if existing.status != AdvanceReconciliation.Status.DRAFT:
-                raise ValidationError(
-                    f"{name} for {period_start}..{period_end} is already {existing.status}; "
-                    "only drafts can be edited."
-                )
+            cls._validate_entries(existing, entries)
             existing.supplier = supplier
             existing.employee_name = name
             existing.gl_balance = gl
-            existing.reviewed_balance = reviewed
-            existing.variance = reviewed - gl
-            existing.memo = (memo or "").strip()
             existing.updated_by = user
             existing.save(update_fields=[
-                "supplier", "employee_name", "gl_balance", "reviewed_balance",
-                "variance", "memo", "updated_by", "updated_at",
+                "supplier", "employee_name", "gl_balance", "updated_by", "updated_at",
             ])
-            log_action(existing, "reconciled", actor=user, note=(memo or "").strip())
+            existing.entries.all().delete()
+            for entry in entries:
+                d = entry["date"]
+                if isinstance(d, str):
+                    d = date.fromisoformat(d)
+                AdvanceReconEntry.objects.create(
+                    recon=existing, date=d,
+                    description=entry["description"].strip(),
+                    amount=money(entry["amount"]),
+                    created_by=user,
+                )
+            log_action(existing, "reconciled", actor=user)
             return existing
         recon = AdvanceReconciliation.objects.create(
             supplier=supplier, employee_name=name,
             period_start=period_start, period_end=period_end,
-            gl_balance=gl, reviewed_balance=reviewed, variance=reviewed - gl,
-            memo=(memo or "").strip(), status=AdvanceReconciliation.Status.DRAFT,
+            gl_balance=gl, status=AdvanceReconciliation.Status.DRAFT,
             created_by=user,
         )
-        log_action(recon, "reconciled", actor=user, note=(memo or "").strip())
-        return recon
-
-    @classmethod
-    @transaction.atomic
-    def link_adjustment(cls, recon, journal_entry, *, user=None):
-        from .models import AdvanceReconciliation
-
-        if recon.status == AdvanceReconciliation.Status.LOCKED:
-            raise ValidationError("A locked reconciliation cannot be changed.")
-        if journal_entry.status != PostingStatus.POSTED:
-            raise ValidationError(
-                f"JE {journal_entry.entry_no} is '{journal_entry.status}' — "
-                "only a POSTED adjusting entry can close a variance."
+        cls._validate_entries(recon, entries)
+        for entry in entries:
+            d = entry["date"]
+            if isinstance(d, str):
+                d = date.fromisoformat(d)
+            AdvanceReconEntry.objects.create(
+                recon=recon, date=d,
+                description=entry["description"].strip(),
+                amount=money(entry["amount"]),
+                created_by=user,
             )
-        recon.adjustment_je = journal_entry
-        recon.updated_by = user
-        recon.save(update_fields=["adjustment_je", "updated_by", "updated_at"])
-        log_action(recon, "adjustment_linked", actor=user, note=journal_entry.entry_no)
+        log_action(recon, "reconciled", actor=user)
         return recon
 
     @classmethod
+    def grand_total(cls, recon):
+        return recon.grand_total
+
+    @classmethod
+    def compute_variance(cls, recon):
+        return (recon.gl_balance - recon.grand_total).quantize(Decimal("0.01"))
+
+    @classmethod
     @transaction.atomic
-    def review(cls, recon, *, user=None):
+    def submit(cls, recon, *, user=None):
+        """draft -> submitted: accounting sends it to the Head."""
         from .models import AdvanceReconciliation
 
         if recon.status != AdvanceReconciliation.Status.DRAFT:
-            raise ValidationError(f"Only drafts can be reviewed (status '{recon.status}').")
-        recon.status = AdvanceReconciliation.Status.REVIEWED
-        recon.reviewed_by = user
-        recon.reviewed_at = timezone.now()
-        recon.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
-        log_action(recon, "reviewed", actor=user)
+            raise ValidationError(f"Only drafts can be submitted (status '{recon.status}').")
+        if not recon.entries.exists():
+            raise ValidationError("Add at least one memorandum entry before submitting.")
+        recon.status = AdvanceReconciliation.Status.SUBMITTED
+        recon.submitted_by = user
+        recon.submitted_at = timezone.now()
+        recon.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
+        log_action(recon, "submitted", actor=user)
         return recon
 
     @classmethod
     @transaction.atomic
-    def lock(cls, recon, *, user=None):
+    def approve(cls, recon, *, user=None):
+        """submitted -> approved (Head only)."""
         from .models import AdvanceReconciliation
         from apps.core.approvals import require_approval_role
 
         require_approval_role(user, "head")
-        if recon.status != AdvanceReconciliation.Status.REVIEWED:
+        if recon.status != AdvanceReconciliation.Status.SUBMITTED:
             raise ValidationError(
-                f"Only reviewed reconciliations can be locked (status '{recon.status}')."
+                f"Only submitted reconciliations can be approved (status '{recon.status}')."
             )
-        if recon.variance != Decimal("0.00") and recon.adjustment_je_id is None:
+        recon.variance = cls.compute_variance(recon)
+        recon.status = AdvanceReconciliation.Status.APPROVED
+        recon.approved_by = user
+        recon.approved_at = timezone.now()
+        recon.save(update_fields=["status", "variance", "approved_by", "approved_at", "updated_at"])
+        log_action(recon, "approved", actor=user)
+        return recon
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, recon, *, user, note):
+        """submitted -> draft: the Head returns it to accounting with a note."""
+        from .models import AdvanceReconciliation
+        from apps.core.approvals import require_approval_role
+
+        require_approval_role(user, "head")
+        if recon.status != AdvanceReconciliation.Status.SUBMITTED:
             raise ValidationError(
-                f"Variance is {recon.variance}: link the POSTED adjusting JE "
-                "before locking, or correct the reviewed balance."
+                f"Only submitted reconciliations can be rejected (status '{recon.status}')."
             )
-        recon.status = AdvanceReconciliation.Status.LOCKED
-        recon.locked_by = user
-        recon.locked_at = timezone.now()
-        recon.save(update_fields=["status", "locked_by", "locked_at", "updated_at"])
-        log_action(recon, "locked", actor=user)
+        if not (note or "").strip():
+            raise ValidationError("A rejection note is required.")
+        recon.status = AdvanceReconciliation.Status.DRAFT
+        recon.rejected_by = user
+        recon.rejected_at = timezone.now()
+        recon.rejection_note = note.strip()
+        recon.submitted_by = None
+        recon.submitted_at = None
+        recon.save(update_fields=[
+            "status", "rejected_by", "rejected_at", "rejection_note",
+            "submitted_by", "submitted_at", "updated_at",
+        ])
+        log_action(recon, "rejected", actor=user, note=note.strip())
         return recon

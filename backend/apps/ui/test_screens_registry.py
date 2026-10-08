@@ -75,6 +75,12 @@ def test_approval_actions_map_to_inbox():
 REGISTER_GATED_VERBS = frozenset({
     # CONSO grading review (POSTING_RULES 7.3) happens on the batch page.
     "conso_reject",
+    # Advances memorandum reconciliation is approved on the employee
+    # drill-down page (advances register); the Head gate is enforced in
+    # AdvanceReconService.approve/reject, not via the approvals inbox
+    # (submitted recons are not inbox queue items).
+    "advances_recon_approve",
+    "advances_recon_reject",
 })
 
 

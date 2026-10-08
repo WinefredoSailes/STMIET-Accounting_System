@@ -166,20 +166,25 @@
       <tr style="font-size:9px; text-transform:uppercase; letter-spacing:.03em">
         <th colspan="4" style="font-weight:700; text-align:left">Period</th>
         <th colspan="2" style="font-weight:700; text-align:right">GL Balance</th>
-        <th colspan="2" style="font-weight:700; text-align:right">Verified</th>
+        <th colspan="2" style="font-weight:700; text-align:right">Entries Total</th>
         <th colspan="2" style="font-weight:700; text-align:right">Variance</th>
-        <th colspan="2" style="font-weight:700; text-align:left">Adjusting JE</th>
-        <th colspan="2" style="font-weight:700; text-align:left">Status</th>
+        <th colspan="4" style="font-weight:700; text-align:left">Status</th>
       </tr>
       {% for r in recons %}
       <tr style="font-size:10px; line-height:2;">
         <td colspan="4">{{ r.period_start|date:"Y-m-d" }} to {{ r.period_end|date:"Y-m-d" }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ r.gl_balance|money }}</td>
-        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ r.reviewed_balance|money }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ r.grand_total|money }}</td>
         <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ r.variance|money }}</td>
-        <td colspan="2">{% if r.adjustment_je %}{{ r.adjustment_je.entry_no }}{% else %}—{% endif %}</td>
-        <td colspan="2">{{ r.get_status_display }}</td>
+        <td colspan="4">{{ r.get_status_display }}</td>
       </tr>
+      {% for e in r.entries.all %}
+      <tr style="font-size:9px;">
+        <td colspan="4" style="padding-left:12px;">{{ e.date|date:"Y-m-d" }} · {{ e.description }}</td>
+        <td colspan="2" style="text-align:right; font-variant-numeric:tabular-nums">{{ e.amount|money }}</td>
+        <td colspan="8"></td>
+      </tr>
+      {% endfor %}
       {% endfor %}
       {% endif %}
 

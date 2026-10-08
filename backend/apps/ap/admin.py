@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    AdvanceReconEntry,
     AdvanceReconciliation,
     AdvanceToEmployee,
     CheckVoucher,
@@ -49,11 +50,18 @@ class AdvanceToEmployeeAdmin(admin.ModelAdmin):
     list_filter = ("kind", "status", "segment")
 
 
+class AdvanceReconEntryInline(admin.TabularInline):
+    model = AdvanceReconEntry
+    extra = 0
+    fields = ("date", "description", "amount")
+
+
 @admin.register(AdvanceReconciliation)
 class AdvanceReconciliationAdmin(admin.ModelAdmin):
     list_display = (
         "employee_name", "period_start", "period_end",
-        "gl_balance", "reviewed_balance", "variance", "status",
+        "gl_balance", "variance", "status",
     )
     list_filter = ("status",)
     search_fields = ("employee_name",)
+    inlines = [AdvanceReconEntryInline]

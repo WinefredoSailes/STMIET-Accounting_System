@@ -523,23 +523,52 @@ class ActionLog(models.Model):
         return f"{self.doc_type}#{self.doc_id} {self.action} by {self.actor}"
 
 
+class AdvanceReconEntry(AuditableModel):
+    """One memorandum entry of an Advances reconciliation.
+
+    Memorandum entries are NOT journal entries — they never post to the GL,
+    Trial Balance, or financial statements. They record what the verified
+    true advance balance consists of (e.g. outstanding cash advances,
+    payroll deductions not yet posted) so the Head can approve the
+    reconciliation and the variance against the GL becomes explainable.
+    """
+
+    recon = models.ForeignKey(
+        "AdvanceReconciliation", on_delete=models.CASCADE, related_name="entries"
+    )
+    date = models.DateField(db_index=True)
+    description = models.CharField(max_length=500)
+    # Signed amount: positive = Dr (increases the advance), negative = Cr.
+    amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["date", "id"]
+
+    def __str__(self):
+        return f"{self.recon_id} {self.date} {self.description} {self.amount}"
+
+
 class AdvanceReconciliation(AuditableModel):
     """Manual reconciliation of the Advances to Employees subsidiary (COA 12070).
 
     There is no payroll feed that auto-deducts employee advances, so the GL
     control balance and the per-employee subsidiary can drift. Accounting
-    reviews one employee for one period, records the reviewed (true) balance
-    plus a memo, and optionally links the posted adjusting Journal Entry that
-    fixes it (e.g. payroll deduction Dr Salary / Cr 12070). Proper accounting:
-    the memo alone never moves the GL — only a posted JE does — and the memo
-    alone never proves the fix; both live here so the executive dashboard can
-    trust locked periods.
+    reviews one employee for one period and records memorandum entries
+    (date / description / amount) that make up the verified true balance.
+    The entries are memorandum only — they never post to the GL. The Head
+    approves the reconciliation; approved periods appear in the history.
+
+    Variance = gl_balance − grand_total (sum of memorandum entries):
+      positive  → GL is higher than the verified balance (unrecorded deductions)
+      negative  → GL is lower than the verified balance (unrecorded additions)
+      zero      → reconciled
     """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
-        REVIEWED = "reviewed", "Reviewed"
-        LOCKED = "locked", "Locked"
+        SUBMITTED = "submitted", "Submitted"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
 
     supplier = models.ForeignKey(
         Supplier, null=True, blank=True, on_delete=models.PROTECT,
@@ -552,26 +581,24 @@ class AdvanceReconciliation(AuditableModel):
     period_start = models.DateField(db_index=True)
     period_end = models.DateField(db_index=True)
     # Signed GL-side closing for the employee at review time (Dr positive).
+    # Pre-filled from the GL but overridable by the reviewer.
     gl_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
-    # The manually verified true balance accounting signs off (Dr positive).
-    reviewed_balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
-    # reviewed_balance - gl_balance at review time (what the adjusting JE must book).
+    # gl_balance − grand_total, recomputed on approve.
     variance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
-    adjustment_je = models.ForeignKey(
-        "posting.JournalEntry", null=True, blank=True, on_delete=models.SET_NULL,
-        related_name="advance_reconciliations",
-        help_text="Posted adjusting JE that books the variance into 12070.",
-    )
-    memo = models.TextField(blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
-    reviewed_by = models.ForeignKey(
+    submitted_by = models.ForeignKey(
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    locked_by = models.ForeignKey(
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    locked_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-period_end", "employee_name"]
@@ -582,3 +609,8 @@ class AdvanceReconciliation(AuditableModel):
 
     def __str__(self):
         return f"{self.employee_name} {self.period_start}..{self.period_end} ({self.status})"
+
+    @property
+    def grand_total(self):
+        total = sum((e.amount for e in self.entries.all()), Decimal("0.00"))
+        return total.quantize(Decimal("0.01"))

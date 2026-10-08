@@ -75,11 +75,11 @@
       </dl>
       <div class="mt-2 text-xs text-surface-400">{{ s.row_count }} line{% if s.row_count != 1 %}s{% endif %}</div>
       <div class="mt-2 flex items-center justify-between gap-2 text-xs">
-        {% if s.recon_status == "locked" %}
-        <span class="rounded-full bg-brand-100 px-2 py-0.5 font-semibold text-brand-800">Reconciled · Locked</span>
-        {% elif s.recon_status == "reviewed" %}
-        <span class="rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-800">Reviewed — awaiting lock</span>
-        {% elif s.recon_status == "draft" %}
+        {% if s.recon_status == "approved" %}
+        <span class="rounded-full bg-brand-100 px-2 py-0.5 font-semibold text-brand-800">Reconciled · Approved</span>
+        {% elif s.recon_status == "submitted" %}
+        <span class="rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-800">Submitted — awaiting approval</span>
+        {% elif s.recon_status == "draft" or s.recon_status == "rejected" %}
         <span class="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">Recon draft</span>
         {% else %}
         <span class="text-surface-400">Not yet reconciled</span>
