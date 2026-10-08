@@ -23,13 +23,22 @@
       <legend class="text-xs uppercase tracking-wider text-surface-500 font-medium">Payee Information</legend>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-surface-700 mb-1">RFP being paid</label>
+          <label class="block text-sm font-medium text-surface-700 mb-1">{% if selected_pcf %}PCV being paid{% else %}RFP being paid{% endif %}</label>
+          {% if selected_pcf %}
+          <input type="text" readonly value="{{ selected_pcf.voucher_no }} · {{ selected_pcf.payee_name }} · {{ selected_pcf.fund.fund_code }} · {{selected_pcf.amount|peso}}"
+                 class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
+          {% else %}
           <input type="text" readonly value="{{ cv.rfp.ap_number }} · {{ cv.rfp.payee.name }} · {{cv.rfp.amount|peso}}"
                  class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
+          {% endif %}
         </div>
         <div>
           <label class="block text-sm font-medium text-surface-700 mb-1">NAME</label>
-          {% if cv.rfp_id %}
+          {% if selected_pcf %}
+          <input type="text" readonly value="{{ selected_pcf.payee_name }}"
+                 class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
+          <p class="mt-1 text-xs text-surface-500">Payee comes from the linked PCV replenishment and cannot be changed here.</p>
+          {% elif cv.rfp_id %}
           <input type="text" readonly value="{{ cv.payee.name }}"
                  class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
           <p class="mt-1 text-xs text-surface-500">Payee comes from the linked RFP and cannot be changed here.</p>

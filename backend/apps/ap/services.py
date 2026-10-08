@@ -1829,6 +1829,13 @@ class CVPaymentService:
                 )
             seg = rfp.fund.company.segments.order_by("code").first()
             company = seg.company
+            cv.gross_amount = gross
+            cv.withheld_tax = tax
+            cv.net_amount = net
+            cv.check_no = check_no
+            cv.cv_date = cv_date or cv.cv_date
+            if bank_account is not None:
+                cv.bank_account = bank_account
             payable_account = rfp.fund.get_payable_account()
             entry = JournalEntry.objects.create(
                 entry_no=cv.cv_number,

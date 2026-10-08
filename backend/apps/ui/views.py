@@ -4975,21 +4975,39 @@ def cv_create(request):
     if request.method == "POST":
         try:
             bank_account = Account.objects.get(pk=request.POST["bank_account"])
-            source_type = request.POST.get("source_type", "rfp")
-            # New UI sends source_id; the legacy RFP-only form posts rfp=.
-            source_pk = request.POST.get("source_id") or request.POST.get("rfp")
+            # Combined picker sends source_id as "rfp:<id>" / "pcf:<id>";
+            # the legacy RFP-only form posts rfp=<id> (bare id).
+            raw_source = request.POST.get("source_id") or request.POST.get("rfp")
+            parsed_type, source_pk = _parse_cv_source_value(raw_source)
+            posted_type = (request.POST.get("source_type") or "").strip().lower()
+            has_prefix = isinstance(raw_source, str) and (":" in raw_source)
+            if has_prefix and parsed_type:
+                # Trust the prefixed picker value over a stale hidden field.
+                source_type = parsed_type
+            elif posted_type in ("rfp", "pcf"):
+                source_type = posted_type
+            else:
+                source_type = parsed_type or "rfp"
             gross = request.POST["gross_amount"]
             withheld_tax = request.POST.get("withheld_tax", "0.00")
 
             # Resolve source document (RFP or PCF replenishment).
             source_doc = None
             if source_type == "pcf" and source_pk:
-                source_doc = PCFReplenishment.objects.get(pk=source_pk)
+                if not str(source_pk).isdigit():
+                    pcf_lookup = PCFReplenishment.objects.filter(voucher_no=str(source_pk)).first()
+                    source_doc = pcf_lookup or PCFReplenishment.objects.get(pk=source_pk)
+                else:
+                    source_doc = PCFReplenishment.objects.get(pk=source_pk)
                 company = source_doc.fund.company
                 payee_name = source_doc.payee_name or ""
                 payee = None  # No Supplier FK on PCF
             else:
-                source_doc = RFPDocument.objects.get(pk=source_pk)
+                if source_pk is not None and not str(source_pk).isdigit():
+                    rfp_lookup = RFPDocument.objects.filter(ap_number=str(source_pk)).first()
+                    source_doc = rfp_lookup or RFPDocument.objects.get(pk=source_pk)
+                else:
+                    source_doc = RFPDocument.objects.get(pk=source_pk)
                 company = source_doc.segment.company
                 payee = source_doc.payee
 
@@ -5008,31 +5026,67 @@ def cv_create(request):
             )
             messages.success(request, f"Check voucher {cv.cv_number} issued.")
             return redirect("ui:cv_detail", pk=cv.id)
-        except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
+        except (AccountingError, ValueError, KeyError, ArithmeticError, RFPDocument.DoesNotExist, PCFReplenishment.DoesNotExist) as exc:
             messages.error(request, str(exc))
 
     selected_rfp = None
     selected_pcf = None
     payable = None
+    pcf_payable_account = None
     rfp_id = request.GET.get("rfp")
     pcf_id = request.GET.get("pcfid")
     source_type = request.GET.get("source", "rfp")
+    # Combined picker redirects with ?source_id=rfp:<id> / pcf:<id>.
+    combined_source = request.GET.get("source_id")
+    if combined_source and not rfp_id and not pcf_id:
+        parsed_type, parsed_pk = _parse_cv_source_value(combined_source)
+        if parsed_type == "pcf":
+            pcf_id = parsed_pk
+            source_type = "pcf"
+        elif parsed_type == "rfp":
+            rfp_id = parsed_pk
+            source_type = "rfp"
     if rfp_id:
         from django.db.models import Prefetch
         from apps.ap.models import RFPLine
 
         try:
-            rfp_qs = RFPDocument.objects.filter(pk=rfp_id).select_related("payee", "segment")
+            if str(rfp_id).isdigit():
+                rfp_qs = RFPDocument.objects.filter(pk=rfp_id).select_related("payee", "segment")
+            else:
+                rfp_qs = RFPDocument.objects.filter(ap_number=str(rfp_id)).select_related("payee", "segment")
             selected_rfp = rfp_qs.prefetch_related(
                 Prefetch("lines", queryset=RFPLine.objects.select_related("account", "segment")),
             ).get()
             payable = money(rfp_payable(selected_rfp))
+            source_type = "rfp"
         except (ValueError, RFPDocument.DoesNotExist):
             messages.error(request, "Selected RFP not found.")
     elif pcf_id:
         try:
-            selected_pcf = PCFReplenishment.objects.get(pk=pcf_id)
+            if str(pcf_id).isdigit():
+                selected_pcf = PCFReplenishment.objects.select_related(
+                    "fund", "fund__company", "fund__gl_account",
+                    "fund__payable_account", "requested_by",
+                ).get(pk=pcf_id)
+            else:
+                selected_pcf = PCFReplenishment.objects.select_related(
+                    "fund", "fund__company", "fund__gl_account",
+                    "fund__payable_account", "requested_by",
+                ).get(voucher_no=str(pcf_id))
             source_type = "pcf"
+            if selected_pcf.status != "posted":
+                messages.error(request, "Selected PCF voucher must be posted before CV.")
+                selected_pcf = None
+            elif selected_pcf.cv_id is not None:
+                messages.error(request, "Selected PCF voucher already has a check voucher.")
+                selected_pcf = None
+            else:
+                payable = money(selected_pcf.amount)
+                try:
+                    pcf_payable_account = selected_pcf.fund.get_payable_account()
+                except Exception:
+                    pcf_payable_account = None
         except (ValueError, PCFReplenishment.DoesNotExist):
             messages.error(request, "Selected PCF voucher not found.")
 
@@ -5047,6 +5101,7 @@ def cv_create(request):
             "selected_pcf": selected_pcf,
             "payable": payable,
             "source_type": source_type,
+            "pcf_payable_account": pcf_payable_account,
         },
     )
 
@@ -5202,6 +5257,8 @@ def cv_print(request, pk):
             "signatories": signatories,
             "date_of_request": date_of_request,
             "source_type": "pcf" if pcfs else "rfp",
+            "pcfs": pcfs,
+            "payee_name": pcfs[0].payee_name if pcfs else "",
         },
     )
 
@@ -5225,6 +5282,37 @@ def cv_export(request, pk, fmt):
     rfp = cv.rfp
     lines = list(rfp.lines.select_related("account", "segment")) if rfp else []
     total = sum((line.amount for line in lines if line.side == "dr"), Decimal("0.00"))
+    if rfp:
+        payee_label = cv.payee.name if cv.payee else ""
+        export_rows = [
+            [
+                line.line_no, line.side.upper(), line.account.code,
+                line.account.name, line.segment.code, line.cost_center or "",
+                line.description or (rfp.particulars if rfp else ""), line.amount,
+            ]
+            for line in lines
+        ]
+    else:
+        from types import SimpleNamespace
+
+        pcfs = list(cv.pcf_cvs.select_related("fund").all())
+        replen = pcfs[0] if pcfs else None
+        payee_label = replen.payee_name if replen else ""
+        export_rows = []
+        total = Decimal("0.00")
+        if replen:
+            for idx, exp in enumerate(replen.expenses or [], start=1):
+                side = str(exp.get("side", "dr")).lower()
+                amt = Decimal(str(exp.get("amount", 0)))
+                if side == "dr":
+                    total += amt
+                export_rows.append(
+                    [
+                        idx, side.upper(), exp.get("account_code", ""),
+                        exp.get("account_name", ""), exp.get("segment", ""),
+                        exp.get("cost_center", ""), exp.get("description", ""), amt,
+                    ]
+                )
     spec = TableSpec(
         title=f"CV {cv.cv_number} — Check Voucher (ACCTG-FOR-010)",
         columns=[
@@ -5234,7 +5322,7 @@ def cv_export(request, pk, fmt):
             Column("Amount", money=True),
         ],
         preamble=[
-            ["Payee", cv.payee.name],
+            ["Payee", payee_label],
             ["Date", cv.cv_date.isoformat()],
             ["Check No", cv.check_no or ""],
             ["Gross Amount", cv.gross_amount],
@@ -5242,14 +5330,7 @@ def cv_export(request, pk, fmt):
             ["Net Amount", cv.net_amount],
             ["Status", cv.status],
         ],
-        rows=[
-            [
-                line.line_no, line.side.upper(), line.account.code,
-                line.account.name, line.segment.code, line.cost_center or "",
-                line.description or (rfp.particulars if rfp else ""), line.amount,
-            ]
-            for line in lines
-        ],
+        rows=export_rows,
         totals_row=["", "", "", "TOTAL", "", "", "", total],
         sheet_title=f"CV_{cv.cv_number}",
         page="portrait",
@@ -5338,7 +5419,10 @@ def cv_revise(request, pk):
     from apps.ap.services import CVPaymentService, rfp_payable
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "rfp", "bank_account"), pk=pk
+        CheckVoucher.objects.select_related("payee", "rfp", "bank_account").prefetch_related(
+            "pcf_cvs__fund"
+        ),
+        pk=pk,
     )
     if request.user.id != cv.created_by_id:
         messages.error(request, "Only the issuer may revise this CV.")
@@ -5368,14 +5452,25 @@ def cv_revise(request, pk):
         except (AccountingError, ValidationError, ValueError, KeyError) as exc:
             messages.error(request, str(exc))
 
+    pcfs = list(cv.pcf_cvs.all()) if not cv.rfp_id else []
+    replen = pcfs[0] if pcfs else None
+    if cv.rfp_id:
+        revise_payable = money(rfp_payable(cv.rfp))
+    elif replen is not None:
+        revise_payable = money(replen.amount)
+    else:
+        revise_payable = None
     return render(
         request,
         "ui/ap/cv_revise_form.html",
         {
             "cv": cv,
-            "payable": money(rfp_payable(cv.rfp)) if cv.rfp_id else None,
+            "payable": revise_payable,
             "rfps": approved_rfps(),
             "today": date.today(),
+            "pcfs": pcfs,
+            "selected_pcf": replen,
+            "source_type": "pcf" if replen is not None else "rfp",
         },
     )
 
@@ -7086,6 +7181,127 @@ def approved_rfp_options(request):
         ],
         safe=False,
     )
+
+
+def _parse_cv_source_value(raw):
+    """Split a combined CV source picker value into (source_type, pk).
+
+    Accepts ``rfp:<id>`` / ``pcf:<id>`` from the new combined picker and
+    bare ids / legacy values (treated as RFP for back-compat).
+    Returns ``("rfp"|"pcf", pk_str)`` or ``(None, None)`` when empty.
+    """
+    if raw is None:
+        return None, None
+    text = str(raw).strip()
+    if not text:
+        return None, None
+    low = text.lower()
+    if low.startswith("rfp:"):
+        return "rfp", text[4:].strip() or None
+    if low.startswith("pcf:") or low.startswith("pcv:"):
+        return "pcf", text.split(":", 1)[1].strip() or None
+    return "rfp", text
+
+
+@login_required
+def cv_source_options(request):
+    """Type-ahead source for the CV form's combined source picker.
+
+    Returns posted + unpaid RFPs and PCF replenishments as a single list so
+    one searchable dropdown can auto-populate either basis. Values are
+    prefixed (``rfp:<id>`` / ``pcf:<id>``) because the two tables share one
+    integer namespace. ``?q=`` filters both sets; ``?selected=`` accepts a
+    prefixed value (or a bare id / document number for back-compat);
+    ``?type=rfp|pcf`` optionally restricts to one set.
+    """
+    from django.db.models import Q
+
+    q = request.GET.get("q", "").strip()
+    selected = request.GET.get("selected", "").strip()
+    only = (request.GET.get("type", "") or "").strip().lower()
+
+    rows = []
+    if only in ("", "rfp"):
+        rfp_qs = approved_rfps()
+        if q:
+            rfp_qs = rfp_qs.filter(
+                Q(ap_number__icontains=q)
+                | Q(payee__name__icontains=q)
+                | Q(payee__code__icontains=q)
+            )
+        for r in list(rfp_qs[:30]):
+            rows.append(
+                {
+                    "value": f"rfp:{r.id}",
+                    "id": r.id,
+                    "type": "rfp",
+                    "code": r.ap_number,
+                    "text": f"{r.ap_number} — {r.payee.name} — ₱{r.amount:,.2f}",
+                }
+            )
+    if only in ("", "pcf"):
+        pcf_qs = approved_pcf()
+        if q:
+            pcf_qs = pcf_qs.filter(
+                Q(voucher_no__icontains=q)
+                | Q(payee_name__icontains=q)
+                | Q(fund__fund_code__icontains=q)
+                | Q(fund__name__icontains=q)
+            )
+        for p in list(pcf_qs[:30]):
+            fund_code = getattr(p.fund, "fund_code", "") or ""
+            rows.append(
+                {
+                    "value": f"pcf:{p.id}",
+                    "id": p.id,
+                    "type": "pcf",
+                    "code": p.voucher_no,
+                    "text": f"{p.voucher_no} — {p.payee_name} — {fund_code} — ₱{p.amount:,.2f}",
+                }
+            )
+    if selected and not any(
+        r.get("value") == selected or str(r.get("id")) == selected or r.get("code") == selected
+        for r in rows
+    ):
+        sel_type, sel_pk = _parse_cv_source_value(selected)
+        if sel_type == "pcf" and (only in ("", "pcf")):
+            keep = None
+            if sel_pk:
+                if sel_pk.isdigit():
+                    keep = approved_pcf().filter(pk=sel_pk).first()
+                if keep is None:
+                    keep = approved_pcf().filter(voucher_no=sel_pk).first()
+            if keep is not None:
+                fund_code = getattr(keep.fund, "fund_code", "") or ""
+                rows.insert(
+                    0,
+                    {
+                        "value": f"pcf:{keep.id}",
+                        "id": keep.id,
+                        "type": "pcf",
+                        "code": keep.voucher_no,
+                        "text": f"{keep.voucher_no} — {keep.payee_name} — {fund_code} — ₱{keep.amount:,.2f}",
+                    },
+                )
+        else:
+            lookup = Q(ap_number=selected)
+            if sel_pk and sel_pk.isdigit():
+                lookup |= Q(pk=sel_pk)
+            elif selected.isdigit():
+                lookup |= Q(pk=selected)
+            keep = approved_rfps().filter(lookup).first()
+            if keep is not None:
+                rows.insert(
+                    0,
+                    {
+                        "value": f"rfp:{keep.id}",
+                        "id": keep.id,
+                        "type": "rfp",
+                        "code": keep.ap_number,
+                        "text": f"{keep.ap_number} — {keep.payee.name} — ₱{keep.amount:,.2f}",
+                    },
+                )
+    return JsonResponse(rows, safe=False)
 
 
 @login_required

@@ -1034,8 +1034,36 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     dr_lines = [line for line in lines if line.side == "dr"]
     total = sum((line.amount for line in dr_lines), Decimal("0.00"))
     payable = rfp_payable(rfp) if rfp else total
-    position = cv.payee.position or cv.payee.get_supplier_type_display()
-    date_of_request = rfp.rfp_date if rfp and rfp.rfp_date else None
+    pcfs = list(cv.pcf_cvs.select_related("fund").all()) if not rfp else []
+    replen = pcfs[0] if pcfs else None
+    if replen is not None:
+        from types import SimpleNamespace
+
+        dr_lines = []
+        for exp in (replen.expenses or []):
+            dr_lines.append(SimpleNamespace(
+                description=exp.get("description", ""),
+                segment=SimpleNamespace(code=exp.get("segment", "")),
+                cost_center=exp.get("cost_center", ""),
+                account=SimpleNamespace(code=exp.get("account_code", "")),
+                amount=Decimal(str(exp.get("amount", 0))),
+                side=str(exp.get("side", "dr")).lower(),
+            ))
+        total = sum((line.amount for line in dr_lines if line.side == "dr"), Decimal("0.00"))
+        payable = total
+    payee_name = cv.payee.name if getattr(cv, "payee", None) else (replen.payee_name if replen else "")
+    if getattr(cv, "payee", None):
+        position = cv.payee.position or cv.payee.get_supplier_type_display()
+    elif replen is not None:
+        position = replen.fund.fund_code
+    else:
+        position = ""
+    if rfp:
+        date_of_request = rfp.rfp_date if rfp.rfp_date else None
+    elif replen is not None:
+        date_of_request = replen.request_date
+    else:
+        date_of_request = None
     from apps.cash.models import CheckDisbursement
 
     disb = CheckDisbursement.objects.filter(cv_id=cv.pk).values("cleared_at").first()
@@ -1058,11 +1086,12 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
         ]
     ]
     for line in dr_lines:
+        cost_center = getattr(line, "cost_center", "") or (rfp.purpose if rfp else "")
         dist_rows.append(
             [
                 Paragraph(_t(line.description or (rfp.particulars if rfp else "")), cell),
                 Paragraph(_t(line.segment.code), cell),
-                Paragraph(_t(rfp.purpose if rfp else ""), cell),
+                Paragraph(_t(cost_center), cell),
                 Paragraph(_t(line.account.code), cell),
                 Paragraph(_money(line.amount), cell_right),
             ]
@@ -1075,7 +1104,12 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
     ]))
 
     # TOTAL / REMARKS row + disclaimer
-    remarks = f"Other Remarks: See attached RFP {rfp.ap_number}" if rfp else "Other Remarks:"
+    if rfp:
+        remarks = f"Other Remarks: See attached RFP {rfp.ap_number}"
+    elif replen is not None:
+        remarks = f"Other Remarks: See attached PCV {replen.voucher_no}"
+    else:
+        remarks = "Other Remarks:"
     total_data = [[None] * GRID]
     total_data[0][0] = Paragraph(remarks, _style_cell())
     total_data[0][9] = Paragraph("Total Amount", _style_bold())
@@ -1110,7 +1144,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Payee Information", GREEN),
         _payee_table(colw, [
-            ("NAME:", cv.payee.name, "DATE OF REQUEST:",
+            ("NAME:", payee_name, "DATE OF REQUEST:",
              date_of_request.strftime("%m/%d/%Y") if date_of_request else ""),
             ("POSITION:", position, "CHECK ISSUED & NO.:", cv.check_no or ""),
             ("CV NO.:", cv.cv_number, "DATE OF CV:", cv.cv_date.strftime("%m/%d/%Y")),
@@ -1132,7 +1166,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
                 ("Checked By:", _signatory_name(rfp.checked_by) if rfp
                  else _signatory_name(cv.approved_by), "Finance & Acctg. Head / Sign and Date"),
                 ("Approved By:", _coo_name(), "COO"),
-                ("Payment Received By:", cv.payee.name, "Signature Over Printed Name/Date"),
+                ("Payment Received By:", payee_name, "Signature Over Printed Name/Date"),
             ],
             [3, 3, 3, 3, 2],
         ),

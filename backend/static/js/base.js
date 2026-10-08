@@ -308,14 +308,16 @@ function applyAsyncFilter(wrap, panel, query) {
   listEl.appendChild(loading);
 
   // Pickers declare which identifier they submit via data-search-value
-  // ("code" for RFP/PCV lines, "id" for JE/CV/AR/asset/bank forms).
+  // ("code" for RFP/PCV lines, "id" for JE/CV/AR/asset/bank forms,
+  // "value" for combined pickers whose rows already carry a prefixed value).
   var valueField = wrap.querySelector('select').dataset.searchValue || 'code';
   var req = fetch(url, { signal: ctrl.signal, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
   req.then(function (resp) { return resp.json(); })
      .then(function (results) {
        if (wrap._abort !== ctrl) return; // stale response
         var normalized = (results || []).map(function (r) {
-          var v = (valueField === 'id') ? r.id : r.code;
+          var v = (valueField === 'value') ? (r.value !== undefined ? r.value : r.code)
+            : (valueField === 'id') ? r.id : r.code;
           return {
             value: String(v), code: String(r.code || ''), text: String(r.text || r.code),
             tin: String(r.tin || ''), kind: String(r.kind || ''),

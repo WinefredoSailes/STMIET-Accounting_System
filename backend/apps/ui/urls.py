@@ -163,6 +163,7 @@ urlpatterns = [
     path("ap/pos/new/", views.po_create, name="po_create"),
     path("ap/po-options/", views.po_options, name="po_options"),
     path("ap/rfp-options/", views.approved_rfp_options, name="rfp_options"),
+    path("ap/cv-source-options/", views.cv_source_options, name="cv_source_options"),
     path("ap/po-pre/<int:pk>/", views.po_prefill, name="po_prefill"),
     path("ap/pos/<int:pk>/", views.po_detail, name="po_detail"),
     path("ap/pos/<int:pk>/print/", views.po_print, name="po_print"),

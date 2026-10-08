@@ -92,6 +92,7 @@ SHARED_UI_URL_NAMES = frozenset({
     # prefixes silently gated these - keep every *_options endpoint shared;
     # test_picker_endpoints_are_shared enforces it).
     "rfp_options",
+    "cv_source_options",
     "customer_options",
 })
 

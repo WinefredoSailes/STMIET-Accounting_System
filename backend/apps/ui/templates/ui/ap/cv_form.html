@@ -22,25 +22,35 @@
         <legend class="text-xs uppercase tracking-wider text-surface-500 font-medium">Payee Information</legend>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-surface-700 mb-1" for="id_rfp">RFP to pay (approved)</label>
-            <select name="rfp" id="id_rfp" required
-                    data-searchable data-search-value="id"
-                    data-search-placeholder="Type RFP no. or payee name…"
-                    data-search-url="{% url 'ui:rfp_options' %}{% if selected_rfp %}?selected={{ selected_rfp.id }}{% endif %}"
+            <label class="block text-sm font-medium text-surface-700 mb-1" for="id_source">Source document to pay (posted)</label>
+            <select name="source_id" id="id_source" required
+                    data-searchable data-search-value="value"
+                    data-search-placeholder="Type RFP no., PCV no., or payee name…"
+                    data-search-url="{% url 'ui:cv_source_options' %}{% if selected_rfp %}?selected=rfp:{{ selected_rfp.id }}{% elif selected_pcf %}?selected=pcf:{{ selected_pcf.id }}{% endif %}"
                     data-draft-static
-                    onchange="if(this.value && !window.StmiDraftRestoring) location.href='?rfp='+this.value"
+                    onchange="if(this.value && !window.StmiDraftRestoring){var v=this.value;if(v.indexOf('pcf:')===0){location.href='?pcfid='+encodeURIComponent(v.slice(4))+'&source=pcf';}else if(v.indexOf('rfp:')===0){location.href='?rfp='+encodeURIComponent(v.slice(4));}else{location.href='?rfp='+encodeURIComponent(v);}}"
                     class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
-              <option value="">— select approved RFP —</option>
-              {% for r in rfps %}
-              <option value="{{ r.id }}" {% if selected_rfp and selected_rfp.id == r.id %}selected{% endif %}>
-                {{ r.ap_number }} · {{ r.payee.name }} · {{r.amount|peso}}
-              </option>
-              {% endfor %}
+              <option value="">— select approved RFP or PCV —</option>
+              <optgroup label="Request for Payment">
+                {% for r in rfps %}
+                <option value="rfp:{{ r.id }}" {% if selected_rfp and selected_rfp.id == r.id %}selected{% endif %}>
+                  {{ r.ap_number }} · {{ r.payee.name }} · {{r.amount|peso}}
+                </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Petty Cash Replenishment (posted)">
+                {% for p in pcfs %}
+                <option value="pcf:{{ p.id }}" {% if selected_pcf and selected_pcf.id == p.id %}selected{% endif %}>
+                  {{ p.voucher_no }} · {{ p.payee_name }} · {{ p.fund.fund_code }} · {{p.amount|peso}}
+                </option>
+                {% endfor %}
+              </optgroup>
             </select>
+            <input type="hidden" name="source_type" value="{% if selected_pcf %}pcf{% else %}rfp{% endif %}">
           </div>
           <div>
             <label class="block text-sm font-medium text-surface-700 mb-1">NAME</label>
-            <input type="text" readonly value="{{ selected_rfp.payee.name|default:"" }}"
+            <input type="text" readonly value="{% if selected_rfp %}{{ selected_rfp.payee.name }}{% elif selected_pcf %}{{ selected_pcf.payee_name }}{% endif %}"
                    class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm">
           </div>
           <div>
@@ -66,10 +76,13 @@
                    class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm text-right tabular-nums">
             {% if payable %}
             <div class="mt-1 text-xs text-surface-500">
-              Total Payable (A/P):
+              {% if selected_pcf %}Replenishment amount:{% else %}Total Payable (A/P):{% endif %}
               <span class="font-semibold tabular-nums">{{payable|peso}}</span>
-              {% if payable != selected_rfp.amount %}
+              {% if selected_rfp and payable != selected_rfp.amount %}
               · gross {{selected_rfp.amount|peso}}
+              {% endif %}
+              {% if selected_pcf and pcf_payable_account %}
+              · JE preview: Dr {{ pcf_payable_account.code }} / Cr Bank
               {% endif %}
             </div>
             {% endif %}
@@ -82,7 +95,7 @@
           <div>
             <label class="block text-sm font-medium text-surface-700 mb-1">Net amount</label>
             <div id="id_net_amount" class="w-full rounded-md border border-surface-300 bg-surface-50 px-3 py-2 text-sm font-semibold text-right tabular-nums">
-              {% if payable %}{{payable|peso}}{% else %}{{ selected_rfp.amount|peso|default:"0.00" }}{% endif %}
+              {% if payable %}{{payable|peso}}{% elif selected_pcf %}{{ selected_pcf.amount|peso }}{% else %}{{ selected_rfp.amount|peso|default:"0.00" }}{% endif %}
             </div>
           </div>
         </div>
@@ -134,8 +147,51 @@
             </tr>
           </tfoot>
         </table>
+        {% elif selected_pcf %}
+        <div class="text-sm text-surface-500 mb-2">
+          {{ selected_pcf.voucher_no }} · Fund: {{ selected_pcf.fund.fund_code }} · {{ selected_pcf.payee_name }}
+        </div>
+        <table class="line-table w-full text-sm" style="min-width: 1150px;">
+          <colgroup>
+            <col style="width: 350px;"><!-- PURPOSE OF PAYMENT -->
+            <col style="width: 90px;"><!-- SEGMENT -->
+            <col style="width: 90px;"><!-- COST CENTER -->
+            <col style="width: 280px;"><!-- GL ACCOUNT -->
+            <col style="width: 170px;"><!-- DEBIT -->
+            <col style="width: 170px;"><!-- CREDIT -->
+          </colgroup>
+          <thead class="bg-surface-50 text-left text-xs uppercase tracking-wider text-surface-500">
+            <tr>
+              <th class="px-3 py-2">PURPOSE OF PAYMENT</th>
+              <th class="px-3 py-2">SEGMENT</th>
+              <th class="px-3 py-2">COST CENTER</th>
+              <th class="px-3 py-2">GL ACCOUNT</th>
+              <th class="px-3 py-2 text-right">DEBIT</th>
+              <th class="px-3 py-2 text-right">CREDIT</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-surface-100">
+            {% for exp in selected_pcf.expenses %}
+            <tr>
+              <td class="px-3 py-2">{{ exp.description|default:"Petty cash expense" }}</td>
+              <td class="px-3 py-2">{{ exp.segment|default:"" }}</td>
+              <td class="px-3 py-2">{{ exp.cost_center|default:"OS" }}</td>
+              <td class="px-3 py-2 font-mono text-xs">{{ exp.account_code }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{% if exp.side|default:"dr" == 'dr' %}{{ exp.amount|peso }}{% endif %}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{% if exp.side == 'cr' %}{{ exp.amount|peso }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="bg-surface-50 font-semibold">
+            <tr>
+              <td colspan="4" class="px-3 py-2 text-right">TOTAL AMOUNT</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{selected_pcf.amount|peso}}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{selected_pcf.amount|peso}}</td>
+            </tr>
+          </tfoot>
+        </table>
         {% else %}
-        <p class="text-sm text-surface-400">Select an approved RFP above to show its distribution charges.</p>
+        <p class="text-sm text-surface-400">Select a posted RFP or PCV above to show its distribution charges.</p>
         {% endif %}
       </fieldset>
 

@@ -4902,13 +4902,13 @@ class TestSearchablePickers:
         assert "data-searchable" in body
 
     def test_cv_form_rfp_combobox_searchable(self, client, company, accounts):
-        """The CV 'RFP to pay' dropdown (the payee picker) is a server-driven
+        """The CV source picker (RFP + posted PCV) is a server-driven
         type-ahead like the RFP GL account search."""
         body = client.get("/ap/cv/new/").content.decode()
-        assert 'name="rfp"' in body
+        assert 'name="source_id"' in body
         assert "data-searchable" in body
-        assert 'data-search-value="id"' in body
-        assert "/ap/rfp-options/" in body
+        assert 'data-search-value="value"' in body
+        assert "/ap/cv-source-options/" in body
         assert "Type RFP no" in body
 
     def test_rfp_options_search_by_payee_number_and_code(
