@@ -1148,7 +1148,7 @@ def build_cv_pdf(cv, *, paper="a5") -> bytes:
              date_of_request.strftime("%m/%d/%Y") if date_of_request else ""),
             ("POSITION:", position, "CHECK ISSUED & NO.:", cv.check_no or ""),
             ("CV NO.:", cv.cv_number, "DATE OF CV:", cv.cv_date.strftime("%m/%d/%Y")),
-            ("DATE CLEARED:", cleared_at.strftime("%m/%d/%Y") if cleared_at else "", "", ""),
+            ("DATE CLEARED:", cv.date_cleared.strftime("%m/%d/%Y") if cv.date_cleared else (cleared_at.strftime("%m/%d/%Y") if cleared_at else ""), "", ""),
         ]),
         Spacer(1, 0.15 * cm),
         _band_row_custom(colw, "Distribution Charges", GREEN),

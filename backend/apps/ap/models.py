@@ -415,6 +415,8 @@ class CheckVoucher(AuditableModel):
 
     cv_number = models.CharField(max_length=16, unique=True)  # CV-YYYY-####
     cv_date = models.DateField(db_index=True)
+    date_created = models.DateField(null=True, blank=True, help_text="Date the check voucher was created")
+    date_cleared = models.DateField(null=True, blank=True, help_text="Date the check was cleared")
     rfp = models.ForeignKey(RFPDocument, on_delete=models.PROTECT, related_name="cv", null=True, blank=True)
     payee = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="cv", null=True, blank=True)
     bank_account = models.ForeignKey(

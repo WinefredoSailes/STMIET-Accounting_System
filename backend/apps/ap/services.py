@@ -1719,6 +1719,9 @@ class CVPaymentService:
         disb.cleared_at = timezone.now()
         disb.status = "cleared"
         disb.save(update_fields=["cleared_at", "status", "updated_at"])
+        # Also set the CV's date_cleared field for display on print/PDF/detail
+        cv.date_cleared = disb.cleared_at.date()
+        cv.save(update_fields=["date_cleared", "status", "updated_at"])
         log_action(cv, "cleared", actor=user)
         return cv
 

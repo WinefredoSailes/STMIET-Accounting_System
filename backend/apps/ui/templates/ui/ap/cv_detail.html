@@ -18,9 +18,10 @@
   <div class="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
     <div><div class="text-xs text-surface-500">CV NUMBER</div><div class="mt-0.5 font-mono font-medium">{{ cv.cv_number }}</div></div>
     <div><div class="text-xs text-surface-500">NAME</div><div class="mt-0.5 font-medium">{% if cv.payee %}{{ cv.payee.name }}{% elif pcfs %}{{ pcfs.0.payee_name }}{% else %}—{% endif %}</div></div>
+<div><div class="text-xs text-surface-500">DATE CREATED</div><div class="mt-0.5">{{ cv.date_created|date:"M d, Y" if cv.date_created else "—" }}</div></div>
     <div><div class="text-xs text-surface-500">DATE OF REQUEST</div><div class="mt-0.5">{{ cv.cv_date|date:"M d, Y" }}</div></div>
-    <div><div class="text-xs text-surface-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
-    <div><div class="text-xs text-surface-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">CHECK ISSUED & NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
+    <div><div class="text-xs text-surface-500">DATE CLEARED</div><div class="mt-0.5">{{ cv.date_cleared|date:"M d, Y" if cv.date_cleared else "—" }}</div></div>
     <div><div class="text-xs text-surface-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
     {% if attachments %}
     <div class="col-span-2 md:col-span-4">
