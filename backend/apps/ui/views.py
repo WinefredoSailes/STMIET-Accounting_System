@@ -5127,7 +5127,9 @@ def cv_list(request):
 
     spec = cv_filter_spec()
     qs = spec.apply(
-        CheckVoucher.objects.select_related("payee", "bank_account", "rfp").order_by("-cv_date"),
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp")
+        .defer("date_created", "date_cleared")
+        .order_by("-cv_date"),
         request.GET,
     )
     ctx = {
@@ -5300,6 +5302,7 @@ def cv_detail(request, pk):
 
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "bank_account", "rfp", "journal_entry")
+            .defer("date_created", "date_cleared")
             .prefetch_related("pcf_cvs__fund", "pcf_cvs__requested_by"),
         pk=pk,
     )
@@ -5377,6 +5380,7 @@ def cv_print(request, pk):
 
     cv = get_object_or_404(
         CheckVoucher.objects.select_related("payee", "bank_account", "approved_by", "rfp")
+            .defer("date_created", "date_cleared")
             .prefetch_related("pcf_cvs__fund", "pcf_cvs__requested_by"),
         pk=pk,
     )
@@ -5458,7 +5462,8 @@ def cv_export(request, pk, fmt):
     from .pdf import build_cv_pdf
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "bank_account", "rfp"), pk=pk,
+        CheckVoucher.objects.select_related("payee", "bank_account", "rfp")
+            .defer("date_created", "date_cleared"), pk=pk,
     )
     if (fmt or "").lower() == "pdf":
         data = build_cv_pdf(cv, paper="a5")
@@ -5606,9 +5611,9 @@ def cv_revise(request, pk):
     from apps.ap.services import CVPaymentService, rfp_payable
 
     cv = get_object_or_404(
-        CheckVoucher.objects.select_related("payee", "rfp", "bank_account").prefetch_related(
-            "pcf_cvs__fund"
-        ),
+        CheckVoucher.objects.select_related("payee", "rfp", "bank_account")
+            .defer("date_created", "date_cleared")
+            .prefetch_related("pcf_cvs__fund"),
         pk=pk,
     )
     if request.user.id != cv.created_by_id:
