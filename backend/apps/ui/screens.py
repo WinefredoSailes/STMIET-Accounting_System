@@ -137,6 +137,7 @@ _EXACT = {
     "assets_list_export": "asset_list",
     "conso_list_export": "conso_list",
     "deposit_batch": "receipt_list",
+    "deposit_detail": "receipt_list",
 }
 
 #: UI url-name prefixes -> screen. Longest prefix wins.

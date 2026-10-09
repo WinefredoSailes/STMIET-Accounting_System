@@ -160,7 +160,7 @@
     {% if receipt.deposit %}
     <div class="bg-white rounded-lg border border-surface-200 px-4 py-3">
       <dt class="text-xs text-surface-500">Deposit</dt>
-      <dd class="mt-1 font-mono text-xs">{{ receipt.deposit.deposit_no }}</dd>
+      <dd class="mt-1 font-mono text-xs"><a href="{% url 'ui:deposit_detail' receipt.deposit.id %}" class="text-brand-600 hover:underline">{{ receipt.deposit.deposit_no|default:receipt.deposit.id }}</a></dd>
       {% if receipt.deposit.attachment %}
       <dd class="mt-1 text-xs"><a href="{{ receipt.deposit.attachment.url }}" target="_blank" rel="noopener" class="text-brand-600 hover:underline">View deposit slip</a></dd>
       {% endif %}

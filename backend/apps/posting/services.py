@@ -53,7 +53,7 @@ def entry_source_doc(entry):
         ("transfers", "Inter-Account Transfer", "ui:transfer_detail"),
         ("pcf_replenishments", "PCF Voucher", "ui:pcf_replenishment_detail"),
         ("ar_receipts", "Acknowledgment Receipt", "ui:receipt_detail"),
-        ("ar_deposits", "Bank Deposit", "ui:receipt_list"),
+        ("ar_deposits", "Bank Deposit", "ui:deposit_detail"),
     )
     for accessor, label, detail in checks:
         manager = getattr(entry, accessor, None)

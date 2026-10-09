@@ -95,6 +95,7 @@ urlpatterns = [
     path("ar/receipts/<int:pk>/reject/", views.receipt_reject, name="receipt_reject"),
     path("ar/receipts/<int:pk>/deposit/", views.receipt_deposit, name="receipt_deposit"),
     path("ar/deposits/new/", views.deposit_batch, name="deposit_batch"),
+    path("ar/deposits/<int:pk>/", views.deposit_detail, name="deposit_detail"),
     path("ar/invoices/", views.si_list, name="si_list"),
     path("ar/invoices/new/", views.si_create, name="si_create"),
     path("ar/invoices/<int:pk>/", views.si_detail, name="si_detail"),

@@ -3345,6 +3345,42 @@ def deposit_batch(request):
     )
 
 
+@login_required
+def deposit_detail(request, pk: int):
+    """Bank Deposit slip detail — the JE's "Bank Deposit" link lands here.
+
+    A deposit covers one or more posted receipts and posts its own JE
+    (Dr Cash in Bank | Cr segment Cash on Hand). Previously the JE's
+    source-doc link pointed at ``ui:receipt_list`` (a pk-less list route)
+    while ``je_detail.html`` reverses ``{% url source_doc.detail
+    source_doc.pk %}``, 500ing every deposit-owned journal entry.
+    """
+    from apps.ar.models import Deposit
+
+    deposit = get_object_or_404(
+        Deposit.objects.select_related(
+            "journal_entry", "bank_account", "deposited_by"
+        ).prefetch_related(
+            "lines__account",
+            "lines__segment",
+            "receipts__customer",
+            "receipts__segment",
+        ),
+        pk=pk,
+    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "deposit": deposit,
+        "deposit_title": deposit.deposit_no or f"Deposit #{deposit.id}",
+        "receipts": list(deposit.receipts.all()),
+        "audit_trail": _audit_trail("dep", pk),
+        **_reversal_context(request, deposit.journal_entry),
+    }
+    ctx.update(attachment_context(deposit, request.user))
+    return render(request, "ui/ar/deposit_detail.html", ctx)
+
+
 # ---------------------------------------------------------------------------
 # AP — supplier master + RFP document (ACCTG-FOR-012)
 # ---------------------------------------------------------------------------
