@@ -3374,7 +3374,7 @@ def deposit_detail(request, pk: int):
         "deposit": deposit,
         "deposit_title": deposit.deposit_no or f"Deposit #{deposit.id}",
         "receipts": list(deposit.receipts.all()),
-        "audit_trail": _audit_trail("dep", pk),
+        "audit_trail": _doc_audit_trail("dep", pk, deposit.journal_entry),
         **_reversal_context(request, deposit.journal_entry),
     }
     ctx.update(attachment_context(deposit, request.user))

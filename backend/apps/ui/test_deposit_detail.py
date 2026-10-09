@@ -107,3 +107,44 @@ def test_deposit_detail_is_gated_to_receipts_screen():
     from apps.ui.screens import screen_for_url_name
 
     assert screen_for_url_name("deposit_detail") == "receipt_list"
+
+
+def test_deposit_detail_merges_doc_and_je_posted_events(client, deposit, role_users):
+    """Merged trail (doc + JE), like CV/transfer detail: the deposit's own
+    "posted" row plus its journal entry's "posted to GL" row."""
+    client.force_login(role_users["head"])
+    body = client.get(f"/ar/deposits/{deposit.id}/").content.decode()
+    assert "Audit Trail" in body
+    # One row for the deposit slip, one for its JE — same shared label.
+    assert body.count("Posted to GL (CONSO)") >= 2
+
+
+def test_deposit_detail_shows_reversal_chain(client, deposit, role_users):
+    from apps.posting.services import ReversalService
+
+    req = ReversalService.request(
+        deposit.journal_entry, reason="Duplicate slip", user=role_users["staff"]
+    )
+    client.force_login(role_users["head"])
+    body = client.get(f"/ar/deposits/{deposit.id}/").content.decode()
+    assert "Reversal requested — awaiting approval" in body
+    assert "Duplicate slip" in body
+
+    ReversalService.approve(req, user=role_users["head"])
+    body = client.get(f"/ar/deposits/{deposit.id}/").content.decode()
+    assert "Reversal requested" in body
+    assert "Reversal approved — reversing entry posted" in body
+    assert "has been reversed" in body
+
+
+def test_reversal_can_be_requested_from_deposit_page(client, deposit, role_users):
+    client.force_login(role_users["staff"])
+    resp = client.post(
+        f"/journal/{deposit.journal_entry_id}/reverse/",
+        {"reason": "Wrong bank", "next": f"/ar/deposits/{deposit.id}/"},
+    )
+    assert resp.status_code == 302
+    client.force_login(role_users["head"])
+    body = client.get(f"/ar/deposits/{deposit.id}/").content.decode()
+    assert "Reversal requested — awaiting approval" in body
+    assert "Wrong bank" in body
