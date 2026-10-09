@@ -22,6 +22,12 @@
     <div><div class="text-xs text-surface-500">CHECK ISSUED &amp; NO</div><div class="mt-0.5 font-mono">{{ cv.check_no|default:"—" }}</div></div>
     <div><div class="text-xs text-surface-500">DATE CLEARED</div><div class="mt-0.5">{{ cleared_at|date:"M d, Y"|default:"—" }}</div></div>
     <div><div class="text-xs text-surface-500">BANK ACCOUNT</div><div class="mt-0.5 font-mono">{{ cv.bank_account.code }}</div></div>
+    {% if attachments %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">SUPPORTING FILES</div>
+      {% include "ui/partials/attachments_list.html" %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="px-6 pb-4">

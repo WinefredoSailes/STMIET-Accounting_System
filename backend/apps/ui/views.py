@@ -517,16 +517,16 @@ def je_detail(request, pk):
         JournalEntry.objects.prefetch_related("lines__account", "lines__segment"), pk=pk
     )
     reversal = _reversal_context(request, entry)
-    return render(
-        request,
-        "ui/posting/je_detail.html",
-        {
-            "entry": entry,
-            "audit_trail": _audit_trail("je", entry.id),
-            "source_doc": _je_source_doc(entry),
-            **reversal,
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "entry": entry,
+        "audit_trail": _audit_trail("je", entry.id),
+        "source_doc": _je_source_doc(entry),
+        **reversal,
+    }
+    ctx.update(attachment_context(entry, request.user))
+    return render(request, "ui/posting/je_detail.html", ctx)
 
 
 @login_required
@@ -535,6 +535,12 @@ def je_create(request):
     if request.method == "POST":
         try:
             entry = _create_entry_from_form(request)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, entry)
+            except ValidationError as exc:
+                messages.warning(request, f"Entry saved, but attachments: {exc}")
             messages.success(request, f"Entry {entry.entry_no} saved as draft.")
             return redirect("ui:je_detail", pk=entry.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
@@ -1159,10 +1165,18 @@ def je_edit(request, pk):
     if request.method == "POST":
         try:
             updated_entry = _update_entry_from_form(request, entry)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, updated_entry)
+            except ValidationError as exc:
+                messages.warning(request, f"Entry updated, but attachments: {exc}")
             messages.success(request, f"Entry {updated_entry.entry_no} updated.")
             return redirect("ui:je_detail", pk=updated_entry.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
+    from apps.ui.attachment_flow import attachment_context
+
     ctx = {
         "company": entry.company,
         "segments": Segment.objects.order_by("code"),
@@ -1171,6 +1185,7 @@ def je_edit(request, pk):
         "today": entry.transaction_date,
         "editing": entry,
     }
+    ctx.update(attachment_context(entry, request.user))
     return render(request, "ui/posting/je_form.html", ctx)
 
 
@@ -2364,6 +2379,12 @@ def receipt_create(request):
                 segment=cash_segment,
                 created_by=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, receipt)
+            except ValidationError as exc:
+                messages.warning(request, f"Receipt saved, but attachments: {exc}")
             messages.success(
                 request,
                 f"Receipt {receipt.receipt_no} saved as draft — submit it when ready.",
@@ -2422,23 +2443,29 @@ def receipt_edit(request, pk: int):
                 segment=cash_segment,
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, receipt)
+            except ValidationError as exc:
+                messages.warning(request, f"Receipt updated, but attachments: {exc}")
             messages.success(request, f"Receipt {receipt.receipt_no} updated.")
             return redirect("ui:receipt_detail", pk=receipt.pk)
         except (AccountingError, ValidationError, Account.DoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/ar/receipt_form.html",
-        {
-            "editing": receipt,
-            "cash_line": receipt.lines.filter(debit__gt=0).first(),
-            "today": date.today(),
-            "segments": Segment.objects.order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
-            "ar_invoice_prefill": _ar_invoice_prefill_map(customer=receipt.customer),
-            "segment_cash_map": _segment_cash_map(),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "editing": receipt,
+        "cash_line": receipt.lines.filter(debit__gt=0).first(),
+        "today": date.today(),
+        "segments": Segment.objects.order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+        "ar_invoice_prefill": _ar_invoice_prefill_map(customer=receipt.customer),
+        "segment_cash_map": _segment_cash_map(),
+    }
+    ctx.update(attachment_context(receipt, request.user))
+    return render(request, "ui/ar/receipt_form.html", ctx)
 
 
 @login_required
@@ -2475,26 +2502,34 @@ def receipt_detail(request, pk: int):
         )
         if pending_reversal:
             can_approve_reversal = get_approval_role(request.user) == "head"
-    return render(
-        request,
-        "ui/ar/receipt_detail.html",
-        {
-            "receipt": receipt,
-            "audit_trail": _audit_trail("ar", pk),
-            "pending_reversal": pending_reversal,
-            "can_request_reversal": can_request_reversal,
-            "can_approve_reversal": can_approve_reversal,
-            "can_edit": receipt.status == "draft"
-            and (
-                receipt.created_by_id == request.user.id
-                or get_approval_role(request.user) == "head"
-            ),
-            "available_billings": (
-                CollectionService.available_billings_for(receipt.customer)
-                if receipt.status == "draft" else []
-            ),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "receipt": receipt,
+        "audit_trail": _audit_trail("ar", pk),
+        "pending_reversal": pending_reversal,
+        "can_request_reversal": can_request_reversal,
+        "can_approve_reversal": can_approve_reversal,
+        "can_edit": receipt.status == "draft"
+        and (
+            receipt.created_by_id == request.user.id
+            or get_approval_role(request.user) == "head"
+        ),
+        "available_billings": (
+            CollectionService.available_billings_for(receipt.customer)
+            if receipt.status == "draft" else []
+        ),
+    }
+    ctx.update(attachment_context(receipt, request.user))
+    # Deposit slip (if deposited) also surfaces as evidence alongside receipt files.
+    try:
+        if getattr(receipt, "deposit_id", None) and getattr(receipt, "deposit", None):
+            ctx["attachments"] = list(ctx.get("attachments", [])) + list(
+                attachment_context(receipt.deposit, request.user).get("attachments", [])
+            )
+    except Exception:  # noqa: BLE001 - deposit link must never break receipt page
+        pass
+    return render(request, "ui/ar/receipt_detail.html", ctx)
 
 
 @login_required
@@ -2639,23 +2674,23 @@ def si_detail(request, pk: int):
         ).prefetch_related("lines"),
         pk=pk,
     )
-    return render(
-        request,
-        "ui/ar/si_detail.html",
-        {
-            "invoice": invoice,
-            "audit_trail": _audit_trail("ar", pk),
-            "can_edit": invoice.status == "draft"
-            and (
-                invoice.created_by_id == request.user.id
-                or get_approval_role(request.user) == "head"
-            ),
-            "can_submit": invoice.status == "draft"
-            and invoice.created_by_id == request.user.id,
-            "can_approve": invoice.status == "submitted"
-            and get_approval_role(request.user) == "head",
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "invoice": invoice,
+        "audit_trail": _audit_trail("ar", pk),
+        "can_edit": invoice.status == "draft"
+        and (
+            invoice.created_by_id == request.user.id
+            or get_approval_role(request.user) == "head"
+        ),
+        "can_submit": invoice.status == "draft"
+        and invoice.created_by_id == request.user.id,
+        "can_approve": invoice.status == "submitted"
+        and get_approval_role(request.user) == "head",
+    }
+    ctx.update(attachment_context(invoice, request.user))
+    return render(request, "ui/ar/si_detail.html", ctx)
 
 
 @login_required
@@ -2684,6 +2719,12 @@ def si_create(request):
                 lines=_si_lines_from_form(request),
                 created_by=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, invoice)
+            except ValidationError as exc:
+                messages.warning(request, f"Invoice saved, but attachments: {exc}")
             messages.success(
                 request,
                 f"Invoice {invoice.invoice_no} saved as draft — submit it when ready.",
@@ -2726,19 +2767,25 @@ def si_edit(request, pk: int):
                 lines=_si_lines_from_form(request),
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, invoice)
+            except ValidationError as exc:
+                messages.warning(request, f"Invoice updated, but attachments: {exc}")
             messages.success(request, f"Invoice {invoice.invoice_no} updated.")
             return redirect("ui:si_detail", pk=invoice.pk)
         except (AccountingError, ValidationError, Segment.DoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/ar/si_form.html",
-        {
-            "editing": invoice,
-            "today": date.today(),
-            "segments": Segment.objects.order_by("code"),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "editing": invoice,
+        "today": date.today(),
+        "segments": Segment.objects.order_by("code"),
+    }
+    ctx.update(attachment_context(invoice, request.user))
+    return render(request, "ui/ar/si_form.html", ctx)
 
 
 @login_required
@@ -2896,23 +2943,23 @@ def ssi_detail(request, pk: int):
         ).prefetch_related("lines__account", "lines__segment"),
         pk=pk,
     )
-    return render(
-        request,
-        "ui/ar/ssi_detail.html",
-        {
-            "invoice": invoice,
-            "audit_trail": _audit_trail("ssi", pk),
-            "can_edit": invoice.status == "draft"
-            and (
-                invoice.created_by_id == request.user.id
-                or get_approval_role(request.user) == "head"
-            ),
-            "can_submit": invoice.status == "draft"
-            and invoice.created_by_id == request.user.id,
-            "can_approve": invoice.status == "submitted"
-            and get_approval_role(request.user) == "head",
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "invoice": invoice,
+        "audit_trail": _audit_trail("ssi", pk),
+        "can_edit": invoice.status == "draft"
+        and (
+            invoice.created_by_id == request.user.id
+            or get_approval_role(request.user) == "head"
+        ),
+        "can_submit": invoice.status == "draft"
+        and invoice.created_by_id == request.user.id,
+        "can_approve": invoice.status == "submitted"
+        and get_approval_role(request.user) == "head",
+    }
+    ctx.update(attachment_context(invoice, request.user))
+    return render(request, "ui/ar/ssi_detail.html", ctx)
 
 
 @login_required
@@ -2939,6 +2986,12 @@ def ssi_create(request):
                 lines=_ssi_lines_from_form(request),
                 created_by=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, invoice)
+            except ValidationError as exc:
+                messages.warning(request, f"Invoice saved, but attachments: {exc}")
             messages.success(
                 request,
                 f"Special Invoice {invoice.invoice_no} saved as draft — submit it when ready.",
@@ -2982,20 +3035,26 @@ def ssi_edit(request, pk: int):
                 lines=_ssi_lines_from_form(request),
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, invoice)
+            except ValidationError as exc:
+                messages.warning(request, f"Invoice updated, but attachments: {exc}")
             messages.success(request, f"Special Invoice {invoice.invoice_no} updated.")
             return redirect("ui:ssi_detail", pk=invoice.pk)
         except (AccountingError, ValidationError, Segment.DoesNotExist) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/ar/ssi_form.html",
-        {
-            "editing": invoice,
-            "today": date.today(),
-            "segments": Segment.objects.order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "editing": invoice,
+        "today": date.today(),
+        "segments": Segment.objects.order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+    }
+    ctx.update(attachment_context(invoice, request.user))
+    return render(request, "ui/ar/ssi_form.html", ctx)
 
 
 @login_required
@@ -3189,6 +3248,14 @@ def receipt_deposit(request, pk: int):
                 user=request.user,
                 distribution=_deposit_distribution_from_post(request),
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                # Legacy single slip input (name=attachment) is picked up by
+                # save_doc_attachments back-compat; multi input also supported.
+                save_doc_attachments(request, deposit)
+            except ValidationError as exc:
+                messages.warning(request, f"Deposit recorded, but attachments: {exc}")
             messages.success(request, f"Deposit {deposit.deposit_no} recorded and posted to GL.")
         except Exception as exc:
             messages.error(request, str(exc))
@@ -3230,6 +3297,12 @@ def deposit_batch(request):
                 user=request.user,
                 distribution=_deposit_distribution_from_post(request),
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, deposit)
+            except ValidationError as exc:
+                messages.warning(request, f"Deposit recorded, but attachments: {exc}")
             messages.success(
                 request,
                 f"Deposit {deposit.deposit_no} recorded for {len(receipts)} receipt(s) and posted to GL.",
@@ -3465,6 +3538,9 @@ def _capture_po_receipt_fields(request, po):
     else:
         uploaded = request.FILES.get("attachment")
         if uploaded:
+            from apps.core.attachments import validate_single_file
+
+            validate_single_file(uploaded)
             po.attachment = uploaded
             changed.append("attachment")
     if changed:
@@ -3504,6 +3580,9 @@ def _capture_rfp_invoice_fields(request, rfp):
     else:
         uploaded = request.FILES.get("attachment")
         if uploaded:
+            from apps.core.attachments import validate_single_file
+
+            validate_single_file(uploaded)
             rfp.attachment = uploaded
             changed.append("attachment")
     if changed:
@@ -3548,6 +3627,12 @@ def rfp_create(request):
                 po=po,
             )
             _capture_rfp_invoice_fields(request, rfp)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, rfp)
+            except ValidationError as exc:
+                messages.warning(request, f"RFP saved, but attachments: {exc}")
             messages.success(request, f"RFP {rfp.ap_number} created (prepared).")
             return redirect("ui:rfp_detail", pk=rfp.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
@@ -3595,19 +3680,19 @@ def rfp_detail(request, pk):
             "assignee": role_assignee(role),
             "you_hold": approval_role_of(request.user) == role,
         }
-    return render(
-        request,
-        "ui/ap/rfp_detail.html",
-        {
-            "rfp": rfp,
-            "timeline": rfp_timeline(rfp),
-            "cr_total": cr_total,
-            "payable": money(payable),
-            "awaiting": awaiting,
-            "audit_trail": _audit_trail("rfp", rfp.id),
-            **_reversal_context(request, rfp.journal_entry),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "rfp": rfp,
+        "timeline": rfp_timeline(rfp),
+        "cr_total": cr_total,
+        "payable": money(payable),
+        "awaiting": awaiting,
+        "audit_trail": _audit_trail("rfp", rfp.id),
+        **_reversal_context(request, rfp.journal_entry),
+    }
+    ctx.update(attachment_context(rfp, request.user))
+    return render(request, "ui/ap/rfp_detail.html", ctx)
 
 
 @login_required
@@ -3879,22 +3964,30 @@ def rfp_revise(request, pk):
                 rfp_date=rfp_date,
                 po=po,
             )
+            # Fix: revise previously dropped invoice/attachment changes.
+            _capture_rfp_invoice_fields(request, rfp)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, rfp)
+            except ValidationError as exc:
+                messages.warning(request, f"RFP revised, but attachments: {exc}")
             messages.success(request, f"RFP {rfp.ap_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:rfp_detail", pk))
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
 
-    return render(
-        request,
-        "ui/ap/rfp_form.html",
-        {
-            "editing": rfp,
-            "edit_mode": "revise",
-            "segments": Segment.objects.order_by("code"),
-            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "editing": rfp,
+        "edit_mode": "revise",
+        "segments": Segment.objects.order_by("code"),
+        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+    }
+    ctx.update(attachment_context(rfp, request.user))
+    return render(request, "ui/ap/rfp_form.html", ctx)
 
 
 @login_required
@@ -3942,22 +4035,28 @@ def rfp_edit(request, pk):
                 lines=lines,
             )
             _capture_rfp_invoice_fields(request, rfp)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, rfp)
+            except ValidationError as exc:
+                messages.warning(request, f"RFP updated, but attachments: {exc}")
             messages.success(request, f"RFP {rfp.ap_number} updated.")
             return redirect(_safe_next(request, "ui:rfp_detail", pk))
         except (AccountingError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
 
-    return render(
-        request,
-        "ui/ap/rfp_form.html",
-        {
-            "editing": rfp,
-            "edit_mode": "edit",
-            "segments": Segment.objects.order_by("code"),
-            "accounts": Account.objects.filter(is_postable=True).order_by("code"),
-            "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "editing": rfp,
+        "edit_mode": "edit",
+        "segments": Segment.objects.order_by("code"),
+        "accounts": Account.objects.filter(is_postable=True).order_by("code"),
+        "cost_centers": CostCenter.objects.filter(is_active=True).order_by("code"),
+    }
+    ctx.update(attachment_context(rfp, request.user))
+    return render(request, "ui/ap/rfp_form.html", ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -4111,6 +4210,12 @@ def po_create(request):
                 user=request.user,
             )
             _capture_po_receipt_fields(request, po)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, po)
+            except ValidationError as exc:
+                messages.warning(request, f"PO saved, but attachments: {exc}")
             messages.success(request, f"PO {po.po_number} created (prepared).")
             return redirect("ui:po_detail", pk=po.id)
         except IntegrityError as exc:
@@ -4166,17 +4271,17 @@ def po_detail(request, pk):
             "assignee": role_assignee(role),
             "you_hold": approval_role_of(request.user) == role,
         }
-    return render(
-        request,
-        "ui/ap/po_detail.html",
-        {
-            "po": po,
-            "timeline": po_timeline(po),
-            "awaiting": awaiting,
-            "is_head": approval_role_of(request.user) == "head",
-            "audit_trail": _audit_trail("po", po.id),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "po": po,
+        "timeline": po_timeline(po),
+        "awaiting": awaiting,
+        "is_head": approval_role_of(request.user) == "head",
+        "audit_trail": _audit_trail("po", po.id),
+    }
+    ctx.update(attachment_context(po, request.user))
+    return render(request, "ui/ap/po_detail.html", ctx)
 
 
 @login_required
@@ -4340,6 +4445,12 @@ def po_revise(request, pk):
                 po_date=po_date,
             )
             _capture_po_receipt_fields(request, po)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, po)
+            except ValidationError as exc:
+                messages.warning(request, f"PO revised, but attachments: {exc}")
             messages.success(request, f"PO {po.po_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:po_detail", pk))
         except ValidationError as exc:
@@ -4352,11 +4463,11 @@ def po_revise(request, pk):
             logger.exception("PO revise hit a missing record for %s on %s", request.user, po.po_number)
             messages.error(request, str(exc))
 
-    return render(
-        request,
-        "ui/ap/po_form.html",
-        {"editing": po, "segments": Segment.objects.order_by("code")},
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {"editing": po, "segments": Segment.objects.order_by("code")}
+    ctx.update(attachment_context(po, request.user))
+    return render(request, "ui/ap/po_form.html", ctx)
 
 
 @login_required
@@ -4405,6 +4516,12 @@ def po_edit(request, pk):
                 notes=request.POST.get("notes", ""),
             )
             _capture_po_receipt_fields(request, po)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, po)
+            except ValidationError as exc:
+                messages.warning(request, f"PO updated, but attachments: {exc}")
             messages.success(request, f"PO {po.po_number} updated.")
             return redirect(_safe_next(request, "ui:po_detail", pk))
         except ValidationError as exc:
@@ -4417,11 +4534,11 @@ def po_edit(request, pk):
             logger.exception("PO edit hit a missing record for %s on %s", request.user, po.po_number)
             messages.error(request, str(exc))
 
-    return render(
-        request,
-        "ui/ap/po_form.html",
-        {"editing": po, "edit_mode": "edit", "segments": Segment.objects.order_by("code")},
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {"editing": po, "edit_mode": "edit", "segments": Segment.objects.order_by("code")}
+    ctx.update(attachment_context(po, request.user))
+    return render(request, "ui/ap/po_form.html", ctx)
 
 
 @login_required
@@ -4658,6 +4775,12 @@ def asset_create(request):
                 lines=lines,
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, asset)
+            except ValidationError as exc:
+                messages.warning(request, f"Asset saved, but attachments: {exc}")
             messages.success(request, f"Asset {asset.asset_no} saved as a draft — submit it for approval.")
             return redirect("ui:asset_detail", pk=asset.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
@@ -4792,6 +4915,8 @@ def asset_detail(request, pk):
             "assignee": role_assignee(role),
             "you_hold": approval_role_of(request.user) == role,
         }
+    from apps.ui.attachment_flow import attachment_context
+
     ctx = asset_context(asset)
     ctx.update(
         {
@@ -4799,6 +4924,7 @@ def asset_detail(request, pk):
             "audit_trail": _doc_audit_trail("asset", asset.id, asset.acquisition_journal),
         }
     )
+    ctx.update(attachment_context(asset, request.user))
     return render(request, "ui/assets/asset_detail.html", ctx)
 
 
@@ -5039,6 +5165,12 @@ def cv_create(request):
                 rfp=source_doc, check_no=request.POST.get("check_no", ""),
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, cv)
+            except ValidationError as exc:
+                messages.warning(request, f"Voucher saved, but attachments: {exc}")
             messages.success(request, f"Check voucher {cv.cv_number} issued.")
             return redirect("ui:cv_detail", pk=cv.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError, RFPDocument.DoesNotExist, PCFReplenishment.DoesNotExist) as exc:
@@ -5178,7 +5310,9 @@ def cv_detail(request, pk):
         "approved": _coo_name(),
         "received": cv.payee.name if cv.payee else (pcfs[0].payee_name if pcfs else ""),
     }
-    return render(request, "ui/ap/cv_detail.html", {
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
         "cv": cv,
         "payable": payable,
         "cleared_at": cleared_at,
@@ -5189,7 +5323,9 @@ def cv_detail(request, pk):
         "dr_lines": dr_lines,
         "total": total,
         "pcfs": pcfs,
-    })
+    }
+    ctx.update(attachment_context(cv, request.user))
+    return render(request, "ui/ap/cv_detail.html", ctx)
 
 
 @login_required
@@ -5462,6 +5598,12 @@ def cv_revise(request, pk):
                 cv_date=date.fromisoformat(request.POST["cv_date"]),
                 payee=payee,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, cv)
+            except ValidationError as exc:
+                messages.warning(request, f"CV revised, but attachments: {exc}")
             messages.success(request, f"CV {cv.cv_number} revised and resubmitted.")
             return redirect(_safe_next(request, "ui:cv_detail", pk))
         except (AccountingError, ValidationError, ValueError, KeyError) as exc:
@@ -5475,19 +5617,19 @@ def cv_revise(request, pk):
         revise_payable = money(replen.amount)
     else:
         revise_payable = None
-    return render(
-        request,
-        "ui/ap/cv_revise_form.html",
-        {
-            "cv": cv,
-            "payable": revise_payable,
-            "rfps": approved_rfps(),
-            "today": date.today(),
-            "pcfs": pcfs,
-            "selected_pcf": replen,
-            "source_type": "pcf" if replen is not None else "rfp",
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "cv": cv,
+        "payable": revise_payable,
+        "rfps": approved_rfps(),
+        "today": date.today(),
+        "pcfs": pcfs,
+        "selected_pcf": replen,
+        "source_type": "pcf" if replen is not None else "rfp",
+    }
+    ctx.update(attachment_context(cv, request.user))
+    return render(request, "ui/ap/cv_revise_form.html", ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -5665,6 +5807,12 @@ def pcf_replenish(request):
             if request.POST.get("request_date"):
                 replen.request_date = date.fromisoformat(request.POST["request_date"])
             replen.save(update_fields=["payee_name", "employee", "reference", "request_date", "updated_at"])
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, replen)
+            except ValidationError as exc:
+                messages.warning(request, f"Voucher saved, but attachments: {exc}")
             messages.success(
                 request,
                 f"PCF voucher {replen.voucher_no} created (draft) — submit it for "
@@ -5761,17 +5909,23 @@ def pcf_replenishment_edit(request, pk):
     if request.method == "POST":
         try:
             _pcf_prepare(request, replen, submit=False)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, replen)
+            except ValidationError as exc:
+                messages.warning(request, f"Voucher updated, but attachments: {exc}")
             messages.success(
                 request, f"PCF voucher {replen.voucher_no} updated (still a draft)."
             )
             return redirect("ui:pcf_replenishment_detail", pk=pk)
         except (AccountingError, ValidationError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/cash/pcf_replenish_form.html",
-        {**_pcf_form_context(request, editing=replen), "edit_mode": "edit"},
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {**_pcf_form_context(request, editing=replen), "edit_mode": "edit"}
+    ctx.update(attachment_context(replen, request.user))
+    return render(request, "ui/cash/pcf_replenish_form.html", ctx)
 
 
 @login_required
@@ -5787,17 +5941,23 @@ def pcf_replenishment_revise(request, pk):
     if request.method == "POST":
         try:
             _pcf_prepare(request, replen, submit=True)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, replen)
+            except ValidationError as exc:
+                messages.warning(request, f"Voucher resubmitted, but attachments: {exc}")
             messages.success(
                 request, f"PCF replenishment {replen.voucher_no} resubmitted for approval."
             )
             return redirect("ui:pcf_replenishment_detail", pk=pk)
         except (AccountingError, ValidationError, ValueError, KeyError, ArithmeticError) as exc:
             messages.error(request, str(exc))
-    return render(
-        request,
-        "ui/cash/pcf_replenish_form.html",
-        {**_pcf_form_context(request, editing=replen), "edit_mode": "revise"},
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {**_pcf_form_context(request, editing=replen), "edit_mode": "revise"}
+    ctx.update(attachment_context(replen, request.user))
+    return render(request, "ui/cash/pcf_replenish_form.html", ctx)
 
 
 @login_required
@@ -5868,18 +6028,18 @@ def pcf_replenishment_detail(request, pk):
         dict(e, account_name=e.get("account_name") or name_by_code.get(e.get("account_code", ""), ""))
         for e in stored
     ]
-    return render(
-        request,
-        "ui/cash/pcf_replenishment_detail.html",
-        {
-            "replen": replen,
-            "expense_lines": expense_lines,
-            "is_custodian": request.user.is_superuser
-            or replen.fund.custodian_id == request.user.id
-            or replen.requested_by_id == request.user.id,
-            **_reversal_context(request, replen.journal_entry),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "replen": replen,
+        "expense_lines": expense_lines,
+        "is_custodian": request.user.is_superuser
+        or replen.fund.custodian_id == request.user.id
+        or replen.requested_by_id == request.user.id,
+        **_reversal_context(request, replen.journal_entry),
+    }
+    ctx.update(attachment_context(replen, request.user))
+    return render(request, "ui/cash/pcf_replenishment_detail.html", ctx)
 
 
 @login_required
@@ -8356,12 +8516,21 @@ def transfer_edit(request, pk):
                 transfer_date=request.POST.get("transfer_date") or None,
                 user=request.user,
             )
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, transfer)
+            except ValidationError as exc:
+                messages.warning(request, f"Transfer updated, but attachments: {exc}")
             messages.success(request, f"Transfer {transfer.voucher_no} updated.")
             return redirect(_safe_next(request, "ui:transfer_detail", pk))
         except (AccountingError, ValidationError) as exc:
             messages.error(request, str(exc))
 
+    from apps.ui.attachment_flow import attachment_context
+
     ctx = _transfer_form_context(request, editing=transfer)
+    ctx.update(attachment_context(transfer, request.user))
     return render(request, "ui/cash/transfer_form.html", ctx)
 
 
@@ -8521,6 +8690,8 @@ def transfer_detail(request, pk):
             "assignee": role_assignee(role),
             "you_hold": approval_role_of(request.user) == role,
         }
+    from apps.ui.attachment_flow import attachment_context
+
     ctx.update(
         {
             "timeline": transfer_timeline(transfer),
@@ -8532,6 +8703,7 @@ def transfer_detail(request, pk):
                 or approval_role_of(request.user) == "head"
             ),
             **_reversal_context(request, ctx.get("entry")),
+            **attachment_context(transfer, request.user),
         }
     )
     return render(request, "ui/cash/transfer_detail.html", ctx)
@@ -10512,6 +10684,12 @@ def billing_create(request):
                 user=request.user,
             )
             _billing_invoice_from_form(request, billing)
+            try:
+                from apps.ui.attachment_flow import save_doc_attachments
+
+                save_doc_attachments(request, billing)
+            except ValidationError as exc:
+                messages.warning(request, f"Billing saved, but attachments: {exc}")
             messages.success(request, f"Billing {billing.billing_no} created (draft).")
             return redirect("ui:billing_detail", pk=billing.id)
         except (AccountingError, ValueError, KeyError, ArithmeticError, IntegrityError) as exc:
@@ -10549,16 +10727,16 @@ def billing_detail(request, pk):
             "assignee": role_assignee(role),
             "you_hold": approval_role_of(request.user) == role,
         }
-    return render(
-        request,
-        "ui/billing/billing_detail.html",
-        {
-            "billing": billing,
-            "awaiting": awaiting,
-            "audit_trail": _doc_audit_trail("bill", billing.id, billing.journal_entry),
-            **_reversal_context(request, billing.journal_entry),
-        },
-    )
+    from apps.ui.attachment_flow import attachment_context
+
+    ctx = {
+        "billing": billing,
+        "awaiting": awaiting,
+        "audit_trail": _doc_audit_trail("bill", billing.id, billing.journal_entry),
+        **_reversal_context(request, billing.journal_entry),
+    }
+    ctx.update(attachment_context(billing, request.user))
+    return render(request, "ui/billing/billing_detail.html", ctx)
 
 
 @login_required

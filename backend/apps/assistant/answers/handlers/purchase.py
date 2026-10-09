@@ -294,12 +294,33 @@ def supporting_docs(ctx, e) -> Answer:
     rfp = e.rfp or (e.cv.rfp if e.cv is not None and e.cv.rfp is not None else None)
     po = e.po if e.po is not None else (rfp.po if rfp is not None else None)
     files = []
-    if po is not None and po.attachment:
-        files.append((f"PO {po.po_number}", po.attachment.url))
-    if rfp is not None and rfp.attachment:
-        files.append((f"RFP {rfp.ap_number}", rfp.attachment.url))
-    if e.je is not None and e.je.source_file:
-        files.append((f"JE {e.je.entry_no}", e.je.source_file))
+
+    def _generic_files(obj, label):
+        try:
+            from apps.core.attachments import live_attachments_for
+
+            for att in live_attachments_for(obj):
+                try:
+                    files.append((f"{label} {att.original_name}", att.file.url))
+                except (OSError, ValueError):
+                    continue
+        except Exception:  # noqa: BLE001 - attachments must never break answers
+            pass
+
+    if po is not None:
+        if po.attachment:
+            files.append((f"PO {po.po_number}", po.attachment.url))
+        _generic_files(po, f"PO {po.po_number}")
+    if rfp is not None:
+        if rfp.attachment:
+            files.append((f"RFP {rfp.ap_number}", rfp.attachment.url))
+        _generic_files(rfp, f"RFP {rfp.ap_number}")
+    if e.je is not None:
+        if e.je.source_file:
+            files.append((f"JE {e.je.entry_no}", e.je.source_file))
+        _generic_files(e.je, f"JE {e.je.entry_no}")
+    if e.cv is not None:
+        _generic_files(e.cv, f"CV {e.cv.cv_number}")
     if not files:
         label = ""
         if po is not None:
@@ -312,7 +333,7 @@ def supporting_docs(ctx, e) -> Answer:
             qid="B24",
             title="Supporting documents",
             summary=f"No supporting file is attached to {label or 'this document'} yet.",
-            note="Staff can attach a scan/PDF in the Supporting file field of the PO or RFP form.",
+            note="Staff can attach a scan/PDF in the Supporting file field of the document form (up to 10 files until posted).",
             module="ap",
         )
     links = [{"url": url, "label": f"Open file — {name}"} for name, url in files]

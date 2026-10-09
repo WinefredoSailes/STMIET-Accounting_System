@@ -132,6 +132,12 @@
         {% if not entry.is_balanced %} <span class="text-xs">(unbalanced)</span>{% endif %}
       </dd>
     </div>
+    {% if attachments %}
+    <div class="bg-white rounded-lg border border-surface-200 px-4 py-3 col-span-2 md:col-span-4">
+      <dt class="text-xs text-surface-500">SUPPORTING FILES</dt>
+      <dd class="mt-1">{% include "ui/partials/attachments_list.html" %}</dd>
+    </div>
+    {% endif %}
   </dl>
 
   <div class="mt-6 bg-white rounded-xl border border-surface-200 overflow-x-auto">

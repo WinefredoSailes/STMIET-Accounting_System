@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, views_attachments
 
 app_name = "ui"
 
@@ -286,4 +286,8 @@ urlpatterns = [
     ),
     # My Profile (ADR-048): shared — every authenticated user, any grants.
     path("profile/", views.profile, name="profile"),
+    # Generic transaction attachments (1-10 per doc, evidence-only).
+    path("attachments/<int:pk>/download/", views_attachments.attachment_download, name="attachment_download"),
+    path("attachments/<int:pk>/delete/", views_attachments.attachment_delete, name="attachment_delete"),
+    path("attachments/<str:app_label>/<str:model>/<int:object_id>/upload/", views_attachments.attachment_upload, name="attachment_upload"),
 ]

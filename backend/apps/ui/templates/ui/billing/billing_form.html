@@ -9,7 +9,7 @@
     <span class="text-xs text-surface-400">BI-YYYY-#### auto-assigned · Debits must equal credits</span>
   </div>
 
-  <form method="post" class="mt-6 space-y-6" data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}">
+  <form method="post" enctype="multipart/form-data" class="mt-6 space-y-6" data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}">
     {% csrf_token %}
 
     <!-- ===================== HEADER ===================== -->
@@ -242,6 +242,8 @@
         {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
       </datalist>
     </div>
+
+    {% include "ui/partials/attachments_form.html" %}
 
     <div class="flex justify-end">
       <button type="submit" class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Create billing (draft)</button>

@@ -38,6 +38,12 @@
       <div class="mt-0.5">{{ transfer.purpose }}</div>
     </div>
     <div><div class="text-xs text-surface-500">BALANCE</div><div class="mt-0.5 font-medium {% if total == total_credit %}text-emerald-700{% else %}text-rose-700{% endif %} tabular-nums">{{total|peso}} = {{total_credit|peso}}</div></div>
+    {% if attachments %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">SUPPORTING FILES</div>
+      {% include "ui/partials/attachments_list.html" %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="px-6 pb-4">

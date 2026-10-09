@@ -1,0 +1,56 @@
+{% comment %}
+Generic multi-file attachment form block (1-10 files per transaction).
+Context: `attachments` = live DocumentAttachment rows for the doc (may be empty),
+`attachments_editable` = bool (False once posted/locked).
+
+Usage: include inside a <form enctype="multipart/form-data"> with
+{% include "ui/partials/attachments_form.html" %}.
+Posts: files via input[name=attachments][multiple], removals via
+checkboxes[name=remove_attachments].
+{% endcomment %}
+<div class="flex flex-wrap items-center gap-3">
+  <span class="text-sm font-medium text-surface-700">Supporting files <span class="text-xs font-normal text-surface-400">(up to 10 · PDF/JPG/PNG/DOC · 10MB each)</span></span>
+  {% if attachments_editable|default:True %}
+  <label class="relative inline-flex cursor-pointer items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+    Choose files
+    <input type="file" id="id_attachments" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="absolute inset-0 cursor-pointer opacity-0">
+  </label>
+  {% endif %}
+  <span id="id_attachments_hint" class="text-xs text-surface-500"></span>
+</div>
+{% if attachments %}
+<div class="mt-2 space-y-1">
+  {% for att in attachments %}
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <a href="{% url 'ui:attachment_download' att.id %}" class="font-medium text-brand-600 hover:underline">{{ att.original_name }}</a>
+    <span class="text-surface-400">({{ att.size|filesizeformat }})</span>
+    {% if attachments_editable|default:True %}
+    <label class="inline-flex cursor-pointer items-center gap-1 text-rose-600 hover:text-rose-700">
+      <input type="checkbox" name="remove_attachments" value="{{ att.id }}" class="h-4 w-4 rounded border-surface-300 text-rose-600"> Remove
+    </label>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if not attachments_editable|default:True %}
+  <p class="text-xs text-surface-400">Attachments are locked once posted.</p>
+  {% endif %}
+</div>
+{% endif %}
+<script>
+  (function () {
+    var input = document.getElementById("id_attachments");
+    var hint = document.getElementById("id_attachments_hint");
+    if (input && hint) {
+      input.addEventListener("change", function () {
+        if (!input.files || !input.files.length) { hint.textContent = ""; return; }
+        if (input.files.length > 10) {
+          hint.textContent = "Too many files (max 10). Remove some before submitting.";
+        } else {
+          var names = [];
+          for (var i = 0; i < input.files.length; i++) names.push(input.files[i].name);
+          hint.textContent = input.files.length + " selected: " + names.join(", ");
+        }
+      });
+    }
+  })();
+</script>

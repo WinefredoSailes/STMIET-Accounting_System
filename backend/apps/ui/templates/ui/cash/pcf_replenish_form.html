@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <form method="post" class="p-6 space-y-4"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
+    <form method="post" enctype="multipart/form-data" class="p-6 space-y-4"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
       {% csrf_token %}
       <fieldset class="space-y-3">
         <legend class="text-xs uppercase tracking-wider text-surface-500 font-medium">Payee Information</legend>
@@ -255,6 +255,8 @@
           <div class="text-surface-500">PAYMENT RECEIVED BY · SIGNATURE OVER PRINTED NAME</div>
         </div>
       </div>
+
+      {% include "ui/partials/attachments_form.html" %}
 
       <div class="flex items-center justify-end gap-3">
         {% if editing %}

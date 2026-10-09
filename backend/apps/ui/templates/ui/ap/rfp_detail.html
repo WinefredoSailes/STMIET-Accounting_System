@@ -34,6 +34,12 @@
       <div class="mt-0.5 font-mono text-xs">{{ rfp.supplier_invoice_no|default:"—" }}{% if rfp.supplier_invoice_date %} · dated {{ rfp.supplier_invoice_date|date:"M d, Y" }}{% endif %}{% if rfp.attachment %}<a href="{{ rfp.attachment.url }}" target="_blank" rel="noopener" class="ml-2 font-sans text-brand-600 hover:underline">[supporting file]</a>{% endif %}</div>
     </div>
     {% endif %}
+    {% if attachments %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">SUPPORTING FILES</div>
+      {% include "ui/partials/attachments_list.html" %}
+    </div>
+    {% endif %}
     {% if rfp.revision_count %}
     <div class="col-span-2 md:col-span-4">
       <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Revised {{ rfp.revision_count }}×</span>

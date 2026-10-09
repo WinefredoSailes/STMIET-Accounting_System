@@ -1,0 +1,22 @@
+{% comment %}
+Generic attachment list for detail pages.
+Context: `attachments` = live DocumentAttachment rows.
+Shows nothing when empty (caller gates the section header).
+{% endcomment %}
+{% if attachments %}
+<div class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 font-sans text-xs">
+  {% for att in attachments %}
+  <a href="{% url 'ui:attachment_download' att.id %}" class="text-brand-600 hover:underline">[{{ att.original_name }}]</a>
+  {% endfor %}
+</div>
+{% endif %}
+{% if attachments_editable and attachment_parent %}
+<form method="post" enctype="multipart/form-data" action="{% url 'ui:attachment_upload' attachment_parent.app_label attachment_parent.model attachment_parent.object_id %}" class="mt-2 flex flex-wrap items-center gap-2">
+  {% csrf_token %}
+  <label class="relative inline-flex cursor-pointer items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+    Add files
+    <input type="file" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="absolute inset-0 cursor-pointer opacity-0">
+  </label>
+  <span class="text-xs text-surface-400">up to 10 total · 10MB each</span>
+</form>
+{% endif %}

@@ -17,7 +17,7 @@
   </div>
   {% endif %}
 
-  <form method="post" class="mt-6 space-y-6"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
+  <form method="post" enctype="multipart/form-data" class="mt-6 space-y-6"{% if not editing %} data-autosave data-autosave-user="{{ request.user.id|default:'anon' }}"{% endif %}>
     {% csrf_token %}
 
     <!-- ===================== DOCUMENT METADATA ===================== -->
@@ -211,6 +211,8 @@
     <datalist id="cost_center_options">
       {% for cc in cost_centers %}<option value="{{ cc.code }}">{{ cc.name }}</option>{% endfor %}
     </datalist>
+
+    {% include "ui/partials/attachments_form.html" %}
 
     <!-- ===================== ACTIONS ===================== -->
     <div class="flex flex-wrap items-center gap-3">

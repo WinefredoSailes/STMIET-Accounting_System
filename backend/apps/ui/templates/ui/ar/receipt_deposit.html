@@ -66,10 +66,10 @@
         <input type="text" name="reference" id="id_reference" maxlength="64" class="w-full rounded-md border border-surface-300 px-3 py-2 text-sm">
       </div>
       <div class="flex flex-wrap items-center gap-3">
-        <span class="text-sm font-medium text-surface-700">Deposit slip scan</span>
+        <span class="text-sm font-medium text-surface-700">Deposit slip scan(s) <span class="text-xs font-normal text-surface-400">(up to 10)</span></span>
         <label class="relative inline-flex cursor-pointer items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
-          Choose file
-          <input type="file" id="id_attachment" name="attachment" accept=".pdf,.jpg,.jpeg,.png" class="absolute inset-0 cursor-pointer opacity-0">
+          Choose files
+          <input type="file" id="id_attachment" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="absolute inset-0 cursor-pointer opacity-0">
         </label>
         <span id="id_attachment_hint" class="text-xs text-surface-500"></span>
       </div>
@@ -79,7 +79,10 @@
           var hint = document.getElementById("id_attachment_hint");
           if (input && hint) {
             input.addEventListener("change", function () {
-              hint.textContent = input.files && input.files.length ? input.files[0].name : "";
+              if (!input.files || !input.files.length) { hint.textContent = ""; return; }
+              var names = [];
+              for (var i = 0; i < input.files.length; i++) names.push(input.files[i].name);
+              hint.textContent = input.files.length + " selected: " + names.join(", ");
             });
           }
         })();

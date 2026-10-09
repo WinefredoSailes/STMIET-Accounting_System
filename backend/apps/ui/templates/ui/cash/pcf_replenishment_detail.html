@@ -38,6 +38,12 @@
       <div class="text-xs text-surface-500">REQUESTED BY</div>
       <div class="mt-0.5">{% if replen.requested_by %}{{ replen.requested_by.get_full_name|default:replen.requested_by.username }}{% else %}—{% endif %}</div>
     </div>
+    {% if attachments %}
+    <div class="col-span-2 md:col-span-4">
+      <div class="text-xs text-surface-500">SUPPORTING FILES</div>
+      {% include "ui/partials/attachments_list.html" %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="px-6 pb-4">

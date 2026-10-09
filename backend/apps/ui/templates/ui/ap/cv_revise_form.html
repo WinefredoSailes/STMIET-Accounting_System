@@ -17,7 +17,7 @@
     <div class="mt-2 text-sm text-surface-700 whitespace-pre-wrap">{{ cv.rejection_note }}</div>
   </div>
 
-  <form method="post" class="p-6 space-y-4">
+  <form method="post" enctype="multipart/form-data" class="p-6 space-y-4">
     {% csrf_token %}
     <fieldset class="space-y-3" data-net-calc>
       <legend class="text-xs uppercase tracking-wider text-surface-500 font-medium">Payee Information</legend>
@@ -89,6 +89,8 @@
         </div>
       </div>
     </fieldset>
+
+    {% include "ui/partials/attachments_form.html" %}
 
     <div class="flex justify-end">
       <button type="submit" data-confirm="Resubmit this check voucher for approval? It re-enters the approval queue." class="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">

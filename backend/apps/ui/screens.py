@@ -79,6 +79,9 @@ PUBLIC_UI_URLS = frozenset({"login", "logout"})
 #: on purpose: a supplier picker is not a screen.
 SHARED_UI_URL_NAMES = frozenset({
     "profile",  # ADR-048: everyone's own My Profile
+    "attachment_download",  # generic evidence files: per-parent screen+segment check in view
+    "attachment_delete",  # same: view enforces can_edit + locked-status
+    "attachment_upload",  # same: view enforces can_edit + locked-status
     "account_options",
     "supplier_options",
     "party_options",
