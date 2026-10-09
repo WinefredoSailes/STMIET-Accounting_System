@@ -302,7 +302,7 @@ def cv_queue(user_roles):
     out = []
     docs = CheckVoucher.objects.filter(status__in=list(CV_NEXT_ROLE)).select_related(
         "payee", "rfp"
-    ).defer("date_created")
+    ).defer("date_created", "date_cleared")
     for cv in docs:
         role = CV_NEXT_ROLE[cv.status]
         if role in user_roles:
